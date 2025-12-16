@@ -1,0 +1,51 @@
+[package]
+name = "bevy_code_editor"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "High-performance GPU-accelerated code editor plugin for Bevy"
+repository = "https://github.com/yourusername/dawai"
+keywords = ["bevy", "editor", "code-editor", "syntax-highlighting"]
+categories = ["game-development", "text-editors"]
+
+[dependencies]
+# Bevy engine
+bevy = { version = "0.17", default-features = false, features = [
+    "bevy_render",
+    "bevy_core_pipeline",
+    "bevy_asset",
+    "bevy_text",
+    "default_font",        # Embedded default font for text rendering
+    "bevy_sprite",
+    "bevy_color",
+] }
+
+# Text buffer with efficient rope data structure
+ropey = "1.6"
+
+# Serialization for settings
+serde = { version = "1.0", features = ["derive"] }
+
+# Syntax highlighting (optional)
+tree-sitter = { version = "0.24", optional = true }
+tree-sitter-highlight = { version = "0.24", optional = true }
+
+# Clipboard support (optional)
+arboard = { version = "3.4", optional = true }
+
+# LSP support (optional)
+lsp-types = { version = "0.95", optional = true }
+tower-lsp = { version = "0.20", optional = true }
+tokio = { version = "1.0", features = ["sync", "rt"], optional = true }
+serde_json = { version = "1.0", optional = true }
+
+[dev-dependencies]
+bevy = { version = "0.17", features = ["bevy_window", "bevy_winit"] }
+tree-sitter-rust = "0.23"
+
+[features]
+default = ["tree-sitter", "clipboard"]
+tree-sitter = ["dep:tree-sitter", "tree-sitter-highlight"]
+clipboard = ["arboard"]
+lsp = ["lsp-types", "tower-lsp", "tokio", "serde_json"]
