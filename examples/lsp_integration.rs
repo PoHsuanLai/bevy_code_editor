@@ -46,8 +46,7 @@ fn run_with_lsp() {
 
 #[cfg(feature = "lsp")]
 fn setup_editor(
-    mut state: ResMut<CodeEditorState>, 
-    mut completion: ResMut<bevy_code_editor::lsp::CompletionState>,
+    mut state: ResMut<CodeEditorState>,
     mut lsp_client: ResMut<bevy_code_editor::lsp::LspClient>
 ) {
     // Read the source code of this example file

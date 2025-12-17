@@ -329,7 +329,7 @@ pub fn handle_keyboard_input(
     time: Res<Time>,
     #[cfg(feature = "lsp")] lsp_client: Res<crate::lsp::LspClient>,
     #[cfg(feature = "lsp")] mut completion_state: ResMut<crate::lsp::CompletionState>,
-    #[cfg(feature = "lsp")] mut sync_state: ResMut<crate::lsp::LspSyncState>,
+    #[cfg(feature = "lsp")] _sync_state: ResMut<crate::lsp::LspSyncState>,
 ) {
     let current_time = time.elapsed_secs_f64();
 
@@ -369,11 +369,33 @@ pub fn handle_keyboard_input(
                             }
                             insert_char(&mut state, c);
 
-                            // Auto-trigger completion
+                            // Notify LSP of text change
                             #[cfg(feature = "lsp")]
-                            if settings.completion.enabled && settings.completion.auto_trigger {
+                            send_did_change(&mut state, &lsp_client);
+
+                            // Auto-trigger completion on trigger chars, OR update filter if already visible
+                            #[cfg(feature = "lsp")]
+                            if settings.completion.enabled {
                                 if settings.completion.trigger_characters.contains(&c) {
+                                    // Trigger character (. or ::) - open new completion
+                                    // Mark completion as not visible to force start_char_index reset
+                                    completion_state.visible = false;
                                     request_completion(&mut state, &lsp_client, &mut completion_state);
+                                } else if completion_state.visible && (c.is_alphanumeric() || c == '_') {
+                                    // Completion visible and typing identifier chars - update filter
+                                    update_completion_filter(&state, &mut completion_state);
+                                } else if !completion_state.visible && (c.is_alphanumeric() || c == '_') {
+                                    // Not visible yet - check if we should auto-trigger after N chars
+                                    // Find the start of the current word
+                                    let word_start = find_word_start(&state.rope, state.cursor_pos);
+                                    let word_len = state.cursor_pos - word_start;
+
+                                    // Trigger after min_word_length characters (configurable, like VSCode's 3)
+                                    if word_len >= settings.completion.min_word_length {
+                                        // Set start_char_index to word start so filter works correctly
+                                        completion_state.start_char_index = word_start;
+                                        request_completion(&mut state, &lsp_client, &mut completion_state);
+                                    }
                                 }
                             }
                         }
@@ -381,6 +403,14 @@ pub fn handle_keyboard_input(
                     // Bevy sends Space as a separate variant, not Character(" ")
                     bevy::input::keyboard::Key::Space => {
                         insert_char(&mut state, ' ');
+                        // Notify LSP of text change
+                        #[cfg(feature = "lsp")]
+                        send_did_change(&mut state, &lsp_client);
+                        // Dismiss completion on space
+                        #[cfg(feature = "lsp")]
+                        {
+                            completion_state.visible = false;
+                        }
                     }
                     _ => {}
                 }
@@ -425,7 +455,7 @@ pub fn handle_keyboard_input(
         #[cfg(not(feature = "lsp"))]
         execute_action(&mut state, action, &settings);
         #[cfg(feature = "lsp")]
-        execute_action(&mut state, action, &settings, &lsp_client, &mut completion_state, &mut sync_state);
+        execute_action(&mut state, action, &settings, &lsp_client, &mut completion_state);
     }
 }
 
@@ -646,6 +676,7 @@ fn delete_selection(state: &mut CodeEditorState) {
                         EditorAction::FindPrevious => {},
                         EditorAction::Replace => {},
                         EditorAction::RequestCompletion => {},
+                        EditorAction::GotoDefinition => {},
                     }
                 }        
         /// Execute an editor action (LSP enabled)
@@ -658,22 +689,26 @@ fn execute_action(
     completion_state: &mut lsp::CompletionState,
 ) {
     // Handle Completion UI Navigation
-    if completion_state.visible && !completion_state.items.is_empty() {
+    let filtered_count = completion_state.filtered_items().len();
+    let max_visible = settings.completion.max_visible_items;
+    if completion_state.visible && filtered_count > 0 {
         match action {
             EditorAction::MoveCursorUp => {
                 if completion_state.selected_index > 0 {
                     completion_state.selected_index -= 1;
                 } else {
-                    completion_state.selected_index = completion_state.items.len().saturating_sub(1);
+                    completion_state.selected_index = filtered_count.saturating_sub(1);
                 }
+                completion_state.ensure_selected_visible_with_max(max_visible);
                 return; // Don't move cursor in text
             }
             EditorAction::MoveCursorDown => {
-                if completion_state.selected_index + 1 < completion_state.items.len() {
+                if completion_state.selected_index + 1 < filtered_count {
                     completion_state.selected_index += 1;
                 } else {
                     completion_state.selected_index = 0;
                 }
+                completion_state.ensure_selected_visible_with_max(max_visible);
                 return; // Don't move cursor in text
             }
             EditorAction::InsertNewline | EditorAction::InsertTab => {
@@ -684,6 +719,8 @@ fn execute_action(
             }
             EditorAction::ClearSelection => {
                 completion_state.visible = false;
+                completion_state.filter.clear();
+                completion_state.scroll_offset = 0;
                 return;
             }
             _ => {}
@@ -715,6 +752,22 @@ fn execute_action(
                 state.delete_backward();
             }
             text_changed = true;
+
+            // Update filter if visible
+            if completion_state.visible {
+                if state.cursor_pos > completion_state.start_char_index {
+                    // Still have characters after trigger - update filter
+                    update_completion_filter(state, completion_state);
+                } else if state.cursor_pos == completion_state.start_char_index {
+                    // Deleted back to trigger position - clear filter but keep completion open
+                    completion_state.filter.clear();
+                    completion_state.selected_index = 0;
+                } else {
+                    // Deleted past trigger - dismiss
+                    completion_state.visible = false;
+                    completion_state.filter.clear();
+                }
+            }
         }
         EditorAction::DeleteForward => {
             if state.selection_start.is_some() {
@@ -743,11 +796,15 @@ fn execute_action(
             state.selection_start = None;
             state.selection_end = None;
             state.move_cursor(-1);
+            // Dismiss completion when moving cursor horizontally
+            completion_state.visible = false;
         }
         EditorAction::MoveCursorRight => {
             state.selection_start = None;
             state.selection_end = None;
             state.move_cursor(1);
+            // Dismiss completion when moving cursor horizontally
+            completion_state.visible = false;
         }
         EditorAction::MoveCursorUp => {
             state.selection_start = None;
@@ -991,20 +1048,23 @@ fn apply_completion(
     state: &mut CodeEditorState,
     completion_state: &mut lsp::CompletionState,
 ) {
-    if let Some(item) = completion_state.items.get(completion_state.selected_index) {
+    // Get filtered items and select from that list
+    let filtered = completion_state.filtered_items();
+    if let Some(item) = filtered.get(completion_state.selected_index) {
         let start = completion_state.start_char_index;
         let end = state.cursor_pos;
-        
+        let label = item.label.clone(); // Clone to avoid borrow issues
+
         // Ensure valid range
         if start <= end && end <= state.rope.len_chars() {
             let start_byte = state.rope.char_to_byte(start);
             let end_byte = state.rope.char_to_byte(end);
             state.rope.remove(start_byte..end_byte);
-            state.rope.insert(start, &item.label);
-            
-            state.cursor_pos = start + item.label.chars().count();
+            state.rope.insert(start, &label);
+
+            state.cursor_pos = start + label.chars().count();
             state.pending_update = true;
-            
+
             // Mark lines as dirty for highlighting update
             let line_idx = state.rope.char_to_line(start);
             let new_line_count = state.rope.len_lines();
@@ -1013,16 +1073,64 @@ fn apply_completion(
         }
     }
     completion_state.visible = false;
+    completion_state.filter.clear();
+    completion_state.scroll_offset = 0;
 }
 
-/// Execute an editor action (LSP enabled)
+/// Find the start of the current word (for auto-triggering completion)
+#[cfg(feature = "lsp")]
+fn find_word_start(rope: &ropey::Rope, cursor_pos: usize) -> usize {
+    if cursor_pos == 0 {
+        return 0;
+    }
+
+    let mut pos = cursor_pos;
+    while pos > 0 {
+        let prev_char = rope.char(pos - 1);
+        if prev_char.is_alphanumeric() || prev_char == '_' {
+            pos -= 1;
+        } else {
+            break;
+        }
+    }
+    pos
+}
+
+/// Update the completion filter based on text typed since start_char_index
+#[cfg(feature = "lsp")]
+fn update_completion_filter(
+    state: &CodeEditorState,
+    completion_state: &mut lsp::CompletionState,
+) {
+    let cursor_pos = state.cursor_pos.min(state.rope.len_chars());
+    let start = completion_state.start_char_index;
+
+    if cursor_pos > start && start <= state.rope.len_chars() {
+        // Extract the filter text from start_char_index to cursor
+        let filter_text: String = state.rope.slice(start..cursor_pos).chars().collect();
+        completion_state.filter = filter_text;
+        // Reset selection and scroll when filter changes
+        completion_state.selected_index = 0;
+        completion_state.scroll_offset = 0;
+
+        #[cfg(debug_assertions)]
+        eprintln!("[LSP] Filter updated: '{}'", completion_state.filter);
+    } else {
+        completion_state.filter.clear();
+        completion_state.scroll_offset = 0;
+    }
+}
+
+/// Request completion from LSP
+/// If completion is already visible, this re-requests with updated position (for filtering)
+/// If completion is not visible, this opens new completion
 #[cfg(feature = "lsp")]
 fn request_completion(
     state: &mut CodeEditorState,
     lsp_client: &lsp::LspClient,
     completion_state: &mut lsp::CompletionState,
 ) {
-    use lsp_types::{Position, Url};
+    use lsp_types::Position;
 
     let cursor_pos = state.cursor_pos.min(state.rope.len_chars());
     let line_index = state.rope.char_to_line(cursor_pos);
@@ -1034,31 +1142,40 @@ fn request_completion(
     };
 
     if let Some(uri) = &state.document_uri {
+        #[cfg(debug_assertions)]
+        eprintln!("[LSP] Requesting completion at line={}, char={}, visible={}, start_idx={}",
+            lsp_position.line, lsp_position.character, completion_state.visible, completion_state.start_char_index);
+
         lsp_client.send(LspMessage::Completion {
             uri: uri.clone(),
             position: lsp_position,
         });
 
-        completion_state.start_char_index = cursor_pos;
+        // Only set start_char_index when first opening completion
+        // This preserves the trigger position for proper text replacement
+        if !completion_state.visible {
+            completion_state.start_char_index = cursor_pos;
+            completion_state.items.clear();
+            completion_state.selected_index = 0;
+            completion_state.filter.clear();
+        }
         completion_state.visible = true;
-        completion_state.items.clear();
-        completion_state.selected_index = 0;
-        completion_state.filter.clear();
     } else {
-        warn!("Cannot request completion: No document URI set");
+        eprintln!("[bevy_code_editor] Cannot request completion: No document URI set");
     }
 }
 
 /// Send textDocument/didChange notification to LSP
 #[cfg(feature = "lsp")]
 fn send_did_change(
-    state: &CodeEditorState,
+    state: &mut CodeEditorState,
     lsp_client: &lsp::LspClient,
 ) {
-    // TODO: Increment version
-    let version = 1;
-
     if let Some(uri) = &state.document_uri {
+        // Increment version for each change
+        state.document_version += 1;
+        let version = state.document_version;
+
         // Full text sync for simplicity
         let change = lsp_types::TextDocumentContentChangeEvent {
             range: None,
@@ -1071,6 +1188,9 @@ fn send_did_change(
             version,
             changes: vec![change],
         });
+
+        #[cfg(debug_assertions)]
+        eprintln!("[LSP] DidChange sent, version={}", version);
     }
 }
 
@@ -1130,7 +1250,7 @@ pub fn handle_mouse_input(
     window_query: Query<&Window, With<PrimaryWindow>>,
     settings: Res<EditorSettings>,
     viewport: Res<ViewportDimensions>,
-    time: Res<Time>, // Add this for hover timer
+    #[cfg(feature = "lsp")] time: Res<Time>,
     #[cfg(feature = "lsp")] lsp_client: Res<crate::lsp::LspClient>,
     #[cfg(feature = "lsp")] mut hover_state: ResMut<crate::lsp::HoverState>,
     #[cfg(feature = "lsp")] keyboard_input: Res<ButtonInput<KeyCode>>, // Add for Ctrl check
@@ -1174,40 +1294,54 @@ pub fn handle_mouse_input(
     #[cfg(feature = "lsp")]
     {
         use crate::lsp::reset_hover_state;
-        use lsp_types::{Position, Url};
-        
-        if let Some(current_char_pos) = char_pos {
-            // If mouse moved to a different character
-            if hover_state.trigger_char_index != current_char_pos {
-                hover_state.trigger_char_index = current_char_pos;
-                hover_state.timer = Some(Timer::new(std::time::Duration::from_millis(500), TimerMode::Once)); // Reset timer
-                hover_state.visible = false; // Hide previous hover immediately
-            }
+        use lsp_types::Position;
 
-            // If timer finished, request hover
-            if let Some(timer) = &mut hover_state.timer {
-                timer.tick(time.delta());
-                if timer.is_finished() && !hover_state.visible {
-                    let line_index = state.rope.char_to_line(current_char_pos);
-                    let char_in_line_index = current_char_pos - state.rope.line_to_char(line_index);
-                    
-                    let lsp_position = Position {
-                        line: line_index as u32,
-                        character: char_in_line_index as u32,
-                    };
-                    
-                    if let Some(uri) = &state.document_uri {
-                        lsp_client.send(LspMessage::Hover {
-                            uri: uri.clone(),
-                            position: lsp_position,
-                        });
-                    }
-                    
-                    // HoverState will be updated by process_lsp_messages
+        // Only process hover if enabled in settings
+        if settings.hover.enabled {
+            if let Some(current_char_pos) = char_pos {
+                // If mouse moved to a different character
+                if hover_state.trigger_char_index != current_char_pos {
+                    hover_state.trigger_char_index = current_char_pos;
+                    // Use delay_ms from settings
+                    hover_state.timer = Some(Timer::new(
+                        std::time::Duration::from_millis(settings.hover.delay_ms),
+                        TimerMode::Once
+                    ));
+                    hover_state.visible = false; // Hide previous hover immediately
+                    hover_state.request_sent = false; // Reset request flag
                 }
+
+                // If timer finished and we haven't sent a request yet, request hover
+                if let Some(timer) = &mut hover_state.timer {
+                    timer.tick(time.delta());
+                    if timer.just_finished() && !hover_state.request_sent {
+                        let line_index = state.rope.char_to_line(current_char_pos);
+                        let line_start = state.rope.line_to_char(line_index);
+                        let line_len = state.rope.line(line_index).len_chars();
+                        // Clamp column to actual line length (excluding newline)
+                        let char_in_line_index = (current_char_pos - line_start).min(line_len.saturating_sub(1));
+
+                        let lsp_position = Position {
+                            line: line_index as u32,
+                            character: char_in_line_index as u32,
+                        };
+
+                        if let Some(uri) = &state.document_uri {
+                            lsp_client.send(LspMessage::Hover {
+                                uri: uri.clone(),
+                                position: lsp_position,
+                            });
+                            hover_state.request_sent = true;
+                            hover_state.pending_char_index = Some(current_char_pos); // Remember which position we requested
+                        }
+                    }
+                }
+            } else {
+                // Mouse is not over the editor, reset hover
+                reset_hover_state(&mut hover_state);
             }
         } else {
-            // Mouse is not over the editor, reset hover
+            // Hover disabled - ensure it's hidden
             reset_hover_state(&mut hover_state);
         }
     }
@@ -1223,7 +1357,7 @@ pub fn handle_mouse_input(
             {
                 // Go to definition on Ctrl + Click
                 if keyboard_input.pressed(KeyCode::ControlLeft) || keyboard_input.pressed(KeyCode::ControlRight) {
-                    use lsp_types::{Position, Url};
+                    use lsp_types::Position;
 
                     let line_index = state.rope.char_to_line(char_pos);
                     let char_in_line_index = char_pos - state.rope.line_to_char(line_index);

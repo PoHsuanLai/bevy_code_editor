@@ -31,6 +31,10 @@ pub struct EditorSettings {
     #[cfg(feature = "lsp")]
     pub completion: CompletionSettings,
 
+    /// Hover information settings
+    #[cfg(feature = "lsp")]
+    pub hover: HoverSettings,
+
     /// Bracket matching
     pub brackets: BracketSettings,
 
@@ -320,8 +324,14 @@ pub struct CompletionSettings {
     /// Trigger on typing
     pub auto_trigger: bool,
 
-    /// Trigger characters
+    /// Trigger characters (e.g., '.', ':')
     pub trigger_characters: Vec<char>,
+
+    /// Minimum word length before auto-triggering (e.g., 3 = trigger after typing 3 chars)
+    pub min_word_length: usize,
+
+    /// Maximum visible items in completion popup
+    pub max_visible_items: usize,
 
     /// Show documentation in completion
     pub show_documentation: bool,
@@ -331,6 +341,17 @@ pub struct CompletionSettings {
 
     /// Commit on tab
     pub commit_on_tab: bool,
+}
+
+// ===== Hover Settings =====
+#[cfg(feature = "lsp")]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HoverSettings {
+    /// Enable hover information
+    pub enabled: bool,
+
+    /// Delay before showing hover (milliseconds)
+    pub delay_ms: u64,
 }
 
 // ===== Bracket Settings =====
@@ -411,6 +432,8 @@ impl EditorSettings {
             scrolling: ScrollSettings::default(),
             #[cfg(feature = "lsp")]
             completion: CompletionSettings::default(),
+            #[cfg(feature = "lsp")]
+            hover: HoverSettings::default(),
             brackets: BracketSettings::default(),
             search: SearchSettings::default(),
             performance: PerformanceSettings::default(),
@@ -429,6 +452,8 @@ impl EditorSettings {
             scrolling: ScrollSettings::minimal(),
             #[cfg(feature = "lsp")]
             completion: CompletionSettings::minimal(),
+            #[cfg(feature = "lsp")]
+            hover: HoverSettings::minimal(),
             brackets: BracketSettings::minimal(),
             search: SearchSettings::default(),
             performance: PerformanceSettings::aggressive(),
@@ -686,7 +711,9 @@ impl Default for CompletionSettings {
         Self {
             enabled: true,
             auto_trigger: true,
-            trigger_characters: vec!['.', ':', '>'],
+            trigger_characters: vec!['.', ':'],
+            min_word_length: 3,
+            max_visible_items: 10,
             show_documentation: true,
             commit_on_enter: true,
             commit_on_tab: true,
@@ -701,9 +728,31 @@ impl CompletionSettings {
             enabled: false,
             auto_trigger: false,
             trigger_characters: vec![],
+            min_word_length: 3,
+            max_visible_items: 10,
             show_documentation: false,
             commit_on_enter: false,
             commit_on_tab: false,
+        }
+    }
+}
+
+#[cfg(feature = "lsp")]
+impl Default for HoverSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            delay_ms: 500,
+        }
+    }
+}
+
+#[cfg(feature = "lsp")]
+impl HoverSettings {
+    pub fn minimal() -> Self {
+        Self {
+            enabled: false,
+            delay_ms: 500,
         }
     }
 }

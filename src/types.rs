@@ -84,6 +84,10 @@ pub struct CodeEditorState {
     #[cfg(feature = "lsp")]
     pub document_uri: Option<Url>,
 
+    /// Document version for LSP synchronization (incremented on each change)
+    #[cfg(feature = "lsp")]
+    pub document_version: i32,
+
     /// Vertical scroll offset in pixels
     pub scroll_offset: f32,
 
@@ -133,6 +137,8 @@ impl Default for CodeEditorState {
             highlight_config: None,
             #[cfg(feature = "lsp")]
             document_uri: None,
+            #[cfg(feature = "lsp")]
+            document_version: 1,
             scroll_offset: 0.0,
             horizontal_scroll_offset: 0.0,
             max_content_width: 0.0,
@@ -167,6 +173,8 @@ impl CodeEditorState {
             highlight_config: None,
             #[cfg(feature = "lsp")]
             document_uri: None,
+            #[cfg(feature = "lsp")]
+            document_version: 1,
             scroll_offset: 0.0,
             horizontal_scroll_offset: 0.0,
             max_content_width: 0.0,

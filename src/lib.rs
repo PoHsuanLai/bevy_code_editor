@@ -1,18 +1,6 @@
 //! # Bevy Code Editor
 //!
-//! High-performance GPU-accelerated code editor plugin for Bevy.
-//!
-//! ## Features
-//!
-//! - GPU-accelerated rendering using Bevy's text rendering
-//! - Efficient rope data structure for text editing (via `ropey`)
-//! - Optional syntax highlighting (via `tree-sitter`)
-//! - Optional LSP support
-//! - Viewport culling for large files
-//! - Entity pooling for performance
-//! - Configurable themes and settings
-//!
-//! ## Quick Start
+//! Code editor plugin for Bevy.
 //!
 //! ```rust,no_run
 //! use bevy::prelude::*;

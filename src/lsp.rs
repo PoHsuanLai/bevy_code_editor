@@ -9,33 +9,51 @@
 //! - Code actions
 //! - Formatting
 
-#[cfg(feature = "lsp")]
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
+use std::collections::HashMap;
 
-#[cfg(feature = "lsp")]
 use lsp_types::*;
-
-#[cfg(feature = "lsp")]
-use tower_lsp::jsonrpc::Result as JsonRpcResult;
-
-#[cfg(feature = "lsp")]
-use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 use crate::types::{CodeEditorState, ViewportDimensions};
 use crate::settings::EditorSettings;
+
+/// Global ID counter for LSP requests
+#[cfg(feature = "lsp")]
+static NEXT_REQUEST_ID: AtomicI64 = AtomicI64::new(1);
+
+/// Type of LSP request (used to match responses)
+#[cfg(feature = "lsp")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RequestType {
+    Initialize,
+    Completion,
+    Hover,
+    GotoDefinition,
+    References,
+    Format,
+}
 
 /// LSP client resource
 #[cfg(feature = "lsp")]
 #[derive(Resource)]
 pub struct LspClient {
-    /// Send messages to language server
-    tx: Sender<LspMessage>,
+    /// Send messages to language server (includes request type for ID tracking)
+    tx: Sender<(LspMessage, Option<(i64, RequestType)>)>,
     /// Receive responses from language server (wrapped in Mutex for Sync)
     rx: Mutex<Receiver<LspResponse>>,
+    /// Track pending requests: ID -> RequestType
+    pending_requests: Arc<Mutex<HashMap<i64, RequestType>>>,
 }
+
+/// Default maximum number of visible items in completion popup
+/// This is used as a fallback; prefer settings.completion.max_visible_items
+#[cfg(feature = "lsp")]
+pub const COMPLETION_MAX_VISIBLE_DEFAULT: usize = 10;
 
 /// State for the auto-completion UI
 #[cfg(feature = "lsp")]
@@ -43,14 +61,82 @@ pub struct LspClient {
 pub struct CompletionState {
     /// Whether the completion box is currently visible
     pub visible: bool,
-    /// Current list of completion items
+    /// Current list of completion items (unfiltered from LSP)
     pub items: Vec<CompletionItem>,
-    /// Index of the currently selected item
+    /// Index of the currently selected item (in filtered list)
     pub selected_index: usize,
-    /// Character index in the document where completion started
+    /// Scroll offset (first visible item index)
+    pub scroll_offset: usize,
+    /// Character index in the document where completion started (trigger position)
     pub start_char_index: usize,
     /// Filter text (what the user has typed since opening completion)
     pub filter: String,
+}
+
+#[cfg(feature = "lsp")]
+impl CompletionState {
+    /// Ensure the selected item is visible by adjusting scroll_offset
+    /// Uses max_visible_items from settings (or default if not provided)
+    pub fn ensure_selected_visible(&mut self) {
+        self.ensure_selected_visible_with_max(COMPLETION_MAX_VISIBLE_DEFAULT);
+    }
+
+    /// Ensure the selected item is visible with a specific max visible count
+    pub fn ensure_selected_visible_with_max(&mut self, max_visible: usize) {
+        let filtered_count = self.filtered_items().len();
+        if filtered_count == 0 {
+            self.scroll_offset = 0;
+            return;
+        }
+
+        // Clamp selected_index to valid range
+        self.selected_index = self.selected_index.min(filtered_count.saturating_sub(1));
+
+        // If selected is above visible area, scroll up
+        if self.selected_index < self.scroll_offset {
+            self.scroll_offset = self.selected_index;
+        }
+        // If selected is below visible area, scroll down
+        else if self.selected_index >= self.scroll_offset + max_visible {
+            self.scroll_offset = self.selected_index - max_visible + 1;
+        }
+
+        // Clamp scroll_offset to valid range
+        let max_scroll = filtered_count.saturating_sub(max_visible);
+        self.scroll_offset = self.scroll_offset.min(max_scroll);
+    }
+}
+
+#[cfg(feature = "lsp")]
+impl CompletionState {
+    /// Get filtered items based on current filter text using fuzzy matching
+    /// Returns items sorted by match score (best matches first)
+    pub fn filtered_items(&self) -> Vec<&CompletionItem> {
+        use fuzzy_matcher::FuzzyMatcher;
+        use fuzzy_matcher::skim::SkimMatcherV2;
+
+        if self.filter.is_empty() {
+            self.items.iter().collect()
+        } else {
+            let matcher = SkimMatcherV2::default();
+            let mut scored_items: Vec<(&CompletionItem, i64)> = self.items
+                .iter()
+                .filter_map(|item| {
+                    // Try matching against label first, then filter_text
+                    let score = matcher.fuzzy_match(&item.label, &self.filter)
+                        .or_else(|| {
+                            item.filter_text.as_ref()
+                                .and_then(|f| matcher.fuzzy_match(f, &self.filter))
+                        });
+                    score.map(|s| (item, s))
+                })
+                .collect();
+
+            // Sort by score (higher is better)
+            scored_items.sort_by(|a, b| b.1.cmp(&a.1));
+            scored_items.into_iter().map(|(item, _)| item).collect()
+        }
+    }
 }
 
 /// State for hover popups
@@ -61,12 +147,16 @@ pub struct HoverState {
     pub visible: bool,
     /// Content to display in the hover box (markdown)
     pub content: String,
-    /// The character index in the document where the hover was triggered
+    /// The character index in the document where the mouse currently is
     pub trigger_char_index: usize,
+    /// The character index for which we sent the hover request (to match response)
+    pub pending_char_index: Option<usize>,
     /// Timer for delaying hover display/hide
     pub timer: Option<Timer>,
     /// The actual LSP range for the hover content (useful for highlighting)
     pub range: Option<Range>,
+    /// Whether we've already sent a hover request for this position
+    pub request_sent: bool,
 }
 
 /// State for LSP document synchronization
@@ -99,6 +189,38 @@ pub struct CompletionUI;
 #[cfg(feature = "lsp")]
 #[derive(Component)]
 pub struct HoverUI;
+
+/// Message emitted when navigation to a different file is requested
+/// External code should listen to this message to handle cross-file navigation
+#[cfg(feature = "lsp")]
+#[derive(bevy::prelude::Message, Clone, Debug)]
+pub struct NavigateToFileEvent {
+    /// URI of the file to open
+    pub uri: Url,
+    /// Line number (0-indexed)
+    pub line: usize,
+    /// Character position in line (0-indexed)
+    pub character: usize,
+}
+
+/// Message emitted when there are multiple definition/reference locations
+/// External code can display a picker UI for the user to choose
+#[cfg(feature = "lsp")]
+#[derive(bevy::prelude::Message, Clone, Debug)]
+pub struct MultipleLocationsEvent {
+    /// All available locations
+    pub locations: Vec<Location>,
+    /// Type of locations (definition, references, etc.)
+    pub location_type: LocationType,
+}
+
+/// Type of location event
+#[cfg(feature = "lsp")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocationType {
+    Definition,
+    References,
+}
 
 
 /// Messages sent to language server
@@ -180,9 +302,9 @@ pub enum LspResponse {
         range: Option<Range>,
     },
 
-    /// Definition location
+    /// Definition location(s) - may have multiple definitions
     Definition {
-        location: Location,
+        locations: Vec<Location>,
     },
 
     /// Reference locations
@@ -217,12 +339,10 @@ impl LspClient {
         let (tx, _rx_server) = channel();
         let (_tx_client, rx) = channel();
 
-        // We don't start the server automatically in new() anymore
-        // call start() with the command to run
-
-        Self { 
+        Self {
             tx,
-            rx: Mutex::new(rx) 
+            rx: Mutex::new(rx),
+            pending_requests: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -233,7 +353,8 @@ impl LspClient {
         use std::thread;
         use serde_json::Value;
 
-        info!("Starting LSP server: {} {:?}", command, args);
+        #[cfg(debug_assertions)]
+        eprintln!("[LSP] Starting server: {} {:?}", command, args);
 
         let mut child = Command::new(command)
             .args(args)
@@ -246,19 +367,23 @@ impl LspClient {
         let stdout = child.stdout.take().expect("Failed to open stdout");
         let stderr = child.stderr.take().expect("Failed to open stderr");
 
-        // Channel for Bevy -> Server
-        let (tx_to_server, rx_from_bevy) = channel::<LspMessage>();
+        // Channel for Bevy -> Server (now includes optional ID and request type)
+        let (tx_to_server, rx_from_bevy) = channel::<(LspMessage, Option<(i64, RequestType)>)>();
         self.tx = tx_to_server;
 
         // Channel for Server -> Bevy
         let (tx_to_bevy, rx_from_server) = channel::<LspResponse>();
         self.rx = Mutex::new(rx_from_server);
 
+        // Share pending_requests with the reader thread
+        let pending_requests = self.pending_requests.clone();
+
         // Writer Thread (Bevy -> LSP Stdin)
         thread::spawn(move || {
-            while let Ok(msg) = rx_from_bevy.recv() {
-                // Convert LspMessage to JSON-RPC
-                let json_str = match msg_to_json(&msg) {
+            while let Ok((msg, id_info)) = rx_from_bevy.recv() {
+                // Convert LspMessage to JSON-RPC with the provided ID
+                let id = id_info.map(|(id, _)| id);
+                let json_str = match msg_to_json(&msg, id) {
                     Ok(s) => s,
                     Err(e) => {
                         eprintln!("Failed to serialize message: {:?}", e);
@@ -280,14 +405,14 @@ impl LspClient {
         thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
             let mut buffer = String::new();
-            
+
             loop {
                 buffer.clear();
                 // Read Content-Length header
                 if reader.read_line(&mut buffer).unwrap_or(0) == 0 {
                     break; // EOF
                 }
-                
+
                 let mut content_len = 0;
                 if buffer.starts_with("Content-Length: ") {
                     if let Ok(len) = buffer.trim_start_matches("Content-Length: ").trim().parse::<usize>() {
@@ -307,10 +432,31 @@ impl LspClient {
                     if let Ok(()) = reader.read_exact(&mut body_buf) {
                         if let Ok(body_str) = String::from_utf8(body_buf) {
                             // Parse JSON
-                            debug!("LSP Received raw: {}", body_str);
                             if let Ok(json) = serde_json::from_str::<Value>(&body_str) {
-                                // Convert to LspResponse
-                                if let Some(response) = parse_lsp_response(&json) {
+                                // Get the request type from pending_requests using the response ID
+                                let response_id = json.get("id").and_then(|v| v.as_i64());
+                                let request_type = if let Some(id) = response_id {
+                                    if let Ok(mut pending) = pending_requests.lock() {
+                                        let req_type = pending.remove(&id);
+                                        #[cfg(debug_assertions)]
+                                        eprintln!("[LSP] Response id={} matched to {:?}", id, req_type);
+                                        req_type
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    // Check if it's a notification (has method but no id)
+                                    #[cfg(debug_assertions)]
+                                    if let Some(method) = json.get("method").and_then(|m| m.as_str()) {
+                                        eprintln!("[LSP] Notification: {}", method);
+                                    }
+                                    None
+                                };
+
+                                // Convert to LspResponse using the request type
+                                if let Some(response) = parse_lsp_response(&json, request_type) {
+                                    #[cfg(debug_assertions)]
+                                    eprintln!("[LSP] Parsed response: {:?}", std::mem::discriminant(&response));
                                     let _ = tx_to_bevy_clone.send(response);
                                 }
                             }
@@ -325,7 +471,7 @@ impl LspClient {
             let reader = BufReader::new(stderr);
             for line in reader.lines() {
                 if let Ok(line) = line {
-                    info!("LSP stderr: {}", line);
+                    eprintln!("[LSP stderr] {}", line);
                 }
             }
         });
@@ -335,8 +481,49 @@ impl LspClient {
 
     /// Send message to language server
     pub fn send(&self, message: LspMessage) {
-        debug!("LSP Sending: {:?}", message);
-        let _ = self.tx.send(message);
+        // Determine if this is a request (needs ID) or notification (no ID)
+        let id_info = match &message {
+            LspMessage::Initialize { .. } => {
+                let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+                Some((id, RequestType::Initialize))
+            }
+            LspMessage::Completion { .. } => {
+                let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+                Some((id, RequestType::Completion))
+            }
+            LspMessage::Hover { .. } => {
+                let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+                Some((id, RequestType::Hover))
+            }
+            LspMessage::GotoDefinition { .. } => {
+                let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+                Some((id, RequestType::GotoDefinition))
+            }
+            LspMessage::References { .. } => {
+                let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+                Some((id, RequestType::References))
+            }
+            LspMessage::Format { .. } => {
+                let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+                Some((id, RequestType::Format))
+            }
+            // Notifications don't have IDs
+            LspMessage::Initialized | LspMessage::DidOpen { .. } | LspMessage::DidChange { .. } => None,
+        };
+
+        // Track the request if it has an ID
+        if let Some((id, request_type)) = id_info {
+            if let Ok(mut pending) = self.pending_requests.lock() {
+                pending.insert(id, request_type);
+            }
+            #[cfg(debug_assertions)]
+            eprintln!("[LSP] Sending (id={}): {:?}", id, message);
+        } else {
+            #[cfg(debug_assertions)]
+            eprintln!("[LSP] Sending (notification): {:?}", message);
+        }
+
+        let _ = self.tx.send((message, id_info));
     }
 
     /// Try to receive response from language server
@@ -351,11 +538,8 @@ impl LspClient {
 
 // Helper to serialize LspMessage to JSON-RPC string
 #[cfg(feature = "lsp")]
-fn msg_to_json(msg: &LspMessage) -> serde_json::Result<String> {
+fn msg_to_json(msg: &LspMessage, id: Option<i64>) -> serde_json::Result<String> {
     use serde_json::json;
-    
-    // Simple ID counter could be added if needed, using 1 for now
-    let id = 1;
 
     let (method, params, is_notification) = match msg {
         LspMessage::Initialize { root_uri, capabilities } => (
@@ -393,7 +577,26 @@ fn msg_to_json(msg: &LspMessage) -> serde_json::Result<String> {
             json!({ "textDocument": { "uri": uri }, "position": position }),
             false
         ),
-        _ => return Ok("{}".to_string()), // TODO: Implement others
+        LspMessage::References { uri, position } => (
+            "textDocument/references",
+            json!({
+                "textDocument": { "uri": uri },
+                "position": position,
+                "context": { "includeDeclaration": true }
+            }),
+            false
+        ),
+        LspMessage::Format { uri } => (
+            "textDocument/formatting",
+            json!({
+                "textDocument": { "uri": uri },
+                "options": {
+                    "tabSize": 4,
+                    "insertSpaces": true
+                }
+            }),
+            false
+        ),
     };
 
     let rpc = if is_notification {
@@ -403,9 +606,11 @@ fn msg_to_json(msg: &LspMessage) -> serde_json::Result<String> {
             "params": params
         })
     } else {
+        // Use provided ID for requests, fallback to 1 if not provided
+        let request_id = id.unwrap_or(1);
         json!({
             "jsonrpc": "2.0",
-            "id": id,
+            "id": request_id,
             "method": method,
             "params": params
         })
@@ -416,10 +621,8 @@ fn msg_to_json(msg: &LspMessage) -> serde_json::Result<String> {
 
 // Helper to parse JSON-RPC response to LspResponse
 #[cfg(feature = "lsp")]
-fn parse_lsp_response(json: &serde_json::Value) -> Option<LspResponse> {
-    // Basic parsing logic - needs refinement for production
-    
-    // Check for diagnostics notification
+fn parse_lsp_response(json: &serde_json::Value, request_type: Option<RequestType>) -> Option<LspResponse> {
+    // Check for diagnostics notification (server-initiated, no ID)
     if let Some(method) = json.get("method").and_then(|m| m.as_str()) {
         if method == "textDocument/publishDiagnostics" {
             if let Some(params) = json.get("params") {
@@ -431,50 +634,114 @@ fn parse_lsp_response(json: &serde_json::Value) -> Option<LspResponse> {
                 }
             }
         }
+        // Other notifications can be added here
+        return None;
     }
 
-    // Check for completion response (by ID matching, ideally)
-    if let Some(result) = json.get("result") {
-        // Try parsing as completion items
-        // Result can be CompletionList or Vec<CompletionItem>
-        if let Ok(items) = serde_json::from_value::<Vec<CompletionItem>>(result.clone()) {
-            return Some(LspResponse::Completion { items });
-        }
-        if let Ok(list) = serde_json::from_value::<CompletionList>(result.clone()) {
-            return Some(LspResponse::Completion { items: list.items });
-        }
+    // For responses, use the request_type to determine how to parse
+    let result = json.get("result")?;
+
+    // Handle null results (e.g., no hover info available)
+    if result.is_null() {
+        return None;
     }
 
-    // Check for hover response
-    if let Some(result) = json.get("result") {
-        if let Ok(hover) = serde_json::from_value::<Hover>(result.clone()) {
-            // hover.contents is HoverContents, not Option<HoverContents>
-            let contents_enum = hover.contents; 
-            let content_string = match contents_enum {
-                lsp_types::HoverContents::Markup(markup) => markup.value,
-                lsp_types::HoverContents::Scalar(marked_string) => {
-                    // MarkedString is an enum itself, we need to match its variants
-                    match marked_string {
-                        lsp_types::MarkedString::String(s) => s,
-                        lsp_types::MarkedString::LanguageString(lang_string_struct) => lang_string_struct.value,
-                    }
-                },
-                lsp_types::HoverContents::Array(arr) => arr.into_iter().map(|marked_string| {
-                    match marked_string {
-                        lsp_types::MarkedString::String(s) => s,
-                        lsp_types::MarkedString::LanguageString(lang_string_struct) => lang_string_struct.value,
-                    }
-                }).collect::<Vec<_>>().join("\n"),
-            };
-            
-            return Some(LspResponse::Hover {
-                content: content_string,
-                range: hover.range,
-            });
+    match request_type {
+        Some(RequestType::Completion) => {
+            // Result can be CompletionList or Vec<CompletionItem>
+            if let Ok(items) = serde_json::from_value::<Vec<CompletionItem>>(result.clone()) {
+                return Some(LspResponse::Completion { items });
+            }
+            if let Ok(list) = serde_json::from_value::<CompletionList>(result.clone()) {
+                return Some(LspResponse::Completion { items: list.items });
+            }
+            #[cfg(debug_assertions)]
+            eprintln!("[LSP] Failed to parse completion response");
+            None
+        }
+        Some(RequestType::Hover) => {
+            if let Ok(hover) = serde_json::from_value::<Hover>(result.clone()) {
+                let content_string = match hover.contents {
+                    lsp_types::HoverContents::Markup(markup) => markup.value,
+                    lsp_types::HoverContents::Scalar(marked_string) => {
+                        match marked_string {
+                            lsp_types::MarkedString::String(s) => s,
+                            lsp_types::MarkedString::LanguageString(lang_string_struct) => lang_string_struct.value,
+                        }
+                    },
+                    lsp_types::HoverContents::Array(arr) => arr.into_iter().map(|marked_string| {
+                        match marked_string {
+                            lsp_types::MarkedString::String(s) => s,
+                            lsp_types::MarkedString::LanguageString(lang_string_struct) => lang_string_struct.value,
+                        }
+                    }).collect::<Vec<_>>().join("\n"),
+                };
+
+                return Some(LspResponse::Hover {
+                    content: content_string,
+                    range: hover.range,
+                });
+            }
+            #[cfg(debug_assertions)]
+            eprintln!("[LSP] Failed to parse hover response");
+            None
+        }
+        Some(RequestType::GotoDefinition) => {
+            // Can be Location, Vec<Location>, or Vec<LocationLink>
+            // Single location
+            if let Ok(location) = serde_json::from_value::<Location>(result.clone()) {
+                return Some(LspResponse::Definition { locations: vec![location] });
+            }
+            // Multiple locations
+            if let Ok(locations) = serde_json::from_value::<Vec<Location>>(result.clone()) {
+                if !locations.is_empty() {
+                    return Some(LspResponse::Definition { locations });
+                }
+            }
+            // LocationLink format (convert to Location)
+            if let Ok(links) = serde_json::from_value::<Vec<lsp_types::LocationLink>>(result.clone()) {
+                let locations: Vec<Location> = links.into_iter().map(|link| Location {
+                    uri: link.target_uri,
+                    range: link.target_selection_range,
+                }).collect();
+                if !locations.is_empty() {
+                    return Some(LspResponse::Definition { locations });
+                }
+            }
+            #[cfg(debug_assertions)]
+            eprintln!("[LSP] Failed to parse definition response");
+            None
+        }
+        Some(RequestType::References) => {
+            if let Ok(locations) = serde_json::from_value::<Vec<Location>>(result.clone()) {
+                return Some(LspResponse::References { locations });
+            }
+            #[cfg(debug_assertions)]
+            eprintln!("[LSP] Failed to parse references response");
+            None
+        }
+        Some(RequestType::Format) => {
+            if let Ok(edits) = serde_json::from_value::<Vec<TextEdit>>(result.clone()) {
+                return Some(LspResponse::Format { edits });
+            }
+            #[cfg(debug_assertions)]
+            eprintln!("[LSP] Failed to parse format response");
+            None
+        }
+        Some(RequestType::Initialize) => {
+            // Initialize response is typically just acknowledged, we don't need to return anything special
+            #[cfg(debug_assertions)]
+            eprintln!("[LSP] Initialize response received");
+            None
+        }
+        None => {
+            // No request type - this shouldn't happen for responses with IDs
+            // Fall back to guessing (legacy behavior)
+            #[cfg(debug_assertions)]
+            eprintln!("[LSP] Warning: Response without known request type, cannot parse");
+            None
         }
     }
-
-    None
 }
 
 #[cfg(feature = "lsp")]
@@ -493,6 +760,8 @@ pub fn process_lsp_messages(
     mut completion_state: ResMut<CompletionState>,
     mut hover_state: ResMut<HoverState>,
     mut editor_state: ResMut<CodeEditorState>,
+    mut navigate_events: MessageWriter<NavigateToFileEvent>,
+    mut multi_location_events: MessageWriter<MultipleLocationsEvent>,
 ) {
     // Process new messages from LSP
     while let Some(response) = lsp_client.try_recv() {
@@ -515,40 +784,144 @@ pub fn process_lsp_messages(
                 }
             },
             LspResponse::Completion { items } => {
-                debug!("Received {} completion items", items.len());
+                #[cfg(debug_assertions)]
+                eprintln!("[LSP] Completion response: {} items", items.len());
                 completion_state.items = items;
                 completion_state.visible = !completion_state.items.is_empty();
                 completion_state.selected_index = 0;
-                if completion_state.visible {
-                    info!("Completion UI set to visible");
-                }
-                // TODO: Set start_char_index based on cursor position or trigger
             },
             LspResponse::Hover { content, range } => {
-                info!("Received hover content: {}", content);
-                hover_state.content = content;
-                hover_state.range = range;
-                hover_state.visible = true;
-                hover_state.timer = Some(Timer::new(std::time::Duration::from_millis(300), TimerMode::Once)); // Small delay for display
-                info!("Hover UI set to visible (timer started)");
+                #[cfg(debug_assertions)]
+                eprintln!("[LSP] Hover response: {} chars, pending={:?}, trigger={}",
+                    content.len(), hover_state.pending_char_index, hover_state.trigger_char_index);
+
+                // Only show hover if we have content AND mouse is still at the position we requested
+                if !content.is_empty() {
+                    if let Some(pending_pos) = hover_state.pending_char_index {
+                        if pending_pos == hover_state.trigger_char_index {
+                            #[cfg(debug_assertions)]
+                            eprintln!("[LSP] Hover showing: first 100 chars = {:?}", &content[..content.len().min(100)]);
+                            hover_state.content = content;
+                            hover_state.range = range;
+                            hover_state.visible = true;
+                        } else {
+                            #[cfg(debug_assertions)]
+                            eprintln!("[LSP] Hover DISCARDED: position mismatch (pending={} != trigger={})",
+                                pending_pos, hover_state.trigger_char_index);
+                        }
+                    } else {
+                        #[cfg(debug_assertions)]
+                        eprintln!("[LSP] Hover DISCARDED: no pending request");
+                    }
+                }
+                hover_state.pending_char_index = None; // Clear pending regardless
             }
-            LspResponse::Definition { location } => {
-                // For simplicity, just move cursor to definition start
-                // TODO: Handle multiple locations, different files, etc.
-                let line_num = location.range.start.line as usize;
-                let char_in_line = location.range.start.character as usize;
-                
-                // Convert line/char to rope char index
-                if line_num < editor_state.rope.len_lines() {
-                    let line_start_char = editor_state.rope.line_to_char(line_num);
-                    let target_char_pos = line_start_char + char_in_line;
-                    
-                    editor_state.cursor_pos = target_char_pos.min(editor_state.rope.len_chars());
-                    editor_state.needs_update = true;
-                    info!("Moved cursor to definition at line {}, char {}", line_num, char_in_line);
+            LspResponse::Definition { locations } => {
+                if locations.is_empty() {
+                    #[cfg(debug_assertions)]
+                    eprintln!("[LSP] Definition response: no locations");
+                    continue;
+                }
+
+                #[cfg(debug_assertions)]
+                eprintln!("[LSP] Definition response: {} location(s)", locations.len());
+
+                // Check if multiple locations - emit event for picker UI
+                if locations.len() > 1 {
+                    multi_location_events.write(MultipleLocationsEvent {
+                        locations: locations.clone(),
+                        location_type: LocationType::Definition,
+                    });
+                    // For now, also navigate to first location
+                }
+
+                // Navigate to first location
+                let location = &locations[0];
+                let current_uri = editor_state.document_uri.as_ref();
+                let is_same_file = current_uri.is_some_and(|uri| uri == &location.uri);
+
+                if is_same_file {
+                    // Same file - just move cursor
+                    let line_num = location.range.start.line as usize;
+                    let char_in_line = location.range.start.character as usize;
+
+                    if line_num < editor_state.rope.len_lines() {
+                        let line_start_char = editor_state.rope.line_to_char(line_num);
+                        let target_char_pos = line_start_char + char_in_line;
+
+                        editor_state.cursor_pos = target_char_pos.min(editor_state.rope.len_chars());
+                        editor_state.needs_update = true;
+                    }
+                } else {
+                    // Different file - emit navigation event
+                    navigate_events.write(NavigateToFileEvent {
+                        uri: location.uri.clone(),
+                        line: location.range.start.line as usize,
+                        character: location.range.start.character as usize,
+                    });
                 }
             }
-            _ => {} // TODO: Handle other LSP responses
+            LspResponse::References { locations } => {
+                #[cfg(debug_assertions)]
+                eprintln!("[LSP] References response: {} location(s)", locations.len());
+
+                if !locations.is_empty() {
+                    // Emit event with all reference locations
+                    multi_location_events.write(MultipleLocationsEvent {
+                        locations,
+                        location_type: LocationType::References,
+                    });
+                }
+            }
+            LspResponse::Format { edits } => {
+                #[cfg(debug_assertions)]
+                eprintln!("[LSP] Format response: {} edit(s)", edits.len());
+
+                // Apply formatting edits in reverse order (to preserve positions)
+                let mut edits_sorted = edits;
+                edits_sorted.sort_by(|a, b| {
+                    // Sort by start position, descending (apply from end to start)
+                    let a_pos = (a.range.start.line, a.range.start.character);
+                    let b_pos = (b.range.start.line, b.range.start.character);
+                    b_pos.cmp(&a_pos)
+                });
+
+                for edit in edits_sorted {
+                    let start_line = edit.range.start.line as usize;
+                    let end_line = edit.range.end.line as usize;
+                    let start_char = edit.range.start.character as usize;
+                    let end_char = edit.range.end.character as usize;
+
+                    // Convert LSP positions to rope char indices
+                    if start_line < editor_state.rope.len_lines() {
+                        let start_line_char = editor_state.rope.line_to_char(start_line);
+                        let start_pos = start_line_char + start_char;
+
+                        let end_pos = if end_line < editor_state.rope.len_lines() {
+                            let end_line_char = editor_state.rope.line_to_char(end_line);
+                            (end_line_char + end_char).min(editor_state.rope.len_chars())
+                        } else {
+                            editor_state.rope.len_chars()
+                        };
+
+                        let start_pos = start_pos.min(editor_state.rope.len_chars());
+                        let end_pos = end_pos.min(editor_state.rope.len_chars());
+
+                        if start_pos <= end_pos {
+                            // Remove old text
+                            let start_byte = editor_state.rope.char_to_byte(start_pos);
+                            let end_byte = editor_state.rope.char_to_byte(end_pos);
+                            editor_state.rope.remove(start_byte..end_byte);
+                            // Insert new text
+                            editor_state.rope.insert(start_pos, &edit.new_text);
+                        }
+                    }
+                }
+
+                editor_state.pending_update = true;
+                editor_state.dirty_lines = None; // Full re-highlight needed
+                editor_state.previous_line_count = editor_state.rope.len_lines();
+            }
         }
     }
 }
@@ -563,8 +936,11 @@ pub fn update_completion_ui(
     viewport: Res<ViewportDimensions>,
     ui_query: Query<Entity, With<CompletionUI>>,
 ) {
-    // If not visible, ensure cleared and return
-    if !completion_state.visible || completion_state.items.is_empty() {
+    // Get filtered items
+    let filtered_items = completion_state.filtered_items();
+
+    // If not visible or no filtered items, ensure cleared and return
+    if !completion_state.visible || filtered_items.is_empty() {
         for entity in ui_query.iter() {
             commands.entity(entity).despawn();
         }
@@ -580,8 +956,6 @@ pub fn update_completion_ui(
     for entity in ui_query.iter() {
         commands.entity(entity).despawn();
     }
-
-    info!("Spawning Completion UI with {} items", completion_state.items.len());
 
     // Calculate position relative to cursor
     let cursor_pos = editor_state.cursor_pos.min(editor_state.rope.len_chars());
@@ -599,9 +973,9 @@ pub fn update_completion_ui(
     // Convert to Bevy world coordinates
     let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
-    
-    // Calculate dynamic width based on longest item
-    let max_char_count = completion_state.items.iter()
+
+    // Calculate dynamic width based on longest filtered item
+    let max_char_count = filtered_items.iter()
         .take(10) // Only consider visible items for width
         .map(|item| {
             let label_len = item.label.chars().count();
@@ -614,11 +988,15 @@ pub fn update_completion_ui(
     let calculated_width = (max_char_count as f32 * char_width) + 20.0; // Padding
     let box_width = calculated_width.max(200.0).min(600.0); // Clamp width
 
-    let box_height = (completion_state.items.len().min(10) as f32 * line_height) + 10.0; // Max 10 items
-    
+    // Calculate visible item count (use settings)
+    let max_visible = settings.completion.max_visible_items;
+    let total_items = filtered_items.len();
+    let visible_count = total_items.min(max_visible);
+    let box_height = (visible_count as f32 * line_height) + 10.0;
+
     let pos = Vec3::new(
         -viewport_width / 2.0 + x_offset + viewport.offset_x + box_width / 2.0,
-        viewport_height / 2.0 - y_offset - box_height / 2.0, 
+        viewport_height / 2.0 - y_offset - box_height / 2.0,
         100.0 // High Z-index to float on top
     );
 
@@ -633,19 +1011,23 @@ pub fn update_completion_ui(
         CompletionUI,
         Name::new("CompletionBox"),
     )).with_children(|parent| {
-        // Render items
-        let visible_items = completion_state.items.iter().take(10); // Show max 10
-        
+        // Render visible items (with scroll offset)
+        let scroll_offset = completion_state.scroll_offset;
+        let visible_items = filtered_items.iter()
+            .skip(scroll_offset)
+            .take(max_visible);
+
         for (i, item) in visible_items.enumerate() {
-            let is_selected = i == completion_state.selected_index;
+            let absolute_index = scroll_offset + i;
+            let is_selected = absolute_index == completion_state.selected_index;
             let bg_color = if is_selected {
                 bevy::prelude::Color::srgba(0.2, 0.4, 0.8, 0.8) // Highlight selection
             } else {
                 bevy::prelude::Color::NONE
             };
-            
+
             let item_y = (box_height / 2.0) - (i as f32 * line_height) - (line_height / 2.0) - 5.0;
-            
+
             // Item background (if selected)
             if is_selected {
                 parent.spawn((
@@ -657,7 +1039,7 @@ pub fn update_completion_ui(
                     Transform::from_translation(Vec3::new(0.0, item_y, 0.1)),
                 ));
             }
-            
+
             // Item Label
             parent.spawn((
                 Text2d::new(&item.label),
@@ -670,7 +1052,7 @@ pub fn update_completion_ui(
                 Transform::from_translation(Vec3::new(-box_width / 2.0 + 10.0, item_y, 0.2)),
                 Anchor::CENTER_LEFT,
             ));
-            
+
             // Item Detail (Right aligned, if exists)
             if let Some(detail) = &item.detail {
                  parent.spawn((
@@ -693,11 +1075,10 @@ pub fn update_completion_ui(
 #[cfg(feature = "lsp")]
 pub fn update_hover_ui(
     mut commands: Commands,
-    mut hover_state: ResMut<HoverState>,
+    hover_state: Res<HoverState>,
     editor_state: Res<CodeEditorState>,
     settings: Res<EditorSettings>,
     viewport: Res<ViewportDimensions>,
-    time: Res<Time>,
     ui_query: Query<Entity, With<HoverUI>>,
 ) {
     // If not visible or empty, ensure cleared and return
@@ -707,23 +1088,8 @@ pub fn update_hover_ui(
         }
         return;
     }
-    
-    // Timer for delayed display
-    if let Some(timer) = &mut hover_state.timer {
-        timer.tick(time.delta());
-        if !timer.is_finished() {
-            return;
-        }
-    }
 
     // If visible/ready but nothing relevant changed, skip update (keep existing UI)
-    // Note: We check hover_state.is_changed() because timer ticking might not mark it changed if accessed via &mut but not modified? 
-    // Actually timer tick modifies it. So it will be changed.
-    // But we should check if content/pos changed.
-    // If timer is just ticking, we don't need to rebuild UI every frame once visible.
-    // But timer is part of state.
-    // Ideally we separate "content changed" from "timer ticked".
-    // For now, let's just rebuild if state changed.
     if !hover_state.is_changed() && !editor_state.is_changed() && !viewport.is_changed() && !settings.is_changed() {
         return;
     }
@@ -783,7 +1149,14 @@ pub fn update_hover_ui(
         HoverUI,
         Name::new("HoverBox"),
     )).with_children(|parent| {
-        parent.spawn(( 
+        // Position text at left edge of box with padding
+        // Parent center is (0,0), so left edge is at -box_width/2
+        // We add padding to get the text start position
+        let text_x = -box_width / 2.0 + padding;
+        // For vertical: top edge is at box_height/2, we want text to start from top with padding
+        let text_y = box_height / 2.0 - padding;
+
+        parent.spawn((
             Text2d::new(hover_state.content.clone()),
             TextFont {
                 font: settings.font.handle.clone().unwrap_or_default(),
@@ -791,8 +1164,8 @@ pub fn update_hover_ui(
                 ..default()
             },
             TextColor(bevy::prelude::Color::WHITE),
-            Transform::from_translation(Vec3::new(0.0, 0.0, 0.1)),
-            Anchor::CENTER_LEFT,
+            Transform::from_translation(Vec3::new(text_x, text_y, 0.1)),
+            Anchor::TOP_LEFT,
         ));
     });
 }
@@ -804,9 +1177,14 @@ pub fn reset_hover_state(hover_state: &mut HoverState) {
     hover_state.content = String::new();
     hover_state.timer = None;
     hover_state.range = None;
+    hover_state.request_sent = false;
+    hover_state.pending_char_index = None;
 }
 
 /// System to sync document with LSP (debounced)
+/// Note: This is an alternative sync mechanism. The primary sync happens
+/// in input.rs via send_did_change() which properly increments document_version.
+/// This debounced sync is useful for external text modifications.
 #[cfg(feature = "lsp")]
 pub fn sync_lsp_document(
     time: Res<Time>,
@@ -820,10 +1198,11 @@ pub fn sync_lsp_document(
 
     sync_state.timer.tick(time.delta());
 
-    if sync_state.timer.finished() {
+    if sync_state.timer.is_finished() {
         if let Some(uri) = &editor_state.document_uri {
-            let version = 1; // TODO: Increment version properly
-            
+            // Use the document_version from editor state (already incremented by input handling)
+            let version = editor_state.document_version;
+
             let change = lsp_types::TextDocumentContentChangeEvent {
                 range: None,
                 range_length: None,
@@ -835,10 +1214,11 @@ pub fn sync_lsp_document(
                 version,
                 changes: vec![change],
             });
-            
-            //debug!("LSP Sync: Sent DidChange");
+
+            #[cfg(debug_assertions)]
+            eprintln!("[LSP] Debounced sync sent, version={}", version);
         }
-        
+
         sync_state.dirty = false;
         sync_state.timer.reset();
     }

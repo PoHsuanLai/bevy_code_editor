@@ -69,6 +69,9 @@ impl Plugin for CodeEditorPlugin {
             app.insert_resource(CompletionState::default());
             app.insert_resource(HoverState::default());
             app.insert_resource(LspSyncState::default());
+            // Register LSP events (messages) so external code can listen to them
+            app.add_message::<NavigateToFileEvent>();
+            app.add_message::<MultipleLocationsEvent>();
             app.add_systems(Update, (
                 process_lsp_messages,
                 sync_lsp_document,

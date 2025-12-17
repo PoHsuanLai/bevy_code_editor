@@ -1,11 +1,11 @@
 [package]
 name = "bevy_code_editor"
-version.workspace = true
-edition.workspace = true
-authors.workspace = true
-license.workspace = true
+version = "0.1.0"
+edition = "2021"
+authors = ["PoHsuanLai"]
+license = "MIT OR Apache-2.0"
 description = "High-performance GPU-accelerated code editor plugin for Bevy"
-repository = "https://github.com/yourusername/dawai"
+repository = "https://github.com/PoHsuanLai/bevy_code_editor"
 keywords = ["bevy", "editor", "code-editor", "syntax-highlighting"]
 categories = ["game-development", "text-editors"]
 
@@ -39,6 +39,7 @@ lsp-types = { version = "0.95", optional = true }
 tower-lsp = { version = "0.20", optional = true }
 tokio = { version = "1.0", features = ["sync", "rt"], optional = true }
 serde_json = { version = "1.0", optional = true }
+fuzzy-matcher = { version = "0.3", optional = true }
 
 [dev-dependencies]
 bevy = { version = "0.17", features = ["bevy_window", "bevy_winit"] }
@@ -48,4 +49,4 @@ tree-sitter-rust = "0.23"
 default = ["tree-sitter", "clipboard"]
 tree-sitter = ["dep:tree-sitter", "tree-sitter-highlight"]
 clipboard = ["arboard"]
-lsp = ["lsp-types", "tower-lsp", "tokio", "serde_json"]
+lsp = ["lsp-types", "tower-lsp", "tokio", "serde_json", "fuzzy-matcher"]
