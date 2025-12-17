@@ -100,7 +100,6 @@ fn setup_editor(
 #[cfg(feature = "lsp")]
 fn display_lsp_info(
     lsp_client: Res<LspClient>,
-    state: Res<CodeEditorState>,
 ) {
     // This would display LSP information in a real implementation
     // For now, it's just a placeholder showing the structure

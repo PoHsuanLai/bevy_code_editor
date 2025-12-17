@@ -55,6 +55,58 @@ pub struct LspClient {
 #[cfg(feature = "lsp")]
 pub const COMPLETION_MAX_VISIBLE_DEFAULT: usize = 10;
 
+/// A word completion item (extracted from document)
+#[cfg(feature = "lsp")]
+#[derive(Clone, Debug)]
+pub struct WordCompletionItem {
+    /// The word text
+    pub word: String,
+}
+
+/// Unified completion item for display (can be LSP or word-based)
+#[cfg(feature = "lsp")]
+#[derive(Clone, Debug)]
+pub enum UnifiedCompletionItem {
+    /// LSP completion item
+    Lsp(CompletionItem),
+    /// Word from document
+    Word(WordCompletionItem),
+}
+
+#[cfg(feature = "lsp")]
+impl UnifiedCompletionItem {
+    /// Get the display label
+    pub fn label(&self) -> &str {
+        match self {
+            UnifiedCompletionItem::Lsp(item) => &item.label,
+            UnifiedCompletionItem::Word(item) => &item.word,
+        }
+    }
+
+    /// Get the detail text (if any)
+    pub fn detail(&self) -> Option<&str> {
+        match self {
+            UnifiedCompletionItem::Lsp(item) => item.detail.as_deref(),
+            UnifiedCompletionItem::Word(_) => Some("word"),
+        }
+    }
+
+    /// Get the text to insert
+    pub fn insert_text(&self) -> &str {
+        match self {
+            UnifiedCompletionItem::Lsp(item) => {
+                item.insert_text.as_deref().unwrap_or(&item.label)
+            }
+            UnifiedCompletionItem::Word(item) => &item.word,
+        }
+    }
+
+    /// Check if this is a word completion
+    pub fn is_word(&self) -> bool {
+        matches!(self, UnifiedCompletionItem::Word(_))
+    }
+}
+
 /// State for the auto-completion UI
 #[cfg(feature = "lsp")]
 #[derive(Resource, Default)]
@@ -63,6 +115,8 @@ pub struct CompletionState {
     pub visible: bool,
     /// Current list of completion items (unfiltered from LSP)
     pub items: Vec<CompletionItem>,
+    /// Word completions extracted from the document (fallback when LSP is empty)
+    pub word_items: Vec<WordCompletionItem>,
     /// Index of the currently selected item (in filtered list)
     pub selected_index: usize,
     /// Scroll offset (first visible item index)
@@ -110,32 +164,140 @@ impl CompletionState {
 #[cfg(feature = "lsp")]
 impl CompletionState {
     /// Get filtered items based on current filter text using fuzzy matching
-    /// Returns items sorted by match score (best matches first)
-    pub fn filtered_items(&self) -> Vec<&CompletionItem> {
+    /// Returns unified items (LSP + word completions) sorted by match score (best matches first)
+    /// LSP items are prioritized over word completions
+    pub fn filtered_items(&self) -> Vec<UnifiedCompletionItem> {
         use fuzzy_matcher::FuzzyMatcher;
         use fuzzy_matcher::skim::SkimMatcherV2;
+        use std::collections::HashSet;
 
-        if self.filter.is_empty() {
-            self.items.iter().collect()
+        let matcher = SkimMatcherV2::default();
+
+        // First, filter and score LSP items
+        let mut lsp_scored: Vec<(UnifiedCompletionItem, i64)> = if self.filter.is_empty() {
+            self.items.iter()
+                .map(|item| (UnifiedCompletionItem::Lsp(item.clone()), 0))
+                .collect()
         } else {
-            let matcher = SkimMatcherV2::default();
-            let mut scored_items: Vec<(&CompletionItem, i64)> = self.items
+            self.items
                 .iter()
                 .filter_map(|item| {
-                    // Try matching against label first, then filter_text
                     let score = matcher.fuzzy_match(&item.label, &self.filter)
                         .or_else(|| {
                             item.filter_text.as_ref()
                                 .and_then(|f| matcher.fuzzy_match(f, &self.filter))
                         });
-                    score.map(|s| (item, s))
+                    score.map(|s| (UnifiedCompletionItem::Lsp(item.clone()), s))
                 })
-                .collect();
+                .collect()
+        };
 
-            // Sort by score (higher is better)
-            scored_items.sort_by(|a, b| b.1.cmp(&a.1));
-            scored_items.into_iter().map(|(item, _)| item).collect()
+        // Sort LSP items by score (higher is better)
+        lsp_scored.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // Collect LSP labels to avoid duplicates with word completions
+        let lsp_labels: HashSet<&str> = self.items.iter().map(|i| i.label.as_str()).collect();
+
+        // Filter and score word completions (only if filter is not empty)
+        let mut word_scored: Vec<(UnifiedCompletionItem, i64)> = if self.filter.is_empty() {
+            Vec::new()
+        } else {
+            self.word_items
+                .iter()
+                .filter(|item| !lsp_labels.contains(item.word.as_str())) // Avoid duplicates
+                .filter_map(|item| {
+                    matcher.fuzzy_match(&item.word, &self.filter)
+                        .map(|s| (UnifiedCompletionItem::Word(item.clone()), s))
+                })
+                .collect()
+        };
+
+        // Sort word items by score
+        word_scored.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // Combine: LSP items first, then word completions
+        let mut result: Vec<UnifiedCompletionItem> = lsp_scored.into_iter().map(|(item, _)| item).collect();
+        result.extend(word_scored.into_iter().map(|(item, _)| item));
+
+        result
+    }
+
+    /// Update word completions from the rope
+    /// Extracts unique words (identifiers) from the document, excluding the word at cursor
+    pub fn update_word_completions(&mut self, rope: &ropey::Rope, cursor_pos: usize) {
+        use std::collections::HashSet;
+
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut words: Vec<WordCompletionItem> = Vec::new();
+
+        // Get the word at cursor position (to exclude it)
+        let cursor_word = get_word_at_position(rope, cursor_pos);
+
+        // Iterate through the entire document and extract words
+        let text = rope.to_string();
+        let mut word_start: Option<usize> = None;
+
+        for (i, c) in text.char_indices() {
+            let is_word_char = c.is_alphanumeric() || c == '_';
+
+            if is_word_char {
+                if word_start.is_none() {
+                    word_start = Some(i);
+                }
+            } else if let Some(start) = word_start {
+                let word = &text[start..i];
+                // Filter: at least 2 chars, not the cursor word, not already seen
+                if word.len() >= 2
+                    && cursor_word.as_ref().map_or(true, |cw| cw != word)
+                    && !seen.contains(word)
+                {
+                    seen.insert(word.to_string());
+                    words.push(WordCompletionItem { word: word.to_string() });
+                }
+                word_start = None;
+            }
         }
+
+        // Handle word at end of text
+        if let Some(start) = word_start {
+            let word = &text[start..];
+            if word.len() >= 2
+                && cursor_word.as_ref().map_or(true, |cw| cw != word)
+                && !seen.contains(word)
+            {
+                words.push(WordCompletionItem { word: word.to_string() });
+            }
+        }
+
+        self.word_items = words;
+    }
+}
+
+/// Get the word at a given character position (for exclusion during word extraction)
+#[cfg(feature = "lsp")]
+fn get_word_at_position(rope: &ropey::Rope, char_pos: usize) -> Option<String> {
+    if char_pos == 0 || char_pos > rope.len_chars() {
+        return None;
+    }
+
+    let text = rope.to_string();
+    let byte_pos = rope.char_to_byte(char_pos.min(rope.len_chars()));
+
+    // Find word boundaries
+    let start = text[..byte_pos]
+        .rfind(|c: char| !c.is_alphanumeric() && c != '_')
+        .map(|i| i + 1)
+        .unwrap_or(0);
+
+    let end = text[byte_pos..]
+        .find(|c: char| !c.is_alphanumeric() && c != '_')
+        .map(|i| byte_pos + i)
+        .unwrap_or(text.len());
+
+    if start < end {
+        Some(text[start..end].to_string())
+    } else {
+        None
     }
 }
 
@@ -978,8 +1140,8 @@ pub fn update_completion_ui(
     let max_char_count = filtered_items.iter()
         .take(10) // Only consider visible items for width
         .map(|item| {
-            let label_len = item.label.chars().count();
-            let detail_len = item.detail.as_deref().map(|d| d.chars().count()).unwrap_or(0);
+            let label_len = item.label().chars().count();
+            let detail_len = item.detail().map(|d| d.chars().count()).unwrap_or(0);
             label_len + detail_len + 5 // +5 for spacing
         })
         .max()
@@ -1040,21 +1202,27 @@ pub fn update_completion_ui(
                 ));
             }
 
-            // Item Label
+            // Item Label (word completions in slightly different color)
+            let label_color = if item.is_word() {
+                bevy::prelude::Color::srgba(0.9, 0.9, 0.8, 1.0) // Slightly yellow-ish for word completions
+            } else {
+                bevy::prelude::Color::WHITE
+            };
+
             parent.spawn((
-                Text2d::new(&item.label),
+                Text2d::new(item.label()),
                 TextFont {
                     font: settings.font.handle.clone().unwrap_or_default(),
                     font_size: settings.font.size,
                     ..default()
                 },
-                TextColor(bevy::prelude::Color::WHITE),
+                TextColor(label_color),
                 Transform::from_translation(Vec3::new(-box_width / 2.0 + 10.0, item_y, 0.2)),
                 Anchor::CENTER_LEFT,
             ));
 
             // Item Detail (Right aligned, if exists)
-            if let Some(detail) = &item.detail {
+            if let Some(detail) = item.detail() {
                  parent.spawn((
                     Text2d::new(detail),
                     TextFont {

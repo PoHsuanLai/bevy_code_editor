@@ -41,6 +41,9 @@ tokio = { version = "1.0", features = ["sync", "rt"], optional = true }
 serde_json = { version = "1.0", optional = true }
 fuzzy-matcher = { version = "0.3", optional = true }
 
+# 3D rendering support (optional)
+bevy_fontmesh = { path = "../bevy_fontmesh", optional = true }
+
 [dev-dependencies]
 bevy = { version = "0.17", features = ["bevy_window", "bevy_winit"] }
 tree-sitter-rust = "0.23"
@@ -50,3 +53,4 @@ default = ["tree-sitter", "clipboard"]
 tree-sitter = ["dep:tree-sitter", "tree-sitter-highlight"]
 clipboard = ["arboard"]
 lsp = ["lsp-types", "tower-lsp", "tokio", "serde_json", "fuzzy-matcher"]
+render3d = ["bevy_fontmesh"]

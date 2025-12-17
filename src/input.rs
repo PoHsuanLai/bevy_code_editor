@@ -324,7 +324,6 @@ pub fn handle_keyboard_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     keybindings: Res<Keybindings>,
     settings: Res<EditorSettings>,
-    _viewport: Res<ViewportDimensions>,
     mut repeat_state: ResMut<KeyRepeatState>,
     time: Res<Time>,
     #[cfg(feature = "lsp")] lsp_client: Res<crate::lsp::LspClient>,
@@ -1053,16 +1052,16 @@ fn apply_completion(
     if let Some(item) = filtered.get(completion_state.selected_index) {
         let start = completion_state.start_char_index;
         let end = state.cursor_pos;
-        let label = item.label.clone(); // Clone to avoid borrow issues
+        let insert_text = item.insert_text().to_string(); // Use insert_text() for proper text
 
         // Ensure valid range
         if start <= end && end <= state.rope.len_chars() {
             let start_byte = state.rope.char_to_byte(start);
             let end_byte = state.rope.char_to_byte(end);
             state.rope.remove(start_byte..end_byte);
-            state.rope.insert(start, &label);
+            state.rope.insert(start, &insert_text);
 
-            state.cursor_pos = start + label.chars().count();
+            state.cursor_pos = start + insert_text.chars().count();
             state.pending_update = true;
 
             // Mark lines as dirty for highlighting update
@@ -1124,6 +1123,7 @@ fn update_completion_filter(
 /// Request completion from LSP
 /// If completion is already visible, this re-requests with updated position (for filtering)
 /// If completion is not visible, this opens new completion
+/// Also populates word completions from the current document as fallback
 #[cfg(feature = "lsp")]
 fn request_completion(
     state: &mut CodeEditorState,
@@ -1159,9 +1159,28 @@ fn request_completion(
             completion_state.selected_index = 0;
             completion_state.filter.clear();
         }
+
+        // Always update word completions from the document
+        // This provides fallback completions when LSP returns empty results
+        completion_state.update_word_completions(&state.rope, cursor_pos);
+
         completion_state.visible = true;
     } else {
-        eprintln!("[bevy_code_editor] Cannot request completion: No document URI set");
+        // No LSP document URI - still provide word completions
+        if !completion_state.visible {
+            completion_state.start_char_index = cursor_pos;
+            completion_state.items.clear();
+            completion_state.selected_index = 0;
+            completion_state.filter.clear();
+        }
+
+        // Populate word completions even without LSP
+        completion_state.update_word_completions(&state.rope, cursor_pos);
+        completion_state.visible = true;
+
+        #[cfg(debug_assertions)]
+        eprintln!("[bevy_code_editor] No LSP document URI - using word completions only ({} words)",
+            completion_state.word_items.len());
     }
 }
 

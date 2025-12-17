@@ -38,13 +38,19 @@ pub mod input;
 #[cfg(feature = "lsp")]
 pub mod lsp;
 
+#[cfg(feature = "render3d")]
+pub mod render3d;
+
 pub mod prelude {
     //! Convenient re-exports for common usage
-    pub use crate::plugin::CodeEditorPlugin;
+    pub use crate::plugin::{CodeEditorPlugin, RenderMode};
     pub use crate::settings::*;
     pub use crate::types::*;
     pub use crate::input::*;
 
     #[cfg(feature = "lsp")]
     pub use crate::lsp::*;
+
+    #[cfg(feature = "render3d")]
+    pub use crate::render3d::*;
 }

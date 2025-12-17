@@ -8,15 +8,30 @@ use bevy::text::TextSpan;
 use crate::settings::EditorSettings;
 use crate::types::*;
 
+/// Render mode for the code editor
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RenderMode {
+    /// Standard 2D text rendering (default)
+    #[default]
+    Render2D,
+    /// 3D mesh rendering (use with render3d module systems)
+    Render3D,
+    /// No rendering - only state and input management
+    /// Useful for custom rendering implementations
+    None,
+}
+
 /// Code editor plugin
 pub struct CodeEditorPlugin {
     settings: EditorSettings,
+    render_mode: RenderMode,
 }
 
 impl Default for CodeEditorPlugin {
     fn default() -> Self {
         Self {
             settings: EditorSettings::default(),
+            render_mode: RenderMode::Render2D,
         }
     }
 }
@@ -24,42 +39,75 @@ impl Default for CodeEditorPlugin {
 impl CodeEditorPlugin {
     /// Create plugin with custom settings
     pub fn with_settings(settings: EditorSettings) -> Self {
-        Self { settings }
+        Self { settings, render_mode: RenderMode::Render2D }
+    }
+
+    /// Set the render mode for the plugin
+    pub fn with_render_mode(mut self, mode: RenderMode) -> Self {
+        self.render_mode = mode;
+        self
+    }
+
+    /// Create a plugin configured for 3D rendering
+    /// This sets up state and input handling but not 2D rendering systems
+    pub fn for_3d() -> Self {
+        Self {
+            settings: EditorSettings::default(),
+            render_mode: RenderMode::Render3D,
+        }
+    }
+
+    /// Create a plugin with only state management (no rendering)
+    pub fn state_only() -> Self {
+        Self {
+            settings: EditorSettings::default(),
+            render_mode: RenderMode::None,
+        }
     }
 }
 
 impl Plugin for CodeEditorPlugin {
     fn build(&self, app: &mut App) {
-        // Insert resources
-        app.insert_resource(ClearColor(self.settings.theme.background));
+        // Insert core resources (needed for all render modes)
         app.insert_resource(self.settings.clone());
         app.insert_resource(CodeEditorState::default());
-        app.insert_resource(ViewportDimensions::default());
         app.insert_resource(crate::input::Keybindings::default());
         app.insert_resource(crate::input::KeyRepeatState::default());
         app.insert_resource(crate::input::MouseDragState::default());
 
-        // Add systems
-        app.add_systems(Startup, (init_viewport_from_window, setup).chain());
+        // Add input handling systems (needed for all render modes)
         app.add_systems(
             Update,
             (
                 crate::input::handle_keyboard_input,
-                crate::input::handle_mouse_input,
-                crate::input::handle_mouse_wheel,
-                auto_scroll_to_cursor,
-                detect_viewport_resize,
-                update_separator_on_resize,
                 debounce_updates,
-                update_scroll_only,
-                update_text_display,
-                update_line_numbers,
-                update_selection_highlight,
-                update_cursor,
-                animate_cursor,
-            )
-                .chain(),
+            ),
         );
+
+        // Add 2D-specific resources and systems only for 2D mode
+        if self.render_mode == RenderMode::Render2D {
+            app.insert_resource(ClearColor(self.settings.theme.background));
+            app.insert_resource(ViewportDimensions::default());
+
+            app.add_systems(Startup, (init_viewport_from_window, setup).chain());
+            app.add_systems(
+                Update,
+                (
+                    crate::input::handle_mouse_input,
+                    crate::input::handle_mouse_wheel,
+                    auto_scroll_to_cursor,
+                    detect_viewport_resize,
+                    update_separator_on_resize,
+                    update_scroll_only,
+                    update_text_display,
+                    update_line_numbers,
+                    update_selection_highlight,
+                    update_cursor,
+                    animate_cursor,
+                )
+                    .chain(),
+            );
+        }
 
         // Add LSP systems if feature is enabled
         #[cfg(feature = "lsp")]
