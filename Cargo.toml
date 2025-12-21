@@ -18,7 +18,9 @@ bevy = { version = "0.17", default-features = false, features = [
     "bevy_text",
     "default_font",        # Embedded default font for text rendering
     "bevy_sprite",
+    "bevy_sprite_render",  # For Material2d and custom shaders
     "bevy_color",
+    "bevy_mesh",           # For Mesh2d
 ] }
 
 # Text buffer with efficient rope data structure
@@ -26,6 +28,12 @@ ropey = "1.6"
 
 # Serialization for settings
 serde = { version = "1.0", features = ["derive"] }
+
+# Input management (keyboard only - no gamepad/mouse/ui overhead)
+leafwing-input-manager = { version = "0.18", default-features = false, features = ["keyboard"] }
+
+# GPU text rendering - font rasterization (same as Zed uses)
+cosmic-text = "0.12"
 
 # Syntax highlighting (optional)
 tree-sitter = { version = "0.24", optional = true }
@@ -41,9 +49,6 @@ tokio = { version = "1.0", features = ["sync", "rt"], optional = true }
 serde_json = { version = "1.0", optional = true }
 fuzzy-matcher = { version = "0.3", optional = true }
 
-# 3D rendering support (optional)
-bevy_fontmesh = { path = "../bevy_fontmesh", optional = true }
-
 [dev-dependencies]
 bevy = { version = "0.17", features = ["bevy_window", "bevy_winit"] }
 tree-sitter-rust = "0.23"
@@ -53,4 +58,6 @@ default = ["tree-sitter", "clipboard"]
 tree-sitter = ["dep:tree-sitter", "tree-sitter-highlight"]
 clipboard = ["arboard"]
 lsp = ["lsp-types", "tower-lsp", "tokio", "serde_json", "fuzzy-matcher"]
-render3d = ["bevy_fontmesh"]
+
+[profile.release]
+debug = true

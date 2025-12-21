@@ -24,6 +24,9 @@ pub struct EditorSettings {
     /// Cursor and selection
     pub cursor: CursorSettings,
 
+    /// Cursor line highlighting (VSCode-style borders and word highlight)
+    pub cursor_line: CursorLineSettings,
+
     /// Scrolling behavior
     pub scrolling: ScrollSettings,
 
@@ -43,6 +46,9 @@ pub struct EditorSettings {
 
     /// Rendering optimizations
     pub performance: PerformanceSettings,
+
+    /// Minimap settings
+    pub minimap: MinimapSettings,
 }
 
 // ===== Font Settings =====
@@ -103,6 +109,27 @@ pub struct Theme {
 
     /// Separator line color
     pub separator: Color,
+
+    /// Indent guide line color
+    pub indent_guide: Color,
+
+    /// Minimap background color
+    pub minimap_background: Color,
+
+    /// Minimap slider/viewport indicator color (on hover)
+    pub minimap_slider: Color,
+
+    /// Minimap viewport highlight color (subtle, always visible)
+    pub minimap_viewport_highlight: Color,
+
+    /// Matching bracket highlight color
+    pub bracket_match: Color,
+
+    /// Find/search match highlight color
+    pub find_match: Color,
+
+    /// Current find match highlight color (the selected one)
+    pub find_match_current: Color,
 
     /// Syntax highlighting colors
     pub syntax: SyntaxTheme,
@@ -168,6 +195,9 @@ pub struct UISettings {
 
     /// Show ruler (vertical line at column)
     pub rulers: Vec<usize>,
+
+    /// Show separator line between gutter and code
+    pub show_separator: bool,
 
     /// Layout configuration
     pub layout: LayoutSettings,
@@ -238,6 +268,9 @@ pub struct WrappingSettings {
 
     /// Wrap column (if WrapMode::Column)
     pub column: usize,
+
+    /// Indent wrapped continuation lines
+    pub indent_wrapped_lines: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -287,6 +320,46 @@ impl Default for KeyRepeatSettings {
         Self {
             initial_delay: 0.5,      // 500ms initial delay
             repeat_interval: 0.03,   // 30ms between repeats (~33 repeats/sec)
+        }
+    }
+}
+
+// ===== Cursor Line Settings =====
+/// Settings for cursor line highlighting (VSCode-style)
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CursorLineSettings {
+    /// Enable cursor line highlighting
+    pub enabled: bool,
+
+    /// Show border lines above and below current line
+    pub show_border: bool,
+
+    /// Border line thickness in pixels
+    pub border_thickness: f32,
+
+    /// Border color (if None, uses line_highlight color with increased alpha)
+    pub border_color: Option<Color>,
+
+    /// Border alpha multiplier (applied to line_highlight color)
+    pub border_alpha_multiplier: f32,
+
+    /// Highlight the word under cursor
+    pub highlight_word: bool,
+
+    /// Word highlight color (if None, uses line_highlight color from theme)
+    pub word_highlight_color: Option<Color>,
+}
+
+impl Default for CursorLineSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            show_border: true,
+            border_thickness: 0.5,
+            border_color: None,
+            border_alpha_multiplier: 1.5,
+            highlight_word: true,
+            word_highlight_color: None,
         }
     }
 }
@@ -360,6 +433,12 @@ pub struct BracketSettings {
     /// Highlight matching brackets
     pub highlight_matching: bool,
 
+    /// Use bounding box style (border) instead of filled highlight
+    pub use_box_style: bool,
+
+    /// Border thickness for box style (in pixels)
+    pub box_border_thickness: f32,
+
     /// Auto-close brackets
     pub auto_close: bool,
 
@@ -392,6 +471,67 @@ pub struct SearchSettings {
     pub incremental: bool,
 }
 
+// ===== Minimap Settings =====
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MinimapSettings {
+    /// Enable minimap
+    pub enabled: bool,
+
+    /// Width of the minimap in pixels
+    pub width: f32,
+
+    /// Scale factor for text rendering (how much to shrink)
+    pub scale: f32,
+
+    /// Show slider/viewport indicator on hover
+    pub show_slider: bool,
+
+    /// Only show slider on hover (like VSCode)
+    pub slider_on_hover_only: bool,
+
+    /// Show a subtle viewport highlight always (even when not hovering)
+    pub show_viewport_highlight: bool,
+
+    /// Render actual characters (vs simplified blocks)
+    pub render_characters: bool,
+
+    /// Maximum number of columns to render
+    pub max_column: usize,
+
+    /// Side of the editor to show minimap (true = right, false = left)
+    pub show_on_right: bool,
+
+    /// Vertical alignment when content is shorter than viewport
+    /// true = center, false = top-aligned
+    pub center_when_short: bool,
+}
+
+impl Default for MinimapSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            width: 80.0,
+            scale: 0.1,
+            show_slider: true,
+            slider_on_hover_only: true, // Like VSCode - only show on hover
+            show_viewport_highlight: true, // Subtle always-visible viewport indicator
+            render_characters: false, // Use simplified blocks by default
+            max_column: 120,
+            show_on_right: true,
+            center_when_short: true, // Center minimap content when document is short
+        }
+    }
+}
+
+impl MinimapSettings {
+    pub fn minimal() -> Self {
+        Self {
+            enabled: false,
+            ..Default::default()
+        }
+    }
+}
+
 // ===== Performance Settings =====
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PerformanceSettings {
@@ -409,6 +549,11 @@ pub struct PerformanceSettings {
 
     /// Lazy syntax highlighting (only visible range)
     pub lazy_syntax_highlighting: bool,
+
+    /// Number of extra lines to render above/below the visible viewport.
+    /// Higher values prevent "blackouts" during fast scrolling but use more memory.
+    /// Zed uses about 2-3 lines, but we use more for safety with Bevy's rendering model.
+    pub viewport_buffer_lines: u32,
 }
 
 // ===== Default Implementations =====
@@ -429,6 +574,7 @@ impl EditorSettings {
             indentation: IndentationSettings::default(),
             wrapping: WrappingSettings::default(),
             cursor: CursorSettings::default(),
+            cursor_line: CursorLineSettings::default(),
             scrolling: ScrollSettings::default(),
             #[cfg(feature = "lsp")]
             completion: CompletionSettings::default(),
@@ -437,6 +583,7 @@ impl EditorSettings {
             brackets: BracketSettings::default(),
             search: SearchSettings::default(),
             performance: PerformanceSettings::default(),
+            minimap: MinimapSettings::default(),
         }
     }
 
@@ -449,6 +596,7 @@ impl EditorSettings {
             indentation: IndentationSettings::default(),
             wrapping: WrappingSettings::minimal(),
             cursor: CursorSettings::minimal(),
+            cursor_line: CursorLineSettings::default(),
             scrolling: ScrollSettings::minimal(),
             #[cfg(feature = "lsp")]
             completion: CompletionSettings::minimal(),
@@ -457,6 +605,7 @@ impl EditorSettings {
             brackets: BracketSettings::minimal(),
             search: SearchSettings::default(),
             performance: PerformanceSettings::aggressive(),
+            minimap: MinimapSettings::minimal(),
         }
     }
 }
@@ -503,6 +652,13 @@ impl Theme {
             line_numbers_active: Color::srgba(0.9, 0.9, 0.9, 1.0),
             gutter_background: Color::srgba(0.0, 0.0, 0.0, 0.0),
             separator: Color::srgba(0.3, 0.3, 0.3, 0.6),
+            indent_guide: Color::srgba(0.3, 0.3, 0.3, 0.3),
+            minimap_background: Color::srgba(0.05, 0.05, 0.05, 0.8),
+            minimap_slider: Color::srgba(0.5, 0.5, 0.5, 0.3),
+            minimap_viewport_highlight: Color::srgba(0.4, 0.4, 0.4, 0.15),
+            bracket_match: Color::srgba(0.5, 0.7, 1.0, 0.4),
+            find_match: Color::srgba(0.9, 0.7, 0.2, 0.3),
+            find_match_current: Color::srgba(0.9, 0.7, 0.2, 0.6),
             syntax: SyntaxTheme::liquid_chrome(),
             #[cfg(feature = "lsp")]
             diagnostics: DiagnosticColors::default(),
@@ -523,6 +679,13 @@ impl Theme {
             line_numbers_active: Color::srgba(0.7, 0.7, 0.7, 1.0),
             gutter_background: Color::srgba(0.0, 0.0, 0.0, 0.0),
             separator: Color::srgba(0.2, 0.2, 0.2, 0.6),
+            indent_guide: Color::srgba(0.2, 0.2, 0.2, 0.2),
+            minimap_background: Color::srgba(0.03, 0.03, 0.03, 0.8),
+            minimap_slider: Color::srgba(0.4, 0.4, 0.4, 0.3),
+            minimap_viewport_highlight: Color::srgba(0.3, 0.3, 0.3, 0.1),
+            bracket_match: Color::srgba(0.5, 0.5, 0.5, 0.3),
+            find_match: Color::srgba(0.7, 0.7, 0.3, 0.3),
+            find_match_current: Color::srgba(0.7, 0.7, 0.3, 0.5),
             syntax: SyntaxTheme::minimal(),
             #[cfg(feature = "lsp")]
             diagnostics: DiagnosticColors::default(),
@@ -597,11 +760,12 @@ impl Default for UISettings {
             show_line_numbers: true,
             relative_line_numbers: false,
             show_gutter: true,
-            show_indent_guides: false,
+            show_indent_guides: true,
             show_whitespace: WhitespaceMode::None,
             show_control_characters: false,
             highlight_active_line: true,
             rulers: vec![],
+            show_separator: false,  // Modern editors don't show separators
             layout: LayoutSettings::default(),
         }
     }
@@ -613,11 +777,12 @@ impl UISettings {
             show_line_numbers: true,
             relative_line_numbers: false,
             show_gutter: true,
-            show_indent_guides: false,
+            show_indent_guides: true,
             show_whitespace: WhitespaceMode::None,
             show_control_characters: false,
             highlight_active_line: false,
             rulers: vec![],
+            show_separator: false,
             layout: LayoutSettings::default(),
         }
     }
@@ -641,6 +806,7 @@ impl Default for WrappingSettings {
             enabled: false,
             mode: WrapMode::None,
             column: 80,
+            indent_wrapped_lines: true,
         }
     }
 }
@@ -651,6 +817,7 @@ impl WrappingSettings {
             enabled: false,
             mode: WrapMode::None,
             column: 80,
+            indent_wrapped_lines: true,
         }
     }
 }
@@ -761,6 +928,8 @@ impl Default for BracketSettings {
     fn default() -> Self {
         Self {
             highlight_matching: true,
+            use_box_style: true,
+            box_border_thickness: 1.0,
             auto_close: true,
             auto_close_quotes: true,
             pairs: vec![
@@ -778,6 +947,8 @@ impl BracketSettings {
     pub fn minimal() -> Self {
         Self {
             highlight_matching: false,
+            use_box_style: true,
+            box_border_thickness: 1.0,
             auto_close: false,
             auto_close_quotes: false,
             pairs: vec![],
@@ -806,6 +977,7 @@ impl Default for PerformanceSettings {
             debounce_ms: 16.0,  // ~60 FPS
             max_syntax_highlight_size: 1_000_000,  // 1MB
             lazy_syntax_highlighting: true,
+            viewport_buffer_lines: 15,  // Render 15 extra lines above/below viewport
         }
     }
 }
@@ -818,6 +990,7 @@ impl PerformanceSettings {
             debounce_ms: 33.0,  // ~30 FPS
             max_syntax_highlight_size: 100_000,  // 100KB
             lazy_syntax_highlighting: true,
+            viewport_buffer_lines: 10,  // Smaller buffer for aggressive mode
         }
     }
 }
