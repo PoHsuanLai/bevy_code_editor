@@ -504,6 +504,48 @@ pub struct MinimapSettings {
     /// Vertical alignment when content is shorter than viewport
     /// true = center, false = top-aligned
     pub center_when_short: bool,
+
+    /// Scrollbar width in pixels
+    pub scrollbar_width: f32,
+
+    /// Scrollbar track color
+    pub scrollbar_track_color: Color,
+
+    /// Scrollbar thumb color
+    pub scrollbar_thumb_color: Color,
+
+    /// Minimum scrollbar thumb height
+    pub scrollbar_min_thumb_height: f32,
+
+    /// Scrollbar Z-index
+    pub scrollbar_z_index: f32,
+
+    /// Scrollbar border radius
+    pub scrollbar_border_radius: f32,
+
+    /// Line height in minimap (pixels per line)
+    pub line_height: f32,
+
+    /// Font size in minimap
+    pub font_size: f32,
+
+    /// Minimum height for viewport indicator
+    pub min_indicator_height: f32,
+
+    /// Horizontal padding/margin
+    pub padding: f32,
+
+    /// Spacing between minimap and scrollbar
+    pub scrollbar_spacing: f32,
+
+    /// Z-index for minimap background
+    pub background_z_index: f32,
+
+    /// Z-index for viewport highlight
+    pub viewport_highlight_z_index: f32,
+
+    /// Z-index for slider
+    pub slider_z_index: f32,
 }
 
 impl Default for MinimapSettings {
@@ -519,6 +561,20 @@ impl Default for MinimapSettings {
             max_column: 120,
             show_on_right: true,
             center_when_short: true, // Center minimap content when document is short
+            scrollbar_width: 10.0,
+            scrollbar_track_color: Color::srgba(0.2, 0.2, 0.2, 0.3),
+            scrollbar_thumb_color: Color::srgba(0.5, 0.5, 0.5, 0.6),
+            scrollbar_min_thumb_height: 30.0,
+            scrollbar_z_index: 6.0,
+            scrollbar_border_radius: 5.0,
+            line_height: 4.0,
+            font_size: 3.0,
+            min_indicator_height: 20.0,
+            padding: 2.0,
+            scrollbar_spacing: 2.0,
+            background_z_index: 5.0,
+            viewport_highlight_z_index: 5.3,
+            slider_z_index: 5.5,
         }
     }
 }

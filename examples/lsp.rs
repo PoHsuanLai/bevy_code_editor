@@ -47,7 +47,9 @@ fn run_with_lsp() {
 #[cfg(feature = "lsp")]
 fn setup_editor(
     mut state: ResMut<CodeEditorState>,
-    mut lsp_client: ResMut<bevy_code_editor::lsp::LspClient>
+    mut lsp_client: ResMut<bevy_code_editor::lsp::LspClient>,
+    #[cfg(feature = "tree-sitter")]
+    mut syntax: ResMut<bevy_code_editor::plugin::SyntaxResource>,
 ) {
     // Read the source code of this example file
     let current_dir = std::env::current_dir().expect("Failed to get current directory");
@@ -59,45 +61,18 @@ fn setup_editor(
     // Set up tree-sitter syntax highlighting for Rust
     #[cfg(feature = "tree-sitter")]
     {
-        use tree_sitter_highlight::HighlightConfiguration;
+        use bevy_code_editor::syntax::TreeSitterProvider;
 
-        let language = tree_sitter_rust::LANGUAGE;
-        let highlight_names = vec![
-            "attribute",
-            "comment",
-            "comment.documentation",
-            "constant",
-            "constant.builtin",
-            "constructor",
-            "escape",
-            "function",
-            "function.macro",
-            "function.method",
-            "keyword",
-            "label",
-            "operator",
-            "property",
-            "punctuation.bracket",
-            "punctuation.delimiter",
-            "string",
-            "type",
-            "type.builtin",
-            "variable.builtin",
-            "variable.parameter",
-        ];
+        let language = tree_sitter_rust::LANGUAGE.into();
 
-        let mut config = HighlightConfiguration::new(
-            language.into(),
-            "rust",
-            tree_sitter_rust::HIGHLIGHTS_QUERY,
-            "",
-            "",
-        )
-        .expect("Failed to create highlight configuration");
+        // Create a TreeSitterProvider and set it up with the Rust query
+        let mut provider = TreeSitterProvider::new();
+        provider.set_query(tree_sitter_rust::HIGHLIGHTS_QUERY, language)
+            .expect("Failed to create highlight query");
 
-        config.configure(&highlight_names);
-        state.set_highlight_config(config, language.into());
-        state.update_highlighting();
+
+        // Set the provider in the syntax resource
+        syntax.set_provider(provider);
     }
 
     let file_uri_str = format!("file://{}", example_file_path.to_string_lossy());

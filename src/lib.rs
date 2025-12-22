@@ -45,16 +45,19 @@ pub mod input;
 pub mod display_map;
 pub mod line_width;
 pub mod gpu_text;
+pub mod syntax;
+pub mod events;
 
 #[cfg(feature = "lsp")]
 pub mod lsp;
 
 pub mod prelude {
     //! Convenient re-exports for common usage
-    pub use crate::plugin::{CodeEditorPlugin, RenderMode, EditorInputManager};
+    pub use crate::plugin::{CodeEditorPlugin, EditorInputManager, ScrollbarPlugin, Scrollbar};
     pub use crate::settings::*;
     pub use crate::types::*;
     pub use crate::input::*;
+    pub use crate::events::*;
 
     // Selective re-exports from display_map to avoid name conflicts with types.rs
     pub use crate::display_map::{

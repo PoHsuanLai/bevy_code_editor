@@ -584,16 +584,18 @@ dependencies = [
  "arboard",
  "bevy",
  "cosmic-text 0.12.1",
+ "futures-lite",
  "fuzzy-matcher",
  "leafwing-input-manager",
  "lsp-types 0.95.1",
  "ropey",
  "serde",
  "serde_json",
+ "streaming-iterator",
  "tokio",
  "tower-lsp",
  "tree-sitter",
- "tree-sitter-highlight",
+ "tree-sitter-c",
  "tree-sitter-rust",
 ]
 
@@ -5200,16 +5202,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "tree-sitter-highlight"
-version = "0.24.7"
+name = "tree-sitter-c"
+version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6411813e4a9ebc87d391b98b0f3ce65d5361cd80c54de8651d8b85b555ea5d95"
+checksum = "afd2b1bf1585dc2ef6d69e87d01db8adb059006649dd5f96f31aa789ee6e9c71"
 dependencies = [
- "lazy_static",
- "regex",
- "streaming-iterator",
- "thiserror 1.0.69",
- "tree-sitter",
+ "cc",
+ "tree-sitter-language",
 ]
 
 [[package]]

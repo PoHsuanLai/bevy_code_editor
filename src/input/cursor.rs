@@ -213,7 +213,9 @@ pub fn delete_word_backward(state: &mut CodeEditorState) {
         });
 
         // Mark for update
-        state.pending_update = true;
+        state.needs_update = true;
+        state.pending_update = false;
+        state.content_version += 1;
         let line_idx = state.rope.char_to_line(word_start);
         let new_line_count = state.rope.len_lines();
         state.dirty_lines = Some(line_idx..new_line_count);
@@ -253,7 +255,9 @@ pub fn delete_word_forward(state: &mut CodeEditorState) {
         });
 
         // Mark for update
-        state.pending_update = true;
+        state.needs_update = true;
+        state.pending_update = false;
+        state.content_version += 1;
         let line_idx = state.rope.char_to_line(cursor_before);
         let new_line_count = state.rope.len_lines();
         state.dirty_lines = Some(line_idx..new_line_count);

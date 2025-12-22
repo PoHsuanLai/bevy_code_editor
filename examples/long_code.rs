@@ -7,6 +7,11 @@ use bevy::prelude::*;
 use bevy::window::{CursorIcon, SystemCursorIcon};
 use bevy_code_editor::prelude::*;
 
+#[cfg(feature = "tree-sitter")]
+use bevy_code_editor::syntax::TreeSitterProvider;
+#[cfg(feature = "tree-sitter")]
+use bevy_code_editor::plugin::SyntaxResource;
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -23,7 +28,11 @@ fn main() {
         .run();
 }
 
-fn setup_editor(mut state: ResMut<CodeEditorState>) {
+#[cfg(feature = "tree-sitter")]
+fn setup_editor(
+    mut state: ResMut<CodeEditorState>,
+    mut syntax: ResMut<SyntaxResource>,
+) {
     // Always focused in basic editor (no UI competing for input)
     state.is_focused = true;
 
@@ -35,6 +44,44 @@ fn setup_editor(mut state: ResMut<CodeEditorState>) {
     let content = match std::fs::read_to_string(&file_path) {
         Ok(content) => {
             println!("Loaded {} with {} lines", file_path.display(), content.lines().count());
+            content
+        }
+        Err(e) => {
+            eprintln!("Failed to load {}: {}", file_path.display(), e);
+            format!("// Failed to load sqlite3.c: {}\n// Make sure assets/sqlite3.c exists", e)
+        }
+    };
+
+    state.set_text(&content);
+
+    // Set up tree-sitter highlighting for C
+    let language = tree_sitter_c::LANGUAGE.into();
+
+    // Create a TreeSitterProvider and set it up with the C query
+    let mut provider = TreeSitterProvider::new();
+    provider.set_query(tree_sitter_c::HIGHLIGHT_QUERY, language)
+        .expect("Failed to create highlight query");
+
+
+    // Set the provider in the syntax resource
+    syntax.set_provider(provider);
+
+    state.needs_update = true;
+}
+
+#[cfg(not(feature = "tree-sitter"))]
+fn setup_editor(mut state: ResMut<CodeEditorState>) {
+    // Always focused in basic editor (no UI competing for input)
+    state.is_focused = true;
+
+    // Load sqlite3.c from assets folder
+    let file_path = std::env::current_dir()
+        .expect("Failed to get current directory")
+        .join("assets/sqlite3.c");
+
+    let content = match std::fs::read_to_string(&file_path) {
+        Ok(content) => {
+            println!("Loaded {} with {} lines (tree-sitter feature not enabled)", file_path.display(), content.lines().count());
             content
         }
         Err(e) => {

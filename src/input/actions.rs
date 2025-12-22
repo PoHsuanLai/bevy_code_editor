@@ -44,7 +44,8 @@ pub fn insert_closing_char(state: &mut CodeEditorState, c: char) {
     state.rope.insert_char(cursor_pos, c);
 
     // Don't move cursor - it stays between the brackets
-    state.pending_update = true;
+    state.needs_update = true;
+    state.pending_update = false;
     state.content_version += 1;
 
     // Mark line as dirty
@@ -126,7 +127,9 @@ fn delete_selection_with_history(state: &mut CodeEditorState, record_history: bo
         state.selection_start = None;
         state.selection_end = None;
 
-        state.pending_update = true;
+        state.needs_update = true;
+        state.pending_update = false;
+        state.content_version += 1;
         state.dirty_lines = None;
         state.previous_line_count = state.rope.len_lines();
     }
@@ -158,7 +161,9 @@ pub fn apply_completion(
             state.rope.insert(start, &insert_text);
 
             state.cursor_pos = start + insert_text.chars().count();
-            state.pending_update = true;
+            state.needs_update = true;
+            state.pending_update = false;
+            state.content_version += 1;
 
             // Mark lines as dirty for highlighting update
             let line_idx = state.rope.char_to_line(start);
@@ -290,10 +295,11 @@ pub fn send_did_change(
         let version = state.document_version;
 
         // Full text sync for simplicity
+        // OPTIMIZATION: Use rope chunks instead of full to_string() conversion
         let change = lsp_types::TextDocumentContentChangeEvent {
             range: None,
             range_length: None,
-            text: state.rope.to_string(),
+            text: state.rope.chunks().collect(),
         };
 
         lsp_client.send(LspMessage::DidChange {
@@ -533,7 +539,9 @@ fn execute_action_core(
 
                 state.selection_start = None;
                 state.selection_end = None;
-                state.pending_update = true;
+                state.needs_update = true;
+                state.pending_update = false;
+                state.content_version += 1;
 
                 let new_line_count = state.rope.len_lines();
                 let line_idx = state.rope.char_to_line(start);
@@ -589,7 +597,9 @@ fn execute_action_core(
 
                         state.rope.insert(paste_position, &text);
                         state.cursor_pos = paste_position + text.chars().count();
-                        state.pending_update = true;
+                        state.needs_update = true;
+                        state.pending_update = false;
+                        state.content_version += 1;
 
                         // Record for undo (combined delete selection + insert paste)
                         state.history.record(EditOperation {

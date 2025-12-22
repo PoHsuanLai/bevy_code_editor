@@ -21,13 +21,13 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Bevy Code Editor - GPU Text Rendering".to_string(),
+                title: "Bevy Code Editor".to_string(),
                 resolution: (1400, 900).into(),
                 ..default()
             }),
             ..default()
         }))
-        .add_plugins(CodeEditorPlugin::default().with_render_mode(RenderMode::GpuText))
+        .add_plugins(CodeEditorPlugin::default())
         .add_systems(Startup, setup_editor)
         .add_systems(Update, update_cursor_icon)
         .run();

@@ -197,10 +197,11 @@ impl CompletionState {
         let cursor_word = get_word_at_position(rope, cursor_pos);
 
         // Iterate through the entire document and extract words
-        let text = rope.to_string();
+        // OPTIMIZATION: Use rope chunks instead of full to_string() conversion
+        let chunk_text: String = rope.chunks().collect();
         let mut word_start: Option<usize> = None;
 
-        for (i, c) in text.char_indices() {
+        for (i, c) in chunk_text.char_indices() {
             let is_word_char = c.is_alphanumeric() || c == '_';
 
             if is_word_char {
@@ -208,7 +209,7 @@ impl CompletionState {
                     word_start = Some(i);
                 }
             } else if let Some(start) = word_start {
-                let word = &text[start..i];
+                let word = &chunk_text[start..i];
                 if word.len() >= 2
                     && cursor_word.as_ref().map_or(true, |cw| cw != word)
                     && !seen.contains(word)
@@ -222,7 +223,7 @@ impl CompletionState {
 
         // Handle word at end of text
         if let Some(start) = word_start {
-            let word = &text[start..];
+            let word = &chunk_text[start..];
             if word.len() >= 2
                 && cursor_word.as_ref().map_or(true, |cw| cw != word)
                 && !seen.contains(word)
@@ -252,21 +253,32 @@ fn get_word_at_position(rope: &ropey::Rope, char_pos: usize) -> Option<String> {
         return None;
     }
 
-    let text = rope.to_string();
-    let byte_pos = rope.char_to_byte(char_pos.min(rope.len_chars()));
+    // OPTIMIZATION: Work with rope directly instead of converting to string
+    let line_idx = rope.char_to_line(char_pos);
+    let line = rope.line(line_idx);
+    let line_start_char = rope.line_to_char(line_idx);
+    let pos_in_line = char_pos - line_start_char;
 
-    let start = text[..byte_pos]
+    let line_text: String = line.chars().collect();
+
+    // Find word boundaries within the line
+    let byte_pos_in_line = line_text.char_indices()
+        .nth(pos_in_line)
+        .map(|(i, _)| i)
+        .unwrap_or(line_text.len());
+
+    let start = line_text[..byte_pos_in_line]
         .rfind(|c: char| !c.is_alphanumeric() && c != '_')
         .map(|i| i + 1)
         .unwrap_or(0);
 
-    let end = text[byte_pos..]
+    let end = line_text[byte_pos_in_line..]
         .find(|c: char| !c.is_alphanumeric() && c != '_')
-        .map(|i| byte_pos + i)
-        .unwrap_or(text.len());
+        .map(|i| byte_pos_in_line + i)
+        .unwrap_or(line_text.len());
 
     if start < end {
-        Some(text[start..end].to_string())
+        Some(line_text[start..end].to_string())
     } else {
         None
     }

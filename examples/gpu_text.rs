@@ -18,10 +18,7 @@ fn main() {
             }),
             ..default()
         }))
-        .add_plugins(
-            CodeEditorPlugin::default()
-                .with_render_mode(RenderMode::GpuText)
-        )
+        .add_plugins(CodeEditorPlugin::default())
         .add_systems(Startup, setup_editor)
         .add_systems(Update, update_cursor_icon)
         .run();

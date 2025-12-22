@@ -8,6 +8,9 @@ use std::time::Instant;
 
 use crate::line_width::LineWidthTracker;
 
+#[cfg(feature = "tree-sitter")]
+use tree_sitter_highlight::HighlightConfiguration;
+
 #[cfg(feature = "lsp")]
 use lsp_types::Url;
 
@@ -1558,6 +1561,26 @@ pub struct CodeEditorState {
     /// Cached processed lines for rendering (optimization)
     pub lines: Vec<Vec<LineSegment>>,
 
+    /// Cached highlight configuration (optional, for syntax highlighting)
+    #[cfg(feature = "tree-sitter")]
+    pub highlight_config: Option<HighlightConfiguration>,
+
+    /// Cached tree-sitter tree for incremental parsing
+    #[cfg(feature = "tree-sitter")]
+    pub cached_tree: Option<tree_sitter::Tree>,
+
+    /// Pending edits to apply to the tree before re-parsing (for incremental highlighting)
+    #[cfg(feature = "tree-sitter")]
+    pub pending_edits: Vec<tree_sitter::InputEdit>,
+
+    /// Cached tree-sitter parser (reused for performance)
+    #[cfg(feature = "tree-sitter")]
+    pub cached_parser: Option<tree_sitter::Parser>,
+
+    /// Cached tree-sitter language (for incremental parsing)
+    #[cfg(feature = "tree-sitter")]
+    pub cached_language: Option<tree_sitter::Language>,
+
     /// The URI of the document being edited (for LSP)
     #[cfg(feature = "lsp")]
     pub document_uri: Option<Url>,
@@ -1638,12 +1661,9 @@ pub struct CodeEditorState {
     /// Used for horizontal scrolling bounds calculation
     pub line_width_tracker: LineWidthTracker,
 
-    /// Pending text edit for tree-sitter incremental parsing
-    /// Stores byte positions of the most recent edit to be sent as an event
-    /// Format: (start_byte, old_end_byte, new_end_byte)
-    #[cfg(feature = "tree-sitter")]
-    pub pending_tree_sitter_edit: Option<(usize, usize, usize)>,
-
+    /// Whether syntax highlighting is enabled and producing tokens
+    /// When false, rendering reads directly from rope for O(visible_lines) performance
+    pub has_syntax_highlighting: bool,
 }
 
 impl Default for CodeEditorState {
@@ -1664,6 +1684,16 @@ impl Default for CodeEditorState {
             needs_scroll_update: false,
             tokens: Vec::new(),
             lines: Vec::new(),
+            #[cfg(feature = "tree-sitter")]
+            highlight_config: None,
+            #[cfg(feature = "tree-sitter")]
+            cached_tree: None,
+            #[cfg(feature = "tree-sitter")]
+            pending_edits: Vec::new(),
+            #[cfg(feature = "tree-sitter")]
+            cached_parser: None,
+            #[cfg(feature = "tree-sitter")]
+            cached_language: None,
             #[cfg(feature = "lsp")]
             document_uri: None,
             #[cfg(feature = "lsp")]
@@ -1680,7 +1710,7 @@ impl Default for CodeEditorState {
             dirty_lines: None,
             previous_line_count: line_count,
             content_version: 0,
-            last_highlighted_version: u64::MAX, // Force initial highlighting
+            last_highlighted_version: 0,
             last_lines_version: 0,
             pending_update: false,
             last_render_time: 0.0,
@@ -1689,8 +1719,7 @@ impl Default for CodeEditorState {
             selections: SelectionCollection::new(),
             display_map: DisplayMap::default(),
             line_width_tracker: LineWidthTracker::new(),
-            #[cfg(feature = "tree-sitter")]
-            pending_tree_sitter_edit: None,
+            has_syntax_highlighting: false,
         }
     }
 }
@@ -1714,6 +1743,16 @@ impl CodeEditorState {
             needs_scroll_update: false,
             tokens: Vec::new(),
             lines: Vec::new(),
+            #[cfg(feature = "tree-sitter")]
+            highlight_config: None,
+            #[cfg(feature = "tree-sitter")]
+            cached_tree: None,
+            #[cfg(feature = "tree-sitter")]
+            pending_edits: Vec::new(),
+            #[cfg(feature = "tree-sitter")]
+            cached_parser: None,
+            #[cfg(feature = "tree-sitter")]
+            cached_language: None,
             #[cfg(feature = "lsp")]
             document_uri: None,
             #[cfg(feature = "lsp")]
@@ -1730,7 +1769,7 @@ impl CodeEditorState {
             dirty_lines: None,
             previous_line_count: line_count,
             content_version: 0,
-            last_highlighted_version: u64::MAX, // Force initial highlighting
+            last_highlighted_version: 0,
             last_lines_version: 0,
             pending_update: false,
             last_render_time: 0.0,
@@ -1739,9 +1778,308 @@ impl CodeEditorState {
             selections: SelectionCollection::new(),
             display_map: DisplayMap::default(),
             line_width_tracker,
-            #[cfg(feature = "tree-sitter")]
-            pending_tree_sitter_edit: None,
+            has_syntax_highlighting: false,
         }
+    }
+
+    /// Update syntax highlighting tokens using incremental parsing
+    #[cfg(feature = "tree-sitter")]
+    pub fn update_highlighting(&mut self) {
+        // LAZY HIGHLIGHTING: Only update the parse tree, not the actual highlighting
+        // Highlighting is done on-demand per-line during rendering
+
+        let text = self.rope.to_string();
+        let text_bytes = text.as_bytes();
+
+        // Try incremental parsing first
+        if let Some(ref mut tree) = self.cached_tree {
+            // Apply any pending edits to the tree
+            for edit in self.pending_edits.drain(..) {
+                tree.edit(&edit);
+            }
+
+            // Re-parse incrementally using the edited tree
+            if let Some(ref mut parser) = self.cached_parser {
+                if let Some(new_tree) = parser.parse(text_bytes, Some(tree)) {
+                    *tree = new_tree;
+                }
+            }
+        } else if let Some(ref language) = self.cached_language {
+            // First parse - initialize parser and tree using the cached language
+            if self.cached_parser.is_none() {
+                let mut parser = tree_sitter::Parser::new();
+                if parser.set_language(language).is_ok() {
+                    self.cached_parser = Some(parser);
+                }
+            }
+
+            if let Some(ref mut parser) = self.cached_parser {
+                self.cached_tree = parser.parse(text_bytes, None);
+            }
+        }
+
+        // Mark that we have syntax highlighting capability
+        self.has_syntax_highlighting = self.highlight_config.is_some();
+
+        // Clear old token-based cache (we now do per-line lazy highlighting)
+        self.tokens.clear();
+
+        self.last_highlighted_version = self.content_version;
+        self.dirty_lines = None;
+    }
+
+
+    /// Highlight a specific range of lines on-demand (lazy highlighting)
+    /// Returns Vec<Vec<LineSegment>> for the requested line range
+    #[cfg(feature = "tree-sitter")]
+    pub fn highlight_line_range(&self, start_line: usize, end_line: usize, theme: &crate::settings::SyntaxTheme, default_color: Color) -> Vec<Vec<LineSegment>> {
+        use tree_sitter_highlight::{Highlighter as TSHighlighter, HighlightEvent};
+
+        let line_count = self.rope.len_lines();
+        let start_line = start_line.min(line_count.saturating_sub(1));
+        let end_line = end_line.min(line_count);
+
+        if start_line >= end_line || self.highlight_config.is_none() {
+            // Return plain text without highlighting
+            return (start_line..end_line)
+                .map(|line_idx| {
+                    let line = self.rope.line(line_idx);
+                    let text: String = line.chars().collect();
+                    if text.trim().is_empty() {
+                        vec![]
+                    } else {
+                        vec![LineSegment {
+                            text: text.trim_end_matches('\n').trim_end_matches('\r').to_string(),
+                            color: default_color,
+                        }]
+                    }
+                })
+                .collect();
+        }
+
+        // Get the text for the line range
+        let start_byte = self.rope.line_to_byte(start_line);
+        let end_byte = self.rope.line_to_byte(end_line);
+        let range_text = self.rope.byte_slice(start_byte..end_byte).to_string();
+
+        // Highlight the range
+        const HIGHLIGHT_NAMES: &[&str] = &[
+            "attribute", "comment", "comment.documentation", "constant", "constant.builtin",
+            "constructor", "escape", "function", "function.macro", "function.method",
+            "keyword", "label", "number", "operator", "property",
+            "punctuation.bracket", "punctuation.delimiter", "string",
+            "type", "type.builtin", "variable", "variable.builtin", "variable.parameter",
+        ];
+
+        let config = self.highlight_config.as_ref().unwrap();
+        let mut ts_highlighter = TSHighlighter::new();
+
+        let highlights = match ts_highlighter.highlight(config, range_text.as_bytes(), None, |_| None) {
+            Ok(h) => h,
+            Err(_) => {
+                // Fall back to plain text
+                return (start_line..end_line)
+                    .map(|line_idx| {
+                        let line = self.rope.line(line_idx);
+                        let text: String = line.chars().collect();
+                        if text.trim().is_empty() {
+                            vec![]
+                        } else {
+                            vec![LineSegment {
+                                text: text.trim_end_matches('\n').trim_end_matches('\r').to_string(),
+                                color: default_color,
+                            }]
+                        }
+                    })
+                    .collect();
+            }
+        };
+
+        // Convert highlights to per-line segments
+        let mut lines: Vec<Vec<LineSegment>> = Vec::new();
+        let mut current_line_segments: Vec<LineSegment> = Vec::new();
+        let mut current_highlight: Option<String> = None;
+
+        for event in highlights {
+            match event {
+                Ok(HighlightEvent::Source { start, end }) => {
+                    let text_fragment = &range_text[start..end];
+                    let color = map_highlight_color(current_highlight.as_deref(), theme, default_color);
+
+                    // Split by newlines
+                    let token_lines: Vec<&str> = text_fragment.split('\n').collect();
+                    for (line_idx, line_text) in token_lines.iter().enumerate() {
+                        if line_idx > 0 {
+                            lines.push(current_line_segments.clone());
+                            current_line_segments.clear();
+                        }
+
+                        if !line_text.is_empty() {
+                            current_line_segments.push(LineSegment {
+                                text: line_text.to_string(),
+                                color,
+                            });
+                        }
+                    }
+                }
+                Ok(HighlightEvent::HighlightStart(highlight)) => {
+                    if highlight.0 < HIGHLIGHT_NAMES.len() {
+                        current_highlight = Some(HIGHLIGHT_NAMES[highlight.0].to_string());
+                    }
+                }
+                Ok(HighlightEvent::HighlightEnd) => {
+                    current_highlight = None;
+                }
+                Err(_) => {}
+            }
+        }
+
+        if !current_line_segments.is_empty() {
+            lines.push(current_line_segments);
+        }
+
+        // Pad to match expected line count
+        while lines.len() < (end_line - start_line) {
+            lines.push(Vec::new());
+        }
+
+        lines
+    }
+
+    /// Internal: Run highlighting using the HighlightConfiguration
+    #[cfg(feature = "tree-sitter")]
+    fn update_highlighting_from_config(&mut self, text: &str) {
+        use tree_sitter_highlight::{Highlighter as TSHighlighter, HighlightEvent};
+
+        // These are the actual capture names from tree-sitter grammars
+        const HIGHLIGHT_NAMES: &[&str] = &[
+            "attribute",
+            "comment",
+            "comment.documentation",
+            "constant",
+            "constant.builtin",
+            "constructor",
+            "escape",
+            "function",
+            "function.macro",
+            "function.method",
+            "keyword",
+            "label",
+            "number",
+            "operator",
+            "property",
+            "punctuation.bracket",
+            "punctuation.delimiter",
+            "string",
+            "type",
+            "type.builtin",
+            "variable",
+            "variable.builtin",
+            "variable.parameter",
+        ];
+
+        if let Some(config) = &self.highlight_config {
+            let mut tokens = Vec::with_capacity(text.len() / 10);
+            let mut ts_highlighter = TSHighlighter::new();
+
+            let highlights = match ts_highlighter.highlight(config, text.as_bytes(), None, |_| None) {
+                Ok(h) => h,
+                Err(e) => {
+                    eprintln!("Tree-sitter highlight error: {:?}", e);
+                    // Fall back to direct rope reading
+                    self.tokens.clear();
+                    self.has_syntax_highlighting = false;
+                    return;
+                }
+            };
+
+            let mut current_highlight: Option<String> = None;
+
+            for event in highlights {
+                match event {
+                    Ok(HighlightEvent::Source { start, end }) => {
+                        let text_fragment = &text[start..end];
+                        tokens.push(HighlightedToken {
+                            text: text_fragment.to_string(),
+                            highlight_type: current_highlight.clone(),
+                        });
+                    }
+                    Ok(HighlightEvent::HighlightStart(highlight)) => {
+                        if highlight.0 < HIGHLIGHT_NAMES.len() {
+                            let hl_name = HIGHLIGHT_NAMES[highlight.0].to_string();
+                            current_highlight = Some(hl_name);
+                        }
+                    }
+                    Ok(HighlightEvent::HighlightEnd) => {
+                        current_highlight = None;
+                    }
+                    Err(_) => {}
+                }
+            }
+
+            if tokens.is_empty() {
+                // No tokens produced - fall back to direct rope reading
+                self.tokens.clear();
+                self.has_syntax_highlighting = false;
+            } else {
+                self.tokens = tokens;
+                self.has_syntax_highlighting = true;
+            }
+        } else {
+            // No highlight config - rendering will read directly from rope
+            self.tokens.clear();
+            self.has_syntax_highlighting = false;
+        }
+    }
+
+    /// Set the highlight configuration and language for syntax highlighting.
+    /// This is the preferred way to configure highlighting, as it sets up both
+    /// the configuration and the language for incremental parsing.
+    #[cfg(feature = "tree-sitter")]
+    pub fn set_highlight_config(&mut self, config: HighlightConfiguration, language: tree_sitter::Language) {
+        self.highlight_config = Some(config);
+        self.cached_language = Some(language);
+        // Reset cached parser/tree so they get reinitialized with the new language
+        self.cached_parser = None;
+        self.cached_tree = None;
+    }
+
+    /// Record an edit for incremental parsing (call this when text changes)
+    #[cfg(feature = "tree-sitter")]
+    pub fn record_edit(&mut self, start_byte: usize, old_end_byte: usize, new_end_byte: usize) {
+        // Convert byte positions to tree-sitter Points
+        let start_line = self.rope.byte_to_line(start_byte.min(self.rope.len_bytes()));
+        let start_col = start_byte.saturating_sub(self.rope.line_to_byte(start_line));
+
+        let old_end_line = self.rope.byte_to_line(old_end_byte.min(self.rope.len_bytes()));
+        let old_end_col = old_end_byte.saturating_sub(self.rope.line_to_byte(old_end_line));
+
+        let new_end_line = self.rope.byte_to_line(new_end_byte.min(self.rope.len_bytes()));
+        let new_end_col = new_end_byte.saturating_sub(self.rope.line_to_byte(new_end_line));
+
+        let edit = tree_sitter::InputEdit {
+            start_byte,
+            old_end_byte,
+            new_end_byte,
+            start_position: tree_sitter::Point::new(start_line, start_col),
+            old_end_position: tree_sitter::Point::new(old_end_line, old_end_col),
+            new_end_position: tree_sitter::Point::new(new_end_line, new_end_col),
+        };
+
+        self.pending_edits.push(edit);
+        self.content_version += 1;
+    }
+
+    /// Update highlighting without syntax highlighting feature
+    /// OPTIMIZATION: When tree-sitter is disabled, we don't create tokens.
+    /// Instead, the rendering loop reads directly from rope for visible lines only.
+    #[cfg(not(feature = "tree-sitter"))]
+    pub fn update_highlighting(&mut self) {
+        // Don't create tokens - rendering will read directly from rope
+        // This avoids O(n) rope.to_string() call
+        self.tokens.clear();
+        self.has_syntax_highlighting = false;
+        self.dirty_lines = None;
     }
 
     /// Get text content as string
@@ -1765,11 +2103,13 @@ impl CodeEditorState {
         let line_idx = self.rope.char_to_line(cursor_pos);
         let cursor_before = cursor_pos;
 
-        // Record byte positions for tree-sitter incremental parsing
+        // Record edit for incremental parsing BEFORE making the change
         #[cfg(feature = "tree-sitter")]
-        let start_byte = self.rope.char_to_byte(cursor_pos);
-        #[cfg(feature = "tree-sitter")]
-        let char_byte_len = c.len_utf8();
+        {
+            let start_byte = self.rope.char_to_byte(cursor_pos);
+            let char_len = c.len_utf8();
+            self.record_edit(start_byte, start_byte, start_byte + char_len);
+        }
 
         // Record anchor edit (character-based, not byte-based)
         // Note: We only record edits to anchors, not selections, because selections
@@ -1779,19 +2119,7 @@ impl CodeEditorState {
         self.rope.insert_char(cursor_pos, c);
         self.cursor_pos += 1;
         self.sync_cursors_from_primary();
-        // Mark for update with debouncing (avoids rebuilding mesh on every keystroke)
         self.pending_update = true;
-        self.content_version += 1;
-
-        // Record edit for tree-sitter incremental parsing
-        #[cfg(feature = "tree-sitter")]
-        {
-            self.pending_tree_sitter_edit = Some((
-                start_byte,
-                start_byte,  // old_end = start for insertion
-                start_byte + char_byte_len,  // new_end = start + inserted bytes
-            ));
-        }
 
         // Record for undo
         if record_history {
@@ -1832,25 +2160,17 @@ impl CodeEditorState {
             let char_idx = self.rope.char_to_byte(self.cursor_pos - 1);
             let byte_idx_end = self.rope.char_to_byte(self.cursor_pos);
 
+            // Record edit for incremental parsing BEFORE making the change
+            #[cfg(feature = "tree-sitter")]
+            self.record_edit(char_idx, byte_idx_end, char_idx);
+
             // Record anchor edit (character-based)
             self.anchors.record_edit(TextEdit::delete(self.cursor_pos - 1, self.cursor_pos));
 
             self.rope.remove(char_idx..byte_idx_end);
             self.cursor_pos -= 1;
             self.sync_cursors_from_primary();
-            // Mark for update with debouncing
             self.pending_update = true;
-            self.content_version += 1;
-
-            // Record edit for tree-sitter incremental parsing
-            #[cfg(feature = "tree-sitter")]
-            {
-                self.pending_tree_sitter_edit = Some((
-                    char_idx,       // start_byte
-                    byte_idx_end,   // old_end = end of deleted character
-                    char_idx,       // new_end = start (nothing inserted)
-                ));
-            }
 
             // Record for undo
             if record_history {
@@ -1887,24 +2207,16 @@ impl CodeEditorState {
             let char_idx = self.rope.char_to_byte(self.cursor_pos);
             let byte_idx_end = self.rope.char_to_byte(self.cursor_pos + 1);
 
+            // Record edit for incremental parsing BEFORE making the change
+            #[cfg(feature = "tree-sitter")]
+            self.record_edit(char_idx, byte_idx_end, char_idx);
+
             // Record anchor edit (character-based)
             self.anchors.record_edit(TextEdit::delete(self.cursor_pos, self.cursor_pos + 1));
 
             self.rope.remove(char_idx..byte_idx_end);
             self.sync_cursors_from_primary();
-            // Mark for update with debouncing
             self.pending_update = true;
-            self.content_version += 1;
-
-            // Record edit for tree-sitter incremental parsing
-            #[cfg(feature = "tree-sitter")]
-            {
-                self.pending_tree_sitter_edit = Some((
-                    char_idx,       // start_byte
-                    byte_idx_end,   // old_end = end of deleted character
-                    char_idx,       // new_end = start (nothing inserted)
-                ));
-            }
 
             // Record for undo
             if record_history {
@@ -1929,30 +2241,21 @@ impl CodeEditorState {
         let pos = pos.min(self.rope.len_chars());
         let text_char_len = text.chars().count();
 
-        // Record byte positions for tree-sitter incremental parsing
+        // Record edit for incremental parsing
         #[cfg(feature = "tree-sitter")]
-        let start_byte = self.rope.char_to_byte(pos);
-        #[cfg(feature = "tree-sitter")]
-        let text_byte_len = text.len();
+        {
+            let start_byte = self.rope.char_to_byte(pos);
+            let text_len = text.len();
+            self.record_edit(start_byte, start_byte, start_byte + text_len);
+        }
 
         // Record anchor edit (character-based)
         self.anchors.record_edit(TextEdit::insert(pos, text_char_len));
 
         self.rope.insert(pos, text);
         self.pending_update = true;
-        self.content_version += 1;
         self.dirty_lines = None; // Full rehighlight
         self.previous_line_count = self.rope.len_lines();
-
-        // Record edit for tree-sitter incremental parsing
-        #[cfg(feature = "tree-sitter")]
-        {
-            self.pending_tree_sitter_edit = Some((
-                start_byte,
-                start_byte,  // old_end = start for insertion
-                start_byte + text_byte_len,  // new_end = start + inserted bytes
-            ));
-        }
     }
 
     /// Remove text range (used for undo/redo)
@@ -1963,24 +2266,17 @@ impl CodeEditorState {
             let start_byte = self.rope.char_to_byte(start);
             let end_byte = self.rope.char_to_byte(end);
 
+            // Record edit for incremental parsing
+            #[cfg(feature = "tree-sitter")]
+            self.record_edit(start_byte, end_byte, start_byte);
+
             // Record anchor edit (character-based)
             self.anchors.record_edit(TextEdit::delete(start, end));
 
             self.rope.remove(start_byte..end_byte);
             self.pending_update = true;
-            self.content_version += 1;
             self.dirty_lines = None; // Full rehighlight
             self.previous_line_count = self.rope.len_lines();
-
-            // Record edit for tree-sitter incremental parsing
-            #[cfg(feature = "tree-sitter")]
-            {
-                self.pending_tree_sitter_edit = Some((
-                    start_byte,  // start_byte
-                    end_byte,    // old_end = end of deleted range
-                    start_byte,  // new_end = start (nothing inserted)
-                ));
-            }
         }
     }
 
@@ -2053,16 +2349,9 @@ impl CodeEditorState {
 
     /// Set text content
     pub fn set_text(&mut self, text: &str) {
-        // Record byte length before replacement
-        #[cfg(feature = "tree-sitter")]
-        let old_byte_len = self.rope.len_bytes();
-        #[cfg(feature = "tree-sitter")]
-        let new_byte_len = text.len();
-
         self.rope = Rope::from_str(text);
         self.cursor_pos = self.cursor_pos.min(self.rope.len_chars());
         self.pending_update = true;
-        self.content_version += 1;
         self.dirty_lines = None;
         self.previous_line_count = self.rope.len_lines();
         // Clear anchors and reset selections when text is replaced entirely
@@ -2072,16 +2361,8 @@ impl CodeEditorState {
         self.line_width_tracker.rebuild(&self.rope);
         // Invalidate cached max content width
         self.max_content_width_version = 0;
-
-        // Record edit for tree-sitter incremental parsing (full document replacement)
-        #[cfg(feature = "tree-sitter")]
-        {
-            self.pending_tree_sitter_edit = Some((
-                0,              // start_byte = beginning of document
-                old_byte_len,   // old_end = old document length
-                new_byte_len,   // new_end = new document length
-            ));
-        }
+        // Increment content_version to trigger highlighting on next render
+        self.content_version += 1;
     }
 
     // ========== Anchor methods ==========
@@ -2430,19 +2711,6 @@ impl CodeEditorState {
         }
 
         false
-    }
-
-    /// Record a text edit for incremental parsing (sends TextEditEvent)
-    ///
-    /// This method is a compatibility stub for code that previously called tree-sitter's
-    /// record_edit(). The actual event sending happens at the plugin layer.
-    ///
-    /// NOTE: This is kept as a no-op stub because CodeEditorState is a Resource, not a System,
-    /// so it cannot send Bevy events. The actual TextEditEvent is sent by watching
-    /// `content_version` changes in the plugin systems.
-    pub fn record_edit(&mut self, _start_byte: usize, _old_end_byte: usize, _new_end_byte: usize) {
-        // No-op: Event sending happens in plugin layer by detecting content_version changes
-        // This method exists only for backwards compatibility with existing code
     }
 }
 

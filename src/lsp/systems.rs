@@ -298,7 +298,9 @@ fn apply_text_edits(editor_state: &mut CodeEditorState, edits: Vec<TextEdit>) {
         }
     }
 
-    editor_state.pending_update = true;
+    editor_state.needs_update = true;
+    editor_state.pending_update = false;
+    editor_state.content_version += 1;
     editor_state.dirty_lines = None;
     editor_state.previous_line_count = editor_state.rope.len_lines();
 }
@@ -320,10 +322,11 @@ pub fn sync_lsp_document(
         if let Some(uri) = &editor_state.document_uri {
             let version = editor_state.document_version;
 
+            // OPTIMIZATION: Use rope chunks instead of full to_string() conversion
             let change = TextDocumentContentChangeEvent {
                 range: None,
                 range_length: None,
-                text: editor_state.rope.to_string(),
+                text: editor_state.rope.chunks().collect(),
             };
 
             lsp_client.send(LspMessage::DidChange {

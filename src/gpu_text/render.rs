@@ -8,7 +8,7 @@
 use bevy::prelude::*;
 use bevy::render::render_resource::AsBindGroup;
 use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d};
-use bevy::mesh::{Mesh2d, Indices, PrimitiveTopology};
+use bevy::mesh::{Mesh2d, Indices, PrimitiveTopology, MeshVertexBufferLayoutRef};
 use bevy::shader::ShaderRef;
 use bevy::asset::RenderAssetUsages;
 
@@ -118,7 +118,7 @@ impl GlyphBatch {
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
 pub struct TextMaterial {
     #[texture(0)]
-    #[sampler(1)]
+    #[sampler(1, sampler_type = "filtering")]
     pub atlas_texture: Handle<Image>,
 
     /// Base color multiplier
@@ -209,9 +209,18 @@ impl Plugin for GpuTextPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(Material2dPlugin::<TextMaterial>::default())
             .init_resource::<TextRenderState>()
-            .add_systems(Startup, setup_gpu_text)
-            .add_systems(Update, update_atlas_texture);
+            .add_systems(Startup, setup_gpu_text);
+        // Note: update_atlas_texture is called from the main plugin's system chain
+        // to ensure it runs AFTER update_gpu_text_display populates the atlas
     }
+}
+
+/// System to update the atlas texture - must run after glyphs are added
+pub fn update_atlas_texture(
+    mut atlas: ResMut<GlyphAtlas>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    atlas.update_texture(&mut images);
 }
 
 fn setup_gpu_text(
@@ -220,9 +229,10 @@ fn setup_gpu_text(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TextMaterial>>,
     mut render_state: ResMut<TextRenderState>,
+    settings: Res<crate::settings::EditorSettings>,
 ) {
-    // Create the glyph atlas
-    let atlas = GlyphAtlas::new(&mut images);
+    // Create the glyph atlas with the configured font
+    let atlas = GlyphAtlas::new_with_font(&mut images, Some(&settings.font.family));
 
     // Create the text material
     let material = TextMaterial {
@@ -235,13 +245,6 @@ fn setup_gpu_text(
     render_state.mesh_handle = Some(meshes.add(create_quad_mesh()));
 
     commands.insert_resource(atlas);
-}
-
-fn update_atlas_texture(
-    mut atlas: ResMut<GlyphAtlas>,
-    mut images: ResMut<Assets<Image>>,
-) {
-    atlas.update_texture(&mut images);
 }
 
 /// Spawns glyph entities for a line of text using GPU rendering

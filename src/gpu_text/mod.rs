@@ -24,8 +24,12 @@ mod atlas;
 mod render;
 
 pub use atlas::{GlyphAtlas, GlyphInfo, GlyphKey, GlyphRasterizer, RasterizedGlyph, ATLAS_SIZE};
+
+// Re-export new_with_font for creating atlas with custom font
+pub use atlas::GlyphAtlas as GlyphAtlasType;
 pub use render::{
     GlyphBatch, GlyphInstance, GpuTextPlugin, TextBatchBuilder, TextMaterial, TextRenderState,
+    update_atlas_texture,
 };
 
 // Re-export from bevy for convenience

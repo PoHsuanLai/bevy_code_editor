@@ -7,7 +7,9 @@ use bevy::prelude::*;
 use bevy_code_editor::prelude::*;
 
 #[cfg(feature = "tree-sitter")]
-use tree_sitter_highlight::HighlightConfiguration;
+use bevy_code_editor::syntax::TreeSitterProvider;
+#[cfg(feature = "tree-sitter")]
+use bevy_code_editor::plugin::SyntaxResource;
 
 fn main() {
     App::new()
@@ -25,7 +27,10 @@ fn main() {
 }
 
 #[cfg(feature = "tree-sitter")]
-fn setup_editor_with_treesitter(mut state: ResMut<CodeEditorState>) {
+fn setup_editor_with_treesitter(
+    mut state: ResMut<CodeEditorState>,
+    mut syntax: ResMut<SyntaxResource>,
+) {
     // Sample Rust code to demonstrate syntax highlighting
     let rust_code = r#"// Rust syntax highlighting with tree-sitter
 use std::collections::HashMap;
@@ -92,50 +97,18 @@ fn main() {
 
     state.set_text(rust_code);
 
-    // Set up tree-sitter highlighting configuration for Rust
-    let language = tree_sitter_rust::LANGUAGE;
+    // Set up tree-sitter highlighting for Rust
+    let language = tree_sitter_rust::LANGUAGE.into();
 
-    // These are the actual capture names from tree-sitter-rust's highlights.scm
-    let highlight_names = vec![
-        "attribute",
-        "comment",
-        "comment.documentation",
-        "constant",
-        "constant.builtin",
-        "constructor",
-        "escape",
-        "function",
-        "function.macro",
-        "function.method",
-        "keyword",
-        "label",
-        "operator",
-        "property",
-        "punctuation.bracket",
-        "punctuation.delimiter",
-        "string",
-        "type",
-        "type.builtin",
-        "variable.builtin",
-        "variable.parameter",
-    ];
+    // Create a TreeSitterProvider and set it up with the Rust query
+    let mut provider = TreeSitterProvider::new();
+    provider.set_query(tree_sitter_rust::HIGHLIGHTS_QUERY, language)
+        .expect("Failed to create highlight query");
 
-    let mut config = HighlightConfiguration::new(
-        language.into(),
-        "rust",
-        tree_sitter_rust::HIGHLIGHTS_QUERY,
-        "",
-        "",
-    )
-    .expect("Failed to create highlight configuration");
+    // Set the provider in the syntax resource
+    // The tree will be updated automatically when rendering
+    syntax.set_provider(provider);
 
-    config.configure(&highlight_names);
-
-    // Use the new helper that sets both config and language for incremental parsing
-    state.set_highlight_config(config, language.into());
-
-    // Trigger initial highlighting
-    state.update_highlighting();
     state.needs_update = true;
 }
 

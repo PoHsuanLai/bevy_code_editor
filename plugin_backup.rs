@@ -3440,7 +3440,16 @@ fn update_fold_indicators(
 
 /// Marker component for GPU text mesh entities
 #[derive(Component)]
-pub struct GpuTextMesh;
+/// Marker component for GPU text mesh entities with scroll tracking
+#[derive(Component)]
+pub struct GpuTextMesh {
+    /// The scroll offset when this mesh was built
+    pub built_at_scroll: f32,
+    pub built_at_horizontal_scroll: f32,
+    /// The visible line range when built
+    pub first_line: usize,
+    pub last_line: usize,
+}
 
 /// GPU-accelerated text display system
 /// Uses a glyph atlas and batched mesh rendering instead of Bevy's Text2d

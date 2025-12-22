@@ -4,6 +4,7 @@
 //! Glyphs are rasterized once and cached in a texture atlas for efficient GPU rendering.
 
 use bevy::prelude::*;
+use bevy::asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use cosmic_text::{CacheKey, FontSystem, SwashCache};
 use std::collections::HashMap;
@@ -13,6 +14,10 @@ pub const ATLAS_SIZE: u32 = 2048;
 
 /// Padding between glyphs to prevent bleeding
 const GLYPH_PADDING: u32 = 2;
+
+/// DPI scale factor for high-quality text rendering
+/// Rasterize at 2x resolution for crisp text on Retina/HiDPI displays
+const DPI_SCALE: f32 = 2.0;
 
 /// A unique identifier for a cached glyph
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -38,9 +43,9 @@ pub struct GlyphInfo {
     /// UV coordinates in the atlas (0.0 to 1.0)
     pub uv_min: Vec2,
     pub uv_max: Vec2,
-    /// Size in pixels
+    /// Size in pixels (at original/logical resolution for rendering)
     pub size: Vec2,
-    /// Offset from the baseline
+    /// Offset from the baseline (at original/logical resolution)
     pub offset: Vec2,
     /// Advance width (how far to move for next character)
     pub advance: f32,
@@ -72,11 +77,22 @@ pub struct GlyphAtlas {
     font_system: FontSystem,
     /// Swash cache for glyph rasterization
     swash_cache: SwashCache,
+    /// Cached font ID for the configured font
+    configured_font_id: Option<cosmic_text::fontdb::ID>,
 }
 
 impl GlyphAtlas {
-    /// Create a new glyph atlas
+    /// Create a new glyph atlas with default font
     pub fn new(images: &mut Assets<Image>) -> Self {
+        Self::new_with_font(images, None)
+    }
+
+    /// Create a new glyph atlas with a specific font
+    ///
+    /// The font_path can be:
+    /// - A path to a font file (e.g., "fonts/FiraMono-Regular.ttf")
+    /// - A font family name (e.g., "Fira Mono", "JetBrains Mono")
+    pub fn new_with_font(images: &mut Assets<Image>, font_path: Option<&str>) -> Self {
         // Create RGBA texture
         let pixels = vec![0u8; (ATLAS_SIZE * ATLAS_SIZE * 4) as usize];
 
@@ -89,14 +105,22 @@ impl GlyphAtlas {
             TextureDimension::D2,
             pixels.clone(),
             TextureFormat::Rgba8UnormSrgb,
-            default(),
+            // Keep in both worlds so we can update the data and have it re-upload
+            RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
         );
 
         let texture = images.add(image);
 
         // Initialize cosmic_text font system
-        let font_system = FontSystem::new();
+        let mut font_system = FontSystem::new();
         let swash_cache = SwashCache::new();
+
+        // Try to load/find the configured font
+        let configured_font_id = if let Some(path) = font_path {
+            Self::find_or_load_font(&mut font_system, path)
+        } else {
+            None
+        };
 
         Self {
             texture,
@@ -107,7 +131,88 @@ impl GlyphAtlas {
             dirty: false,
             font_system,
             swash_cache,
+            configured_font_id,
         }
+    }
+
+    /// Find or load a font by path or family name
+    fn find_or_load_font(font_system: &mut FontSystem, font_path: &str) -> Option<cosmic_text::fontdb::ID> {
+        // First, try to load as a file path
+        if font_path.ends_with(".ttf") || font_path.ends_with(".otf") {
+            // Try different base paths
+            let paths_to_try = [
+                font_path.to_string(),
+                format!("assets/{}", font_path),
+                format!("./{}", font_path),
+            ];
+
+            for path in &paths_to_try {
+                if let Ok(data) = std::fs::read(path) {
+                    // Load the font into the font system
+                    // load_font_data returns the number of fonts loaded, and we need to find the ID
+                    let db = font_system.db_mut();
+                    let count_before = db.faces().count();
+                    db.load_font_data(data);
+                    let count_after = db.faces().count();
+
+                    // If a new font was added, find its ID
+                    if count_after > count_before {
+                        if let Some(face) = db.faces().last() {
+                            // Get the font family name for logging
+                            let family_name = face.families.first()
+                                .map(|f| f.0.as_str())
+                                .unwrap_or("Unknown");
+                            info!("GPU Text: Loaded font '{}' from {}", family_name, path);
+                            return Some(face.id);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Try to find by family name
+        // Extract family name from path if it looks like a path
+        let family_name = if font_path.contains('/') || font_path.contains('\\') {
+            // Extract filename without extension
+            std::path::Path::new(font_path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| {
+                    // Convert "FiraMono-Regular" to "Fira Mono"
+                    s.split('-').next().unwrap_or(s)
+                        .chars()
+                        .fold(String::new(), |mut acc, c| {
+                            if c.is_uppercase() && !acc.is_empty() && !acc.ends_with(' ') {
+                                acc.push(' ');
+                            }
+                            acc.push(c);
+                            acc
+                        })
+                })
+                .unwrap_or_else(|| font_path.to_string())
+        } else {
+            font_path.to_string()
+        };
+
+        // Search for the font by family name (case-insensitive)
+        let family_lower = family_name.to_lowercase();
+        let db = font_system.db();
+
+        if let Some(id) = db.faces().find_map(|face| {
+            for family in &face.families {
+                if family.0.to_lowercase().contains(&family_lower) {
+                    info!("GPU Text: Using system font '{}'", family.0);
+                    return Some(face.id);
+                }
+            }
+            None
+        }) {
+            return Some(id);
+        }
+
+        // Fall back to any monospace font
+        warn!("GPU Text: Could not find font '{}', using system monospace fallback", font_path);
+        None
     }
 
     /// Get or create a glyph entry in the atlas
@@ -135,22 +240,18 @@ impl GlyphAtlas {
             (y + glyph.height) as f32 / ATLAS_SIZE as f32,
         );
 
+        // Size is scaled down to logical pixels for rendering
+        // The atlas stores high-res glyphs, but we render at logical size
         let info = GlyphInfo {
             uv_min,
             uv_max,
-            size: Vec2::new(glyph.width as f32, glyph.height as f32),
+            size: Vec2::new(glyph.width as f32 / DPI_SCALE, glyph.height as f32 / DPI_SCALE),
             offset: Vec2::new(glyph.bearing_x, glyph.bearing_y),
             advance: glyph.advance,
         };
 
         self.glyphs.insert(key, info);
         self.dirty = true;
-
-        // Debug first few glyphs
-        if self.glyphs.len() <= 3 {
-            println!("Atlas: Added glyph '{}' with size {:?}, uv {:?}-{:?}",
-                     key.character, info.size, info.uv_min, info.uv_max);
-        }
 
         Some(info)
     }
@@ -165,13 +266,13 @@ impl GlyphAtlas {
             return None;
         }
 
-        // Get a font that supports this character
-        // cosmic_text's font_system provides access to system fonts
-        let font_id = {
+        // Use configured font if available, otherwise fall back to system monospace
+        let font_id = if let Some(id) = self.configured_font_id {
+            id
+        } else {
             let db = self.font_system.db();
-            // Find a font that has this glyph
+            // Find a monospace font first for code editing
             db.faces().find_map(|face| {
-                // Try to find a monospace font first for code editing
                 if face.monospaced {
                     Some(face.id)
                 } else {
@@ -194,20 +295,25 @@ impl GlyphAtlas {
             return None;
         }
 
-        // Get glyph metrics
-        let metrics = swash_font.glyph_metrics(&[]).scale(font_size);
-        let advance = metrics.advance_width(glyph_id);
+        // Rasterize at higher resolution for crisp text on HiDPI displays
+        let scaled_font_size = font_size * DPI_SCALE;
 
-        // Create cache key for swash
+        // Get glyph metrics at the scaled size
+        let metrics = swash_font.glyph_metrics(&[]).scale(scaled_font_size);
+        let scaled_advance = metrics.advance_width(glyph_id);
+        // Return advance at original size for layout
+        let advance = scaled_advance / DPI_SCALE;
+
+        // Create cache key for swash with scaled font size
         let cache_key = CacheKey::new(
             font_id,
             glyph_id,
-            font_size,
+            scaled_font_size,
             (0.0, 0.0), // No subpixel offset
             cosmic_text::CacheKeyFlags::empty(),
         );
 
-        // Get the rasterized image
+        // Get the rasterized image at higher resolution
         let image = self.swash_cache.get_image_uncached(&mut self.font_system, cache_key.0)?;
 
         // Handle empty glyphs (like space)
@@ -222,11 +328,12 @@ impl GlyphAtlas {
             });
         }
 
-        // Convert to our format
+        // Convert to our format - keep the high-res size for the atlas
         let width = image.placement.width;
         let height = image.placement.height;
-        let bearing_x = image.placement.left as f32;
-        let bearing_y = image.placement.top as f32;
+        // Scale bearings back to original size for correct positioning
+        let bearing_x = image.placement.left as f32 / DPI_SCALE;
+        let bearing_y = image.placement.top as f32 / DPI_SCALE;
 
         // The image data is in coverage format (single channel alpha)
         // We need to extract just the alpha values
@@ -323,9 +430,20 @@ impl GlyphAtlas {
             return;
         }
 
-        if let Some(image) = images.get_mut(&self.texture) {
-            image.data = Some(self.pixels.clone());
-        }
+        // Replace the entire image to trigger re-upload to GPU
+        let new_image = Image::new(
+            Extent3d {
+                width: ATLAS_SIZE,
+                height: ATLAS_SIZE,
+                depth_or_array_layers: 1,
+            },
+            TextureDimension::D2,
+            self.pixels.clone(),
+            TextureFormat::Rgba8UnormSrgb,
+            RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+        );
+
+        let _ = images.insert(&self.texture, new_image);
 
         self.dirty = false;
     }
