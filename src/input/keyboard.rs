@@ -79,8 +79,8 @@ pub fn handle_keyboard_input(
     mut open_events: MessageWriter<crate::types::OpenRequested>,
     #[cfg(feature = "lsp")] lsp_client: Res<crate::lsp::LspClient>,
     #[cfg(feature = "lsp")] mut completion_state: ResMut<crate::lsp::CompletionState>,
-    #[cfg(feature = "lsp")] _sync_state: ResMut<crate::lsp::LspSyncState>,
     #[cfg(feature = "lsp")] mut rename_state: ResMut<crate::lsp::state::RenameState>,
+    #[cfg(feature = "lsp")] mut lsp_sync: ResMut<crate::lsp::LspSyncState>,
 ) {
     // Only process input if editor is focused
     if !state.is_focused {
@@ -119,7 +119,7 @@ pub fn handle_keyboard_input(
                     // Submit rename
                     if rename_state.can_submit() {
                         if let Some(position) = rename_state.position {
-                            if let Some(uri) = &state.document_uri {
+                            if let Some(uri) = &lsp_sync.document_uri {
                                 crate::lsp::systems::execute_rename(
                                     &lsp_client,
                                     uri,
@@ -283,7 +283,7 @@ pub fn handle_keyboard_input(
 
                             // Notify LSP of text change
                             #[cfg(feature = "lsp")]
-                            send_did_change(&mut state, &lsp_client);
+                            send_did_change(&state, &lsp_client, &mut lsp_sync);
 
                             // Auto-trigger completion on trigger chars, OR update filter if already visible
                             #[cfg(feature = "lsp")]
@@ -292,7 +292,7 @@ pub fn handle_keyboard_input(
                                     // Trigger character (. or ::) - open new completion
                                     // Mark completion as not visible to force start_char_index reset
                                     completion_state.visible = false;
-                                    request_completion(&mut state, &lsp_client, &mut completion_state);
+                                    request_completion(&state, &lsp_client, &mut completion_state, &lsp_sync);
                                 } else if completion_state.visible && (c.is_alphanumeric() || c == '_') {
                                     // Completion visible and typing identifier chars - update filter
                                     update_completion_filter(&state, &mut completion_state);
@@ -306,7 +306,7 @@ pub fn handle_keyboard_input(
                                     if word_len >= settings.completion.min_word_length {
                                         // Set start_char_index to word start so filter works correctly
                                         completion_state.start_char_index = word_start;
-                                        request_completion(&mut state, &lsp_client, &mut completion_state);
+                                        request_completion(&state, &lsp_client, &mut completion_state, &lsp_sync);
                                     }
                                 }
                             }
@@ -317,7 +317,7 @@ pub fn handle_keyboard_input(
                         insert_char(&mut state, ' ');
                         // Notify LSP of text change
                         #[cfg(feature = "lsp")]
-                        send_did_change(&mut state, &lsp_client);
+                        send_did_change(&state, &lsp_client, &mut lsp_sync);
                         // Dismiss completion on space
                         #[cfg(feature = "lsp")]
                         {
@@ -356,10 +356,10 @@ pub fn handle_keyboard_input(
             eprintln!("[Rename] supports_rename: {}, supports_prepare_rename: {}",
                 lsp_client.capabilities.supports_rename(),
                 lsp_client.capabilities.supports_prepare_rename());
-            eprintln!("[Rename] document_uri: {:?}", state.document_uri);
+            eprintln!("[Rename] document_uri: {:?}", lsp_sync.document_uri);
 
             if lsp_client.capabilities.supports_rename() {
-                if let Some(uri) = &state.document_uri {
+                if let Some(uri) = &lsp_sync.document_uri {
                     // Convert cursor position to LSP position
                     let cursor_pos = state.cursor_pos.min(state.rope.len_chars());
                     let line = state.rope.char_to_line(cursor_pos);
@@ -386,6 +386,6 @@ pub fn handle_keyboard_input(
         #[cfg(not(feature = "lsp"))]
         execute_action(&mut state, action, &settings, &mut find_state, &mut goto_line_state, &mut fold_state);
         #[cfg(feature = "lsp")]
-        execute_action(&mut state, action, &settings, &mut find_state, &mut goto_line_state, &mut fold_state, &lsp_client, &mut completion_state);
+        execute_action(&mut state, action, &settings, &mut find_state, &mut goto_line_state, &mut fold_state, &lsp_client, &mut completion_state, &mut lsp_sync);
     }
 }

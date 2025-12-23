@@ -10,6 +10,13 @@ mod folding;
 mod gpu_text_render;
 mod scrollbar;
 mod syntax_highlighting;
+mod editor_ui_plugin;
+
+#[cfg(feature = "lsp")]
+mod lsp_plugin;
+
+#[cfg(feature = "lsp")]
+mod lsp_ui_plugin;
 
 pub(crate) use ui_elements::*;
 pub(crate) use cursor::*;
@@ -24,6 +31,16 @@ pub use scrollbar::{ScrollbarPlugin, Scrollbar};
 // Re-export syntax plugin publicly
 pub use syntax_highlighting::{SyntaxPlugin, SyntaxResource, HighlightCache};
 
+// Re-export editor UI plugin publicly
+pub use editor_ui_plugin::EditorUiPlugin;
+
+// Re-export LSP plugins publicly (feature-gated)
+#[cfg(feature = "lsp")]
+pub use lsp_plugin::LspPlugin;
+
+#[cfg(feature = "lsp")]
+pub use lsp_ui_plugin::LspUiPlugin;
+
 use bevy::prelude::*;
 use leafwing_input_manager::prelude::{InputManagerPlugin, InputMap, ActionState};
 use crate::input::EditorAction;
@@ -31,32 +48,14 @@ use crate::settings::EditorSettings;
 use crate::types::*;
 use crate::gpu_text::GpuTextPlugin;
 
-/// Configuration for LSP UI rendering
-#[derive(Clone, Copy, Debug, Default)]
-pub struct LspUiConfig {
-    /// Whether to enable the default LSP UI rendering systems
-    /// Set to false to disable and use your own custom rendering
-    pub enable_default_ui: bool,
-}
-
-impl LspUiConfig {
-    /// Create config with default UI enabled
-    pub fn enabled() -> Self {
-        Self { enable_default_ui: true }
-    }
-
-    /// Create config with default UI disabled
-    pub fn disabled() -> Self {
-        Self { enable_default_ui: false }
-    }
-}
+/// System set for core editor setup (runs in Startup schedule)
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EditorSetupSet;
 
 /// Code editor plugin with GPU-accelerated text rendering
 pub struct CodeEditorPlugin {
     settings: EditorSettings,
     input_map: InputMap<EditorAction>,
-    #[cfg(feature = "lsp")]
-    lsp_ui_config: LspUiConfig,
 }
 
 impl CodeEditorPlugin {
@@ -80,8 +79,6 @@ impl CodeEditorPlugin {
         Self {
             settings: EditorSettings::default(),
             input_map,
-            #[cfg(feature = "lsp")]
-            lsp_ui_config: LspUiConfig::enabled(),
         }
     }
 
@@ -90,40 +87,6 @@ impl CodeEditorPlugin {
         self.settings = settings;
         self
     }
-
-    /// Configure LSP UI rendering
-    ///
-    /// Set to `false` to disable default LSP UI systems (completion popup, hover, etc.)
-    /// and provide your own custom rendering by querying the marker components.
-    ///
-    /// # Example
-    /// ```ignore
-    /// use bevy_code_editor::prelude::*;
-    /// use bevy_code_editor::lsp::components::*;
-    ///
-    /// // Disable default UI
-    /// app.add_plugins(CodeEditorPlugin::default().with_lsp_ui(false));
-    ///
-    /// // Add your custom render system
-    /// app.add_systems(Update, my_custom_completion_renderer);
-    ///
-    /// fn my_custom_completion_renderer(
-    ///     query: Query<&CompletionPopupData, Changed<CompletionPopupData>>,
-    ///     mut commands: Commands,
-    /// ) {
-    ///     // Your custom rendering logic
-    /// }
-    /// ```
-    #[cfg(feature = "lsp")]
-    pub fn with_lsp_ui(mut self, enable: bool) -> Self {
-        self.lsp_ui_config = if enable {
-            LspUiConfig::enabled()
-        } else {
-            LspUiConfig::disabled()
-        };
-        self
-    }
-
 }
 
 impl Default for CodeEditorPlugin {
@@ -187,7 +150,7 @@ impl Plugin for CodeEditorPlugin {
         // Add the syntax highlighting plugin
         app.add_plugins(SyntaxPlugin);
 
-        app.add_systems(Startup, (init_viewport_from_window, setup).chain());
+        app.add_systems(Startup, (init_viewport_from_window, setup).chain().in_set(EditorSetupSet));
 
         // GPU text rendering systems - split into smaller groups to avoid tuple limits
         app.add_systems(
@@ -208,8 +171,6 @@ impl Plugin for CodeEditorPlugin {
                 detect_foldable_regions,
                 handle_scroll_for_gpu_text,
                 update_gpu_text_display,
-                update_line_numbers,
-                update_fold_indicators,
             )
                 .chain()
                 .after(update_separator_on_resize),
@@ -221,114 +182,6 @@ impl Plugin for CodeEditorPlugin {
             Update,
             update_syntax_tree.after(update_gpu_text_display),
         );
-        // Enable selection/highlighting systems
-        app.add_systems(
-            Update,
-            (
-                update_selection_highlight,
-                update_cursor_line_highlight,
-                update_indent_guides,
-                update_bracket_match,
-                update_bracket_highlight,
-                update_find_highlights,
-            )
-                .chain()
-                .after(update_line_numbers),
-        );
-        // Enable minimap and cursor systems (split to avoid tuple limit)
-        app.add_systems(
-            Update,
-            update_minimap_hover.after(update_find_highlights),
-        );
-        app.add_systems(
-            Update,
-            handle_minimap_mouse.after(update_minimap_hover),
-        );
-        app.add_systems(
-            Update,
-            update_minimap.after(handle_minimap_mouse),  // GPU minimap rendering
-        );
-        app.add_systems(
-            Update,
-            update_minimap_find_highlights.after(update_minimap),
-        );
-        app.add_systems(
-            Update,
-            update_cursor.after(update_minimap_find_highlights),
-        );
-        app.add_systems(
-            Update,
-            animate_cursor.after(update_cursor),
-        );
-
-        // Add LSP systems if feature is enabled
-        #[cfg(feature = "lsp")]
-        {
-            use crate::lsp::prelude::*;
-            use crate::lsp::state::{CodeActionState, SignatureHelpState, InlayHintState, DocumentHighlightState, RenameState};
-            use crate::lsp::systems::{request_document_highlights, WorkspaceEditEvent};
-            use crate::lsp::{LspUiSyncSet, LspUiRenderSet};
-
-            // Core LSP resources
-            app.insert_resource(LspClient::default());
-            app.insert_resource(CompletionState::default());
-            app.insert_resource(HoverState::default());
-            app.insert_resource(LspSyncState::default());
-
-            // New feature resources
-            app.insert_resource(SignatureHelpState::default());
-            app.insert_resource(CodeActionState::default());
-            app.insert_resource(InlayHintState::default());
-            app.insert_resource(DocumentHighlightState::default());
-            app.insert_resource(RenameState::default());
-
-            // Theme resource for UI customization
-            app.insert_resource(LspUiTheme::default());
-
-            // Register LSP events (messages) so external code can listen to them
-            app.add_message::<NavigateToFileEvent>();
-            app.add_message::<MultipleLocationsEvent>();
-            app.add_message::<WorkspaceEditEvent>();
-
-            // Configure system set ordering
-            app.configure_sets(Update, LspUiSyncSet.before(LspUiRenderSet));
-
-            // Core LSP systems (always enabled)
-            app.add_systems(Update, (
-                process_lsp_messages,
-                sync_lsp_document,
-                request_inlay_hints,
-                request_document_highlights,
-                cleanup_lsp_timeouts,
-            ));
-
-            // LSP UI sync systems (state -> marker components)
-            // These always run so users can query marker components
-            app.add_systems(Update, (
-                sync_completion_popup,
-                sync_hover_popup,
-                sync_signature_help_popup,
-                sync_code_actions_popup,
-                sync_rename_input,
-                sync_inlay_hints,
-                sync_document_highlights,
-            ).in_set(LspUiSyncSet));
-
-            // LSP UI render systems (marker components -> visuals)
-            // Only enabled if default UI is enabled
-            if self.lsp_ui_config.enable_default_ui {
-                app.add_systems(Update, (
-                    render_completion_popup,
-                    render_hover_popup,
-                    render_signature_help_popup,
-                    render_code_actions_popup,
-                    render_rename_input,
-                    render_inlay_hints,
-                    render_document_highlights,
-                    cleanup_lsp_ui_visuals,
-                ).in_set(LspUiRenderSet));
-            }
-        }
     }
 }
 
@@ -455,9 +308,7 @@ fn update_separator_on_resize(
 
 fn setup(
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut settings: ResMut<EditorSettings>,
-    viewport: Res<ViewportDimensions>,
+    settings: Res<EditorSettings>,
 ) {
     // Spawn 2D camera for the editor with 1:1 pixel mapping
     commands.spawn((
@@ -471,73 +322,5 @@ fn setup(
             ..default()
         },
         Name::new("EditorCamera"),
-    ));
-
-    // Load font
-    let font_handle: Handle<Font> = asset_server.load(&settings.font.family);
-    settings.font.handle = Some(font_handle.clone());
-
-    let viewport_width = viewport.width as f32;
-    let viewport_height = viewport.height as f32;
-
-    // Spawn line numbers
-    commands.spawn((
-        Text2d::new("1"),
-        TextFont {
-            font: font_handle.clone(),
-            font_size: settings.font.size,
-            ..default()
-        },
-        TextColor(settings.theme.line_numbers),
-        Transform::from_translation(to_bevy_coords_dynamic(
-            settings.ui.layout.line_number_margin_left,
-            settings.ui.layout.margin_top,
-            viewport_width,
-            viewport_height,
-            viewport.offset_x,
-        )),
-        LineNumbers,
-        Name::new("LineNumbers"),
-    ));
-
-    // Spawn separator line (only if enabled)
-    if settings.ui.show_separator {
-        commands.spawn((
-            Sprite {
-                color: settings.theme.separator,
-                custom_size: Some(Vec2::new(1.0, viewport_height)),
-                ..default()
-            },
-            Transform::from_translation(to_bevy_coords_left_aligned(
-                settings.ui.layout.separator_x,
-                viewport_height / 2.0,
-                viewport_width,
-                viewport_height,
-                viewport.offset_x,
-                0.0,  // separator doesn't scroll horizontally
-            )),
-            Separator,
-            Name::new("Separator"),
-        ));
-    }
-
-    // Spawn primary cursor (cursor_index = 0)
-    let cursor_height = settings.font.line_height * settings.cursor.height_multiplier;
-    commands.spawn((
-        Sprite {
-            color: settings.theme.cursor,
-            custom_size: Some(Vec2::new(settings.cursor.width, cursor_height)),
-            ..default()
-        },
-        Transform::from_translation(to_bevy_coords_dynamic(
-            settings.ui.layout.code_margin_left,
-            settings.ui.layout.margin_top,
-            viewport_width,
-            viewport_height,
-            viewport.offset_x,
-        )),
-        Visibility::Hidden,
-        EditorCursor { cursor_index: 0 },
-        Name::new("EditorCursor_0"),
     ));
 }

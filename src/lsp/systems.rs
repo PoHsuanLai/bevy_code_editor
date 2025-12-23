@@ -73,6 +73,7 @@ pub fn process_lsp_messages(
     mut highlight_state: ResMut<DocumentHighlightState>,
     mut rename_state: ResMut<RenameState>,
     mut editor_state: ResMut<CodeEditorState>,
+    lsp_sync: Res<LspSyncState>,
     mut navigate_events: MessageWriter<NavigateToFileEvent>,
     mut multi_location_events: MessageWriter<MultipleLocationsEvent>,
     mut workspace_edit_events: MessageWriter<WorkspaceEditEvent>,
@@ -145,7 +146,7 @@ pub fn process_lsp_messages(
                 }
 
                 let location = &locations[0];
-                let current_uri = editor_state.document_uri.as_ref();
+                let current_uri = lsp_sync.document_uri.as_ref();
                 let is_same_file = current_uri.is_some_and(|uri| uri == &location.uri);
 
                 if is_same_file {
@@ -237,7 +238,7 @@ pub fn process_lsp_messages(
 
                 // Apply edits to current document if present
                 if let Some(changes) = &edit.changes {
-                    if let Some(uri) = &editor_state.document_uri {
+                    if let Some(uri) = &lsp_sync.document_uri {
                         if let Some(edits) = changes.get(uri) {
                             apply_text_edits(&mut editor_state, edits.clone());
                         }
@@ -319,8 +320,8 @@ pub fn sync_lsp_document(
     sync_state.timer.tick(time.delta());
 
     if sync_state.timer.is_finished() {
-        if let Some(uri) = &editor_state.document_uri {
-            let version = editor_state.document_version;
+        if let Some(uri) = &sync_state.document_uri {
+            let version = sync_state.document_version;
 
             // OPTIMIZATION: Use rope chunks instead of full to_string() conversion
             let change = TextDocumentContentChangeEvent {
@@ -348,6 +349,7 @@ pub fn sync_lsp_document(
 pub fn request_inlay_hints(
     lsp_client: Res<LspClient>,
     editor_state: Res<CodeEditorState>,
+    lsp_sync: Res<LspSyncState>,
     mut hint_state: ResMut<InlayHintState>,
     settings: Res<EditorSettings>,
     viewport: Res<crate::types::ViewportDimensions>,
@@ -360,7 +362,7 @@ pub fn request_inlay_hints(
         return;
     }
 
-    let Some(uri) = &editor_state.document_uri else {
+    let Some(uri) = &lsp_sync.document_uri else {
         return;
     };
 
@@ -458,13 +460,14 @@ pub fn request_document_highlights(
     time: Res<Time>,
     lsp_client: Res<LspClient>,
     editor_state: Res<CodeEditorState>,
+    lsp_sync: Res<LspSyncState>,
     mut highlight_state: ResMut<DocumentHighlightState>,
 ) {
     if !lsp_client.is_ready() || !lsp_client.capabilities.supports_document_highlight() {
         return;
     }
 
-    let Some(uri) = &editor_state.document_uri else {
+    let Some(uri) = &lsp_sync.document_uri else {
         return;
     };
 

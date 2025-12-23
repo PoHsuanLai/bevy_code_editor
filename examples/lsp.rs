@@ -35,12 +35,11 @@ fn run_with_lsp() {
             ..default()
         }))
         .add_plugins(CodeEditorPlugin::default())
-        .insert_resource(LspClient::default())
+        .add_plugins(EditorUiPlugin::default())  // Add Editor UI plugin
+        .add_plugins(LspPlugin::default())
+        .add_plugins(LspUiPlugin::default())     // Add LSP UI plugin
         .add_systems(Startup, setup_editor)
-        .add_systems(Update, (
-            process_lsp_messages,
-            display_lsp_info,
-        ))
+        .add_systems(Update, display_lsp_info)
         .run();
 }
 
@@ -48,6 +47,7 @@ fn run_with_lsp() {
 fn setup_editor(
     mut state: ResMut<CodeEditorState>,
     mut lsp_client: ResMut<bevy_code_editor::lsp::LspClient>,
+    mut lsp_sync: ResMut<bevy_code_editor::lsp::LspSyncState>,
     #[cfg(feature = "tree-sitter")]
     mut syntax: ResMut<bevy_code_editor::plugin::SyntaxResource>,
 ) {
@@ -111,7 +111,7 @@ fn setup_editor(
         text: rust_code.to_string(),
     });
 
-    state.document_uri = Some(doc_uri); // Store the document URI in state
+    lsp_sync.document_uri = Some(doc_uri); // Store the document URI in lsp_sync
     
     info!("LSP started for file: {:?}", example_file_path);
 }

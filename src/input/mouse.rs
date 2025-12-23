@@ -71,6 +71,7 @@ pub fn handle_mouse_input(
     mut fold_state: ResMut<FoldState>,
     #[cfg(feature = "lsp")] time: Res<Time>,
     #[cfg(feature = "lsp")] lsp_client: Res<crate::lsp::LspClient>,
+    #[cfg(feature = "lsp")] lsp_sync: Res<crate::lsp::LspSyncState>,
     #[cfg(feature = "lsp")] mut hover_state: ResMut<crate::lsp::HoverState>,
 ) {
     // Get cursor position
@@ -141,7 +142,7 @@ pub fn handle_mouse_input(
                             character: char_in_line_index as u32,
                         };
 
-                        if let Some(uri) = &state.document_uri {
+                        if let Some(uri) = &lsp_sync.document_uri {
                             lsp_client.send(LspMessage::Hover {
                                 uri: uri.clone(),
                                 position: lsp_position,
@@ -215,7 +216,7 @@ pub fn handle_mouse_input(
                         character: char_in_line_index as u32,
                     };
 
-                    if let Some(uri) = &state.document_uri {
+                    if let Some(uri) = &lsp_sync.document_uri {
                         lsp_client.send(LspMessage::GotoDefinition {
                             uri: uri.clone(),
                             position: lsp_position,

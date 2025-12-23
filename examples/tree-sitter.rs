@@ -22,6 +22,7 @@ fn main() {
             ..default()
         }))
         .add_plugins(CodeEditorPlugin::default())
+        .add_plugins(EditorUiPlugin::default())
         .add_systems(Startup, setup_editor_with_treesitter)
         .run();
 }

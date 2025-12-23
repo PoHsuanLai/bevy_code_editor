@@ -53,7 +53,10 @@ pub mod lsp;
 
 pub mod prelude {
     //! Convenient re-exports for common usage
-    pub use crate::plugin::{CodeEditorPlugin, EditorInputManager, ScrollbarPlugin, Scrollbar};
+    pub use crate::plugin::{
+        CodeEditorPlugin, EditorInputManager, EditorUiPlugin,
+        ScrollbarPlugin, Scrollbar,
+    };
     pub use crate::settings::*;
     pub use crate::types::*;
     pub use crate::input::*;
@@ -69,4 +72,8 @@ pub mod prelude {
 
     #[cfg(feature = "lsp")]
     pub use crate::lsp::*;
+
+    // Re-export LSP plugins (feature-gated)
+    #[cfg(feature = "lsp")]
+    pub use crate::plugin::{LspPlugin, LspUiPlugin};
 }

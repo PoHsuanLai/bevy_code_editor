@@ -1,0 +1,344 @@
+═══════════════════════════════════════════════════════════════════════════════
+                      LSP INTEGRATION COUPLING ANALYSIS
+                              bevy_code_editor
+═══════════════════════════════════════════════════════════════════════════════
+
+PROJECT OVERVIEW
+────────────────────────────────────────────────────────────────────────────────
+Project:        GPU-accelerated code editor plugin for Bevy v0.17
+LSP Feature:    Language Server Protocol integration (feature-gated)
+Status:         Tightly coupled to core editor
+
+═══════════════════════════════════════════════════════════════════════════════
+                            COUPLING ANALYSIS SUMMARY
+═══════════════════════════════════════════════════════════════════════════════
+
+MAIN COUPLING POINTS IDENTIFIED
+────────────────────────────────────────────────────────────────────────────────
+
+1. CODECONTEXT STATE (src/types.rs) - CRITICAL COUPLING
+   ├─ document_uri: Option<Url>                    [LSP field in core state]
+   ├─ document_version: i32                         [LSP field in core state]
+   └─ Impact: Core resource has LSP dependencies
+
+2. CODEEDITORPLUGIN (src/plugin/mod.rs) - MAJOR COUPLING
+   ├─ 68 lines of LSP registration (lines 264-331)
+   ├─ Direct resource injection (9 LSP state resources)
+   ├─ Direct system registration (15+ LSP systems)
+   ├─ LspUiConfig struct in core plugin
+   └─ Impact: LSP integrated directly in core plugin build
+
+3. INPUT KEYBOARD HANDLER (src/input/keyboard.rs) - HIGH COUPLING
+   ├─ Direct LSP resource parameters (4 conditional params)
+   ├─ Direct LSP function calls in handler
+   ├─ Rename dialog input handling (LSP-specific)
+   ├─ Completion trigger logic (LSP-specific)
+   └─ Impact: Core input handler cannot function without LSP awareness
+
+4. INPUT ACTIONS (src/input/actions.rs) - HIGH COUPLING
+   ├─ send_did_change() function            [LSP-specific]
+   ├─ request_completion() function         [LSP-specific]
+   ├─ update_completion_filter() function   [LSP-specific]
+   ├─ apply_completion() function           [LSP-specific]
+   ├─ find_word_start() function            [LSP-specific]
+   └─ Impact: Core input actions have LSP implementation
+
+5. LSP MODULE DEPENDENCIES (src/lsp/) - LSP INTERNAL
+   ├─ CodeEditorState accessed in systems.rs
+   ├─ EditorSettings accessed in sync.rs
+   ├─ ViewportDimensions accessed in sync.rs
+   └─ Impact: LSP systems depend on core state
+
+═══════════════════════════════════════════════════════════════════════════════
+                          LSP MODULE STRUCTURE
+═══════════════════════════════════════════════════════════════════════════════
+
+FILES IN src/lsp/ DIRECTORY (12 files)
+────────────────────────────────────────────────────────────────────────────────
+
+mod.rs                   - Module exports & system sets
+├─ Re-exports main types
+├─ Defines LspUiSyncSet and LspUiRenderSet
+└─ Size: 145 lines
+
+client.rs                - LSP client resource
+├─ LspClient (JSON-RPC communication over stdio)
+├─ Writer/Reader/Stderr threads for language server
+├─ Request ID tracking and timeout management
+└─ Size: 749 lines
+
+messages.rs              - Message types
+├─ LspMessage enum (18 message variants)
+├─ LspResponse enum (12 response variants)
+├─ RequestType enum (12 request types)
+└─ Size: 150+ lines
+
+capabilities.rs          - Server capabilities
+├─ ServerCapabilitiesCache
+├─ Capability checking methods
+└─ Size: 200+ lines
+
+state.rs                 - State resources (10 resources)
+├─ CompletionState
+├─ HoverState
+├─ SignatureHelpState
+├─ CodeActionState
+├─ InlayHintState
+├─ DocumentHighlightState
+├─ RenameState
+├─ LspSyncState
+├─ UnifiedCompletionItem
+└─ Size: 500+ lines
+
+components.rs            - UI marker components
+├─ CompletionPopupData
+├─ HoverPopupData
+├─ SignatureHelpPopupData
+├─ CodeActionsPopupData
+├─ InlayHintData
+├─ DocumentHighlightData
+├─ RenameInputData
+└─ Size: 200+ lines
+
+systems.rs               - Core LSP systems (5 systems)
+├─ process_lsp_messages
+├─ sync_lsp_document
+├─ request_inlay_hints
+├─ request_document_highlights
+├─ cleanup_lsp_timeouts
+├─ (+ 4 helper functions)
+└─ Size: 539 lines
+
+sync.rs                  - UI sync systems (7 systems)
+├─ sync_completion_popup
+├─ sync_hover_popup
+├─ sync_signature_help_popup
+├─ sync_code_actions_popup
+├─ sync_rename_input
+├─ sync_inlay_hints
+├─ sync_document_highlights
+└─ Size: 400+ lines
+
+render.rs                - UI render systems (8 systems)
+├─ render_completion_popup
+├─ render_hover_popup
+├─ render_signature_help_popup
+├─ render_code_actions_popup
+├─ render_rename_input
+├─ render_inlay_hints
+├─ render_document_highlights
+├─ cleanup_lsp_ui_visuals
+└─ Size: 500+ lines
+
+ui.rs                    - Legacy UI systems (DEPRECATED)
+├─ update_completion_ui
+├─ update_hover_ui
+├─ update_signature_help_ui
+├─ update_code_action_ui
+├─ update_inlay_hints_ui
+└─ Size: 900+ lines
+
+theme.rs                 - Theme configuration
+├─ LspUiTheme
+├─ CompletionTheme
+├─ HoverTheme
+├─ And 5 more theme structs
+└─ Size: 285 lines
+
+═══════════════════════════════════════════════════════════════════════════════
+                              STATISTICS
+═══════════════════════════════════════════════════════════════════════════════
+
+Code Metrics:
+    Total LSP-related lines:           493 lines (counted by grep)
+    LSP module files:                  12 files
+    LSP state resources:               10 resources
+    LSP systems:                       15+ systems
+    LSP component types:               7 marker components
+    LSP events:                        3 events
+    
+Feature-gated code:
+    In plugin.rs:                      68 lines
+    In input/keyboard.rs:              180+ lines
+    In input/actions.rs:               150+ lines
+    
+Coupling points:
+    In CodeEditorState:                2 fields
+    In CodeEditorPlugin:               1 block
+    In input handler:                  4 parameters
+    In input actions:                  5 functions
+
+═══════════════════════════════════════════════════════════════════════════════
+                          DEPENDENCY MAPPING
+═══════════════════════════════════════════════════════════════════════════════
+
+CodeEditorPlugin
+    │
+    ├─ Inserts: LspClient
+    ├─ Inserts: CompletionState
+    ├─ Inserts: HoverState
+    ├─ Inserts: LspSyncState
+    ├─ Inserts: SignatureHelpState
+    ├─ Inserts: CodeActionState
+    ├─ Inserts: InlayHintState
+    ├─ Inserts: DocumentHighlightState
+    ├─ Inserts: RenameState
+    ├─ Inserts: LspUiTheme
+    │
+    ├─ Registers events: NavigateToFileEvent, MultipleLocationsEvent, WorkspaceEditEvent
+    │
+    ├─ Adds systems: process_lsp_messages, sync_lsp_document, request_inlay_hints...
+    │
+    └─ Sets config: LspUiConfig.enable_default_ui
+
+CodeEditorState (Core Resource)
+    ├─ #[cfg(lsp)] document_uri: Option<Url>        ← LSP DEPENDENCY
+    ├─ #[cfg(lsp)] document_version: i32            ← LSP DEPENDENCY
+    │
+    └─ Read by LSP systems: process_lsp_messages, sync_lsp_document, sync_*
+
+Input Handler (core/input/keyboard.rs)
+    ├─ Calls: send_did_change()                     ← LSP FUNCTION
+    ├─ Calls: request_completion()                  ← LSP FUNCTION
+    ├─ Accesses: CompletionState                    ← LSP RESOURCE
+    ├─ Accesses: LspClient                          ← LSP RESOURCE
+    ├─ Accesses: RenameState                        ← LSP RESOURCE
+    │
+    └─ Handles: Rename dialog                       ← LSP-SPECIFIC FEATURE
+
+═══════════════════════════════════════════════════════════════════════════════
+                          BREAKING THE COUPLING
+═══════════════════════════════════════════════════════════════════════════════
+
+TO DECOUPLE LSP INTO SEPARATE PLUGIN:
+
+1. Remove from CodeEditorState:
+   - document_uri field
+   - document_version field
+
+2. Create separate LspDocumentState resource:
+   - pub uri: Option<Url>
+   - pub version: i32
+
+3. Create standalone LspPlugin:
+   - Move all LSP registration out of CodeEditorPlugin
+   - Register LSP resources, systems, events in LspPlugin::build()
+
+4. Decouple input handler:
+   - Emit EditorTextChangedEvent instead of calling send_did_change()
+   - Emit RequestCompletionEvent instead of calling request_completion()
+   - Remove LSP resource parameters from handle_keyboard_input()
+   - Remove LSP feature gates from input modules
+
+5. Move LSP functions:
+   - Move send_did_change() to LSP module
+   - Move request_completion() to LSP module
+   - Move update_completion_filter() to LSP module
+   - Move apply_completion() to LSP module
+
+6. Create event listener systems:
+   - listen_to_editor_events (receives EditorTextChangedEvent)
+   - listen_to_completion_requests (receives RequestCompletionEvent)
+   - (and listeners for other editor events)
+
+═══════════════════════════════════════════════════════════════════════════════
+                              FILES TO MODIFY
+═══════════════════════════════════════════════════════════════════════════════
+
+PHASE 1: Define Event Boundaries
+    ├─ src/events.rs                     [ADD: new event types]
+    ├─ src/plugin/mod.rs                 [ADD: register events]
+    └─ src/lib.rs                        [UPDATE: export events]
+
+PHASE 2: Extract LSP State
+    ├─ src/types.rs                      [REMOVE: LSP fields]
+    ├─ src/lsp/state.rs                  [UPDATE: add LspDocumentState]
+    └─ src/lsp/systems.rs                [UPDATE: use new state]
+
+PHASE 3: Create LSP Plugin
+    ├─ src/plugin/mod.rs                 [REMOVE: LSP registration]
+    ├─ src/plugin/lsp_plugin.rs          [CREATE: LspPlugin]
+    └─ src/lib.rs                        [UPDATE: export LspPlugin]
+
+PHASE 4: Event Listeners
+    ├─ src/lsp/event_listener.rs         [CREATE: listener systems]
+    ├─ src/lsp/mod.rs                    [ADD: module export]
+    └─ src/plugin/lsp_plugin.rs          [UPDATE: add listeners]
+
+PHASE 5: Clean Input Handler
+    ├─ src/input/keyboard.rs             [REMOVE: LSP resources, emit events]
+    ├─ src/input/actions.rs              [MOVE: LSP functions to LSP module]
+    └─ src/lsp/actions.rs                [CREATE: LSP action handlers]
+
+PHASE 6: Cleanup
+    ├─ src/input/keyboard.rs             [REMOVE: #[cfg(lsp)]]
+    ├─ src/input/actions.rs              [REMOVE: #[cfg(lsp)]]
+    ├─ src/types.rs                      [REMOVE: #[cfg(lsp)]]
+    └─ src/lib.rs                        [CLEANUP: conditional exports]
+
+PHASE 7: Documentation
+    ├─ examples/lsp_integration.rs       [CREATE: LSP example]
+    ├─ examples/basic_editor.rs          [UPDATE: show LSP is optional]
+    ├─ README.md                         [UPDATE: LSP setup]
+    └─ LSP_INTEGRATION_ANALYSIS.md       [PROVIDED: analysis document]
+
+═══════════════════════════════════════════════════════════════════════════════
+                            IMPLEMENTATION ORDER
+═══════════════════════════════════════════════════════════════════════════════
+
+Recommended order for minimal risk:
+
+1. Start with Phase 2 (Extract LSP state)
+   - Safest to do first (isolated change)
+   
+2. Then Phase 1 (Define events)
+   - Adds new events to core
+   
+3. Then Phase 3 (Create LSP plugin)
+   - Moves existing code
+   
+4. Then Phase 4 (Event listeners)
+   - Wires events to LSP systems
+   
+5. Then Phase 5 (Clean input)
+   - Removes LSP from core
+   
+6. Finally Phase 6 & 7 (Cleanup & docs)
+   - Polish and documentation
+
+═══════════════════════════════════════════════════════════════════════════════
+                            TESTING STRATEGY
+═══════════════════════════════════════════════════════════════════════════════
+
+After each phase, run:
+    cargo test                  (all tests)
+    cargo build --no-default-features (core only, no LSP)
+    cargo build --all-features  (with LSP)
+    cargo run --example basic_editor (without LSP)
+    cargo run --example lsp_integration (with LSP)
+
+═══════════════════════════════════════════════════════════════════════════════
+                          BACKWARD COMPATIBILITY
+═══════════════════════════════════════════════════════════════════════════════
+
+After decoupling:
+- Old code without LSP: FULLY COMPATIBLE (no change needed)
+- Old code with LSP: NEEDS UPDATE (enable LspPlugin)
+  
+Example transition:
+    // OLD: LSP was automatic with editor plugin
+    App::new().add_plugins(CodeEditorPlugin::default()).run();
+    
+    // NEW: LSP is optional
+    App::new()
+        .add_plugins(CodeEditorPlugin::default())
+        .add_plugins(LspPlugin::default())  // Add this line for LSP
+        .run();
+
+═══════════════════════════════════════════════════════════════════════════════
+
+ANALYSIS COMPLETED
+For detailed implementation guide, see: LSP_DECOUPLING_PLAN.md
+For detailed code analysis, see: LSP_INTEGRATION_ANALYSIS.md
+
+═══════════════════════════════════════════════════════════════════════════════

@@ -404,6 +404,10 @@ pub struct LspSyncState {
     pub dirty: bool,
     /// Timer to debounce sync requests
     pub timer: Timer,
+    /// Document URI (moved from CodeEditorState for decoupling)
+    pub document_uri: Option<Url>,
+    /// Document version counter (moved from CodeEditorState for decoupling)
+    pub document_version: i32,
 }
 
 impl Default for LspSyncState {
@@ -411,6 +415,8 @@ impl Default for LspSyncState {
         Self {
             dirty: false,
             timer: Timer::from_seconds(0.2, TimerMode::Once),
+            document_uri: None,
+            document_version: 0,
         }
     }
 }

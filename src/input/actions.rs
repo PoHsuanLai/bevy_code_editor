@@ -224,9 +224,10 @@ pub fn update_completion_filter(
 /// Request completion from LSP
 #[cfg(feature = "lsp")]
 pub fn request_completion(
-    state: &mut CodeEditorState,
+    state: &CodeEditorState,
     lsp_client: &lsp::LspClient,
     completion_state: &mut lsp::CompletionState,
+    lsp_sync: &lsp::LspSyncState,
 ) {
     use lsp_types::Position;
     use crate::lsp::LspMessage;
@@ -240,7 +241,7 @@ pub fn request_completion(
         character: char_in_line_index as u32,
     };
 
-    if let Some(uri) = &state.document_uri {
+    if let Some(uri) = &lsp_sync.document_uri {
         #[cfg(debug_assertions)]
         eprintln!("[LSP] Requesting completion at line={}, char={}, visible={}, start_idx={}",
             lsp_position.line, lsp_position.character, completion_state.visible, completion_state.start_char_index);
@@ -284,15 +285,16 @@ pub fn request_completion(
 /// Send textDocument/didChange notification to LSP
 #[cfg(feature = "lsp")]
 pub fn send_did_change(
-    state: &mut CodeEditorState,
+    state: &CodeEditorState,
     lsp_client: &lsp::LspClient,
+    lsp_sync: &mut lsp::LspSyncState,
 ) {
     use crate::lsp::LspMessage;
 
-    if let Some(uri) = &state.document_uri {
+    if let Some(uri) = &lsp_sync.document_uri {
         // Increment version for each change
-        state.document_version += 1;
-        let version = state.document_version;
+        lsp_sync.document_version += 1;
+        let version = lsp_sync.document_version;
 
         // Full text sync for simplicity
         // OPTIMIZATION: Use rope chunks instead of full to_string() conversion
@@ -875,6 +877,7 @@ pub fn execute_action(
     fold_state: &mut FoldState,
     lsp_client: &lsp::LspClient,
     completion_state: &mut lsp::CompletionState,
+    lsp_sync: &mut lsp::LspSyncState,
 ) {
     // Handle Escape to clear multi-cursors, goto line mode, find mode, or completion
     if action == EditorAction::ClearSelection {
@@ -922,7 +925,7 @@ pub fn execute_action(
             }
             EditorAction::InsertNewline | EditorAction::InsertTab => {
                 apply_completion(state, completion_state);
-                send_did_change(state, lsp_client);
+                send_did_change(state, lsp_client, lsp_sync);
                 return;
             }
             EditorAction::ClearSelection => {
@@ -937,7 +940,7 @@ pub fn execute_action(
 
     // Handle LSP-specific actions
     if action == EditorAction::RequestCompletion {
-        request_completion(state, lsp_client, completion_state);
+        request_completion(state, lsp_client, completion_state, lsp_sync);
         return;
     }
 
@@ -964,6 +967,6 @@ pub fn execute_action(
 
     // Notify LSP of text changes
     if result.text_changed {
-        send_did_change(state, lsp_client);
+        send_did_change(state, lsp_client, lsp_sync);
     }
 }

@@ -71,6 +71,7 @@ use bevy::prelude::*;
 pub mod capabilities;
 pub mod client;
 pub mod components;
+pub mod event_listeners;
 pub mod messages;
 pub mod render;
 pub mod state;
@@ -115,6 +116,11 @@ pub mod prelude {
         cleanup_lsp_timeouts, execute_code_action, process_lsp_messages, request_code_actions,
         request_inlay_hints, request_signature_help, sync_lsp_document, DiagnosticMarker,
         LocationType, MultipleLocationsEvent, NavigateToFileEvent,
+    };
+    pub use super::event_listeners::{
+        listen_apply_completion, listen_completion_requests, listen_dismiss_completion,
+        listen_hover_requests, listen_rename_requests, listen_signature_help_requests,
+        listen_text_edit_events,
     };
     pub use super::theme::{
         CodeActionsTheme, CommonTheme, CompletionTheme, DocumentHighlightsTheme, HoverTheme,

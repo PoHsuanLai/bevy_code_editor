@@ -34,3 +34,88 @@ impl TextEditEvent {
         }
     }
 }
+
+/// Event requesting code completion at current cursor position
+///
+/// This event is typically fired when user presses Ctrl+Space or types a trigger character
+#[derive(Message, Clone, Debug)]
+pub struct RequestCompletionEvent {
+    /// Line number where completion is requested
+    pub line: usize,
+    /// Character position on the line
+    pub character: usize,
+}
+
+impl RequestCompletionEvent {
+    pub fn new(line: usize, character: usize) -> Self {
+        Self { line, character }
+    }
+}
+
+/// Event requesting hover information at cursor position
+///
+/// This event is typically fired when user hovers over a symbol
+#[derive(Message, Clone, Debug)]
+pub struct RequestHoverEvent {
+    /// Line number where hover is requested
+    pub line: usize,
+    /// Character position on the line
+    pub character: usize,
+}
+
+impl RequestHoverEvent {
+    pub fn new(line: usize, character: usize) -> Self {
+        Self { line, character }
+    }
+}
+
+/// Event requesting rename operation
+///
+/// This event is typically fired when user initiates a rename (F2)
+#[derive(Message, Clone, Debug)]
+pub struct RequestRenameEvent {
+    /// Line number where rename is requested
+    pub line: usize,
+    /// Character position on the line
+    pub character: usize,
+}
+
+impl RequestRenameEvent {
+    pub fn new(line: usize, character: usize) -> Self {
+        Self { line, character }
+    }
+}
+
+/// Event requesting signature help at cursor position
+///
+/// This event is typically fired when user types '(' or ','
+#[derive(Message, Clone, Debug)]
+pub struct RequestSignatureHelpEvent {
+    /// Line number where signature help is requested
+    pub line: usize,
+    /// Character position on the line
+    pub character: usize,
+}
+
+impl RequestSignatureHelpEvent {
+    pub fn new(line: usize, character: usize) -> Self {
+        Self { line, character }
+    }
+}
+
+/// Event fired when completion is dismissed/cancelled
+#[derive(Message, Clone, Debug, Default)]
+pub struct DismissCompletionEvent;
+
+/// Event fired when a completion item is selected
+#[derive(Message, Clone, Debug)]
+pub struct ApplyCompletionEvent {
+    /// Index of the selected completion item
+    pub item_index: usize,
+}
+
+impl ApplyCompletionEvent {
+    pub fn new(item_index: usize) -> Self {
+        Self { item_index }
+    }
+}

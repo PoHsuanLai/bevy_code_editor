@@ -1558,14 +1558,6 @@ pub struct CodeEditorState {
     /// Cached processed lines for rendering (optimization)
     pub lines: Vec<Vec<LineSegment>>,
 
-    /// The URI of the document being edited (for LSP)
-    #[cfg(feature = "lsp")]
-    pub document_uri: Option<Url>,
-
-    /// Document version for LSP synchronization (incremented on each change)
-    #[cfg(feature = "lsp")]
-    pub document_version: i32,
-
     /// Vertical scroll offset in pixels
     pub scroll_offset: f32,
 
@@ -1664,10 +1656,6 @@ impl Default for CodeEditorState {
             needs_scroll_update: false,
             tokens: Vec::new(),
             lines: Vec::new(),
-            #[cfg(feature = "lsp")]
-            document_uri: None,
-            #[cfg(feature = "lsp")]
-            document_version: 1,
             scroll_offset: 0.0,
             target_scroll_offset: 0.0,
             horizontal_scroll_offset: 0.0,
@@ -1714,10 +1702,6 @@ impl CodeEditorState {
             needs_scroll_update: false,
             tokens: Vec::new(),
             lines: Vec::new(),
-            #[cfg(feature = "lsp")]
-            document_uri: None,
-            #[cfg(feature = "lsp")]
-            document_version: 1,
             scroll_offset: 0.0,
             target_scroll_offset: 0.0,
             horizontal_scroll_offset: 0.0,
