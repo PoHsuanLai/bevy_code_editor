@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::input::keyboard::KeyCode;
 use leafwing_input_manager::prelude::*;
 
 /// Create the default input map with all keybindings

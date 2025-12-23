@@ -13,6 +13,11 @@ use crate::types::{LineSegment, CodeEditorState};
 pub struct SyntaxResource {
     #[cfg(feature = "tree-sitter")]
     provider: Option<TreeSitterProvider>,
+
+    /// Version counter incremented each time the syntax tree is updated
+    /// Used to detect when highlighting needs to be refreshed
+    #[cfg(feature = "tree-sitter")]
+    pub tree_version: u64,
 }
 
 impl SyntaxResource {
@@ -21,6 +26,8 @@ impl SyntaxResource {
         Self {
             #[cfg(feature = "tree-sitter")]
             provider: None,
+            #[cfg(feature = "tree-sitter")]
+            tree_version: 0,
         }
     }
 
@@ -159,6 +166,9 @@ impl SyntaxResource {
                     }
                 }
             }
+
+            // Increment tree version to signal that highlighting should be refreshed
+            self.tree_version += 1;
         }
     }
 
@@ -200,6 +210,7 @@ struct CachedRange {
     start_line: usize,
     end_line: usize,
     content_version: u64,
+    tree_version: u64,
     lines: Vec<Vec<LineSegment>>,
 }
 
@@ -241,11 +252,12 @@ impl HighlightCache {
 
     /// Get cached highlights if available
     /// Returns Some if the requested range is fully covered by cache
-    pub fn get(&mut self, start_line: usize, end_line: usize, content_version: u64) -> Option<Vec<Vec<LineSegment>>> {
+    pub fn get(&mut self, start_line: usize, end_line: usize, content_version: u64, tree_version: u64) -> Option<Vec<Vec<LineSegment>>> {
         // Look for exact match or overlapping range
         let mut found_idx: Option<(usize, usize, usize)> = None;
         for (idx, range) in self.ranges.iter().enumerate() {
             if range.content_version == content_version
+                && range.tree_version == tree_version
                 && range.start_line <= start_line
                 && range.end_line >= end_line
             {
@@ -278,7 +290,7 @@ impl HighlightCache {
     }
 
     /// Store highlighted lines in cache
-    pub fn insert(&mut self, start_line: usize, end_line: usize, content_version: u64, lines: Vec<Vec<LineSegment>>) {
+    pub fn insert(&mut self, start_line: usize, end_line: usize, content_version: u64, tree_version: u64, lines: Vec<Vec<LineSegment>>) {
         // Remove old entries if cache is full
         if self.ranges.len() >= self.max_ranges {
             self.ranges.pop_back();
@@ -289,6 +301,7 @@ impl HighlightCache {
             start_line,
             end_line,
             content_version,
+            tree_version,
             lines,
         });
     }

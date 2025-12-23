@@ -2,12 +2,10 @@ use crate::types::*;
 use crate::settings::EditorSettings;
 use super::keybindings::EditorAction;
 use super::cursor::*;
+use arboard::Clipboard;
 
 #[cfg(feature = "lsp")]
 use crate::lsp;
-
-#[cfg(feature = "clipboard")]
-use arboard::Clipboard;
 
 /// Result of executing an action
 pub struct ActionResult {
@@ -493,7 +491,6 @@ fn execute_action_core(
         }
 
         EditorAction::Copy => {
-            #[cfg(feature = "clipboard")]
             if let (Some(s), Some(e)) = (state.selection_start, state.selection_end) {
                 let (start, end) = if s < e { (s, e) } else { (e, s) };
                 let start = start.min(state.rope.len_chars());
@@ -505,7 +502,6 @@ fn execute_action_core(
             }
         }
         EditorAction::Cut => {
-            #[cfg(feature = "clipboard")]
             if let (Some(s), Some(e)) = (state.selection_start, state.selection_end) {
                 let (start, end) = if s < e { (s, e) } else { (e, s) };
                 let start = start.min(state.rope.len_chars());
@@ -554,7 +550,6 @@ fn execute_action_core(
             }
         }
         EditorAction::Paste => {
-            #[cfg(feature = "clipboard")]
             {
                 if let Ok(mut clipboard) = Clipboard::new() {
                     if let Ok(text) = clipboard.get_text() {

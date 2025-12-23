@@ -1218,7 +1218,7 @@ impl EditHistory {
 
     /// Check if undo is available
     pub fn can_undo(&self) -> bool {
-        !self.undo_stack.is_empty() || self.current_transaction.as_ref().map_or(false, |tx| !tx.is_empty())
+        !self.undo_stack.is_empty() || self.current_transaction.as_ref().is_some_and(|tx| !tx.is_empty())
     }
 
     /// Check if redo is available
@@ -1602,6 +1602,10 @@ pub struct CodeEditorState {
     /// Last content version when line segments were built (PERFORMANCE)
     pub last_lines_version: u64,
 
+    /// Last syntax tree version that was rendered (PERFORMANCE)
+    #[cfg(feature = "tree-sitter")]
+    pub last_rendered_tree_version: u64,
+
     /// Debouncing: true if update is pending but not yet applied (PERFORMANCE)
     pub pending_update: bool,
 
@@ -1670,6 +1674,8 @@ impl Default for CodeEditorState {
             content_version: 0,
             last_highlighted_version: u64::MAX, // Force initial highlighting
             last_lines_version: 0,
+            #[cfg(feature = "tree-sitter")]
+            last_rendered_tree_version: 0,
             pending_update: false,
             last_render_time: 0.0,
             history: EditHistory::default(),
@@ -1716,6 +1722,8 @@ impl CodeEditorState {
             content_version: 0,
             last_highlighted_version: u64::MAX, // Force initial highlighting
             last_lines_version: 0,
+            #[cfg(feature = "tree-sitter")]
+            last_rendered_tree_version: 0,
             pending_update: false,
             last_render_time: 0.0,
             history: EditHistory::default(),
@@ -2552,6 +2560,7 @@ pub struct MinimapDragState {
 
 /// Resource to track key repeat state for editor actions
 #[derive(Resource)]
+#[derive(Default)]
 pub struct KeyRepeatState {
     /// The action currently being repeated (if any)
     pub current_action: Option<crate::input::EditorAction>,
@@ -2561,15 +2570,6 @@ pub struct KeyRepeatState {
     pub last_repeat: Option<Instant>,
 }
 
-impl Default for KeyRepeatState {
-    fn default() -> Self {
-        Self {
-            current_action: None,
-            press_start: None,
-            last_repeat: None,
-        }
-    }
-}
 
 /// Represents a matched bracket pair
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2605,6 +2605,7 @@ pub struct FindMatch {
 
 /// Resource to track find/search state
 #[derive(Resource, Clone, Debug)]
+#[derive(Default)]
 pub struct FindState {
     /// Whether find mode is active
     pub active: bool,
@@ -2622,19 +2623,6 @@ pub struct FindState {
     pub whole_word: bool,
 }
 
-impl Default for FindState {
-    fn default() -> Self {
-        Self {
-            active: false,
-            query: String::new(),
-            matches: Vec::new(),
-            current_match_index: None,
-            case_sensitive: false,
-            use_regex: false,
-            whole_word: false,
-        }
-    }
-}
 
 impl FindState {
     /// Find all matches in the given rope

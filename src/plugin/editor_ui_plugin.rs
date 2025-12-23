@@ -59,7 +59,7 @@ impl Default for EditorUiPlugin {
 impl EditorUiPlugin {
     /// Create a new Editor UI plugin
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 }
 

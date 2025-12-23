@@ -4,8 +4,9 @@ use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task};
 use crate::settings::EditorSettings;
 use crate::types::*;
-use crate::gpu_text::{GlyphAtlas, TextRenderState};
+use crate::gpu_text::{GlyphAtlas, GlyphKey, GlyphRasterizer, TextRenderState};
 use super::{SyntaxResource, HighlightCache};
+use std::sync::Arc;
 
 /// Component to track async parse tasks
 #[cfg(feature = "tree-sitter")]
@@ -30,15 +31,8 @@ pub(crate) fn update_syntax_tree(
         if let Some(tree) = futures_lite::future::block_on(futures_lite::future::poll_once(&mut parse_task.task)) {
             if let Some(tree) = tree {
                 // Update the syntax provider with the completed tree and current rope
-                // This increments syntax.tree_version, which will trigger a re-render automatically
                 syntax.set_parsed_tree(tree, &state.rope);
                 state.last_highlighted_version = parse_task.content_version;
-
-                // Invalidate the highlight cache to force re-highlighting with the new tree
-                highlight_cache.clear();
-
-                // Force a render update to display the new highlights immediately
-                state.needs_update = true;
             }
             // Remove the completed task
             commands.entity(entity).despawn();
@@ -49,8 +43,6 @@ pub(crate) fn update_syntax_tree(
 
     // Only start a new parse if content changed and no task is running
     if state.content_version != state.last_highlighted_version && syntax.is_available() {
-        info!("Starting tree-sitter parse task (content_version: {}, last_highlighted: {})",
-              state.content_version, state.last_highlighted_version);
         // Clear highlight cache when content changes
         highlight_cache.clear();
 
@@ -126,20 +118,53 @@ fn parse_tree_async(
 pub struct GpuTextMesh {
     /// The scroll offset when this mesh was built
     pub built_at_scroll: f32,
+    pub built_at_horizontal_scroll: f32,
+    /// The visible line range when built
+    pub first_line: usize,
+    pub last_line: usize,
+}
+
+/// Marker component for per-line GPU text mesh
+#[derive(Component)]
+pub struct GpuLineMesh {
+    /// The buffer line number this mesh represents
+    pub line_number: usize,
+    /// Content version when this line was last built
+    pub content_version: u64,
+}
+
+/// Marker component for GPU minimap mesh entity
+#[derive(Component)]
+pub struct GpuMinimapMesh {
+    /// The content version when this mesh was built
+    pub built_at_version: u64,
 }
 
 /// Convert scroll-only updates to full updates for GPU text
 /// GPU text rendering requires rebuilding the mesh on scroll
-/// For lazy syntax highlighting, we need to rebuild on every scroll to highlight newly visible lines
+/// OPTIMIZATION: Only rebuild mesh when we've scrolled significantly (> 5 lines)
 pub(crate) fn handle_scroll_for_gpu_text(
     mut state: ResMut<CodeEditorState>,
     settings: Res<EditorSettings>,
     mesh_query: Query<&GpuTextMesh>,
 ) {
     if state.needs_scroll_update {
-        // Always rebuild on scroll to ensure newly visible lines get highlighted
-        // The highlight cache prevents redundant work, so this is efficient
-        state.needs_update = true;
+        // Check if we've scrolled significantly from the last built position
+        let line_height = settings.font.line_height;
+        let scroll_dist = state.scroll_offset.abs();
+        let current_line = (scroll_dist / line_height).floor() as usize;
+
+        // Only rebuild if we've scrolled more than 5 lines from last build
+        let should_rebuild = if let Some(mesh_info) = mesh_query.iter().next() {
+            let last_built_line = (mesh_info.built_at_scroll.abs() / line_height).floor() as usize;
+            current_line.abs_diff(last_built_line) > 5
+        } else {
+            true // No mesh yet, need to build
+        };
+
+        if should_rebuild {
+            state.needs_update = true;
+        }
         state.needs_scroll_update = false;
     }
 }
@@ -164,13 +189,7 @@ pub(crate) fn update_gpu_text_display(
     use bevy::asset::RenderAssetUsages;
     use crate::gpu_text::{GlyphKey, GlyphRasterizer};
 
-    // Check if we need to update due to tree-sitter parse completion
-    #[cfg(feature = "tree-sitter")]
-    let tree_updated = state.last_rendered_tree_version != syntax.tree_version;
-    #[cfg(not(feature = "tree-sitter"))]
-    let tree_updated = false;
-
-    if !state.needs_update && !tree_updated {
+    if !state.needs_update {
         return;
     }
 
@@ -224,16 +243,19 @@ pub(crate) fn update_gpu_text_display(
     // Estimate end buffer line for lazy highlighting
     let estimated_end_buffer_line = (start_buffer_line + visible_count + 10).min(total_buffer_lines);
 
-    // === LAZY HIGHLIGHTING with CACHING ===
-    // Inspired by VS Code: Always show highlights when available, parse in background
-    // The tree-sitter parsing already happens asynchronously, so we just need to highlight on-demand
+    // === LAZY HIGHLIGHTING with CACHING and DEBOUNCING ===
+    // Like Zed: Only highlight visible range, cache results, debounce during fast scrolling
     #[cfg(feature = "tree-sitter")]
     let highlighted_lines = if syntax.is_available() && estimated_end_buffer_line > start_buffer_line {
-        // Try to get from cache first - ALWAYS use cache if available (no debounce on display)
-        if let Some(cached) = highlight_cache.get(start_buffer_line, estimated_end_buffer_line, state.content_version, syntax.tree_version) {
+        let current_time = time.elapsed_secs_f64() * 1000.0; // Convert to ms
+
+        // Try to get from cache first
+        if let Some(cached) = highlight_cache.get(start_buffer_line, estimated_end_buffer_line, state.content_version) {
             cached
+        } else if highlight_cache.should_debounce(current_time) {
+            // During fast scrolling, show plain text instead of re-highlighting every frame
+            Vec::new()
         } else {
-            // Cache miss - need to highlight this range
             // Extract ONLY the visible text range (not the entire file!)
             let start_char = state.rope.line_to_char(start_buffer_line);
             let end_char = state.rope.line_to_char(estimated_end_buffer_line.min(state.rope.len_lines()));
@@ -250,8 +272,9 @@ pub(crate) fn update_gpu_text_display(
                 settings.theme.foreground,
             );
 
-            // Cache the result for future frames
-            highlight_cache.insert(start_buffer_line, estimated_end_buffer_line, state.content_version, syntax.tree_version, lines.clone());
+            // Cache the result
+            highlight_cache.insert(start_buffer_line, estimated_end_buffer_line, state.content_version, lines.clone());
+            highlight_cache.mark_highlighted(current_time);
             lines
         }
     } else {
@@ -457,7 +480,7 @@ pub(crate) fn update_gpu_text_display(
     mesh.insert_indices(Indices::U32(indices));
 
     // Update existing mesh or create new one
-    if let Some((entity, _, _mesh2d)) = mesh_query.iter().next() {
+    if let Some((entity, _, mesh2d)) = mesh_query.iter().next() {
         // Replace the mesh handle to force re-upload
         let new_mesh_handle = meshes.add(mesh);
         commands.entity(entity).insert(Mesh2d(new_mesh_handle));
@@ -465,6 +488,9 @@ pub(crate) fn update_gpu_text_display(
         // Update scroll position marker
         commands.entity(entity).insert(GpuTextMesh {
             built_at_scroll: state.scroll_offset,
+            built_at_horizontal_scroll: state.horizontal_scroll_offset,
+            first_line: first_visible_display_row,
+            last_line: last_visible_display_row,
         });
         // Remove the old mesh (it will be cleaned up automatically)
     } else {
@@ -476,6 +502,9 @@ pub(crate) fn update_gpu_text_display(
             Transform::default(),
             GpuTextMesh {
                 built_at_scroll: state.scroll_offset,
+                built_at_horizontal_scroll: state.horizontal_scroll_offset,
+                first_line: first_visible_display_row,
+                last_line: last_visible_display_row,
             },
             Name::new("GpuTextMesh"),
             Visibility::Visible,
@@ -485,10 +514,132 @@ pub(crate) fn update_gpu_text_display(
     state.needs_update = false;
     // Update render time for debouncing (even though we bypass debounce for text edits)
     state.last_render_time = time.elapsed_secs_f64() * 1000.0;
+}
 
-    // Track that we've rendered with the current syntax tree version
+/// Update the lines cache using syntax highlighting (used by minimap)
+/// Note: The main editor uses lazy highlighting and doesn't need this
+pub(crate) fn update_lines_cache(
+    state: &mut CodeEditorState,
+    settings: &EditorSettings,
+    syntax: &mut SyntaxResource,
+) {
+    // === OPTIMIZATION: Skip entirely when no syntax highlighting ===
+    // Rendering will read directly from rope for O(visible_lines) instead of O(all_lines)
     #[cfg(feature = "tree-sitter")]
-    {
-        state.last_rendered_tree_version = syntax.tree_version;
+    let has_syntax = syntax.is_available();
+
+    #[cfg(not(feature = "tree-sitter"))]
+    let has_syntax = false;
+
+    if !has_syntax {
+        state.lines.clear();
+        state.last_lines_version = state.content_version;
+        return;
+    }
+
+    // === OPTIMIZATION: Skip rebuilding if content hasn't changed ===
+    if state.content_version == state.last_lines_version && !state.lines.is_empty() {
+        return;
+    }
+
+    // Use syntax highlighting to get all lines
+    // OPTIMIZATION: Use rope chunks instead of full to_string() conversion
+    #[cfg(feature = "tree-sitter")]
+    let lines = {
+        let line_count = state.line_count();
+        // Collect chunks efficiently
+        let chunk_text: String = state.rope.chunks().collect();
+        syntax.highlight_range(
+            &chunk_text,
+            0,
+            line_count,
+            0, // Start from byte 0 (full document)
+            &settings.theme.syntax,
+            settings.theme.foreground,
+        )
+    };
+
+    #[cfg(not(feature = "tree-sitter"))]
+    let lines: Vec<Vec<LineSegment>> = vec![Vec::new()];
+
+    state.lines = lines.clone();
+
+    // Build display map for soft line wrapping
+    let wrap_width = if settings.wrapping.enabled {
+        match settings.wrapping.mode {
+            crate::settings::WrapMode::None => 0,
+            crate::settings::WrapMode::Column => settings.wrapping.column,
+            crate::settings::WrapMode::Viewport => {
+                // Calculate wrap width from viewport
+                // This is approximate - we'd need viewport info for exact width
+                // For now, use column setting as fallback
+                settings.wrapping.column
+            }
+        }
+    } else {
+        0
+    };
+
+    state.display_map.rebuild(&lines, wrap_width, settings.font.char_width);
+    state.last_lines_version = state.content_version;
+}
+
+/// Map highlight type to color based on theme
+fn map_highlight_color(
+    highlight_type: Option<&str>,
+    syntax_theme: &crate::settings::SyntaxTheme,
+    default_color: Color,
+) -> Color {
+    let hl_type = match highlight_type {
+        Some(t) => t,
+        None => return default_color,
+    };
+
+    // Extract the base category (first part before dot, or the whole string)
+    let base_category = hl_type.split('.').next().unwrap_or(hl_type);
+
+    // Map semantic categories to theme colors
+    match base_category {
+        // Keywords and control flow
+        "keyword" | "conditional" | "repeat" | "exception" => syntax_theme.keyword,
+
+        // Functions and methods
+        "function" | "method" => syntax_theme.function,
+
+        // Types and classes
+        "type" | "class" | "interface" | "struct" | "enum" => syntax_theme.type_name,
+
+        // Variables and parameters
+        "variable" | "parameter" | "field" => syntax_theme.variable,
+
+        // Constants and literals
+        "constant" | "boolean" | "number" | "float" => syntax_theme.constant,
+
+        // Strings and characters
+        "string" | "character" => syntax_theme.string,
+
+        // Comments and documentation
+        "comment" | "note" | "warning" | "danger" => syntax_theme.comment,
+
+        // Operators and punctuation
+        "operator" => syntax_theme.operator,
+        "punctuation" | "delimiter" | "bracket" | "special" => syntax_theme.punctuation,
+
+        // Properties and attributes
+        "property" | "attribute" | "tag" | "decorator" => syntax_theme.property,
+
+        // Constructors
+        "constructor" => syntax_theme.constructor,
+
+        // Labels and other
+        "label" => syntax_theme.label,
+        "escape" => syntax_theme.escape,
+        "embedded" | "include" | "preproc" => syntax_theme.embedded,
+
+        // Namespaces and modules (use type color)
+        "namespace" | "module" => syntax_theme.type_name,
+
+        // Default for unknown categories
+        _ => default_color,
     }
 }

@@ -3,7 +3,6 @@
 use bevy::prelude::*;
 use crate::settings::EditorSettings;
 use crate::types::*;
-use super::to_bevy_coords_left_aligned;
 
 pub(crate) fn find_matching_bracket(
     rope: &ropey::Rope,

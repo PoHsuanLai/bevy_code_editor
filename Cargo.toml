@@ -30,7 +30,7 @@ ropey = "1.6"
 serde = { version = "1.0", features = ["derive"] }
 
 # Input management (keyboard only - no gamepad/mouse/ui overhead)
-leafwing-input-manager = { version = "0.18", default-features = false, features = ["keyboard"] }
+leafwing-input-manager = {version = "0.18", features = ["keyboard"] }
 
 # GPU text rendering - font rasterization (same as Zed uses)
 cosmic-text = "0.12"
@@ -41,7 +41,7 @@ streaming-iterator = { version = "0.1", optional = true }
 futures-lite = "2.5"
 
 # Clipboard support (optional)
-arboard = { version = "3.4", optional = true }
+arboard = { version = "3.4"}
 
 # LSP support (optional)
 lsp-types = { version = "0.95", optional = true }
@@ -56,9 +56,8 @@ tree-sitter-rust = "0.23"
 tree-sitter-c = "0.23"
 
 [features]
-default = ["tree-sitter", "clipboard"]
+default = ["tree-sitter"]
 tree-sitter = ["dep:tree-sitter", "streaming-iterator"]
-clipboard = ["arboard"]
 lsp = ["lsp-types", "tower-lsp", "tokio", "serde_json", "fuzzy-matcher"]
 
 [profile.release]

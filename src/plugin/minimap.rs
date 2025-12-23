@@ -133,7 +133,7 @@ pub(crate) fn handle_minimap_mouse(
 /// Update minimap rendering using GPU-accelerated text
 pub(crate) fn update_minimap(
     mut commands: Commands,
-    mut state: ResMut<CodeEditorState>,
+    state: ResMut<CodeEditorState>,
     settings: Res<EditorSettings>,
     viewport: Res<ViewportDimensions>,
     hover_state: Res<MinimapHoverState>,
@@ -183,22 +183,11 @@ pub(crate) fn update_minimap(
     // Calculate total content height in minimap (unscaled)
     let total_minimap_content_height = line_count as f32 * minimap_line_height;
 
-    // Minimap uses fixed size - content scrolls when it exceeds viewport
-    let effective_minimap_height = total_minimap_content_height.min(viewport_height);
-
     // Vertical offset for centering when content is short
     let content_y_offset = if settings.minimap.center_when_short && total_minimap_content_height < viewport_height {
         (viewport_height - total_minimap_content_height) / 2.0
     } else {
         0.0
-    };
-
-    // Minimap X position (right or left side)
-    // When on right, shift left to make room for scrollbar with spacing
-    let minimap_left_x = if settings.minimap.show_on_right {
-        viewport_width / 2.0 - minimap_width - settings.minimap.scrollbar_width - settings.minimap.scrollbar_spacing + settings.minimap.padding
-    } else {
-        -viewport_width / 2.0 + settings.minimap.padding
     };
 
     let minimap_center_x = if settings.minimap.show_on_right {

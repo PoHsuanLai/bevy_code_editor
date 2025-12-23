@@ -90,7 +90,7 @@ impl WrapMap {
             let wrap_count = if line_len == 0 {
                 1 // Empty lines still take one row
             } else {
-                ((line_len + self.wrap_width - 1) / self.wrap_width).max(1)
+                line_len.div_ceil(self.wrap_width).max(1)
             };
 
             self.wrap_info.push(WrapInfo {

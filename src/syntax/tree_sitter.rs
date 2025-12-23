@@ -2,7 +2,7 @@
 //! This approach matches Zed's implementation for better performance.
 
 use bevy::prelude::*;
-use tree_sitter::{Language, Parser, Query, QueryCursor, Tree, Point};
+use tree_sitter::{Language, Parser, Query, QueryCursor, Tree};
 use crate::types::LineSegment;
 use super::highlighter::{SyntaxProvider, map_highlight_color};
 use std::ops::Range;
@@ -80,33 +80,6 @@ impl<'a> RopeReader<'a> {
         &self.current_chunk[offset_in_chunk.min(self.current_chunk.len())..]
     }
 }
-
-/// Tree-sitter highlight names used for syntax highlighting
-const HIGHLIGHT_NAMES: &[&str] = &[
-    "attribute",
-    "comment",
-    "comment.documentation",
-    "constant",
-    "constant.builtin",
-    "constructor",
-    "escape",
-    "function",
-    "function.macro",
-    "function.method",
-    "keyword",
-    "label",
-    "number",
-    "operator",
-    "property",
-    "punctuation.bracket",
-    "punctuation.delimiter",
-    "string",
-    "type",
-    "type.builtin",
-    "variable",
-    "variable.builtin",
-    "variable.parameter",
-];
 
 /// Tree-sitter-based syntax highlighting provider
 pub struct TreeSitterProvider {
@@ -371,7 +344,7 @@ impl SyntaxProvider for TreeSitterProvider {
         let mut byte_pos = 0;
         let mut current_highlight_idx = 0;
 
-        for (line_idx, line) in text.lines().enumerate() {
+        for line in text.lines() {
             current_line_segments.clear();
             let line_start = byte_pos;
             let line_end = byte_pos + line.len();

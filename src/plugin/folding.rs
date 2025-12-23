@@ -5,10 +5,6 @@ use crate::settings::EditorSettings;
 use crate::types::*;
 use super::to_bevy_coords_left_aligned;
 
-#[cfg(feature = "tree-sitter")]
-use tree_sitter::{Parser, QueryCursor, Node};
-#[cfg(feature = "tree-sitter")]
-use tree_sitter::Query as TsQuery;
 
 pub(crate) fn detect_foldable_regions(
     state: Res<CodeEditorState>,

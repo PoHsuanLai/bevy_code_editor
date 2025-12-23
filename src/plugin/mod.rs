@@ -312,7 +312,7 @@ fn setup(
 ) {
     // Spawn 2D camera for the editor with 1:1 pixel mapping
     commands.spawn((
-        Camera2d::default(),
+        Camera2d,
         Projection::Orthographic(OrthographicProjection {
             scale: 1.0,  // 1:1 world units to pixels
             ..OrthographicProjection::default_2d()

@@ -307,11 +307,7 @@ pub(crate) fn update_cursor_line_highlight(
 
         let on_word = if col < line_chars.len() && is_word_char(line_chars[col]) {
             true
-        } else if col > 0 && col <= line_chars.len() && is_word_char(line_chars[col - 1]) {
-            true
-        } else {
-            false
-        };
+        } else { col > 0 && col <= line_chars.len() && is_word_char(line_chars[col - 1]) };
 
         // Find word start and end
         let (word_start, word_end) = if on_word {

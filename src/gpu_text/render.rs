@@ -7,8 +7,8 @@
 
 use bevy::prelude::*;
 use bevy::render::render_resource::AsBindGroup;
-use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d};
-use bevy::mesh::{Mesh2d, Indices, PrimitiveTopology, MeshVertexBufferLayoutRef};
+use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
+use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::shader::ShaderRef;
 use bevy::asset::RenderAssetUsages;
 
@@ -138,19 +138,12 @@ impl Material2d for TextMaterial {
 
 /// Resource to track the current text material
 #[derive(Resource)]
+#[derive(Default)]
 pub struct TextRenderState {
     pub material_handle: Option<Handle<TextMaterial>>,
     pub mesh_handle: Option<Handle<Mesh>>,
 }
 
-impl Default for TextRenderState {
-    fn default() -> Self {
-        Self {
-            material_handle: None,
-            mesh_handle: None,
-        }
-    }
-}
 
 /// Create a quad mesh for rendering glyphs
 pub fn create_quad_mesh() -> Mesh {
@@ -193,13 +186,6 @@ pub fn create_quad_mesh() -> Mesh {
     mesh.insert_indices(Indices::U32(vec![0, 1, 2, 0, 2, 3]));
 
     mesh
-}
-
-/// Marker component for GPU-rendered text entities
-#[derive(Component)]
-pub struct GpuTextGlyph {
-    pub line_index: usize,
-    pub char_index: usize,
 }
 
 /// Plugin for GPU text rendering
@@ -245,73 +231,6 @@ fn setup_gpu_text(
     render_state.mesh_handle = Some(meshes.add(create_quad_mesh()));
 
     commands.insert_resource(atlas);
-}
-
-/// Spawns glyph entities for a line of text using GPU rendering
-pub fn spawn_gpu_text_line(
-    commands: &mut Commands,
-    line_index: usize,
-    x: f32,
-    y: f32,
-    segments: &[(String, Color)],
-    font_size: f32,
-    char_width: f32,
-    atlas: &mut GlyphAtlas,
-    render_state: &TextRenderState,
-) -> Vec<Entity> {
-    let mut entities = Vec::new();
-    let mut current_x = x;
-    let mut char_index = 0;
-
-    let Some(mesh_handle) = &render_state.mesh_handle else {
-        return entities;
-    };
-    let Some(material_handle) = &render_state.material_handle else {
-        return entities;
-    };
-
-    for (text, _color) in segments {
-        for ch in text.chars() {
-            if ch == '\n' || ch == '\r' {
-                continue;
-            }
-
-            let advance = if ch == '\t' {
-                char_width * 4.0
-            } else {
-                let key = GlyphKey::new(ch, font_size);
-                if let Some(info) = atlas.get_or_insert(key, || {
-                    super::atlas::GlyphRasterizer::rasterize(ch, font_size)
-                }) {
-                    // Spawn a glyph entity
-                    let entity = commands.spawn((
-                        Mesh2d(mesh_handle.clone()),
-                        MeshMaterial2d(material_handle.clone()),
-                        Transform::from_translation(Vec3::new(
-                            current_x + info.offset.x,
-                            y - info.offset.y,
-                            0.0,
-                        ))
-                        .with_scale(Vec3::new(info.size.x, info.size.y, 1.0)),
-                        GpuTextGlyph {
-                            line_index,
-                            char_index,
-                        },
-                    )).id();
-
-                    entities.push(entity);
-                    info.advance
-                } else {
-                    char_width
-                }
-            };
-
-            current_x += advance;
-            char_index += 1;
-        }
-    }
-
-    entities
 }
 
 /// Builder for creating text render batches

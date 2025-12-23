@@ -225,16 +225,14 @@ pub fn handle_keyboard_input(
                             }
 
                             // Check for quote skip-over (typing closing quote when already there)
-                            if settings.brackets.auto_close_quotes {
-                                if let Some(_) = get_closing_quote(c) {
-                                    if should_skip_auto_close(&state, c) {
+                            if settings.brackets.auto_close_quotes
+                                && get_closing_quote(c).is_some()
+                                    && should_skip_auto_close(&state, c) {
                                         // Just move cursor past the existing quote
                                         state.move_cursor(1);
                                         state.pending_update = true;
                                         continue;
                                     }
-                                }
-                            }
 
                             // Check for bracket skip-over (typing closing bracket when already there)
                             if settings.brackets.auto_close {
