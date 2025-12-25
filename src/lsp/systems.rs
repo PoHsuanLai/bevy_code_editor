@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 use lsp_types::*;
 
-use crate::settings::EditorSettings;
+use crate::settings::*;
 use crate::types::CodeEditorState;
 
 use super::client::LspClient;

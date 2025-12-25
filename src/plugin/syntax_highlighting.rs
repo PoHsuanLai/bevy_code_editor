@@ -108,7 +108,7 @@ impl SyntaxResource {
         }
     }
 
-    /// Clone the parse state for async parsing (returns parser, language, tree, edits)
+    /// Clone the parse state for async parsing (returns parser, language, tree, edits, deferred_edits)
     /// Note: Creates new parser/clones tree to avoid blocking main thread access
     #[cfg(feature = "tree-sitter")]
     pub fn clone_parse_state(&mut self) -> (
@@ -116,6 +116,7 @@ impl SyntaxResource {
         Option<tree_sitter::Language>,
         Option<tree_sitter::Tree>,
         Vec<tree_sitter::InputEdit>,
+        Vec<crate::syntax::tree_sitter::DeferredEdit>,
     ) {
         if let Some(provider) = &mut self.provider {
             // Create a new parser for the async task
@@ -136,17 +137,22 @@ impl SyntaxResource {
             // Clone the pending edits
             let edits = provider.pending_edits.clone();
 
+            // Clone the deferred edits (byte positions only - Points calculated in async task)
+            let deferred_edits = provider.deferred_edits.clone();
+
             // Clear pending edits since we're processing them
             provider.pending_edits.clear();
+            provider.deferred_edits.clear();
 
             (
                 parser,
                 provider.cached_language.clone(),
                 tree,
                 edits,
+                deferred_edits,
             )
         } else {
-            (None, None, None, Vec::new())
+            (None, None, None, Vec::new(), Vec::new())
         }
     }
 
@@ -172,25 +178,20 @@ impl SyntaxResource {
         }
     }
 
-    /// Record an edit for incremental parsing
+    /// Record an edit for incremental parsing (deferred - byte positions only)
+    /// Points will be calculated lazily during async parse to avoid blocking the main thread
     #[cfg(feature = "tree-sitter")]
-    pub fn record_edit(
+    pub fn record_edit_deferred(
         &mut self,
         start_byte: usize,
         old_end_byte: usize,
         new_end_byte: usize,
-        start_position: tree_sitter::Point,
-        old_end_position: tree_sitter::Point,
-        new_end_position: tree_sitter::Point,
     ) {
         if let Some(provider) = &mut self.provider {
-            provider.record_edit_with_positions(
+            provider.record_edit_deferred(
                 start_byte,
                 old_end_byte,
                 new_end_byte,
-                start_position,
-                old_end_position,
-                new_end_position,
             );
         }
     }
@@ -316,7 +317,8 @@ impl HighlightCache {
 
 #[cfg(feature = "tree-sitter")]
 /// Helper function to convert a byte offset to a tree-sitter Point (row, column)
-fn byte_to_point(rope: &ropey::Rope, byte_offset: usize) -> tree_sitter::Point {
+/// Used during async parsing - not called on main thread anymore for edit recording
+pub(crate) fn byte_to_point(rope: &ropey::Rope, byte_offset: usize) -> tree_sitter::Point {
     // Clamp byte offset to valid range
     let byte_offset = byte_offset.min(rope.len_bytes());
 
@@ -361,25 +363,18 @@ fn send_text_edit_events(
 #[cfg(feature = "tree-sitter")]
 /// System that listens for TextEditEvent and records edits for incremental parsing
 /// This runs after send_text_edit_events to process the sent events
+/// OPTIMIZATION: Only store byte positions - Points are calculated lazily during async parse
 fn record_edits_for_incremental_parsing(
-    state: Res<CodeEditorState>,
     mut syntax: ResMut<SyntaxResource>,
     mut events: MessageReader<crate::events::TextEditEvent>,
 ) {
     for event in events.read() {
-        // Calculate tree-sitter Points from byte positions
-        let start_position = byte_to_point(&state.rope, event.start_byte);
-        let old_end_position = byte_to_point(&state.rope, event.old_end_byte);
-        let new_end_position = byte_to_point(&state.rope, event.new_end_byte);
-
-        // Record the edit for incremental parsing
-        syntax.record_edit(
+        // Record the edit with deferred Point calculation
+        // This avoids expensive rope traversals on the main thread
+        syntax.record_edit_deferred(
             event.start_byte,
             event.old_end_byte,
             event.new_end_byte,
-            start_position,
-            old_end_position,
-            new_end_position,
         );
     }
 }

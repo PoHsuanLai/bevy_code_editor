@@ -215,10 +215,10 @@ fn setup_gpu_text(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TextMaterial>>,
     mut render_state: ResMut<TextRenderState>,
-    settings: Res<crate::settings::EditorSettings>,
+    font: Res<crate::settings::FontSettings>,
 ) {
     // Create the glyph atlas with the configured font
-    let atlas = GlyphAtlas::new_with_font(&mut images, Some(&settings.font.family));
+    let atlas = GlyphAtlas::new_with_font(&mut images, Some(&font.family));
 
     // Create the text material
     let material = TextMaterial {

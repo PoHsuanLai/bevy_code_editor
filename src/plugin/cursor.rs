@@ -1,14 +1,18 @@
 //! Cursor rendering and animation
 
 use bevy::prelude::*;
-use crate::settings::EditorSettings;
+use crate::settings::{FontSettings, CursorSettings, CursorLineSettings, ThemeSettings, WrappingSettings, IndentationSettings};
 use crate::types::*;
 use super::to_bevy_coords_left_aligned;
 
 pub(crate) fn update_cursor(
     mut commands: Commands,
     state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    cursor_settings: Res<CursorSettings>,
+    theme: Res<ThemeSettings>,
+    wrapping: Res<WrappingSettings>,
+    indentation: Res<IndentationSettings>,
     viewport: Res<ViewportDimensions>,
     fold_state: Res<FoldState>,
     mut cursor_query: Query<(Entity, &EditorCursor, &mut Transform, &mut Visibility)>,
@@ -17,13 +21,13 @@ pub(crate) fn update_cursor(
         return;
     }
 
-    let char_width = settings.font.char_width;
-    let line_height = settings.font.line_height;
-    let cursor_height = line_height * settings.cursor.height_multiplier;
+    let char_width = font.char_width;
+    let line_height = font.line_height;
+    let cursor_height = line_height * cursor_settings.height_multiplier;
     let cursor_count = state.cursors.len();
 
     // Check if we're using soft line wrapping
-    let use_wrapping = settings.wrapping.enabled && state.display_map.wrap_width > 0;
+    let use_wrapping = wrapping.enabled && state.display_map.wrap_width > 0;
 
     // Collect existing cursor entities by their index
     let mut cursor_entities: std::collections::HashMap<usize, Entity> = std::collections::HashMap::new();
@@ -48,9 +52,9 @@ pub(crate) fn update_cursor(
         };
 
         // For wrapped continuation rows, add indent offset
-        let extra_indent = if use_wrapping && settings.wrapping.indent_wrapped_lines {
+        let extra_indent = if use_wrapping && wrapping.indent_wrapped_lines {
             if state.display_map.is_continuation(display_row) {
-                settings.indentation.indent_size as f32 * char_width
+                indentation.indent_size as f32 * char_width
             } else {
                 0.0
             }
@@ -58,8 +62,8 @@ pub(crate) fn update_cursor(
             0.0
         };
 
-        let x_offset = settings.ui.layout.code_margin_left + extra_indent + (display_col as f32 * char_width);
-        let y_offset = settings.ui.layout.margin_top + state.scroll_offset + (display_row as f32 * line_height);
+        let x_offset = viewport.text_area_left + extra_indent + (display_col as f32 * char_width);
+        let y_offset = viewport.text_area_top + state.scroll_offset + (display_row as f32 * line_height);
 
         // No horizontal scroll in wrapped mode
         let h_scroll = if use_wrapping { 0.0 } else { state.horizontal_scroll_offset };
@@ -84,8 +88,8 @@ pub(crate) fn update_cursor(
             // Spawn new cursor entity
             commands.spawn((
                 Sprite {
-                    color: settings.theme.cursor,
-                    custom_size: Some(Vec2::new(settings.cursor.width, cursor_height)),
+                    color: theme.cursor,
+                    custom_size: Some(Vec2::new(cursor_settings.width, cursor_height)),
                     ..default()
                 },
                 Transform::from_translation(Vec3::new(translation.x, translation.y, 1.0)),
@@ -113,17 +117,17 @@ pub(crate) fn update_cursor(
 /// Animate cursor blinking for all cursors
 pub(crate) fn animate_cursor(
     time: Res<Time>,
-    settings: Res<EditorSettings>,
+    cursor: Res<CursorSettings>,
     mut cursor_query: Query<&mut Visibility, With<EditorCursor>>,
 ) {
-    if settings.cursor.blink_rate == 0.0 {
+    if cursor.blink_rate == 0.0 {
         for mut visibility in cursor_query.iter_mut() {
             *visibility = Visibility::Visible;
         }
         return;
     }
 
-    let blink_phase = (time.elapsed_secs() * settings.cursor.blink_rate) % 1.0;
+    let blink_phase = (time.elapsed_secs() * cursor.blink_rate) % 1.0;
     let new_visibility = if blink_phase < 0.5 {
         Visibility::Visible
     } else {
@@ -137,16 +141,18 @@ pub(crate) fn animate_cursor(
 pub(crate) fn update_cursor_line_highlight(
     mut commands: Commands,
     state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    cursor_line: Res<CursorLineSettings>,
+    theme: Res<ThemeSettings>,
+    wrapping: Res<WrappingSettings>,
+    _indentation: Res<IndentationSettings>,
     viewport: Res<ViewportDimensions>,
     fold_state: Res<FoldState>,
     mut border_query: Query<(Entity, &CursorLineBorder, &mut Transform, &mut Sprite, &mut Visibility)>,
     mut word_query: Query<(Entity, &CursorWordHighlight, &mut Transform, &mut Sprite, &mut Visibility), Without<CursorLineBorder>>,
 ) {
-    let cursor_line_settings = &settings.cursor_line;
-
     // Skip if cursor line highlighting is disabled entirely
-    if !cursor_line_settings.enabled {
+    if !cursor_line.enabled {
         // Hide all existing borders and word highlights
         for (_, _, _, _, mut visibility) in border_query.iter_mut() {
             *visibility = Visibility::Hidden;
@@ -157,8 +163,8 @@ pub(crate) fn update_cursor_line_highlight(
         return;
     }
 
-    // Get base highlight color from theme
-    let base_highlight_color = match settings.theme.line_highlight {
+    // Get base highlight color from theme (unused for now, kept for future reference)
+    let _base_highlight_color = match theme.line_highlight {
         Some(color) => color,
         None => {
             // Hide all existing borders and word highlights
@@ -176,24 +182,16 @@ pub(crate) fn update_cursor_line_highlight(
         return;
     }
 
-    let line_height = settings.font.line_height;
-    let char_width = settings.font.char_width;
-    let use_wrapping = settings.wrapping.enabled && state.display_map.wrap_width > 0;
+    let line_height = font.line_height;
+    let char_width = font.char_width;
+    let use_wrapping = wrapping.enabled && state.display_map.wrap_width > 0;
 
     // Border settings from configuration
-    let border_thickness = cursor_line_settings.border_thickness;
-    let border_color = cursor_line_settings.border_color.unwrap_or_else(|| {
-        // Use base highlight color with configurable alpha multiplier
-        Color::srgba(
-            base_highlight_color.to_srgba().red,
-            base_highlight_color.to_srgba().green,
-            base_highlight_color.to_srgba().blue,
-            (base_highlight_color.to_srgba().alpha * cursor_line_settings.border_alpha_multiplier).min(1.0),
-        )
-    });
+    let border_thickness = cursor_line.border_thickness;
+    let border_color = cursor_line.border_color;
 
     // Word highlight color from configuration
-    let word_highlight_color = cursor_line_settings.word_highlight_color.unwrap_or(base_highlight_color);
+    let word_highlight_color = cursor_line.word_highlight_color;
 
     // Collect existing entities
     let mut border_entities: std::collections::HashMap<(usize, bool), Entity> = std::collections::HashMap::new();
@@ -207,7 +205,7 @@ pub(crate) fn update_cursor_line_highlight(
     }
 
     // Calculate border width (code area only, not the gutter)
-    let code_area_start = settings.ui.layout.code_margin_left;
+    let code_area_start = viewport.text_area_left;
     let border_width = viewport.width as f32 - code_area_start;
     let border_center_x = -(viewport.width as f32) / 2.0 + code_area_start + border_width / 2.0 + viewport.offset_x;
 
@@ -234,10 +232,10 @@ pub(crate) fn update_cursor_line_highlight(
             visible_row
         };
 
-        let y_from_top = settings.ui.layout.margin_top + state.scroll_offset + (display_row as f32 * line_height);
+        let y_from_top = viewport.text_area_top + state.scroll_offset + (display_row as f32 * line_height);
 
         // === TOP BORDER ===
-        if cursor_line_settings.show_border {
+        if cursor_line.show_border {
             let top_y = (viewport.height as f32) / 2.0 - y_from_top + line_height / 2.0 - border_thickness / 2.0;
             let top_translation = Vec3::new(border_center_x, top_y, -0.4);
 
@@ -291,7 +289,7 @@ pub(crate) fn update_cursor_line_highlight(
         }
 
         // === WORD HIGHLIGHT ===
-        if !cursor_line_settings.highlight_word {
+        if !cursor_line.highlight_word {
             continue;
         }
         // Find word boundaries at cursor position
@@ -338,7 +336,7 @@ pub(crate) fn update_cursor_line_highlight(
         // Only show word highlight if we found a word
         if word_end > word_start {
             let word_width = (word_end - word_start) as f32 * char_width;
-            let word_x_left = settings.ui.layout.code_margin_left + (word_start as f32 * char_width);
+            let word_x_left = viewport.text_area_left + (word_start as f32 * char_width);
 
             let word_center_x = -(viewport.width as f32) / 2.0 + word_x_left + word_width / 2.0 + viewport.offset_x - state.horizontal_scroll_offset;
             let word_center_y = (viewport.height as f32) / 2.0 - y_from_top;

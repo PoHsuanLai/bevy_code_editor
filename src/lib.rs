@@ -56,6 +56,7 @@ pub mod prelude {
     pub use crate::plugin::{
         CodeEditorPlugin, EditorInputManager, EditorUiPlugin,
         ScrollbarPlugin, Scrollbar,
+        InputSet, ApplyStateSet, RenderingSet, EditorSetupSet,
     };
     pub use crate::settings::*;
     pub use crate::types::*;

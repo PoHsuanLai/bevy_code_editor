@@ -2,10 +2,37 @@
 
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task};
-use crate::settings::EditorSettings;
+use crate::settings::*;
 use crate::types::*;
 use crate::gpu_text::{GlyphAtlas, TextRenderState};
 use super::{SyntaxResource, HighlightCache};
+
+/// Marker component for the main GPU text mesh (DEPRECATED - being replaced with per-line meshes)
+#[derive(Component)]
+pub struct GpuTextMesh;
+
+/// Component for per-line mesh entities
+/// Each visible line gets its own mesh entity for incremental updates
+#[derive(Component)]
+pub struct LineMeshEntity {
+    /// Buffer line index this mesh represents
+    pub buffer_line: usize,
+    /// Display row (for Y positioning, accounting for folding)
+    pub display_row: usize,
+    /// Content version when this line was last rendered
+    pub content_version: u64,
+    /// Tree version when this line was last rendered (for syntax highlighting)
+    pub tree_version: u64,
+}
+
+/// Resource to pool line mesh entities for reuse
+#[derive(Resource, Default)]
+pub struct LineMeshPool {
+    /// Available entities that can be reused
+    available: Vec<Entity>,
+    /// Currently active line entities (buffer_line -> Entity)
+    active: std::collections::HashMap<usize, Entity>,
+}
 
 /// Component to track async parse tasks
 #[cfg(feature = "tree-sitter")]
@@ -21,7 +48,7 @@ pub(crate) fn update_syntax_tree(
     mut commands: Commands,
     mut state: ResMut<CodeEditorState>,
     mut syntax: ResMut<SyntaxResource>,
-    mut highlight_cache: ResMut<HighlightCache>,
+    _highlight_cache: ResMut<HighlightCache>,
     mut parse_task_query: Query<(Entity, &mut ParseTask)>,
 ) {
     // Check if there's a completed parse task
@@ -34,8 +61,11 @@ pub(crate) fn update_syntax_tree(
                 syntax.set_parsed_tree(tree, &state.rope);
                 state.last_highlighted_version = parse_task.content_version;
 
-                // Invalidate the highlight cache to force re-highlighting with the new tree
-                highlight_cache.clear();
+                // OPTIMIZATION: Smarter cache invalidation
+                // Only clear cache if tree_version changed (parse produced different tree)
+                // Cache entries with old tree_version will be naturally invalidated during lookup
+                // This preserves cached highlights for unchanged regions
+                // highlight_cache.clear(); // Removed - let version mismatch handle invalidation
 
                 // Force a render update to display the new highlights immediately
                 state.needs_update = true;
@@ -51,20 +81,21 @@ pub(crate) fn update_syntax_tree(
     if state.content_version != state.last_highlighted_version && syntax.is_available() {
         info!("Starting tree-sitter parse task (content_version: {}, last_highlighted: {})",
               state.content_version, state.last_highlighted_version);
-        // Clear highlight cache when content changes
-        highlight_cache.clear();
+        // OPTIMIZATION: Don't clear cache here - let it invalidate naturally by version mismatch
+        // This allows unchanged lines to remain cached during typing
+        // highlight_cache.clear();
 
         // Clone rope for async task (Rope uses Arc internally so this is cheap)
         let rope = state.rope.clone();
         let content_version = state.content_version;
 
         // Clone the provider's state for incremental parsing (keeps main state intact)
-        let (parser, language, cached_tree, pending_edits) = syntax.clone_parse_state();
+        let (parser, language, cached_tree, pending_edits, deferred_edits) = syntax.clone_parse_state();
 
         // Spawn async parse task
         let task_pool = AsyncComputeTaskPool::get();
         let task = task_pool.spawn(async move {
-            parse_tree_async(rope, parser, language, cached_tree, pending_edits)
+            parse_tree_async(rope, parser, language, cached_tree, pending_edits, deferred_edits)
         });
 
         // Spawn entity to track the task
@@ -82,9 +113,11 @@ fn parse_tree_async(
     language: Option<tree_sitter::Language>,
     mut cached_tree: Option<tree_sitter::Tree>,
     pending_edits: Vec<tree_sitter::InputEdit>,
+    deferred_edits: Vec<crate::syntax::tree_sitter::DeferredEdit>,
 ) -> Option<tree_sitter::Tree> {
     // Same parsing logic as update_tree, but runs async
     use crate::syntax::tree_sitter::RopeReader;
+    use super::syntax_highlighting::byte_to_point;
 
     let mut reader = RopeReader::new(&rope);
     let mut callback = |byte_offset: usize, _position: tree_sitter::Point| -> &[u8] {
@@ -93,8 +126,26 @@ fn parse_tree_async(
 
     // Try incremental parsing first
     if let Some(ref mut tree) = cached_tree {
-        // Apply pending edits
+        // Apply pending edits (already have full position info)
         for edit in pending_edits {
+            tree.edit(&edit);
+        }
+
+        // Apply deferred edits (calculate Points now on async thread)
+        // OPTIMIZATION: This expensive work happens off the main thread
+        for deferred in deferred_edits {
+            let start_position = byte_to_point(&rope, deferred.start_byte);
+            let old_end_position = byte_to_point(&rope, deferred.old_end_byte);
+            let new_end_position = byte_to_point(&rope, deferred.new_end_byte);
+
+            let edit = tree_sitter::InputEdit {
+                start_byte: deferred.start_byte,
+                old_end_byte: deferred.old_end_byte,
+                new_end_byte: deferred.new_end_byte,
+                start_position,
+                old_end_position,
+                new_end_position,
+            };
             tree.edit(&edit);
         }
 
@@ -121,20 +172,11 @@ fn parse_tree_async(
     None
 }
 
-/// Marker component for GPU text mesh entities
-#[derive(Component)]
-pub struct GpuTextMesh {
-    /// The scroll offset when this mesh was built
-    pub built_at_scroll: f32,
-}
-
 /// Convert scroll-only updates to full updates for GPU text
 /// GPU text rendering requires rebuilding the mesh on scroll
 /// For lazy syntax highlighting, we need to rebuild on every scroll to highlight newly visible lines
 pub(crate) fn handle_scroll_for_gpu_text(
     mut state: ResMut<CodeEditorState>,
-    settings: Res<EditorSettings>,
-    mesh_query: Query<&GpuTextMesh>,
 ) {
     if state.needs_scroll_update {
         // Always rebuild on scroll to ensure newly visible lines get highlighted
@@ -147,7 +189,7 @@ pub(crate) fn handle_scroll_for_gpu_text(
 pub(crate) fn update_gpu_text_display(
     mut commands: Commands,
     mut state: ResMut<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    (font, theme, syntax_settings, performance): (Res<FontSettings>, Res<ThemeSettings>, Res<SyntaxSettings>, Res<PerformanceSettings>),
     viewport: Res<ViewportDimensions>,
     fold_state: Res<FoldState>,
     mut atlas: ResMut<GlyphAtlas>,
@@ -155,7 +197,7 @@ pub(crate) fn update_gpu_text_display(
     mut materials: ResMut<Assets<crate::gpu_text::TextMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut images: ResMut<Assets<Image>>,
-    mesh_query: Query<(Entity, &GpuTextMesh, &bevy::mesh::Mesh2d)>,
+    mesh_query: Query<(Entity, &bevy::mesh::Mesh2d), With<GpuTextMesh>>,
     mut syntax: ResMut<SyntaxResource>,
     mut highlight_cache: ResMut<HighlightCache>,
     time: Res<Time>,
@@ -177,16 +219,16 @@ pub(crate) fn update_gpu_text_display(
     // NOTE: Tree-sitter update happens in separate async system
     // This allows text to render immediately without waiting for parsing
 
-    let font_size = settings.font.size;
-    let line_height = settings.font.line_height;
-    let char_width = settings.font.char_width;
+    let font_size = font.size;
+    let line_height = font.line_height;
+    let char_width = font.char_width;
 
     // Calculate visible range
-    let buffer = line_height * settings.performance.viewport_buffer_lines as f32;
+    let buffer = line_height * performance.viewport_buffer_lines as f32;
     let total_buffer_lines = state.line_count();
 
     let scroll_dist = state.scroll_offset.abs();
-    let start_pixels = scroll_dist - settings.ui.layout.margin_top - buffer;
+    let start_pixels = scroll_dist - viewport.text_area_top - buffer;
     let first_visible_display_row = (start_pixels / line_height).floor().max(0.0) as usize;
     let visible_count = ((viewport.height as f32 + buffer * 2.0) / line_height).ceil() as usize;
     let last_visible_display_row = first_visible_display_row + visible_count;
@@ -246,8 +288,8 @@ pub(crate) fn update_gpu_text_display(
                 0, // Start from 0 since we're passing a slice
                 estimated_end_buffer_line - start_buffer_line,
                 start_byte, // Byte offset in the full document
-                &settings.theme.syntax,
-                settings.theme.foreground,
+                &syntax_settings.theme,
+                theme.foreground,
             );
 
             // Cache the result for future frames
@@ -273,7 +315,7 @@ pub(crate) fn update_gpu_text_display(
         // Calculate base Y position
         // Add baseline offset to align GPU text with Text2d line numbers
         let baseline_offset = font_size * 0.32;
-        let base_y = settings.ui.layout.margin_top + state.scroll_offset + (current_display_row as f32 * line_height) + baseline_offset;
+        let base_y = viewport.text_area_top + state.scroll_offset + (current_display_row as f32 * line_height) + baseline_offset;
 
         // Get text segments for this line
         // Use lazy-highlighted lines if available
@@ -287,7 +329,7 @@ pub(crate) fn update_gpu_text_display(
         };
 
         // Build glyph quads for this line
-        let mut x = settings.ui.layout.code_margin_left - state.horizontal_scroll_offset;
+        let mut x = viewport.text_area_left - state.horizontal_scroll_offset;
 
         // Process highlighted segments if available
         if let Some(segments) = segments_ref {
@@ -357,7 +399,7 @@ pub(crate) fn update_gpu_text_display(
         } else if buffer_line < state.rope.len_lines() {
             // Fallback: render directly from rope without highlighting
             let rope_line = state.rope.line(buffer_line);
-            let color_rgba = settings.theme.foreground.to_linear();
+            let color_rgba = theme.foreground.to_linear();
             let color_arr = [color_rgba.red, color_rgba.green, color_rgba.blue, color_rgba.alpha];
 
             for ch in rope_line.chars() {
@@ -439,7 +481,7 @@ pub(crate) fn update_gpu_text_display(
 
     if positions.is_empty() {
         // No visible text, hide existing mesh
-        for (entity, _, _) in mesh_query.iter() {
+        for (entity, _) in mesh_query.iter() {
             commands.entity(entity).insert(Visibility::Hidden);
         }
         state.needs_update = false;
@@ -457,16 +499,11 @@ pub(crate) fn update_gpu_text_display(
     mesh.insert_indices(Indices::U32(indices));
 
     // Update existing mesh or create new one
-    if let Some((entity, _, _mesh2d)) = mesh_query.iter().next() {
+    if let Some((entity, _mesh2d)) = mesh_query.iter().next() {
         // Replace the mesh handle to force re-upload
         let new_mesh_handle = meshes.add(mesh);
         commands.entity(entity).insert(Mesh2d(new_mesh_handle));
         commands.entity(entity).insert(Visibility::Visible);
-        // Update scroll position marker
-        commands.entity(entity).insert(GpuTextMesh {
-            built_at_scroll: state.scroll_offset,
-        });
-        // Remove the old mesh (it will be cleaned up automatically)
     } else {
         // Create new mesh entity
         let mesh_handle = meshes.add(mesh);
@@ -474,9 +511,7 @@ pub(crate) fn update_gpu_text_display(
             Mesh2d(mesh_handle),
             crate::gpu_text::MeshMaterial2d(material_handle.clone()),
             Transform::default(),
-            GpuTextMesh {
-                built_at_scroll: state.scroll_offset,
-            },
+            GpuTextMesh,  // Marker component to distinguish from minimap mesh
             Name::new("GpuTextMesh"),
             Visibility::Visible,
         ));

@@ -1502,13 +1502,35 @@ pub struct HighlightedToken {
     pub highlight_type: Option<String>,
 }
 
-/// Viewport dimensions resource (replaces dioxus-bevy's ViewportDimensions)
+/// Viewport dimensions and layout information
+///
+/// This resource tracks both the viewport size and the computed layout for rendering.
+/// The UI plugin (or custom UI) is responsible for computing the layout based on
+/// its own settings and updating this resource.
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct ViewportDimensions {
+    /// Viewport width in pixels
     pub width: u32,
+
+    /// Viewport height in pixels
     pub height: u32,
+
     /// Horizontal offset for the editor content (useful for sidebars)
     pub offset_x: f32,
+
+    // === Computed Layout (set by UI plugin) ===
+
+    /// Left margin/padding before text starts
+    pub text_area_left: f32,
+
+    /// Top margin/padding before text starts
+    pub text_area_top: f32,
+
+    /// Width of the gutter area (line numbers, etc.)
+    pub gutter_width: f32,
+
+    /// X position of the separator line between gutter and code
+    pub separator_x: f32,
 }
 
 impl Default for ViewportDimensions {
@@ -1517,6 +1539,11 @@ impl Default for ViewportDimensions {
             width: 800,
             height: 600,
             offset_x: 0.0,
+            // Default layout values (can be overridden by UI plugin)
+            text_area_left: 80.0,
+            text_area_top: 10.0,
+            gutter_width: 60.0,
+            separator_x: 70.0,
         }
     }
 }
@@ -2556,6 +2583,12 @@ pub struct MinimapHoverState {
 pub struct MinimapDragState {
     /// Whether we're currently dragging the minimap slider
     pub is_dragging: bool,
+    /// Whether we're dragging the viewport highlight (vs clicking elsewhere on minimap)
+    pub is_dragging_highlight: bool,
+    /// Initial mouse Y position when drag started (for highlight dragging)
+    pub drag_start_y: f32,
+    /// Initial scroll offset when drag started (for highlight dragging)
+    pub drag_start_scroll: f32,
 }
 
 /// Resource to track key repeat state for editor actions

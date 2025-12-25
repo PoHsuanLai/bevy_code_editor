@@ -15,8 +15,8 @@
 
 use bevy::prelude::*;
 
-use crate::types::{LineNumbers, EditorCursor, Separator, ViewportDimensions};
-use crate::settings::EditorSettings;
+use crate::types::{LineNumbers, EditorCursor, Separator, ViewportDimensions, CodeEditorState};
+use crate::settings::*;
 use super::{
     update_line_numbers, update_fold_indicators,
     update_selection_highlight, update_cursor_line_highlight,
@@ -27,6 +27,7 @@ use super::{
     to_bevy_coords_dynamic, to_bevy_coords_left_aligned,
     EditorSetupSet,
     update_gpu_text_display,
+    scrollbar::update_editor_scrollbar,
 };
 
 /// Editor UI plugin providing default rendering for editor visual elements
@@ -65,9 +66,16 @@ impl EditorUiPlugin {
 
 impl Plugin for EditorUiPlugin {
     fn build(&self, app: &mut App) {
-        // Startup: spawn UI entities (must run after CodeEditorPlugin's setup for viewport)
-        app.add_systems(Startup, setup_editor_ui.after(EditorSetupSet));
+        // Startup: compute layout and spawn UI entities
+        app.add_systems(Startup, (
+            compute_viewport_layout,
+            setup_editor_ui,
+        ).chain().after(EditorSetupSet));
 
+        // Update layout when UI settings change
+        app.add_systems(Update, compute_viewport_layout.run_if(resource_changed::<UiSettings>));
+
+        // All UI rendering systems go in RenderingSet
         // Line numbers and fold indicators (run after text display)
         app.add_systems(
             Update,
@@ -76,7 +84,8 @@ impl Plugin for EditorUiPlugin {
                 update_fold_indicators,
             )
                 .chain()
-                .after(update_gpu_text_display),
+                .after(update_gpu_text_display)
+                .in_set(super::RenderingSet),
         );
 
         // Selection and highlighting systems
@@ -91,49 +100,95 @@ impl Plugin for EditorUiPlugin {
                 update_find_highlights,
             )
                 .chain()
-                .after(update_line_numbers),
+                .after(update_line_numbers)
+                .in_set(super::RenderingSet),
         );
 
-        // Minimap systems
+        // Minimap input goes in InputSet
         app.add_systems(
             Update,
-            update_minimap_hover.after(update_find_highlights),
-        );
-        app.add_systems(
-            Update,
-            handle_minimap_mouse.after(update_minimap_hover),
-        );
-        app.add_systems(
-            Update,
-            update_minimap.after(handle_minimap_mouse),
-        );
-        app.add_systems(
-            Update,
-            update_minimap_find_highlights.after(update_minimap),
+            (
+                update_minimap_hover,
+                handle_minimap_mouse,
+            )
+                .chain()
+                .in_set(super::InputSet),
         );
 
-        // Cursor systems
+        // Minimap rendering goes in RenderingSet
         app.add_systems(
             Update,
-            update_cursor.after(update_minimap_find_highlights),
+            (
+                update_minimap,
+                update_minimap_find_highlights,
+            )
+                .chain()
+                .after(update_find_highlights)
+                .in_set(super::RenderingSet),
         );
+
+        // Editor scrollbar config update goes in ApplyStateSet
         app.add_systems(
             Update,
-            animate_cursor.after(update_cursor),
+            update_editor_scrollbar
+                .run_if(resource_changed::<CodeEditorState>
+                    .or(resource_changed::<ViewportDimensions>)
+                    .or(resource_changed::<ScrollbarSettings>))
+                .in_set(super::ApplyStateSet),
+        );
+
+        // Cursor systems in RenderingSet
+        app.add_systems(
+            Update,
+            (
+                update_cursor,
+                animate_cursor,
+            )
+                .chain()
+                .after(update_minimap_find_highlights)
+                .in_set(super::RenderingSet),
         );
     }
+}
+
+/// Compute ViewportDimensions layout fields based on UI settings
+fn compute_viewport_layout(
+    mut viewport: ResMut<ViewportDimensions>,
+    ui: Res<UiSettings>,
+    font: Res<FontSettings>,
+) {
+    // Compute gutter width based on line number display
+    viewport.gutter_width = if ui.show_line_numbers {
+        ui.gutter_padding_left + ui.gutter_padding_right
+            // Reserve space for at least 4 digits (9999 lines)
+            + (font.char_width * 4.0)
+    } else {
+        0.0
+    };
+
+    // Compute separator position (right edge of gutter)
+    viewport.separator_x = viewport.gutter_width;
+
+    // Compute text area left position (gutter + code margin)
+    viewport.text_area_left = viewport.gutter_width + ui.code_margin_left;
+
+    // Top margin for text area
+    viewport.text_area_top = ui.margin_top;
 }
 
 /// Setup UI entities (line numbers, cursor, separator)
 fn setup_editor_ui(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut settings: ResMut<EditorSettings>,
+    mut font: ResMut<FontSettings>,
+    theme: Res<ThemeSettings>,
+    cursor_settings: Res<CursorSettings>,
+    ui: Res<UiSettings>,
     viewport: Res<ViewportDimensions>,
 ) {
     // Load font
-    let font_handle: Handle<Font> = asset_server.load(&settings.font.family);
-    settings.font.handle = Some(font_handle.clone());
+    let font_handle: Handle<Font> = asset_server.load(&font.family);
+    font.handle = Some(font_handle.clone());
 
     let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
@@ -143,13 +198,13 @@ fn setup_editor_ui(
         Text2d::new("1"),
         TextFont {
             font: font_handle.clone(),
-            font_size: settings.font.size,
+            font_size: font.size,
             ..default()
         },
-        TextColor(settings.theme.line_numbers),
+        TextColor(theme.line_numbers),
         Transform::from_translation(to_bevy_coords_dynamic(
-            settings.ui.layout.line_number_margin_left,
-            settings.ui.layout.margin_top,
+            viewport.gutter_width / 2.0,
+            viewport.text_area_top,
             viewport_width,
             viewport_height,
             viewport.offset_x,
@@ -159,15 +214,15 @@ fn setup_editor_ui(
     ));
 
     // Spawn separator line (only if enabled)
-    if settings.ui.show_separator {
+    if ui.show_separator {
         commands.spawn((
             Sprite {
-                color: settings.theme.separator,
+                color: theme.separator,
                 custom_size: Some(Vec2::new(1.0, viewport_height)),
                 ..default()
             },
             Transform::from_translation(to_bevy_coords_left_aligned(
-                settings.ui.layout.separator_x,
+                viewport.separator_x,
                 viewport_height / 2.0,
                 viewport_width,
                 viewport_height,
@@ -180,16 +235,16 @@ fn setup_editor_ui(
     }
 
     // Spawn primary cursor (cursor_index = 0)
-    let cursor_height = settings.font.line_height * settings.cursor.height_multiplier;
+    let cursor_height = font.line_height * cursor_settings.height_multiplier;
     commands.spawn((
         Sprite {
-            color: settings.theme.cursor,
-            custom_size: Some(Vec2::new(settings.cursor.width, cursor_height)),
+            color: theme.cursor,
+            custom_size: Some(Vec2::new(cursor_settings.width, cursor_height)),
             ..default()
         },
         Transform::from_translation(to_bevy_coords_dynamic(
-            settings.ui.layout.code_margin_left,
-            settings.ui.layout.margin_top,
+            viewport.text_area_left,
+            viewport.text_area_top,
             viewport_width,
             viewport_height,
             viewport.offset_x,

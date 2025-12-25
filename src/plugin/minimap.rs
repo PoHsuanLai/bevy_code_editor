@@ -4,18 +4,17 @@ use bevy::prelude::*;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::asset::RenderAssetUsages;
 use bevy::sprite_render::MeshMaterial2d;
-use crate::settings::EditorSettings;
+use crate::settings::*;
 use crate::types::*;
 use crate::gpu_text::{GlyphAtlas, GlyphKey, GlyphRasterizer, TextMaterial, TextRenderState};
-use super::scrollbar::Scrollbar;
 
 pub(crate) fn update_minimap_hover(
     windows: Query<&Window>,
     viewport: Res<ViewportDimensions>,
-    settings: Res<EditorSettings>,
+    minimap_settings: Res<MinimapSettings>,
     mut hover_state: ResMut<MinimapHoverState>,
 ) {
-    if !settings.minimap.enabled {
+    if !minimap_settings.enabled {
         hover_state.is_hovered = false;
         return;
     }
@@ -30,13 +29,13 @@ pub(crate) fn update_minimap_hover(
     };
 
     let viewport_width = viewport.width as f32;
-    let minimap_width = settings.minimap.width;
+    let minimap_width = minimap_settings.width;
 
-    // Check if cursor is over the minimap area
-    let is_over_minimap = if settings.minimap.show_on_right {
-        cursor_pos.x >= viewport_width - minimap_width
+    // Check if cursor is over the minimap area (accounting for edge padding)
+    let is_over_minimap = if minimap_settings.show_on_right {
+        cursor_pos.x >= viewport_width - minimap_width - minimap_settings.edge_padding
     } else {
-        cursor_pos.x <= minimap_width
+        cursor_pos.x <= minimap_width + minimap_settings.edge_padding
     };
 
     hover_state.is_hovered = is_over_minimap;
@@ -47,12 +46,14 @@ pub(crate) fn handle_minimap_mouse(
     windows: Query<&Window>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut state: ResMut<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    minimap_settings: Res<MinimapSettings>,
     viewport: Res<ViewportDimensions>,
     hover_state: Res<MinimapHoverState>,
     mut drag_state: ResMut<MinimapDragState>,
+    highlight_query: Query<(&Transform, &Sprite), With<MinimapViewportHighlight>>,
 ) {
-    if !settings.minimap.enabled {
+    if !minimap_settings.enabled {
         drag_state.is_dragging = false;
         return;
     }
@@ -67,14 +68,14 @@ pub(crate) fn handle_minimap_mouse(
 
     let viewport_height = viewport.height as f32;
     let line_count = state.rope.len_lines();
-    let line_height = settings.font.line_height;
+    let line_height = font.line_height;
 
     // Minimap settings (same as in update_minimap)
-    let minimap_line_height = settings.minimap.line_height;
+    let minimap_line_height = minimap_settings.line_height;
     let total_minimap_content_height = line_count as f32 * minimap_line_height;
 
     // Content Y offset for centering
-    let content_y_offset = if settings.minimap.center_when_short && total_minimap_content_height < viewport_height {
+    let content_y_offset = if minimap_settings.center_when_short && total_minimap_content_height < viewport_height {
         (viewport_height - total_minimap_content_height) / 2.0
     } else {
         0.0
@@ -99,16 +100,65 @@ pub(crate) fn handle_minimap_mouse(
     // Handle mouse button release
     if mouse_button.just_released(MouseButton::Left) {
         drag_state.is_dragging = false;
+        drag_state.is_dragging_highlight = false;
     }
+
+    // Check if cursor is over the viewport highlight
+    let is_over_highlight = if let Ok((transform, sprite)) = highlight_query.single() {
+        if let Some(size) = sprite.custom_size {
+            // Convert cursor to world coordinates
+            let cursor_world_y = cursor_pos.y - viewport_height / 2.0;
+
+            let highlight_y = transform.translation.y;
+            let highlight_half_height = size.y / 2.0;
+
+            cursor_world_y >= highlight_y - highlight_half_height &&
+            cursor_world_y <= highlight_y + highlight_half_height
+        } else {
+            false
+        }
+    } else {
+        false
+    };
 
     // Handle mouse button press on minimap
     if mouse_button.just_pressed(MouseButton::Left) && hover_state.is_hovered {
         drag_state.is_dragging = true;
+
+        // Check if clicking on the viewport highlight
+        if is_over_highlight {
+            drag_state.is_dragging_highlight = true;
+            drag_state.drag_start_y = cursor_pos.y;
+            drag_state.drag_start_scroll = state.scroll_offset;
+        } else {
+            drag_state.is_dragging_highlight = false;
+        }
     }
 
-    // Handle click or drag on minimap
-    if (mouse_button.just_pressed(MouseButton::Left) && hover_state.is_hovered) ||
-       (drag_state.is_dragging && mouse_button.pressed(MouseButton::Left)) {
+    // Handle dragging the viewport highlight
+    if drag_state.is_dragging && drag_state.is_dragging_highlight && mouse_button.pressed(MouseButton::Left) {
+        // Calculate how far the mouse has moved (in screen space)
+        let delta_y = cursor_pos.y - drag_state.drag_start_y;
+
+        // Scale delta to minimap content space
+        // When minimap is scrollable, we need to account for the minimap scroll ratio
+        let minimap_to_content_ratio = if total_minimap_content_height > 0.0 {
+            content_height / total_minimap_content_height
+        } else {
+            1.0
+        };
+
+        // Apply the delta to the original scroll position
+        let new_scroll = drag_state.drag_start_scroll - (delta_y * minimap_to_content_ratio);
+
+        // Clamp to valid range
+        state.scroll_offset = new_scroll.clamp(max_scroll.min(0.0), 0.0);
+        state.needs_scroll_update = true;
+    }
+    // Handle click or drag elsewhere on minimap (jump-to-position behavior)
+    else if drag_state.is_dragging && !drag_state.is_dragging_highlight &&
+            ((mouse_button.just_pressed(MouseButton::Left) && hover_state.is_hovered) ||
+             mouse_button.pressed(MouseButton::Left)) {
         // Convert cursor Y position to minimap content position
         // cursor_pos.y is from top of window (0 = top)
         let click_y_in_minimap = cursor_pos.y - content_y_offset + minimap_scroll_offset;
@@ -134,7 +184,7 @@ pub(crate) fn handle_minimap_mouse(
 pub(crate) fn update_minimap(
     mut commands: Commands,
     state: ResMut<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    (font, theme, minimap_settings): (Res<FontSettings>, Res<ThemeSettings>, Res<MinimapSettings>),
     viewport: Res<ViewportDimensions>,
     hover_state: Res<MinimapHoverState>,
     mut atlas: ResMut<GlyphAtlas>,
@@ -147,10 +197,9 @@ pub(crate) fn update_minimap(
     mut bg_query: Query<(Entity, &mut Transform, &mut Sprite, &mut Visibility), (With<MinimapBackground>, Without<MinimapSlider>, Without<MinimapViewportHighlight>)>,
     mut slider_query: Query<(Entity, &mut Transform, &mut Sprite, &mut Visibility), (With<MinimapSlider>, Without<MinimapBackground>, Without<MinimapViewportHighlight>)>,
     mut highlight_query: Query<(Entity, &mut Transform, &mut Sprite, &mut Visibility), (With<MinimapViewportHighlight>, Without<MinimapBackground>, Without<MinimapSlider>)>,
-    mut scrollbar_query: Query<&mut Scrollbar, With<MinimapScrollbar>>,
 ) {
     // Hide everything if minimap is disabled
-    if !settings.minimap.enabled {
+    if !minimap_settings.enabled {
         for (_, _, _, mut visibility) in bg_query.iter_mut() {
             *visibility = Visibility::Hidden;
         }
@@ -163,52 +212,48 @@ pub(crate) fn update_minimap(
         for (entity, _, _) in mesh_query.iter() {
             commands.entity(entity).insert(Visibility::Hidden);
         }
-        // Disable scrollbar
-        if let Ok(mut scrollbar) = scrollbar_query.single_mut() {
-            scrollbar.enabled = false;
-        }
         return;
     }
 
     let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
-    let minimap_width = settings.minimap.width;
+    let minimap_width = minimap_settings.width;
     let line_count = state.rope.len_lines();
-    let line_height = settings.font.line_height;
+    let line_height = font.line_height;
 
     // Minimap text settings - tiny font like VSCode
-    let minimap_line_height = settings.minimap.line_height;
-    let minimap_font_size = settings.minimap.font_size;
+    let minimap_line_height = minimap_settings.line_height;
+    let minimap_font_size = minimap_settings.font_size;
 
     // Calculate total content height in minimap (unscaled)
     let total_minimap_content_height = line_count as f32 * minimap_line_height;
 
     // Vertical offset for centering when content is short
-    let content_y_offset = if settings.minimap.center_when_short && total_minimap_content_height < viewport_height {
+    let content_y_offset = if minimap_settings.center_when_short && total_minimap_content_height < viewport_height {
         (viewport_height - total_minimap_content_height) / 2.0
     } else {
         0.0
     };
 
-    let minimap_center_x = if settings.minimap.show_on_right {
-        viewport_width / 2.0 - minimap_width / 2.0 - settings.minimap.scrollbar_width - settings.minimap.scrollbar_spacing
+    let minimap_center_x = if minimap_settings.show_on_right {
+        viewport_width / 2.0 - minimap_width / 2.0 - minimap_settings.edge_padding
     } else {
-        -viewport_width / 2.0 + minimap_width / 2.0
+        -viewport_width / 2.0 + minimap_width / 2.0 + minimap_settings.edge_padding
     };
 
     // === BACKGROUND ===
     if let Ok((_, mut transform, mut sprite, mut visibility)) = bg_query.single_mut() {
         sprite.custom_size = Some(Vec2::new(minimap_width, viewport_height));
-        transform.translation = Vec3::new(minimap_center_x, 0.0, settings.minimap.background_z_index);
+        transform.translation = Vec3::new(minimap_center_x, 0.0, minimap_settings.background_z_index);
         *visibility = Visibility::Visible;
     } else {
         commands.spawn((
             Sprite {
-                color: settings.theme.minimap_background,
+                color: theme.minimap_background,
                 custom_size: Some(Vec2::new(minimap_width, viewport_height)),
                 ..default()
             },
-            Transform::from_translation(Vec3::new(minimap_center_x, 0.0, settings.minimap.background_z_index)),
+            Transform::from_translation(Vec3::new(minimap_center_x, 0.0, minimap_settings.background_z_index)),
             MinimapBackground,
             Name::new("MinimapBackground"),
             Visibility::Visible,
@@ -243,14 +288,14 @@ pub(crate) fn update_minimap(
 
     // Convert to screen space with scroll applied
     let indicator_screen_y = indicator_position_in_minimap - minimap_scroll_offset + content_y_offset;
-    let indicator_height = indicator_height_in_minimap.max(settings.minimap.min_indicator_height);
+    let indicator_height = indicator_height_in_minimap.max(minimap_settings.min_indicator_height);
 
     // Convert to world coordinates
     let indicator_y = viewport_height / 2.0 - indicator_screen_y - indicator_height / 2.0;
-    let indicator_translation = Vec3::new(minimap_center_x, indicator_y, settings.minimap.viewport_highlight_z_index);
+    let indicator_translation = Vec3::new(minimap_center_x, indicator_y, minimap_settings.viewport_highlight_z_index);
 
     // === VIEWPORT HIGHLIGHT (only visible on hover, like VSCode) ===
-    let show_highlight = settings.minimap.show_viewport_highlight && hover_state.is_hovered;
+    let show_highlight = minimap_settings.show_viewport_highlight && hover_state.is_hovered;
     if show_highlight {
         if let Ok((_, mut transform, mut sprite, mut visibility)) = highlight_query.single_mut() {
             sprite.custom_size = Some(Vec2::new(minimap_width, indicator_height));
@@ -259,7 +304,7 @@ pub(crate) fn update_minimap(
         } else {
             commands.spawn((
                 Sprite {
-                    color: settings.theme.minimap_viewport_highlight,
+                    color: theme.minimap_viewport_highlight,
                     custom_size: Some(Vec2::new(minimap_width, indicator_height)),
                     ..default()
                 },
@@ -276,12 +321,12 @@ pub(crate) fn update_minimap(
     }
 
     // === SLIDER (more visible, appears on hover) ===
-    let show_slider = settings.minimap.show_slider &&
-        (!settings.minimap.slider_on_hover_only || hover_state.is_hovered);
+    let show_slider = minimap_settings.show_slider &&
+        (!minimap_settings.slider_on_hover_only || hover_state.is_hovered);
 
     if show_slider {
         // Slider is at a higher Z than highlight
-        let slider_translation = Vec3::new(minimap_center_x, indicator_y, settings.minimap.slider_z_index);
+        let slider_translation = Vec3::new(minimap_center_x, indicator_y, minimap_settings.slider_z_index);
 
         if let Ok((_, mut transform, mut sprite, mut visibility)) = slider_query.single_mut() {
             sprite.custom_size = Some(Vec2::new(minimap_width, indicator_height));
@@ -290,7 +335,7 @@ pub(crate) fn update_minimap(
         } else {
             commands.spawn((
                 Sprite {
-                    color: settings.theme.minimap_slider,
+                    color: theme.minimap_slider,
                     custom_size: Some(Vec2::new(minimap_width, indicator_height)),
                     ..default()
                 },
@@ -306,57 +351,9 @@ pub(crate) fn update_minimap(
         }
     }
 
-    // === SCROLLBAR (VSCode-style, separate from minimap) ===
-    // Update or create scrollbar component
-    if let Ok(mut scrollbar) = scrollbar_query.single_mut() {
-        // Update existing scrollbar
-        scrollbar.enabled = total_minimap_content_height > viewport_height;
-        scrollbar.x = if settings.minimap.show_on_right {
-            viewport_width / 2.0 - settings.minimap.scrollbar_width / 2.0
-        } else {
-            -viewport_width / 2.0 + minimap_width + settings.minimap.scrollbar_width / 2.0
-        };
-        scrollbar.y = 0.0;
-        scrollbar.width = settings.minimap.scrollbar_width;
-        scrollbar.track_height = viewport_height;
-        scrollbar.scroll_progress = scroll_progress;
-        scrollbar.visible_fraction = viewport_height / total_minimap_content_height;
-        scrollbar.min_thumb_height = settings.minimap.scrollbar_min_thumb_height;
-        scrollbar.z_index = settings.minimap.scrollbar_z_index;
-        scrollbar.track_color = settings.minimap.scrollbar_track_color;
-        scrollbar.thumb_color = settings.minimap.scrollbar_thumb_color;
-        scrollbar.border_radius = settings.minimap.scrollbar_border_radius;
-    } else {
-        // Create new scrollbar entity
-        let scrollbar_x = if settings.minimap.show_on_right {
-            viewport_width / 2.0 - settings.minimap.scrollbar_width / 2.0
-        } else {
-            -viewport_width / 2.0 + minimap_width + settings.minimap.scrollbar_width / 2.0
-        };
-
-        commands.spawn((
-            Scrollbar {
-                x: scrollbar_x,
-                y: 0.0,
-                width: settings.minimap.scrollbar_width,
-                track_height: viewport_height,
-                scroll_progress,
-                visible_fraction: viewport_height / total_minimap_content_height,
-                min_thumb_height: settings.minimap.scrollbar_min_thumb_height,
-                z_index: settings.minimap.scrollbar_z_index,
-                track_color: settings.minimap.scrollbar_track_color,
-                thumb_color: settings.minimap.scrollbar_thumb_color,
-                enabled: total_minimap_content_height > viewport_height,
-                border_radius: settings.minimap.scrollbar_border_radius,
-            },
-            MinimapScrollbar,
-            Name::new("MinimapScrollbar"),
-        ));
-    }
-
     // === GPU TEXT RENDERING ===
     // Build GPU mesh for minimap text
-    let max_column = settings.minimap.max_column;
+    let max_column = minimap_settings.max_column;
     let font_size = minimap_font_size;
 
     // Calculate visible line range for viewport culling
@@ -390,8 +387,8 @@ pub(crate) fn update_minimap(
             0,
             end_line - start_line,
             start_byte, // Byte offset in the full document
-            &settings.theme.syntax,
-            settings.theme.foreground,
+            &theme.syntax,
+            theme.foreground,
         )
     } else {
         Vec::new()
@@ -407,13 +404,13 @@ pub(crate) fn update_minimap(
     let mut indices: Vec<u32> = Vec::new();
     let mut vertex_count: u32 = 0;
 
-    // FIX: Calculate correct X position for right side (accounting for scrollbar with spacing)
-    let minimap_left_world_x = if settings.minimap.show_on_right {
-        // For right side: viewport right edge - minimap width - scrollbar width - spacing, then convert to world coords
-        let screen_x = viewport_width - minimap_width - settings.minimap.scrollbar_width - settings.minimap.scrollbar_spacing;
+    // Calculate X position for minimap text rendering (accounting for edge padding)
+    let minimap_left_world_x = if minimap_settings.show_on_right {
+        // For right side: viewport right edge - minimap width - edge padding, then convert to world coords
+        let screen_x = viewport_width - minimap_width - minimap_settings.edge_padding;
         screen_x - viewport_width / 2.0 + viewport.offset_x
     } else {
-        -viewport_width / 2.0 + viewport.offset_x
+        -viewport_width / 2.0 + viewport.offset_x + minimap_settings.edge_padding
     };
 
     // Render visible lines
@@ -441,10 +438,10 @@ pub(crate) fn update_minimap(
             segments.iter()
                 .find(|s| !s.text.trim().is_empty())
                 .map(|s| s.color)
-                .unwrap_or(settings.theme.foreground)
+                .unwrap_or(theme.foreground)
                 .with_alpha(0.8)
         } else {
-            settings.theme.foreground.with_alpha(0.6)
+            theme.foreground.with_alpha(0.6)
         };
 
         let color_arr = line_color.to_linear().to_f32_array();
@@ -571,12 +568,13 @@ pub(crate) fn update_minimap_find_highlights(
     mut commands: Commands,
     state: Res<CodeEditorState>,
     find_state: Res<FindState>,
-    settings: Res<EditorSettings>,
+    theme: Res<ThemeSettings>,
+    minimap_settings: Res<MinimapSettings>,
     viewport: Res<ViewportDimensions>,
     mut highlight_query: Query<(Entity, &mut Transform, &mut Sprite, &mut Visibility, &MinimapFindHighlight)>,
 ) {
     // Hide all if minimap disabled or no active search
-    if !settings.minimap.enabled || !find_state.active || find_state.matches.is_empty() {
+    if !minimap_settings.enabled || !find_state.active || find_state.matches.is_empty() {
         for (_, _, _, mut visibility, _) in highlight_query.iter_mut() {
             *visibility = Visibility::Hidden;
         }
@@ -585,7 +583,7 @@ pub(crate) fn update_minimap_find_highlights(
 
     let viewport_height = viewport.height as f32;
     let viewport_width = viewport.width as f32;
-    let minimap_width = settings.minimap.width;
+    let minimap_width = minimap_settings.width;
     let line_count = state.rope.len_lines();
 
     // Minimap scaling (same as in update_minimap)
@@ -599,17 +597,17 @@ pub(crate) fn update_minimap_find_highlights(
     let scaled_line_height = minimap_line_height * scale;
 
     // Content Y offset for centering
-    let content_y_offset = if settings.minimap.center_when_short && total_minimap_content_height < viewport_height {
+    let content_y_offset = if minimap_settings.center_when_short && total_minimap_content_height < viewport_height {
         (viewport_height - total_minimap_content_height) / 2.0
     } else {
         0.0
     };
 
-    // Minimap X position
-    let minimap_center_x = if settings.minimap.show_on_right {
-        viewport_width / 2.0 - minimap_width / 2.0
+    // Minimap X position (with edge padding)
+    let minimap_center_x = if minimap_settings.show_on_right {
+        viewport_width / 2.0 - minimap_width / 2.0 - minimap_settings.edge_padding
     } else {
-        -viewport_width / 2.0 + minimap_width / 2.0
+        -viewport_width / 2.0 + minimap_width / 2.0 + minimap_settings.edge_padding
     };
 
     // Collect lines with matches (deduplicated)
@@ -640,14 +638,14 @@ pub(crate) fn update_minimap_find_highlights(
             if let Ok((_, mut transform, mut sprite, mut visibility, _)) = highlight_query.get_mut(*entity) {
                 transform.translation = translation;
                 sprite.custom_size = Some(Vec2::new(minimap_width, scaled_line_height.max(2.0)));
-                sprite.color = settings.theme.find_match.with_alpha(0.5);
+                sprite.color = theme.find_match.with_alpha(0.5);
                 *visibility = Visibility::Visible;
             }
         } else {
             // Spawn new highlight
             commands.spawn((
                 Sprite {
-                    color: settings.theme.find_match.with_alpha(0.5),
+                    color: theme.find_match.with_alpha(0.5),
                     custom_size: Some(Vec2::new(minimap_width, scaled_line_height.max(2.0))),
                     ..default()
                 },

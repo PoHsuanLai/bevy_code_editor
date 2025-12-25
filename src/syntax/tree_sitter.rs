@@ -81,6 +81,14 @@ impl<'a> RopeReader<'a> {
     }
 }
 
+/// Deferred edit - stores only byte positions, Points calculated lazily
+#[derive(Clone, Copy, Debug)]
+pub struct DeferredEdit {
+    pub start_byte: usize,
+    pub old_end_byte: usize,
+    pub new_end_byte: usize,
+}
+
 /// Tree-sitter-based syntax highlighting provider
 pub struct TreeSitterProvider {
     /// The highlight query
@@ -95,8 +103,12 @@ pub struct TreeSitterProvider {
     /// Cached tree-sitter language (for incremental parsing)
     pub(crate) cached_language: Option<Language>,
 
-    /// Pending edits to apply to the tree before re-parsing
+    /// Pending edits to apply to the tree before re-parsing (with full position info)
     pub(crate) pending_edits: Vec<tree_sitter::InputEdit>,
+
+    /// Deferred edits - byte positions only, Points calculated during async parse
+    /// OPTIMIZATION: This avoids expensive rope traversals on the main thread
+    pub(crate) deferred_edits: Vec<DeferredEdit>,
 
     /// Reusable query cursor
     query_cursor: QueryCursor,
@@ -114,6 +126,7 @@ impl TreeSitterProvider {
             cached_parser: None,
             cached_language: None,
             pending_edits: Vec::new(),
+            deferred_edits: Vec::new(),
             query_cursor: QueryCursor::new(),
             cached_rope: None,
         }
@@ -150,6 +163,22 @@ impl TreeSitterProvider {
         };
 
         self.pending_edits.push(edit);
+    }
+
+    /// Record an edit with deferred Point calculation (OPTIMIZATION)
+    /// Points will be calculated from the rope during async parsing
+    /// This avoids blocking the main thread with expensive rope traversals
+    pub fn record_edit_deferred(
+        &mut self,
+        start_byte: usize,
+        old_end_byte: usize,
+        new_end_byte: usize,
+    ) {
+        self.deferred_edits.push(DeferredEdit {
+            start_byte,
+            old_end_byte,
+            new_end_byte,
+        });
     }
 
     /// Get readonly access to the cached tree

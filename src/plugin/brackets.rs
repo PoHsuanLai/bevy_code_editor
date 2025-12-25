@@ -1,7 +1,7 @@
 //! Bracket matching and find highlights
 
 use bevy::prelude::*;
-use crate::settings::EditorSettings;
+use crate::settings::*;
 use crate::types::*;
 
 pub(crate) fn find_matching_bracket(
@@ -118,7 +118,7 @@ pub(crate) fn find_opening_bracket(
 /// Update bracket match state based on cursor position
 pub(crate) fn update_bracket_match(
     state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    brackets: Res<BracketSettings>,
     mut bracket_state: ResMut<BracketMatchState>,
 ) {
     // Only update when cursor moves or text changes
@@ -127,7 +127,7 @@ pub(crate) fn update_bracket_match(
     }
 
     // Check if bracket matching is enabled
-    if !settings.brackets.highlight_matching {
+    if !brackets.enabled {
         bracket_state.current_match = None;
         return;
     }
@@ -136,7 +136,7 @@ pub(crate) fn update_bracket_match(
     bracket_state.current_match = find_matching_bracket(
         &state.rope,
         cursor_pos,
-        &settings.brackets.pairs,
+        &brackets.pairs,
     );
 }
 
@@ -144,7 +144,9 @@ pub(crate) fn update_bracket_match(
 pub(crate) fn update_bracket_highlight(
     mut commands: Commands,
     state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    theme: Res<ThemeSettings>,
+    brackets: Res<BracketSettings>,
     viewport: Res<ViewportDimensions>,
     bracket_state: Res<BracketMatchState>,
     fold_state: Res<FoldState>,
@@ -154,12 +156,12 @@ pub(crate) fn update_bracket_highlight(
 
     match &bracket_state.current_match {
         Some(bracket_match) => {
-            let char_width = settings.font.char_width;
-            let line_height = settings.font.line_height;
+            let char_width = font.char_width;
+            let line_height = font.line_height;
             let viewport_width = viewport.width as f32;
             let viewport_height = viewport.height as f32;
-            let use_box_style = settings.brackets.use_box_style;
-            let border_thickness = settings.brackets.box_border_thickness;
+            let use_box_style = matches!(brackets.style, BracketHighlightStyle::Background) || matches!(brackets.style, BracketHighlightStyle::Both);
+            let border_thickness = 2.0; // Default thickness
 
             // Calculate positions for both brackets
             let positions = [
@@ -183,8 +185,8 @@ pub(crate) fn update_bracket_highlight(
                 // Calculate display row accounting for folded lines
                 let display_row = fold_state.actual_to_display_line(line_idx);
 
-                let x_offset = settings.ui.layout.code_margin_left + (col_idx as f32 * char_width);
-                let y_offset = settings.ui.layout.margin_top + state.scroll_offset + (display_row as f32 * line_height);
+                let x_offset = viewport.text_area_left + (col_idx as f32 * char_width);
+                let y_offset = viewport.text_area_top + state.scroll_offset + (display_row as f32 * line_height);
 
                 // Calculate base position (center of the bracket character cell)
                 let base_x = -viewport_width / 2.0 + x_offset + char_width / 2.0 - state.horizontal_scroll_offset + viewport.offset_x;
@@ -213,13 +215,13 @@ pub(crate) fn update_bracket_highlight(
                             let (_, _, ref mut transform, ref mut sprite, ref mut visibility) = &mut highlights[entity_index];
                             transform.translation = translation;
                             sprite.custom_size = Some(size);
-                            sprite.color = settings.theme.bracket_match;
+                            sprite.color = theme.bracket_match;
                             **visibility = Visibility::Visible;
                         } else {
                             // Spawn new edge entity
                             commands.spawn((
                                 Sprite {
-                                    color: settings.theme.bracket_match,
+                                    color: theme.bracket_match,
                                     custom_size: Some(size),
                                     ..default()
                                 },
@@ -244,13 +246,13 @@ pub(crate) fn update_bracket_highlight(
                         let (_, _, ref mut transform, ref mut sprite, ref mut visibility) = &mut highlights[entity_index];
                         transform.translation = translation;
                         sprite.custom_size = Some(size);
-                        sprite.color = settings.theme.bracket_match;
+                        sprite.color = theme.bracket_match;
                         **visibility = Visibility::Visible;
                     } else {
                         // Spawn new highlight entity
                         commands.spawn((
                             Sprite {
-                                color: settings.theme.bracket_match,
+                                color: theme.bracket_match,
                                 custom_size: Some(size),
                                 ..default()
                             },
@@ -286,7 +288,8 @@ pub(crate) fn update_bracket_highlight(
 pub(crate) fn update_find_highlights(
     mut commands: Commands,
     state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    theme: Res<ThemeSettings>,
     viewport: Res<ViewportDimensions>,
     find_state: Res<FindState>,
     fold_state: Res<FoldState>,
@@ -300,8 +303,8 @@ pub(crate) fn update_find_highlights(
         return;
     }
 
-    let char_width = settings.font.char_width;
-    let line_height = settings.font.line_height;
+    let char_width = font.char_width;
+    let line_height = font.line_height;
     let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
 
@@ -340,9 +343,9 @@ pub(crate) fn update_find_highlights(
         // Determine color based on whether this is the current match
         let is_current = find_state.current_match_index == Some(match_idx);
         let color = if is_current {
-            settings.theme.find_match_current
+            theme.find_match_current
         } else {
-            settings.theme.find_match
+            theme.find_match
         };
 
         // For simplicity, we'll highlight the entire match as a single rectangle on the first line
@@ -351,8 +354,8 @@ pub(crate) fn update_find_highlights(
         let start_col = find_match.start - line_start_char;
         let match_len = find_match.end - find_match.start;
 
-        let x_offset = settings.ui.layout.code_margin_left + (start_col as f32 * char_width);
-        let y_offset = settings.ui.layout.margin_top + state.scroll_offset + (display_row as f32 * line_height);
+        let x_offset = viewport.text_area_left + (start_col as f32 * char_width);
+        let y_offset = viewport.text_area_top + state.scroll_offset + (display_row as f32 * line_height);
 
         // Calculate sprite position and size
         let sprite_width = match_len as f32 * char_width;

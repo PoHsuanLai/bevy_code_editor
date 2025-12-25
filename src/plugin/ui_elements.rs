@@ -1,20 +1,24 @@
 //! UI elements: line numbers, selection, indent guides
 
 use bevy::prelude::*;
-use crate::settings::EditorSettings;
+use crate::settings::*;
 use crate::types::*;
 use super::to_bevy_coords_left_aligned;
 
 pub(crate) fn update_line_numbers(
     mut commands: Commands,
     state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    theme: Res<ThemeSettings>,
+    ui: Res<UiSettings>,
+    wrapping: Res<WrappingSettings>,
+    performance: Res<PerformanceSettings>,
     viewport: Res<ViewportDimensions>,
     fold_state: Res<FoldState>,
     mut line_numbers_query: Query<(&mut Text2d, &mut Transform, &mut Visibility, &mut TextColor), With<LineNumbers>>,
 ) {
     // Hide all line numbers if disabled in settings
-    if !settings.ui.show_line_numbers {
+    if !ui.show_line_numbers {
         for (_, _, mut visibility, _) in line_numbers_query.iter_mut() {
             *visibility = Visibility::Hidden;
         }
@@ -25,8 +29,8 @@ pub(crate) fn update_line_numbers(
         return;
     }
 
-    let line_height = settings.font.line_height;
-    let font_size = settings.font.size;
+    let line_height = font.line_height;
+    let font_size = font.size;
 
     // Collect cursor lines for highlighting active line numbers
     let cursor_lines: std::collections::HashSet<usize> = state
@@ -39,17 +43,17 @@ pub(crate) fn update_line_numbers(
         .collect();
 
     // Check if we're using soft line wrapping
-    let use_wrapping = settings.wrapping.enabled && state.display_map.wrap_width > 0;
+    let use_wrapping = wrapping.enabled && state.display_map.wrap_width > 0;
 
     // Use configurable buffer for viewport calculations
-    let buffer_lines = settings.performance.viewport_buffer_lines as f32;
+    let buffer_lines = performance.viewport_buffer_lines as f32;
     let viewport_top = -state.scroll_offset - line_height * buffer_lines;
     let viewport_bottom = viewport_top + viewport.height as f32 + line_height * buffer_lines * 2.0;
 
     let first_visible_display_row =
-        ((viewport_top - settings.ui.layout.margin_top) / line_height).floor().max(0.0) as usize;
+        ((viewport_top - viewport.text_area_top) / line_height).floor().max(0.0) as usize;
     let last_visible_display_row =
-        ((viewport_bottom - settings.ui.layout.margin_top) / line_height).ceil() as usize;
+        ((viewport_bottom - viewport.text_area_top) / line_height).ceil() as usize;
 
     let total_buffer_lines = state.line_count();
 
@@ -96,9 +100,9 @@ pub(crate) fn update_line_numbers(
         // All lines from start_buffer_line should be in or after visible range
         if current_display_row <= last_visible_display_row {
             // Calculate Y position based on display row (not buffer line)
-            let y = settings.ui.layout.margin_top + state.scroll_offset + (current_display_row as f32 * line_height);
+            let y = viewport.text_area_top + state.scroll_offset + (current_display_row as f32 * line_height);
             let translation = to_bevy_coords_left_aligned(
-                settings.ui.layout.line_number_margin_left,
+                viewport.gutter_width / 2.0,  // Center line numbers in gutter area
                 y,
                 viewport.width as f32,
                 viewport.height as f32,
@@ -117,9 +121,9 @@ pub(crate) fn update_line_numbers(
 
             // Use active color for cursor lines
             let line_color = if cursor_lines.contains(&buffer_line) {
-                settings.theme.line_numbers_active
+                theme.line_numbers_active
             } else {
-                settings.theme.line_numbers
+                theme.line_numbers
             };
 
             if entity_index < existing_line_numbers.len() {
@@ -131,7 +135,7 @@ pub(crate) fn update_line_numbers(
                 **visibility = Visibility::Visible;
             } else {
                 let text_font = TextFont {
-                    font: settings.font.handle.clone().unwrap_or_default(),
+                    font: font.handle.clone().unwrap_or_default(),
                     font_size,
                     ..default()
                 };
@@ -169,7 +173,10 @@ pub(crate) fn update_line_numbers(
 pub(crate) fn update_selection_highlight(
     mut commands: Commands,
     state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    theme: Res<ThemeSettings>,
+    wrapping: Res<WrappingSettings>,
+    indentation: Res<IndentationSettings>,
     viewport: Res<ViewportDimensions>,
     fold_state: Res<FoldState>,
     mut selection_query: Query<(
@@ -184,11 +191,11 @@ pub(crate) fn update_selection_highlight(
         return;
     }
 
-    let char_width = settings.font.char_width;
-    let line_height = settings.font.line_height;
+    let char_width = font.char_width;
+    let line_height = font.line_height;
 
     // Check if we're using soft line wrapping
-    let use_wrapping = settings.wrapping.enabled && state.display_map.wrap_width > 0;
+    let use_wrapping = wrapping.enabled && state.display_map.wrap_width > 0;
 
     // Collect all selection ranges from all cursors
     // (cursor_idx, display_row, start_col, end_col, is_continuation)
@@ -327,14 +334,14 @@ pub(crate) fn update_selection_highlight(
         let selection_width = (sel_end_col - sel_start_col) as f32 * char_width;
 
         // Add continuation indent for wrapped lines
-        let extra_indent = if use_wrapping && is_continuation && settings.wrapping.indent_wrapped_lines {
-            settings.indentation.indent_size as f32 * char_width
+        let extra_indent = if use_wrapping && is_continuation && wrapping.indent_wrapped_lines {
+            indentation.indent_size as f32 * char_width
         } else {
             0.0
         };
 
-        let x_left_edge = settings.ui.layout.code_margin_left + extra_indent + (sel_start_col as f32 * char_width);
-        let y_from_top = settings.ui.layout.margin_top + state.scroll_offset + (row_idx as f32 * line_height);
+        let x_left_edge = viewport.text_area_left + extra_indent + (sel_start_col as f32 * char_width);
+        let y_from_top = viewport.text_area_top + state.scroll_offset + (row_idx as f32 * line_height);
 
         let sprite_center_x =
             -(viewport.width as f32) / 2.0 + x_left_edge + selection_width / 2.0;
@@ -353,7 +360,7 @@ pub(crate) fn update_selection_highlight(
         } else {
             commands.spawn((
                 Sprite {
-                    color: settings.theme.selection_background,
+                    color: theme.selection_background,
                     custom_size: Some(Vec2::new(selection_width, line_height)),
                     ..default()
                 },
@@ -378,13 +385,16 @@ pub(crate) fn update_selection_highlight(
 pub(crate) fn update_indent_guides(
     mut commands: Commands,
     state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    theme: Res<ThemeSettings>,
+    ui: Res<UiSettings>,
+    indentation: Res<IndentationSettings>,
     viewport: Res<ViewportDimensions>,
     fold_state: Res<FoldState>,
     mut guide_query: Query<(Entity, &mut Transform, &mut Visibility, &mut IndentGuide)>,
 ) {
     // Hide all guides if disabled
-    if !settings.ui.show_indent_guides {
+    if !ui.show_indent_guides {
         for (_, _, mut visibility, _) in guide_query.iter_mut() {
             *visibility = Visibility::Hidden;
         }
@@ -395,9 +405,9 @@ pub(crate) fn update_indent_guides(
         return;
     }
 
-    let line_height = settings.font.line_height;
-    let char_width = settings.font.char_width;
-    let indent_size = settings.indentation.indent_size;
+    let line_height = font.line_height;
+    let char_width = font.char_width;
+    let indent_size = indentation.indent_size;
     let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
 
@@ -488,8 +498,8 @@ pub(crate) fn update_indent_guides(
     let mut entity_index = 0;
 
     for (display_row, level) in needed_guides.iter() {
-        let x_offset = settings.ui.layout.code_margin_left + (*level * indent_size) as f32 * char_width;
-        let y_offset = settings.ui.layout.margin_top + state.scroll_offset + (*display_row as f32 * line_height);
+        let x_offset = viewport.text_area_left + (*level * indent_size) as f32 * char_width;
+        let y_offset = viewport.text_area_top + state.scroll_offset + (*display_row as f32 * line_height);
 
         // Position the guide line (thin vertical line)
         let sprite_x = -viewport_width / 2.0 + x_offset - state.horizontal_scroll_offset + viewport.offset_x;
@@ -507,7 +517,7 @@ pub(crate) fn update_indent_guides(
             // Spawn new guide entity
             commands.spawn((
                 Sprite {
-                    color: settings.theme.indent_guide,
+                    color: theme.indent_guide,
                     custom_size: Some(Vec2::new(1.0, line_height)),
                     ..default()
                 },
@@ -535,12 +545,22 @@ pub(crate) fn update_indent_guides(
 pub(crate) fn animate_smooth_scroll(
     mut state: ResMut<CodeEditorState>,
     time: Res<Time>,
-    settings: Res<EditorSettings>,
+    scrolling: Res<ScrollingSettings>,
+    scrollbar_drag: Res<super::scrollbar::ScrollbarDragState>,
 ) {
-    if !settings.scrolling.smooth_scrolling {
-        // When smooth scrolling is disabled, sync target with actual
-        state.target_scroll_offset = state.scroll_offset;
-        state.target_horizontal_scroll_offset = state.horizontal_scroll_offset;
+    // When dragging scrollbar or smooth scrolling disabled, apply target immediately
+    let use_smooth = scrolling.smooth && !scrollbar_drag.is_dragging;
+
+    if !use_smooth {
+        // Instant update - no interpolation
+        if (state.target_scroll_offset - state.scroll_offset).abs() > 0.001 {
+            state.scroll_offset = state.target_scroll_offset;
+            state.needs_scroll_update = true;
+        }
+        if (state.target_horizontal_scroll_offset - state.horizontal_scroll_offset).abs() > 0.001 {
+            state.horizontal_scroll_offset = state.target_horizontal_scroll_offset;
+            state.needs_update = true;
+        }
         return;
     }
 
@@ -574,11 +594,18 @@ pub(crate) fn animate_smooth_scroll(
 }
 
 /// Auto-scroll viewport to keep cursor visible
+/// Writes to target_scroll_offset, not scroll_offset (applied by animate_smooth_scroll)
 pub(crate) fn auto_scroll_to_cursor(
     mut state: ResMut<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
     viewport: Res<ViewportDimensions>,
+    scrollbar_drag: Res<super::scrollbar::ScrollbarDragState>,
 ) {
+    // Skip auto-scroll when dragging scrollbar (user has manual control priority)
+    if scrollbar_drag.is_dragging {
+        return;
+    }
+
     // Only auto-scroll when cursor actually moves (not when scroll changes)
     let cursor_pos = state.cursor_pos.min(state.rope.len_chars());
     if cursor_pos == state.last_cursor_pos {
@@ -588,44 +615,45 @@ pub(crate) fn auto_scroll_to_cursor(
     // Update last cursor position
     state.last_cursor_pos = cursor_pos;
     let line_index = state.rope.char_to_line(cursor_pos);
-    let line_height = settings.font.line_height;
+    let line_height = font.line_height;
     let viewport_height = viewport.height as f32;
     let viewport_width = viewport.width as f32;
 
     // === VERTICAL AUTO-SCROLL ===
 
     // Calculate cursor's Y position
-    let cursor_y = settings.ui.layout.margin_top + state.scroll_offset + (line_index as f32 * line_height);
+    let cursor_y = viewport.text_area_top + state.scroll_offset + (line_index as f32 * line_height);
 
     // Define visible range (with some margin)
     let margin_vertical = line_height * 2.0;
     let visible_top = margin_vertical;
     let visible_bottom = viewport_height - margin_vertical;
 
-    // Adjust scroll if cursor is outside visible range
+    // Adjust target scroll if cursor is outside visible range
     if cursor_y < visible_top {
         // Cursor is above visible area - scroll up
-        state.scroll_offset += visible_top - cursor_y;
-        state.needs_scroll_update = true;
+        state.target_scroll_offset += visible_top - cursor_y;
     } else if cursor_y > visible_bottom {
         // Cursor is below visible area - scroll down
-        state.scroll_offset -= cursor_y - visible_bottom;
-        state.needs_scroll_update = true;
+        state.target_scroll_offset -= cursor_y - visible_bottom;
+    } else {
+        // Cursor is visible, no auto-scroll needed
+        return;
     }
 
-    // Clamp scroll_offset to valid range
-    state.scroll_offset = state.scroll_offset.min(0.0);
+    // Clamp target_scroll_offset to valid range
+    state.target_scroll_offset = state.target_scroll_offset.min(0.0);
     let line_count = state.rope.len_lines();
     let content_height = line_count as f32 * line_height;
-    let max_scroll = -(content_height - viewport_height + settings.ui.layout.margin_top);
-    state.scroll_offset = state.scroll_offset.max(max_scroll.min(0.0));
+    let max_scroll = -(content_height - viewport_height + viewport.text_area_top);
+    state.target_scroll_offset = state.target_scroll_offset.max(max_scroll.min(0.0));
 
     // === HORIZONTAL AUTO-SCROLL ===
 
     // Calculate cursor's X position (column within line)
     let line_start = state.rope.line_to_char(line_index);
     let col_index = cursor_pos - line_start;
-    let char_width = settings.font.char_width;
+    let char_width = font.char_width;
 
     // Cursor X position relative to code area (before scrolling)
     let cursor_x = col_index as f32 * char_width;
@@ -633,24 +661,22 @@ pub(crate) fn auto_scroll_to_cursor(
     // Define horizontal visible range (with some margin)
     let margin_horizontal = char_width * 5.0; // 5 characters of margin
     let visible_left = state.horizontal_scroll_offset;
-    let visible_right = state.horizontal_scroll_offset + viewport_width - settings.ui.layout.code_margin_left - margin_horizontal;
+    let visible_right = state.horizontal_scroll_offset + viewport_width - viewport.text_area_left - margin_horizontal;
 
-    // Adjust horizontal scroll if cursor is outside visible range
+    // Adjust horizontal target scroll if cursor is outside visible range
     if cursor_x < visible_left {
         // Cursor is left of visible area - scroll left
-        state.horizontal_scroll_offset = cursor_x.max(0.0);
-        state.needs_scroll_update = true;
+        state.target_horizontal_scroll_offset = cursor_x.max(0.0);
     } else if cursor_x > visible_right {
         // Cursor is right of visible area - scroll right
-        state.horizontal_scroll_offset = cursor_x - (viewport_width - settings.ui.layout.code_margin_left - margin_horizontal);
-        state.needs_scroll_update = true;
+        state.target_horizontal_scroll_offset = cursor_x - (viewport_width - viewport.text_area_left - margin_horizontal);
     }
 
-    // Clamp horizontal_scroll_offset to valid range
+    // Clamp target_horizontal_scroll_offset to valid range
     // Minimum is 0.0 (don't scroll past the left edge)
-    state.horizontal_scroll_offset = state.horizontal_scroll_offset.max(0.0);
+    state.target_horizontal_scroll_offset = state.target_horizontal_scroll_offset.max(0.0);
 
     // Maximum is when rightmost content reaches viewport edge
     let max_horizontal_scroll = (state.max_content_width - viewport_width).max(0.0);
-    state.horizontal_scroll_offset = state.horizontal_scroll_offset.min(max_horizontal_scroll);
+    state.target_horizontal_scroll_offset = state.target_horizontal_scroll_offset.min(max_horizontal_scroll);
 }

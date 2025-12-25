@@ -7,7 +7,7 @@
 
 use bevy::prelude::*;
 
-use crate::settings::EditorSettings;
+use crate::settings::*;
 use crate::types::{CodeEditorState, ViewportDimensions};
 
 use super::components::*;

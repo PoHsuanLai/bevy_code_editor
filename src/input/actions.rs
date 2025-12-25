@@ -1,5 +1,7 @@
 use crate::types::*;
-use crate::settings::EditorSettings;
+use crate::settings::IndentationSettings;
+#[cfg(feature = "lsp")]
+use crate::settings::LspSettings;
 use super::keybindings::EditorAction;
 use super::cursor::*;
 use arboard::Clipboard;
@@ -317,7 +319,7 @@ pub fn send_did_change(
 fn execute_action_core(
     state: &mut CodeEditorState,
     action: EditorAction,
-    settings: &EditorSettings,
+    indentation: &IndentationSettings,
     find_state: &mut FindState,
     goto_line_state: &mut GotoLineState,
     fold_state: &mut FoldState,
@@ -333,7 +335,7 @@ fn execute_action_core(
             result.text_changed = true;
         }
         EditorAction::InsertTab => {
-            for _ in 0..settings.indentation.tab_size {
+            for _ in 0..indentation.tab_width {
                 insert_char(state, ' ');
             }
             result.text_changed = true;
@@ -833,7 +835,7 @@ fn add_cursor_below(state: &mut CodeEditorState) {
 pub fn execute_action(
     state: &mut CodeEditorState,
     action: EditorAction,
-    settings: &EditorSettings,
+    indentation: &IndentationSettings,
     find_state: &mut FindState,
     goto_line_state: &mut GotoLineState,
     fold_state: &mut FoldState,
@@ -858,7 +860,7 @@ pub fn execute_action(
         }
     }
 
-    let _ = execute_action_core(state, action, settings, find_state, goto_line_state, fold_state);
+    let _ = execute_action_core(state, action, indentation, find_state, goto_line_state, fold_state);
 }
 
 /// Execute an editor action (LSP version)
@@ -866,7 +868,8 @@ pub fn execute_action(
 pub fn execute_action(
     state: &mut CodeEditorState,
     action: EditorAction,
-    settings: &EditorSettings,
+    indentation: &IndentationSettings,
+    lsp: &LspSettings,
     find_state: &mut FindState,
     goto_line_state: &mut GotoLineState,
     fold_state: &mut FoldState,
@@ -896,7 +899,7 @@ pub fn execute_action(
 
     // Handle Completion UI Navigation first
     let filtered_count = completion_state.filtered_items().len();
-    let max_visible = settings.completion.max_visible_items;
+    let max_visible = lsp.completion.max_visible_items;
 
     if completion_state.visible && filtered_count > 0 {
         match action {
@@ -940,7 +943,7 @@ pub fn execute_action(
     }
 
     // Execute the core action
-    let result = execute_action_core(state, action, settings, find_state, goto_line_state, fold_state);
+    let result = execute_action_core(state, action, indentation, find_state, goto_line_state, fold_state);
 
     // LSP-specific post-processing: dismiss completion on horizontal move
     if result.horizontal_move {

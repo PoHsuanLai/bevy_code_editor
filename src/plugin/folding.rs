@@ -1,7 +1,7 @@
 //! Code folding
 
 use bevy::prelude::*;
-use crate::settings::EditorSettings;
+use crate::settings::*;
 use crate::types::*;
 use super::to_bevy_coords_left_aligned;
 
@@ -246,21 +246,23 @@ pub(crate) fn detect_foldable_regions(
 pub(crate) fn update_fold_indicators(
     mut commands: Commands,
     state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    theme: Res<ThemeSettings>,
+    ui: Res<UiSettings>,
     viewport: Res<ViewportDimensions>,
     fold_state: Res<FoldState>,
     mut indicator_query: Query<(Entity, &FoldIndicator, &mut Transform, &mut Text2d, &mut Visibility)>,
 ) {
     // Hide all if folding is disabled
-    if !fold_state.enabled || !settings.ui.show_line_numbers {
+    if !fold_state.enabled || !ui.show_line_numbers {
         for (_, _, _, _, mut visibility) in indicator_query.iter_mut() {
             *visibility = Visibility::Hidden;
         }
         return;
     }
 
-    let line_height = settings.font.line_height;
-    let font_size = settings.font.size;
+    let line_height = font.line_height;
+    let font_size = font.size;
     let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
 
@@ -307,8 +309,8 @@ pub(crate) fn update_fold_indicators(
 
         // Position in fold gutter (between line numbers and separator)
         // In VSCode style, this is a narrow gutter just before the separator
-        let x_offset = settings.ui.layout.separator_x - 12.0; // Just before the separator
-        let y_offset = settings.ui.layout.margin_top + state.scroll_offset + (display_line as f32 * line_height);
+        let x_offset = viewport.separator_x - 12.0; // Just before the separator
+        let y_offset = viewport.text_area_top + state.scroll_offset + (display_line as f32 * line_height);
 
         let translation = to_bevy_coords_left_aligned(
             x_offset,
@@ -332,7 +334,7 @@ pub(crate) fn update_fold_indicators(
         } else {
             // Spawn new indicator
             let text_font = TextFont {
-                font: settings.font.handle.clone().unwrap_or_default(),
+                font: font.handle.clone().unwrap_or_default(),
                 font_size: font_size * 0.7,
                 ..default()
             };
@@ -340,7 +342,7 @@ pub(crate) fn update_fold_indicators(
             commands.spawn((
                 Text2d::new(indicator_char.to_string()),
                 text_font,
-                TextColor(settings.theme.line_numbers.with_alpha(0.8)),
+                TextColor(theme.line_numbers.with_alpha(0.8)),
                 Transform::from_translation(translation),
                 
                 FoldIndicator { line_index: line_idx },

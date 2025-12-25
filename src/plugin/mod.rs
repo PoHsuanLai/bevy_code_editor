@@ -26,7 +26,7 @@ pub(crate) use folding::*;
 pub(crate) use gpu_text_render::*;
 
 // Re-export scrollbar plugin publicly
-pub use scrollbar::{ScrollbarPlugin, Scrollbar};
+pub use scrollbar::{ScrollbarPlugin, Scrollbar, mouse_not_over_scrollbar};
 
 // Re-export syntax plugin publicly
 pub use syntax_highlighting::{SyntaxPlugin, SyntaxResource, HighlightCache};
@@ -44,7 +44,7 @@ pub use lsp_ui_plugin::LspUiPlugin;
 use bevy::prelude::*;
 use leafwing_input_manager::prelude::{InputManagerPlugin, InputMap, ActionState};
 use crate::input::EditorAction;
-use crate::settings::EditorSettings;
+use crate::settings::*;
 use crate::types::*;
 use crate::gpu_text::GpuTextPlugin;
 
@@ -52,9 +52,24 @@ use crate::gpu_text::GpuTextPlugin;
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EditorSetupSet;
 
+/// System set for input handling (mouse, keyboard, scrollbar drag)
+/// These systems write to target_scroll_offset and other input state
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct InputSet;
+
+/// System set for applying state changes (smooth scroll, auto-scroll to cursor)
+/// These systems read targets and write to actual state (scroll_offset)
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ApplyStateSet;
+
+/// System set for rendering/visual updates (text, UI, scrollbar visuals)
+/// These systems read state and update visual entities
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RenderingSet;
+
 /// Code editor plugin with GPU-accelerated text rendering
 pub struct CodeEditorPlugin {
-    settings: EditorSettings,
+    settings: SettingsBundle,
     input_map: InputMap<EditorAction>,
 }
 
@@ -77,14 +92,20 @@ impl CodeEditorPlugin {
     /// ```
     pub fn new(input_map: InputMap<EditorAction>) -> Self {
         Self {
-            settings: EditorSettings::default(),
+            settings: EditorSettingsBuilder::default().build(),
             input_map,
         }
     }
 
-    /// Set custom editor settings
-    pub fn with_settings(mut self, settings: EditorSettings) -> Self {
+    /// Set custom editor settings using builder
+    pub fn with_settings(mut self, settings: SettingsBundle) -> Self {
         self.settings = settings;
+        self
+    }
+
+    /// Set custom editor settings using builder function
+    pub fn with_settings_builder(mut self, builder: EditorSettingsBuilder) -> Self {
+        self.settings = builder.build();
         self
     }
 }
@@ -101,8 +122,10 @@ struct PendingInputMap(InputMap<EditorAction>);
 
 impl Plugin for CodeEditorPlugin {
     fn build(&self, app: &mut App) {
+        // Insert all settings resources
+        self.settings.clone().insert_into(app);
+
         // Insert core resources (needed for all render modes)
-        app.insert_resource(self.settings.clone());
         app.insert_resource(CodeEditorState::default());
         app.insert_resource(crate::input::MouseDragState::default());
         app.insert_resource(KeyRepeatState::default());
@@ -117,13 +140,20 @@ impl Plugin for CodeEditorPlugin {
         // Users can query and modify the InputMap component to customize bindings at runtime
         app.add_systems(Startup, spawn_input_manager);
 
+        // Configure SystemSet ordering: Input → ApplyState → Rendering
+        app.configure_sets(Update, (
+            InputSet,
+            ApplyStateSet,
+            RenderingSet,
+        ).chain());
+
         // Add input handling systems (needed for all render modes)
         app.add_systems(
             Update,
             (
                 crate::input::handle_keyboard_input,
                 debounce_updates,
-            ),
+            ).in_set(InputSet),
         );
 
         // Register editor events for file operations
@@ -153,18 +183,30 @@ impl Plugin for CodeEditorPlugin {
         app.add_systems(Startup, (init_viewport_from_window, setup).chain().in_set(EditorSetupSet));
 
         // GPU text rendering systems - split into smaller groups to avoid tuple limits
+        // Input systems - handle user input and write to target state
         app.add_systems(
             Update,
             (
-                crate::input::handle_mouse_input,
+                crate::input::handle_mouse_input.run_if(mouse_not_over_scrollbar),
                 crate::input::handle_mouse_wheel,
+            )
+                .chain()
+                .in_set(InputSet),
+        );
+
+        // Apply state systems - read targets and apply to actual state
+        app.add_systems(
+            Update,
+            (
                 animate_smooth_scroll,
                 auto_scroll_to_cursor,
                 detect_viewport_resize,
                 update_separator_on_resize,
             )
-                .chain(),
+                .chain()
+                .in_set(ApplyStateSet),
         );
+        // Rendering systems - update visuals based on state
         app.add_systems(
             Update,
             (
@@ -173,7 +215,7 @@ impl Plugin for CodeEditorPlugin {
                 update_gpu_text_display,
             )
                 .chain()
-                .after(update_separator_on_resize),
+                .in_set(RenderingSet),
         );
 
         // Update syntax tree AFTER rendering (async) to avoid blocking display
@@ -229,7 +271,9 @@ fn to_bevy_coords_left_aligned(
 }
 
 /// Debouncing system: Only promote pending_update to needs_update if enough time has passed
-const DEBOUNCE_INTERVAL_MS: f64 = 16.0; // ~60fps
+/// OPTIMIZATION: Reduced to minimize input lag, but mesh rebuilds still occur
+/// For large files, the bottleneck is GPU mesh rebuild, not tree-sitter parsing
+const DEBOUNCE_INTERVAL_MS: f64 = 16.0;
 
 fn debounce_updates(mut state: ResMut<CodeEditorState>, time: Res<Time>) {
     if !state.pending_update {
@@ -281,11 +325,11 @@ fn detect_viewport_resize(
 /// Update separator height and position when viewport changes
 fn update_separator_on_resize(
     viewport: Res<ViewportDimensions>,
-    settings: Res<EditorSettings>,
+    ui: Res<UiSettings>,
     mut separator_query: Query<(&mut Sprite, &mut Transform), With<Separator>>,
 ) {
     // Only update if separator is enabled and exists
-    if !settings.ui.show_separator {
+    if !ui.show_separator {
         return;
     }
 
@@ -295,7 +339,7 @@ fn update_separator_on_resize(
             let viewport_height = viewport.height as f32;
             sprite.custom_size = Some(Vec2::new(1.0, viewport_height));
             transform.translation = to_bevy_coords_left_aligned(
-                settings.ui.layout.separator_x,
+                viewport.separator_x,
                 viewport_height / 2.0,
                 viewport_width,
                 viewport_height,
@@ -308,7 +352,7 @@ fn update_separator_on_resize(
 
 fn setup(
     mut commands: Commands,
-    settings: Res<EditorSettings>,
+    theme: Res<ThemeSettings>,
 ) {
     // Spawn 2D camera for the editor with 1:1 pixel mapping
     commands.spawn((
@@ -318,7 +362,7 @@ fn setup(
             ..OrthographicProjection::default_2d()
         }),
         Camera {
-            clear_color: ClearColorConfig::Custom(settings.theme.background),
+            clear_color: ClearColorConfig::Custom(theme.background),
             ..default()
         },
         Name::new("EditorCamera"),

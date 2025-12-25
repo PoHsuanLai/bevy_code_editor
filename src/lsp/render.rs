@@ -29,7 +29,7 @@
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
 
-use crate::settings::EditorSettings;
+use crate::settings::FontSettings;
 use crate::types::ViewportDimensions;
 
 use super::components::*;
@@ -44,7 +44,7 @@ pub fn render_completion_popup(
     mut commands: Commands,
     popup_query: Query<(Entity, &CompletionPopupData), Changed<CompletionPopupData>>,
     visual_query: Query<Entity, With<CompletionUI>>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
     viewport: Res<ViewportDimensions>,
     theme: Res<LspUiTheme>,
 ) {
@@ -56,7 +56,7 @@ pub fn render_completion_popup(
 
         let viewport_width = viewport.width as f32;
         let viewport_height = viewport.height as f32;
-        let line_height = settings.font.line_height;
+        let line_height = font.line_height;
 
         let pos = Vec3::new(
             -viewport_width / 2.0 + popup.position.x + popup.width / 2.0,
@@ -105,8 +105,8 @@ pub fn render_completion_popup(
                     parent.spawn((
                         Text2d::new(&item.kind_icon),
                         TextFont {
-                            font: settings.font.handle.clone().unwrap_or_default(),
-                            font_size: settings.font.size * 0.9,
+                            font: font.handle.clone().unwrap_or_default(),
+                            font_size: font.size * 0.9,
                             ..default()
                         },
                         TextColor(theme.completion.icon_color),
@@ -125,8 +125,8 @@ pub fn render_completion_popup(
                     parent.spawn((
                         Text2d::new(&item.label),
                         TextFont {
-                            font: settings.font.handle.clone().unwrap_or_default(),
-                            font_size: settings.font.size,
+                            font: font.handle.clone().unwrap_or_default(),
+                            font_size: font.size,
                             ..default()
                         },
                         TextColor(label_color),
@@ -140,8 +140,8 @@ pub fn render_completion_popup(
                         parent.spawn((
                             Text2d::new(detail),
                             TextFont {
-                                font: settings.font.handle.clone().unwrap_or_default(),
-                                font_size: settings.font.size * 0.8,
+                                font: font.handle.clone().unwrap_or_default(),
+                                font_size: font.size * 0.8,
                                 ..default()
                             },
                             TextColor(theme.completion.detail_color),
@@ -160,7 +160,7 @@ pub fn render_hover_popup(
     mut commands: Commands,
     popup_query: Query<(Entity, &HoverPopupData), Changed<HoverPopupData>>,
     visual_query: Query<Entity, With<HoverUI>>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
     viewport: Res<ViewportDimensions>,
     theme: Res<LspUiTheme>,
 ) {
@@ -197,8 +197,8 @@ pub fn render_hover_popup(
                 parent.spawn((
                     Text2d::new(&popup.content),
                     TextFont {
-                        font: settings.font.handle.clone().unwrap_or_default(),
-                        font_size: settings.font.size * 0.9,
+                        font: font.handle.clone().unwrap_or_default(),
+                        font_size: font.size * 0.9,
                         ..default()
                     },
                     TextColor(theme.hover.text_color),
@@ -215,7 +215,7 @@ pub fn render_signature_help_popup(
     mut commands: Commands,
     popup_query: Query<(Entity, &SignatureHelpPopupData), Changed<SignatureHelpPopupData>>,
     visual_query: Query<Entity, With<SignatureHelpUI>>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
     viewport: Res<ViewportDimensions>,
     theme: Res<LspUiTheme>,
 ) {
@@ -251,8 +251,8 @@ pub fn render_signature_help_popup(
                 parent.spawn((
                     Text2d::new(&popup.label),
                     TextFont {
-                        font: settings.font.handle.clone().unwrap_or_default(),
-                        font_size: settings.font.size * 0.9,
+                        font: font.handle.clone().unwrap_or_default(),
+                        font_size: font.size * 0.9,
                         ..default()
                     },
                     TextColor(theme.signature_help.text_color),
@@ -267,8 +267,8 @@ pub fn render_signature_help_popup(
                     parent.spawn((
                         Text2d::new(indicator),
                         TextFont {
-                            font: settings.font.handle.clone().unwrap_or_default(),
-                            font_size: settings.font.size * 0.72,
+                            font: font.handle.clone().unwrap_or_default(),
+                            font_size: font.size * 0.72,
                             ..default()
                         },
                         TextColor(theme.signature_help.counter_color),
@@ -290,7 +290,7 @@ pub fn render_code_actions_popup(
     mut commands: Commands,
     popup_query: Query<(Entity, &CodeActionsPopupData), Changed<CodeActionsPopupData>>,
     visual_query: Query<Entity, With<CodeActionUI>>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
     viewport: Res<ViewportDimensions>,
     theme: Res<LspUiTheme>,
 ) {
@@ -301,7 +301,7 @@ pub fn render_code_actions_popup(
 
         let viewport_width = viewport.width as f32;
         let viewport_height = viewport.height as f32;
-        let line_height = settings.font.line_height;
+        let line_height = font.line_height;
 
         let pos = Vec3::new(
             -viewport_width / 2.0 + popup.position.x + popup.width / 2.0,
@@ -341,8 +341,8 @@ pub fn render_code_actions_popup(
                     parent.spawn((
                         Text2d::new(format!("{} {}", action.icon, action.title)),
                         TextFont {
-                            font: settings.font.handle.clone().unwrap_or_default(),
-                            font_size: settings.font.size,
+                            font: font.handle.clone().unwrap_or_default(),
+                            font_size: font.size,
                             ..default()
                         },
                         TextColor(theme.code_actions.text_color),
@@ -360,7 +360,7 @@ pub fn render_rename_input(
     mut commands: Commands,
     popup_query: Query<(Entity, &RenameInputData), Changed<RenameInputData>>,
     visual_query: Query<Entity, With<RenameUI>>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
     viewport: Res<ViewportDimensions>,
     theme: Res<LspUiTheme>,
 ) {
@@ -371,7 +371,7 @@ pub fn render_rename_input(
 
         let viewport_width = viewport.width as f32;
         let viewport_height = viewport.height as f32;
-        let char_width = settings.font.char_width;
+        let char_width = font.char_width;
 
         let pos = Vec3::new(
             -viewport_width / 2.0 + popup.position.x,
@@ -410,8 +410,8 @@ pub fn render_rename_input(
                 parent.spawn((
                     Text2d::new(&popup.text),
                     TextFont {
-                        font: settings.font.handle.clone().unwrap_or_default(),
-                        font_size: settings.font.size,
+                        font: font.handle.clone().unwrap_or_default(),
+                        font_size: font.size,
                         ..default()
                     },
                     TextColor(theme.rename.text_color),
@@ -432,7 +432,7 @@ pub fn render_rename_input(
                 parent.spawn((
                     Sprite {
                         color: theme.rename.cursor_color,
-                        custom_size: Some(Vec2::new(1.5, settings.font.size * 0.9)),
+                        custom_size: Some(Vec2::new(1.5, font.size * 0.9)),
                         ..default()
                     },
                     Transform::from_translation(Vec3::new(cursor_x, 0.0, 0.3)),
@@ -446,7 +446,7 @@ pub fn render_rename_input(
 pub fn render_inlay_hints(
     mut commands: Commands,
     hint_query: Query<(Entity, &InlayHintData), Added<InlayHintData>>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
     viewport: Res<ViewportDimensions>,
     theme: Res<LspUiTheme>,
 ) {
@@ -469,8 +469,8 @@ pub fn render_inlay_hints(
         commands.entity(entity).insert((
             Text2d::new(&hint.label),
             TextFont {
-                font: settings.font.handle.clone().unwrap_or_default(),
-                font_size: settings.font.size * theme.inlay_hints.font_size_multiplier,
+                font: font.handle.clone().unwrap_or_default(),
+                font_size: font.size * theme.inlay_hints.font_size_multiplier,
                 ..default()
             },
             TextColor(color),

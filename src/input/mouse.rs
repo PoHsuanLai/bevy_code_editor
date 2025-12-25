@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy::input::mouse::MouseWheel;
 use bevy::window::PrimaryWindow;
 use crate::types::*;
-use crate::settings::EditorSettings;
+use crate::settings::*;
 
 #[cfg(feature = "lsp")]
 use crate::lsp::{LspMessage, reset_hover_state};
@@ -20,24 +20,24 @@ pub struct MouseDragState {
 fn screen_to_char_pos(
     screen_pos: Vec2,
     state: &CodeEditorState,
-    settings: &EditorSettings,
+    font: &FontSettings,
+    viewport: &ViewportDimensions,
     _viewport_width: f32,
     _viewport_height: f32,
-    offset_x: f32,
     fold_state: &FoldState,
 ) -> usize {
     // Calculate the clicked position relative to code start, accounting for sidebar offset
     // Note: scroll_offset is negative when scrolled down, and screen_pos.y is 0 at top in window coords
     // But Bevy's cursor_position() returns (0,0) at top-left, so we need to account for that
-    let relative_x = screen_pos.x - settings.ui.layout.code_margin_left - offset_x;
+    let relative_x = screen_pos.x - viewport.text_area_left - viewport.offset_x;
 
     // scroll_offset is negative when scrolled, so -scroll_offset gives how many pixels we've scrolled
     // screen_pos.y starts at 0 at top of window
-    let relative_y = screen_pos.y - settings.ui.layout.margin_top - state.scroll_offset;
+    let relative_y = screen_pos.y - viewport.text_area_top - state.scroll_offset;
 
     // Calculate line and column from pixel position
-    let line_height = settings.font.line_height;
-    let char_width = settings.font.size * 0.6; // Approximate monospace width
+    let line_height = font.line_height;
+    let char_width = font.size * 0.6; // Approximate monospace width
 
     let display_row = (relative_y / line_height).max(0.0) as usize;
     let col = (relative_x / char_width).max(0.0) as usize;
@@ -65,7 +65,7 @@ pub fn handle_mouse_input(
     mut drag_state: ResMut<MouseDragState>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
     viewport: Res<ViewportDimensions>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut fold_state: ResMut<FoldState>,
@@ -73,6 +73,7 @@ pub fn handle_mouse_input(
     #[cfg(feature = "lsp")] lsp_client: Res<crate::lsp::LspClient>,
     #[cfg(feature = "lsp")] lsp_sync: Res<crate::lsp::LspSyncState>,
     #[cfg(feature = "lsp")] mut hover_state: ResMut<crate::lsp::HoverState>,
+    #[cfg(feature = "lsp")] hover_settings: Res<crate::lsp::LspSettings>,
 ) {
     // Get cursor position
     let cursor_pos_screen = window_query.iter().next()
@@ -93,10 +94,10 @@ pub fn handle_mouse_input(
             Some(screen_to_char_pos(
                 cursor_pos_screen,
                 &state,
-                &settings,
+                &font,
+                &viewport,
                 viewport_width,
                 viewport_height,
-                viewport.offset_x,
                 &fold_state,
             ))
         } else {
@@ -113,14 +114,14 @@ pub fn handle_mouse_input(
         use lsp_types::Position;
 
         // Only process hover if enabled in settings
-        if settings.hover.enabled {
+        if hover_settings.hover_enabled {
             if let Some(current_char_pos) = char_pos {
                 // If mouse moved to a different character
                 if hover_state.trigger_char_index != current_char_pos {
                     hover_state.trigger_char_index = current_char_pos;
                     // Use delay_ms from settings
                     hover_state.timer = Some(Timer::new(
-                        std::time::Duration::from_millis(settings.hover.delay_ms),
+                        std::time::Duration::from_millis(hover_settings.hover_delay_ms),
                         TimerMode::Once
                     ));
                     hover_state.visible = false; // Hide previous hover immediately
@@ -167,17 +168,17 @@ pub fn handle_mouse_input(
     if mouse_button.just_pressed(MouseButton::Left) {
         // Check for fold indicator click (in the fold gutter area)
         if let Some(cursor_pos_screen) = cursor_pos_screen {
-            let line_height = settings.font.line_height;
+            let line_height = font.line_height;
 
             // Fold gutter is a narrow area just before the separator (where fold indicators are)
             // Fold indicators are positioned at: separator_x - 12.0
-            let gutter_start = settings.ui.layout.separator_x - 18.0;
-            let gutter_end = settings.ui.layout.separator_x + 5.0;
+            let gutter_start = viewport.separator_x - 18.0;
+            let gutter_end = viewport.separator_x + 5.0;
 
             // Check if click is in the fold gutter area (horizontally)
             if cursor_pos_screen.x >= gutter_start && cursor_pos_screen.x < gutter_end {
                 // Calculate which display row was clicked
-                let relative_y = cursor_pos_screen.y - settings.ui.layout.margin_top + state.scroll_offset;
+                let relative_y = cursor_pos_screen.y - viewport.text_area_top + state.scroll_offset;
                 let display_row = (relative_y / line_height).max(0.0) as usize;
 
                 // Convert display row to buffer line
@@ -276,10 +277,10 @@ pub fn handle_mouse_input(
             let current_pos = screen_to_char_pos(
                 cursor_pos_screen,
                 &state,
-                &settings,
+                &font,
+                &viewport,
                 viewport.width as f32,
                 viewport.height as f32,
-                viewport.offset_x,
                 &fold_state,
             );
 
@@ -299,24 +300,25 @@ pub fn handle_mouse_wheel(
     mut state: ResMut<CodeEditorState>,
     mut mouse_wheel_events: MessageReader<MouseWheel>,
     _keyboard: Res<ButtonInput<KeyCode>>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    scrolling: Res<ScrollingSettings>,
     viewport: Res<ViewportDimensions>,
 ) {
     for event in mouse_wheel_events.read() {
         let mut scrolled = false;
-        let use_smooth = settings.scrolling.smooth_scrolling;
+        let use_smooth = scrolling.smooth;
 
         // Horizontal scrolling (using event.x)
         if event.x.abs() > 0.0 {
             // Only allow horizontal scrolling if content width exceeds available text area
             let viewport_width = viewport.width as f32;
             // Calculate available width for text (excluding line numbers margin and code margin)
-            let available_text_width = viewport_width - settings.ui.layout.code_margin_left;
+            let available_text_width = viewport_width - viewport.text_area_left;
 
             if state.max_content_width > available_text_width {
                 // Positive x = scroll right (content moves left, horizontal_scroll_offset increases)
                 // Negative x = scroll left (content moves right, horizontal_scroll_offset decreases)
-                let scroll_delta = event.x * settings.font.char_width * settings.scrolling.speed;
+                let scroll_delta = event.x * font.char_width * scrolling.speed;
 
                 if use_smooth {
                     // Update target for smooth scrolling
@@ -348,13 +350,13 @@ pub fn handle_mouse_wheel(
         if event.y.abs() > 0.0 {
             // Positive y = scroll up (content moves down, scroll_offset increases)
             // Negative y = scroll down (content moves up, scroll_offset decreases)
-            let scroll_delta = event.y * settings.font.line_height * settings.scrolling.speed;
+            let scroll_delta = event.y * font.line_height * scrolling.speed;
 
             // Calculate scroll bounds
             let line_count = state.rope.len_lines();
-            let content_height = line_count as f32 * settings.font.line_height;
+            let content_height = line_count as f32 * font.line_height;
             let viewport_height = viewport.height as f32;
-            let max_scroll = -(content_height - viewport_height + settings.ui.layout.margin_top);
+            let max_scroll = -(content_height - viewport_height + viewport.text_area_top);
 
             if use_smooth {
                 // Update target for smooth scrolling
