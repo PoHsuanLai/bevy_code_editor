@@ -33,25 +33,24 @@ pub struct ScrollbarDragState {
 /// Check if mouse is over any scrollbar (used as a run condition)
 pub fn mouse_not_over_scrollbar(
     windows: Query<&Window>,
-    thumb_query: Query<(&ScrollbarThumb, &Transform, &Sprite)>,
+    scrollbar_query: Query<&Scrollbar, With<EditorScrollbar>>,
 ) -> bool {
     let Ok(window) = windows.single() else { return true; };
     let Some(cursor_pos_window) = window.cursor_position() else { return true; };
 
     // Convert to world coordinates
-    let cursor_y = cursor_pos_window.y - window.height() / 2.0;
     let cursor_x = cursor_pos_window.x - window.width() / 2.0;
 
-    // Check if over any scrollbar thumb
-    for (_, transform, sprite) in thumb_query.iter() {
-        let Some(size) = sprite.custom_size else { continue; };
-        let thumb_x = transform.translation.x;
-        let thumb_y = transform.translation.y;
-        let thumb_half_width = size.x / 2.0;
-        let thumb_half_height = size.y / 2.0;
+    // Check if over any scrollbar (entire track area, not just thumb)
+    for scrollbar in scrollbar_query.iter() {
+        if !scrollbar.enabled {
+            continue;
+        }
 
-        if cursor_x >= thumb_x - thumb_half_width && cursor_x <= thumb_x + thumb_half_width &&
-           cursor_y >= thumb_y - thumb_half_height && cursor_y <= thumb_y + thumb_half_height {
+        let scrollbar_left = scrollbar.x - scrollbar.width / 2.0;
+        let scrollbar_right = scrollbar.x + scrollbar.width / 2.0;
+
+        if cursor_x >= scrollbar_left && cursor_x <= scrollbar_right {
             return false; // Mouse IS over scrollbar
         }
     }
@@ -144,7 +143,6 @@ fn handle_scrollbar_mouse(
 
     // Handle mouse button just pressed - check if clicking on a thumb
     if mouse_button.just_pressed(MouseButton::Left) {
-        eprintln!("[Scrollbar] Mouse click at ({}, {})", cursor_x, cursor_y);
         for (thumb, transform, sprite) in thumb_query.iter() {
             let Some(size) = sprite.custom_size else { continue; };
             let thumb_x = transform.translation.x;
@@ -152,12 +150,9 @@ fn handle_scrollbar_mouse(
             let thumb_half_width = size.x / 2.0;
             let thumb_half_height = size.y / 2.0;
 
-            eprintln!("[Scrollbar] Thumb at ({}, {}), size ({}, {})", thumb_x, thumb_y, size.x, size.y);
-
             // Check if cursor is over this thumb
             if cursor_x >= thumb_x - thumb_half_width && cursor_x <= thumb_x + thumb_half_width &&
                cursor_y >= thumb_y - thumb_half_height && cursor_y <= thumb_y + thumb_half_height {
-                eprintln!("[Scrollbar] HIT! Starting drag");
                 // Start dragging
                 if let Ok((entity, _scrollbar)) = scrollbar_query.get(thumb.parent) {
                     drag_state.is_dragging = true;
@@ -198,6 +193,11 @@ fn handle_scrollbar_mouse(
                     // For scrollbar dragging, we want immediate response (no smoothing)
                     state.target_scroll_offset = new_scroll_offset;
                     state.needs_scroll_update = true;
+
+                    // IMPORTANT: Update last_cursor_pos to prevent auto_scroll_to_cursor from
+                    // snapping back after drag release. We keep the cursor at the same position
+                    // so auto-scroll thinks the cursor hasn't moved.
+                    state.last_cursor_pos = state.cursor_pos;
                 }
             }
         }

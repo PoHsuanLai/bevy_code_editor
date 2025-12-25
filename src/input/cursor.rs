@@ -218,7 +218,7 @@ pub fn delete_word_backward(state: &mut CodeEditorState) {
         state.content_version += 1;
         let line_idx = state.rope.char_to_line(word_start);
         let new_line_count = state.rope.len_lines();
-        state.dirty_lines = Some(line_idx..new_line_count);
+        state.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
         state.previous_line_count = new_line_count;
     }
 }
@@ -260,7 +260,7 @@ pub fn delete_word_forward(state: &mut CodeEditorState) {
         state.content_version += 1;
         let line_idx = state.rope.char_to_line(cursor_before);
         let new_line_count = state.rope.len_lines();
-        state.dirty_lines = Some(line_idx..new_line_count);
+        state.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
         state.previous_line_count = new_line_count;
     }
 }

@@ -1826,11 +1826,8 @@ impl CodeEditorState {
         }
 
         let new_line_count = self.rope.len_lines();
-        if c == '\n' {
-            self.dirty_lines = Some(line_idx..new_line_count);
-        } else {
-            self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-        }
+        // Only mark current line as dirty - tree-sitter will handle the rest
+        self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
         self.previous_line_count = new_line_count;
     }
 
@@ -1884,7 +1881,7 @@ impl CodeEditorState {
             }
 
             let new_line_count = self.rope.len_lines();
-            self.dirty_lines = Some(line_idx..new_line_count);
+            self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
             self.previous_line_count = new_line_count;
         }
     }
@@ -1938,7 +1935,7 @@ impl CodeEditorState {
             }
 
             let new_line_count = self.rope.len_lines();
-            self.dirty_lines = Some(line_idx..new_line_count);
+            self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
             self.previous_line_count = new_line_count;
         }
     }

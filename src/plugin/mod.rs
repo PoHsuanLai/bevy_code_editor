@@ -170,6 +170,7 @@ impl Plugin for CodeEditorPlugin {
         app.insert_resource(MinimapHoverState::default());
         app.insert_resource(MinimapDragState::default());
         app.insert_resource(FoldState::default());
+        app.insert_resource(gpu_text_render::LineMeshPool::default());
 
         // Add the GPU text rendering plugin
         app.add_plugins(GpuTextPlugin);
@@ -211,8 +212,8 @@ impl Plugin for CodeEditorPlugin {
             Update,
             (
                 detect_foldable_regions,
-                handle_scroll_for_gpu_text,
-                update_gpu_text_display,
+                // Note: handle_scroll_for_gpu_text removed - per-line renderer handles scroll natively
+                update_gpu_text_per_line,  // NEW: Per-line mesh system for incremental updates
             )
                 .chain()
                 .in_set(RenderingSet),
@@ -222,7 +223,7 @@ impl Plugin for CodeEditorPlugin {
         #[cfg(feature = "tree-sitter")]
         app.add_systems(
             Update,
-            update_syntax_tree.after(update_gpu_text_display),
+            update_syntax_tree.after(update_gpu_text_per_line),
         );
     }
 }

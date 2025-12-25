@@ -44,14 +44,14 @@ pub fn insert_closing_char(state: &mut CodeEditorState, c: char) {
     state.rope.insert_char(cursor_pos, c);
 
     // Don't move cursor - it stays between the brackets
-    state.needs_update = true;
-    state.pending_update = false;
+    // OPTIMIZATION: Use debounce instead of immediate update
+    state.pending_update = true;
     state.content_version += 1;
 
-    // Mark line as dirty
+    // Mark only current line as dirty (not entire rest of file!)
     let line_idx = state.rope.char_to_line(cursor_pos);
     let new_line_count = state.rope.len_lines();
-    state.dirty_lines = Some(line_idx..new_line_count);
+    state.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
     state.previous_line_count = new_line_count;
 }
 
@@ -168,7 +168,7 @@ pub fn apply_completion(
             // Mark lines as dirty for highlighting update
             let line_idx = state.rope.char_to_line(start);
             let new_line_count = state.rope.len_lines();
-            state.dirty_lines = Some(line_idx..new_line_count);
+            state.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
             state.previous_line_count = new_line_count;
         }
     }
@@ -545,7 +545,7 @@ fn execute_action_core(
 
                 let new_line_count = state.rope.len_lines();
                 let line_idx = state.rope.char_to_line(start);
-                state.dirty_lines = Some(line_idx..new_line_count);
+                state.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
                 state.previous_line_count = new_line_count;
 
                 result.text_changed = true;
@@ -611,7 +611,7 @@ fn execute_action_core(
                         });
 
                         let new_line_count = state.rope.len_lines();
-                        state.dirty_lines = Some(line_idx..new_line_count);
+                        state.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
                         state.previous_line_count = new_line_count;
 
                         result.text_changed = true;

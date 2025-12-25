@@ -206,12 +206,13 @@ impl Default for SyntaxResource {
 // ========== Highlight Cache ==========
 
 /// A cached range of highlighted lines
+/// NOTE: We only cache by content_version, not tree_version.
+/// When tree updates, stale entity detection handles re-highlighting.
 #[derive(Clone)]
 struct CachedRange {
     start_line: usize,
     end_line: usize,
     content_version: u64,
-    tree_version: u64,
     lines: Vec<Vec<LineSegment>>,
 }
 
@@ -253,12 +254,13 @@ impl HighlightCache {
 
     /// Get cached highlights if available
     /// Returns Some if the requested range is fully covered by cache
-    pub fn get(&mut self, start_line: usize, end_line: usize, content_version: u64, tree_version: u64) -> Option<Vec<Vec<LineSegment>>> {
+    /// NOTE: Only checks content_version, not tree_version. Tree version changes are handled
+    /// by the stale entity detection system which marks entities for rebuild when tree updates.
+    pub fn get(&mut self, start_line: usize, end_line: usize, content_version: u64, _tree_version: u64) -> Option<Vec<Vec<LineSegment>>> {
         // Look for exact match or overlapping range
         let mut found_idx: Option<(usize, usize, usize)> = None;
         for (idx, range) in self.ranges.iter().enumerate() {
             if range.content_version == content_version
-                && range.tree_version == tree_version
                 && range.start_line <= start_line
                 && range.end_line >= end_line
             {
@@ -291,7 +293,7 @@ impl HighlightCache {
     }
 
     /// Store highlighted lines in cache
-    pub fn insert(&mut self, start_line: usize, end_line: usize, content_version: u64, tree_version: u64, lines: Vec<Vec<LineSegment>>) {
+    pub fn insert(&mut self, start_line: usize, end_line: usize, content_version: u64, _tree_version: u64, lines: Vec<Vec<LineSegment>>) {
         // Remove old entries if cache is full
         if self.ranges.len() >= self.max_ranges {
             self.ranges.pop_back();
@@ -302,7 +304,6 @@ impl HighlightCache {
             start_line,
             end_line,
             content_version,
-            tree_version,
             lines,
         });
     }
