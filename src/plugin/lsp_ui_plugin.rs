@@ -9,13 +9,13 @@
 use bevy::prelude::*;
 
 use crate::lsp::prelude::*;
-use crate::lsp::{LspUiRenderSet, LspUiSyncSet};
-use crate::lsp::theme::LspUiTheme;
 use crate::lsp::render::{
     cleanup_lsp_ui_visuals, render_code_actions_popup, render_completion_popup,
     render_document_highlights, render_hover_popup, render_inlay_hints, render_rename_input,
     render_signature_help_popup,
 };
+use crate::lsp::theme::LspUiTheme;
+use crate::lsp::{LspUiRenderSet, LspUiSyncSet};
 
 /// LSP UI plugin providing default rendering for LSP features
 ///

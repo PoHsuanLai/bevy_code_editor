@@ -48,28 +48,16 @@ pub enum LspMessage {
     },
 
     /// Request completion at position
-    Completion {
-        uri: Url,
-        position: Position,
-    },
+    Completion { uri: Url, position: Position },
 
     /// Request hover information
-    Hover {
-        uri: Url,
-        position: Position,
-    },
+    Hover { uri: Url, position: Position },
 
     /// Go to definition
-    GotoDefinition {
-        uri: Url,
-        position: Position,
-    },
+    GotoDefinition { uri: Url, position: Position },
 
     /// Find references
-    References {
-        uri: Url,
-        position: Position,
-    },
+    References { uri: Url, position: Position },
 
     /// Format document
     Format {
@@ -78,10 +66,7 @@ pub enum LspMessage {
     },
 
     /// Request signature help
-    SignatureHelp {
-        uri: Url,
-        position: Position,
-    },
+    SignatureHelp { uri: Url, position: Position },
 
     /// Request code actions
     CodeAction {
@@ -91,10 +76,7 @@ pub enum LspMessage {
     },
 
     /// Request inlay hints
-    InlayHint {
-        uri: Url,
-        range: Range,
-    },
+    InlayHint { uri: Url, range: Range },
 
     /// Execute a command (from code action)
     ExecuteCommand {
@@ -103,16 +85,10 @@ pub enum LspMessage {
     },
 
     /// Request document highlights (all occurrences of symbol under cursor)
-    DocumentHighlight {
-        uri: Url,
-        position: Position,
-    },
+    DocumentHighlight { uri: Url, position: Position },
 
     /// Prepare rename (check if rename is valid, get range)
-    PrepareRename {
-        uri: Url,
-        position: Position,
-    },
+    PrepareRename { uri: Url, position: Position },
 
     /// Perform rename
     Rename {
@@ -126,9 +102,7 @@ pub enum LspMessage {
 #[derive(Debug, Clone)]
 pub enum LspResponse {
     /// Server initialized with capabilities
-    Initialized {
-        capabilities: ServerCapabilities,
-    },
+    Initialized { capabilities: ServerCapabilities },
 
     /// Diagnostics published
     Diagnostics {
@@ -149,19 +123,13 @@ pub enum LspResponse {
     },
 
     /// Definition location(s) - may have multiple definitions
-    Definition {
-        locations: Vec<Location>,
-    },
+    Definition { locations: Vec<Location> },
 
     /// Reference locations
-    References {
-        locations: Vec<Location>,
-    },
+    References { locations: Vec<Location> },
 
     /// Format edits
-    Format {
-        edits: Vec<TextEdit>,
-    },
+    Format { edits: Vec<TextEdit> },
 
     /// Signature help response
     SignatureHelp {
@@ -171,19 +139,13 @@ pub enum LspResponse {
     },
 
     /// Code actions response
-    CodeActions {
-        actions: Vec<CodeActionOrCommand>,
-    },
+    CodeActions { actions: Vec<CodeActionOrCommand> },
 
     /// Inlay hints response
-    InlayHints {
-        hints: Vec<InlayHint>,
-    },
+    InlayHints { hints: Vec<InlayHint> },
 
     /// Document highlights response
-    DocumentHighlights {
-        highlights: Vec<DocumentHighlight>,
-    },
+    DocumentHighlights { highlights: Vec<DocumentHighlight> },
 
     /// Prepare rename response
     PrepareRename {
@@ -192,9 +154,7 @@ pub enum LspResponse {
     },
 
     /// Rename response (workspace edit)
-    Rename {
-        edit: WorkspaceEdit,
-    },
+    Rename { edit: WorkspaceEdit },
 }
 
 /// Code action or command from LSP

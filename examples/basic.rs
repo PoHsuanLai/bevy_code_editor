@@ -96,7 +96,6 @@ fn update_cursor_icon(
     mut commands: Commands,
     windows: Query<(Entity, &Window), With<Window>>,
     viewport: Res<ViewportDimensions>,
-    ui_settings: Res<UiSettings>,
 ) {
     if let Ok((window_entity, window)) = windows.single() {
         let Some(cursor_pos) = window.cursor_position() else {

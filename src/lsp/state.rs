@@ -42,9 +42,7 @@ impl UnifiedCompletionItem {
     /// Get the text to insert
     pub fn insert_text(&self) -> &str {
         match self {
-            UnifiedCompletionItem::Lsp(item) => {
-                item.insert_text.as_deref().unwrap_or(&item.label)
-            }
+            UnifiedCompletionItem::Lsp(item) => item.insert_text.as_deref().unwrap_or(&item.label),
             UnifiedCompletionItem::Word(item) => &item.word,
         }
     }
@@ -131,26 +129,27 @@ impl CompletionState {
 
     /// Get filtered items based on current filter text using fuzzy matching
     pub fn filtered_items(&self) -> Vec<UnifiedCompletionItem> {
-        use fuzzy_matcher::FuzzyMatcher;
         use fuzzy_matcher::skim::SkimMatcherV2;
+        use fuzzy_matcher::FuzzyMatcher;
         use std::collections::HashSet;
 
         let matcher = SkimMatcherV2::default();
 
         // First, filter and score LSP items
         let mut lsp_scored: Vec<(UnifiedCompletionItem, i64)> = if self.filter.is_empty() {
-            self.items.iter()
+            self.items
+                .iter()
                 .map(|item| (UnifiedCompletionItem::Lsp(item.clone()), 0))
                 .collect()
         } else {
             self.items
                 .iter()
                 .filter_map(|item| {
-                    let score = matcher.fuzzy_match(&item.label, &self.filter)
-                        .or_else(|| {
-                            item.filter_text.as_ref()
-                                .and_then(|f| matcher.fuzzy_match(f, &self.filter))
-                        });
+                    let score = matcher.fuzzy_match(&item.label, &self.filter).or_else(|| {
+                        item.filter_text
+                            .as_ref()
+                            .and_then(|f| matcher.fuzzy_match(f, &self.filter))
+                    });
                     score.map(|s| (UnifiedCompletionItem::Lsp(item.clone()), s))
                 })
                 .collect()
@@ -170,7 +169,8 @@ impl CompletionState {
                 .iter()
                 .filter(|item| !lsp_labels.contains(item.word.as_str()))
                 .filter_map(|item| {
-                    matcher.fuzzy_match(&item.word, &self.filter)
+                    matcher
+                        .fuzzy_match(&item.word, &self.filter)
                         .map(|s| (UnifiedCompletionItem::Word(item.clone()), s))
                 })
                 .collect()
@@ -180,7 +180,8 @@ impl CompletionState {
         word_scored.sort_by(|a, b| b.1.cmp(&a.1));
 
         // Combine: LSP items first, then word completions
-        let mut result: Vec<UnifiedCompletionItem> = lsp_scored.into_iter().map(|(item, _)| item).collect();
+        let mut result: Vec<UnifiedCompletionItem> =
+            lsp_scored.into_iter().map(|(item, _)| item).collect();
         result.extend(word_scored.into_iter().map(|(item, _)| item));
 
         result
@@ -215,7 +216,9 @@ impl CompletionState {
                     && !seen.contains(word)
                 {
                     seen.insert(word.to_string());
-                    words.push(WordCompletionItem { word: word.to_string() });
+                    words.push(WordCompletionItem {
+                        word: word.to_string(),
+                    });
                 }
                 word_start = None;
             }
@@ -228,7 +231,9 @@ impl CompletionState {
                 && cursor_word.as_ref().map_or(true, |cw| cw != word)
                 && !seen.contains(word)
             {
-                words.push(WordCompletionItem { word: word.to_string() });
+                words.push(WordCompletionItem {
+                    word: word.to_string(),
+                });
             }
         }
 
@@ -262,7 +267,8 @@ fn get_word_at_position(rope: &ropey::Rope, char_pos: usize) -> Option<String> {
     let line_text: String = line.chars().collect();
 
     // Find word boundaries within the line
-    let byte_pos_in_line = line_text.char_indices()
+    let byte_pos_in_line = line_text
+        .char_indices()
         .nth(pos_in_line)
         .map(|(i, _)| i)
         .unwrap_or(line_text.len());

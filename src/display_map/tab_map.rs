@@ -3,8 +3,8 @@
 //! The tab map handles tab expansion, converting tab characters to their
 //! visual column positions based on tab stops.
 
+use super::{DisplayMapLayer, DisplayPoint, WrapPoint};
 use ropey::Rope;
-use super::{WrapPoint, DisplayPoint, DisplayMapLayer};
 
 /// Handles tab expansion for display
 #[derive(Clone, Debug)]

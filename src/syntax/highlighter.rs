@@ -1,7 +1,7 @@
 //! Syntax highlighting trait and utilities
 
-use bevy::prelude::*;
 use crate::types::LineSegment;
+use bevy::prelude::*;
 
 /// Trait for syntax highlighting providers
 ///

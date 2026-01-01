@@ -31,6 +31,8 @@ cargo run --example lsp_integration --features lsp
 
 ## Usage
 
+### Basic Setup
+
 ```rust
 use bevy::prelude::*;
 use bevy_code_editor::prelude::*;
@@ -38,20 +40,93 @@ use bevy_code_editor::prelude::*;
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(CodeEditorPlugin)
+        .add_plugins(CodeEditorPlugin::default())
         .add_systems(Startup, setup)
         .run();
 }
 
-fn setup(mut commands: Commands, mut state: ResMut<CodeEditorState>) {
+fn setup(mut state: ResMut<CodeEditorState>) {
     state.set_text("fn main() {\n    println!(\"Hello, world!\");\n}");
+}
+```
+
+### With Syntax Highlighting
+
+```rust
+use bevy::prelude::*;
+use bevy_code_editor::prelude::*;
+
+fn setup(
+    mut state: ResMut<CodeEditorState>,
+    mut syntax: ResMut<SyntaxResource>,
+) {
+    state.set_text("fn main() {\n    println!(\"Hello, world!\");\n}");
+
+    // Define your language configuration
+    let rust = Language {
+        name: "rust",
+        tree_sitter: Some(TreeSitterConfig {
+            grammar: tree_sitter_rust::LANGUAGE.into(),
+            highlights_query: tree_sitter_rust::HIGHLIGHTS_QUERY,
+        }),
+        #[cfg(feature = "lsp")]
+        lsp_command: Some(("rust-analyzer", &[])),
+    };
+
+    // Apply language configuration
+    if let Some(provider) = rust.create_tree_sitter_provider() {
+        syntax.set_provider(provider);
+    }
+}
+```
+
+### With LSP
+
+```rust
+use bevy::prelude::*;
+use bevy_code_editor::prelude::*;
+
+fn main() {
+    App::new()
+        .add_plugins(DefaultPlugins)
+        .add_plugins(CodeEditorPlugin::default())
+        .add_plugins(LspPlugin::default())
+        .add_plugins(LspUiPlugin::default())
+        .add_systems(Startup, setup)
+        .run();
+}
+
+fn setup(
+    mut state: ResMut<CodeEditorState>,
+    mut syntax: ResMut<SyntaxResource>,
+    mut lsp_client: ResMut<LspClient>,
+) {
+    // Define language configuration
+    let rust = Language {
+        name: "rust",
+        tree_sitter: Some(TreeSitterConfig {
+            grammar: tree_sitter_rust::LANGUAGE.into(),
+            highlights_query: tree_sitter_rust::HIGHLIGHTS_QUERY,
+        }),
+        lsp_command: Some(("rust-analyzer", &[])),
+    };
+
+    // Setup syntax highlighting
+    if let Some(provider) = rust.create_tree_sitter_provider() {
+        syntax.set_provider(provider);
+    }
+
+    // Start LSP server
+    if let Some((cmd, args)) = rust.lsp_command {
+        lsp_client.start(cmd, args).unwrap();
+        // Send initialize request...
+    }
 }
 ```
 
 ## Feature Flags
 
 - `tree-sitter` (default) - Syntax highlighting via tree-sitter
-- `clipboard` (default) - System clipboard support
 - `lsp` - Language Server Protocol integration
 
 Minimal build: `cargo build --no-default-features`

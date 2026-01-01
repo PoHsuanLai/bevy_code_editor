@@ -71,6 +71,10 @@ pub struct MinimapSettings {
 
     /// Scrollbar border radius
     pub scrollbar_border_radius: f32,
+
+    /// Minimum viewport width to show minimap (auto-hide when narrower)
+    /// Set to 0.0 to disable auto-hide
+    pub min_viewport_width: f32,
 }
 
 impl Default for MinimapSettings {
@@ -98,6 +102,15 @@ impl Default for MinimapSettings {
             scrollbar_track_color: Color::srgba(0.15, 0.15, 0.15, 0.5),
             scrollbar_thumb_color: Color::srgba(0.4, 0.4, 0.4, 0.7),
             scrollbar_border_radius: 3.0,
+            min_viewport_width: 500.0, // Hide minimap when viewport < 500px wide
         }
+    }
+}
+
+impl MinimapSettings {
+    /// Check if minimap should be visible given the current viewport width
+    pub fn should_show(&self, viewport_width: f32) -> bool {
+        self.enabled
+            && (self.min_viewport_width == 0.0 || viewport_width >= self.min_viewport_width)
     }
 }

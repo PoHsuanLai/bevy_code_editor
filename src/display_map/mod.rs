@@ -26,17 +26,17 @@
 //! let buffer_point = snapshot.to_buffer_point(display_point);
 //! ```
 
-mod point;
 mod fold_map;
-mod wrap_map;
-mod tab_map;
+mod point;
 mod snapshot;
+mod tab_map;
+mod wrap_map;
 
-pub use point::*;
 pub use fold_map::*;
-pub use wrap_map::*;
-pub use tab_map::*;
+pub use point::*;
 pub use snapshot::*;
+pub use tab_map::*;
+pub use wrap_map::*;
 
 use bevy::prelude::*;
 use ropey::Rope;
@@ -153,4 +153,4 @@ impl LayeredDisplayMap {
 }
 
 // Re-export fold types from types.rs to avoid duplication
-pub use crate::types::{FoldRegion, FoldState, FoldKind};
+pub use crate::types::{FoldKind, FoldRegion, FoldState};

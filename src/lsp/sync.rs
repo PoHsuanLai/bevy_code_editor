@@ -19,7 +19,9 @@ pub fn sync_completion_popup(
     mut commands: Commands,
     completion_state: Res<CompletionState>,
     editor_state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    ui: Res<UiSettings>,
+    lsp: Res<LspSettings>,
     viewport: Res<ViewportDimensions>,
     existing: Query<Entity, With<CompletionPopupData>>,
 ) {
@@ -39,13 +41,12 @@ pub fn sync_completion_popup(
     let line_start = editor_state.rope.line_to_char(line_index);
     let col_index = cursor_pos - line_start;
 
-    let char_width = settings.font.char_width;
-    let line_height = settings.font.line_height;
+    let char_width = font.char_width;
+    let line_height = font.line_height;
 
-    let x_offset = settings.ui.layout.code_margin_left + (col_index as f32 * char_width);
-    let y_offset = settings.ui.layout.margin_top
-        + editor_state.scroll_offset
-        + ((line_index + 1) as f32 * line_height);
+    let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
+    let y_offset =
+        ui.margin_top + editor_state.scroll_offset + ((line_index + 1) as f32 * line_height);
 
     // Calculate dynamic width
     let max_char_count = filtered_items
@@ -62,7 +63,7 @@ pub fn sync_completion_popup(
     let calculated_width = (max_char_count as f32 * char_width) + 20.0;
     let box_width = calculated_width.max(200.0).min(600.0);
 
-    let max_visible = settings.completion.max_visible_items;
+    let max_visible = lsp.completion.max_items;
     let total_items = filtered_items.len();
     let visible_count = total_items.min(max_visible);
     let box_height = (visible_count as f32 * line_height) + 10.0;
@@ -101,7 +102,8 @@ pub fn sync_hover_popup(
     mut commands: Commands,
     hover_state: Res<HoverState>,
     editor_state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    ui: Res<UiSettings>,
     viewport: Res<ViewportDimensions>,
     existing: Query<Entity, With<HoverPopupData>>,
 ) {
@@ -112,20 +114,21 @@ pub fn sync_hover_popup(
         return;
     }
 
-    let trigger_char_index = hover_state.trigger_char_index.min(editor_state.rope.len_chars());
+    let trigger_char_index = hover_state
+        .trigger_char_index
+        .min(editor_state.rope.len_chars());
     let line_index = editor_state.rope.char_to_line(trigger_char_index);
     let line_start = editor_state.rope.line_to_char(line_index);
     let col_index = trigger_char_index - line_start;
 
-    let char_width = settings.font.char_width;
-    let line_height = settings.font.line_height;
+    let char_width = font.char_width;
+    let line_height = font.line_height;
 
-    let x_offset = settings.ui.layout.code_margin_left + (col_index as f32 * char_width);
-    let y_offset = settings.ui.layout.margin_top
-        + editor_state.scroll_offset
-        + ((line_index + 1) as f32 * line_height);
+    let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
+    let y_offset =
+        ui.margin_top + editor_state.scroll_offset + ((line_index + 1) as f32 * line_height);
 
-    let font_size = settings.font.size * 0.9;
+    let font_size = font.size * 0.9;
     let padding = 10.0;
 
     let max_line_chars = hover_state
@@ -134,7 +137,7 @@ pub fn sync_hover_popup(
         .map(|l| l.chars().count())
         .max()
         .unwrap_or(0);
-    let hover_char_width = settings.font.char_width * 0.9;
+    let hover_char_width = font.char_width * 0.9;
 
     let calculated_width = (max_line_chars as f32 * hover_char_width) + padding * 2.0;
     let box_width = calculated_width.max(100.0).min(600.0);
@@ -165,7 +168,8 @@ pub fn sync_signature_help_popup(
     mut commands: Commands,
     sig_state: Res<SignatureHelpState>,
     editor_state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    ui: Res<UiSettings>,
     viewport: Res<ViewportDimensions>,
     existing: Query<Entity, With<SignatureHelpPopupData>>,
 ) {
@@ -188,16 +192,14 @@ pub fn sync_signature_help_popup(
     let line_start = editor_state.rope.line_to_char(line_index);
     let col_index = cursor_pos - line_start;
 
-    let char_width = settings.font.char_width;
-    let line_height = settings.font.line_height;
+    let char_width = font.char_width;
+    let line_height = font.line_height;
 
-    let x_offset = settings.ui.layout.code_margin_left + (col_index as f32 * char_width);
-    let y_offset = settings.ui.layout.margin_top
-        + editor_state.scroll_offset
-        + (line_index as f32 * line_height)
+    let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
+    let y_offset = ui.margin_top + editor_state.scroll_offset + (line_index as f32 * line_height)
         - line_height;
 
-    let font_size = settings.font.size * 0.9;
+    let font_size = font.size * 0.9;
     let padding = 8.0;
 
     let sig_label = &signature.label;
@@ -217,9 +219,9 @@ pub fn sync_signature_help_popup(
                     lsp_types::ParameterLabel::LabelOffsets(offsets) => {
                         Some((offsets[0] as usize, offsets[1] as usize))
                     }
-                    lsp_types::ParameterLabel::Simple(s) => {
-                        sig_label.find(s.as_str()).map(|start| (start, start + s.len()))
-                    }
+                    lsp_types::ParameterLabel::Simple(s) => sig_label
+                        .find(s.as_str())
+                        .map(|start| (start, start + s.len())),
                 })
                 .collect()
         })
@@ -252,7 +254,8 @@ pub fn sync_code_actions_popup(
     mut commands: Commands,
     action_state: Res<CodeActionState>,
     editor_state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    ui: Res<UiSettings>,
     viewport: Res<ViewportDimensions>,
     existing: Query<Entity, With<CodeActionsPopupData>>,
 ) {
@@ -266,13 +269,12 @@ pub fn sync_code_actions_popup(
     let cursor_pos = editor_state.cursor_pos.min(editor_state.rope.len_chars());
     let line_index = editor_state.rope.char_to_line(cursor_pos);
 
-    let line_height = settings.font.line_height;
-    let char_width = settings.font.char_width;
+    let line_height = font.line_height;
+    let char_width = font.char_width;
 
-    let x_offset = settings.ui.layout.code_margin_left - 20.0;
-    let y_offset = settings.ui.layout.margin_top
-        + editor_state.scroll_offset
-        + ((line_index + 1) as f32 * line_height);
+    let x_offset = ui.code_margin_left - 20.0;
+    let y_offset =
+        ui.margin_top + editor_state.scroll_offset + ((line_index + 1) as f32 * line_height);
 
     let max_label_len = action_state
         .actions
@@ -284,7 +286,9 @@ pub fn sync_code_actions_popup(
         .max()
         .unwrap_or(20);
 
-    let box_width = (max_label_len as f32 * char_width + 20.0).max(200.0).min(400.0);
+    let box_width = (max_label_len as f32 * char_width + 20.0)
+        .max(200.0)
+        .min(400.0);
     let visible_count = action_state.actions.len().min(10);
     let box_height = (visible_count as f32 * line_height) + 10.0;
 
@@ -301,7 +305,11 @@ pub fn sync_code_actions_popup(
                         Some(kind) if kind.as_str().starts_with("source") => "📁",
                         _ => "💡",
                     };
-                    (icon, action.title.as_str(), action.is_preferred.unwrap_or(false))
+                    (
+                        icon,
+                        action.title.as_str(),
+                        action.is_preferred.unwrap_or(false),
+                    )
                 }
                 CodeActionOrCommand::Command(c) => ("⚡", c.title.as_str(), false),
             };
@@ -337,7 +345,8 @@ pub fn sync_rename_input(
     mut commands: Commands,
     rename_state: Res<RenameState>,
     editor_state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    ui: Res<UiSettings>,
     viewport: Res<ViewportDimensions>,
     existing: Query<Entity, With<RenameInputData>>,
 ) {
@@ -358,11 +367,11 @@ pub fn sync_rename_input(
     let line = range.start.line as usize;
     let character = range.start.character as usize;
 
-    let char_width = settings.font.char_width;
-    let line_height = settings.font.line_height;
+    let char_width = font.char_width;
+    let line_height = font.line_height;
 
-    let x_offset = settings.ui.layout.code_margin_left + (character as f32 * char_width);
-    let y_offset = settings.ui.layout.margin_top
+    let x_offset = ui.code_margin_left + (character as f32 * char_width);
+    let y_offset = ui.margin_top
         + editor_state.scroll_offset
         + (line as f32 * line_height)
         + (line_height / 2.0);
@@ -376,7 +385,8 @@ pub fn sync_rename_input(
         &rename_state.new_name
     };
 
-    let text_width = (display_text.chars().count().max(8) as f32 * char_width) + padding_x * 2.0 + 4.0;
+    let text_width =
+        (display_text.chars().count().max(8) as f32 * char_width) + padding_x * 2.0 + 4.0;
     let box_width = text_width.max(100.0).min(300.0);
     let box_height = line_height + padding_y * 2.0;
 
@@ -405,7 +415,8 @@ pub fn sync_inlay_hints(
     mut commands: Commands,
     hint_state: Res<InlayHintState>,
     editor_state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    ui: Res<UiSettings>,
     viewport: Res<ViewportDimensions>,
     existing: Query<Entity, With<InlayHintData>>,
 ) {
@@ -423,12 +434,12 @@ pub fn sync_inlay_hints(
         return;
     }
 
-    let visible_start_line = (editor_state.scroll_offset / settings.font.line_height) as u32;
-    let visible_lines = (viewport.height as f32 / settings.font.line_height) as u32 + 2;
+    let visible_start_line = (editor_state.scroll_offset / font.line_height) as u32;
+    let visible_lines = (viewport.height as f32 / font.line_height) as u32 + 2;
     let visible_end_line = visible_start_line + visible_lines;
 
-    let char_width = settings.font.char_width;
-    let line_height = settings.font.line_height;
+    let char_width = font.char_width;
+    let line_height = font.line_height;
 
     for hint in &hint_state.hints {
         let line = hint.position.line;
@@ -440,13 +451,15 @@ pub fn sync_inlay_hints(
 
         let label_text = match &hint.label {
             lsp_types::InlayHintLabel::String(s) => s.clone(),
-            lsp_types::InlayHintLabel::LabelParts(parts) => {
-                parts.iter().map(|p| p.value.as_str()).collect::<Vec<_>>().join("")
-            }
+            lsp_types::InlayHintLabel::LabelParts(parts) => parts
+                .iter()
+                .map(|p| p.value.as_str())
+                .collect::<Vec<_>>()
+                .join(""),
         };
 
-        let x_offset = settings.ui.layout.code_margin_left + (character as f32 * char_width);
-        let y_offset = settings.ui.layout.margin_top
+        let x_offset = ui.code_margin_left + (character as f32 * char_width);
+        let y_offset = ui.margin_top
             + editor_state.scroll_offset
             + (line as f32 * line_height)
             + (line_height / 2.0);
@@ -476,7 +489,8 @@ pub fn sync_document_highlights(
     mut commands: Commands,
     highlight_state: Res<DocumentHighlightState>,
     editor_state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    ui: Res<UiSettings>,
     viewport: Res<ViewportDimensions>,
     existing: Query<Entity, With<DocumentHighlightData>>,
 ) {
@@ -493,8 +507,8 @@ pub fn sync_document_highlights(
     }
 
     let viewport_height = viewport.height as f32;
-    let char_width = settings.font.char_width;
-    let line_height = settings.font.line_height;
+    let char_width = font.char_width;
+    let line_height = font.line_height;
 
     let visible_start_line = (editor_state.scroll_offset / line_height) as u32;
     let visible_lines = (viewport_height / line_height) as u32 + 2;
@@ -508,7 +522,10 @@ pub fn sync_document_highlights(
             continue;
         }
 
-        let is_write = matches!(highlight.kind, Some(lsp_types::DocumentHighlightKind::WRITE));
+        let is_write = matches!(
+            highlight.kind,
+            Some(lsp_types::DocumentHighlightKind::WRITE)
+        );
 
         // Single-line highlight
         if start_line == end_line {
@@ -517,8 +534,8 @@ pub fn sync_document_highlights(
             let end_char = highlight.range.end.character;
             let width = (end_char - start_char) as f32 * char_width;
 
-            let x_offset = settings.ui.layout.code_margin_left + (start_char as f32 * char_width);
-            let y_offset = settings.ui.layout.margin_top
+            let x_offset = ui.code_margin_left + (start_char as f32 * char_width);
+            let y_offset = ui.margin_top
                 + editor_state.scroll_offset
                 + (line as f32 * line_height)
                 + (line_height / 2.0);
@@ -550,8 +567,8 @@ pub fn sync_document_highlights(
                 };
 
                 let width = (end_char - start_char).min(200) as f32 * char_width;
-                let x_offset = settings.ui.layout.code_margin_left + (start_char as f32 * char_width);
-                let y_offset = settings.ui.layout.margin_top
+                let x_offset = ui.code_margin_left + (start_char as f32 * char_width);
+                let y_offset = ui.margin_top
                     + editor_state.scroll_offset
                     + (line as f32 * line_height)
                     + (line_height / 2.0);

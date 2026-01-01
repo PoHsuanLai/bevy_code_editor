@@ -4,8 +4,7 @@
 //! composing all layers to convert between buffer and display coordinates.
 
 use super::{
-    BufferPoint, FoldPoint, WrapPoint, DisplayPoint,
-    FoldMap, WrapMap, TabMap, DisplayMapLayer,
+    BufferPoint, DisplayMapLayer, DisplayPoint, FoldMap, FoldPoint, TabMap, WrapMap, WrapPoint,
 };
 
 /// A snapshot of the display map state for consistent coordinate conversion
@@ -81,7 +80,9 @@ impl DisplaySnapshot {
         let fold_row = self.fold_map.buffer_to_fold_row(buffer_row);
 
         // Get wrap info
-        if let Some((display_row_start, wrap_count)) = self.wrap_map.wrap_info_for_fold_row(fold_row) {
+        if let Some((display_row_start, wrap_count)) =
+            self.wrap_map.wrap_info_for_fold_row(fold_row)
+        {
             if wrap_count > 1 {
                 BufferRowDisplayInfo::Wrapped {
                     display_row_start,
@@ -105,10 +106,8 @@ impl DisplaySnapshot {
             let buffer_point = self.to_buffer_point(DisplayPoint::new(display_row, 0));
 
             // Determine if this is a wrapped continuation
-            let fold_point = FoldPoint::new(
-                self.fold_map.buffer_to_fold_row(buffer_point.row()),
-                0
-            );
+            let fold_point =
+                FoldPoint::new(self.fold_map.buffer_to_fold_row(buffer_point.row()), 0);
             let first_display_row = self.wrap_map.to_output(fold_point).row();
             let is_wrap_continuation = display_row > first_display_row;
 
@@ -164,7 +163,7 @@ pub struct DisplayRowInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{FoldRegion, FoldKind};
+    use crate::types::{FoldKind, FoldRegion};
     use ropey::Rope;
 
     /// Helper to create a folded region for tests

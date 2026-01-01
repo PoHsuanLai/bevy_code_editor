@@ -36,7 +36,11 @@ fn setup_editor(mut state: ResMut<CodeEditorState>) {
 
     let content = match std::fs::read_to_string(&file_path) {
         Ok(content) => {
-            println!("Loaded {} with {} lines", file_path.display(), content.lines().count());
+            println!(
+                "Loaded {} with {} lines",
+                file_path.display(),
+                content.lines().count()
+            );
             println!("Using GPU Text rendering mode (bypasses Bevy Text2d)");
             content
         }
@@ -46,7 +50,10 @@ fn setup_editor(mut state: ResMut<CodeEditorState>) {
             // Generate sample content for testing
             let mut content = String::new();
             for i in 0..10000 {
-                content.push_str(&format!("// Line {}: This is sample content for GPU text rendering test\n", i + 1));
+                content.push_str(&format!(
+                    "// Line {}: This is sample content for GPU text rendering test\n",
+                    i + 1
+                ));
             }
             content
         }

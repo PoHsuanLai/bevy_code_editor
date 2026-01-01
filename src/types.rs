@@ -114,7 +114,8 @@ impl PartialOrd for Anchor {
 
 impl Ord for Anchor {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.offset.cmp(&other.offset)
+        self.offset
+            .cmp(&other.offset)
             .then_with(|| self.bias.cmp(&other.bias))
     }
 }
@@ -217,7 +218,8 @@ impl AnchorSet {
         let id = anchor.id;
 
         // Insert in sorted order by offset
-        let pos = self.anchors
+        let pos = self
+            .anchors
             .iter()
             .position(|a| a.offset > anchor.offset)
             .unwrap_or(self.anchors.len());
@@ -305,7 +307,7 @@ impl AnchorSet {
         } else if offset == edit.start && edit.is_insertion() {
             // Anchor is exactly at insertion point
             match bias {
-                AnchorBias::Left => offset, // Stay before inserted text
+                AnchorBias::Left => offset,        // Stay before inserted text
                 AnchorBias::Right => edit.new_end, // Move after inserted text
             }
         } else {
@@ -338,7 +340,9 @@ impl AnchorSet {
 
     /// Get anchors in a range of offsets
     pub fn anchors_in_range(&self, start: usize, end: usize) -> impl Iterator<Item = &Anchor> {
-        self.anchors.iter().filter(move |a| a.offset >= start && a.offset <= end)
+        self.anchors
+            .iter()
+            .filter(move |a| a.offset >= start && a.offset <= end)
     }
 
     /// Get the current version
@@ -386,7 +390,11 @@ impl AnchorRange {
     pub fn as_tuple(&self) -> (usize, usize) {
         let s = self.start.offset;
         let e = self.end.offset;
-        if s <= e { (s, e) } else { (e, s) }
+        if s <= e {
+            (s, e)
+        } else {
+            (e, s)
+        }
     }
 
     /// Check if the range is empty (start == end)
@@ -602,7 +610,8 @@ impl PartialOrd for Selection {
 impl Ord for Selection {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Sort by start position, then by end position
-        self.start().cmp(&other.start())
+        self.start()
+            .cmp(&other.start())
             .then_with(|| self.end().cmp(&other.end()))
     }
 }
@@ -894,24 +903,30 @@ impl SelectionCollection {
 
     /// Convert to a Vec of (head, anchor) tuples for compatibility
     pub fn to_head_anchor_pairs(&self) -> Vec<(usize, Option<usize>)> {
-        self.selections.iter().map(|s| {
-            if s.is_cursor() {
-                (s.head_offset(), None)
-            } else {
-                (s.head_offset(), Some(s.anchor_offset()))
-            }
-        }).collect()
+        self.selections
+            .iter()
+            .map(|s| {
+                if s.is_cursor() {
+                    (s.head_offset(), None)
+                } else {
+                    (s.head_offset(), Some(s.anchor_offset()))
+                }
+            })
+            .collect()
     }
 
     /// Create from the legacy Cursor format
     pub fn from_cursors(cursors: &[Cursor]) -> Self {
-        let selections: Vec<Selection> = cursors.iter().map(|c| {
-            if let Some(anchor) = c.anchor {
-                Selection::new(c.position, anchor)
-            } else {
-                Selection::cursor(c.position)
-            }
-        }).collect();
+        let selections: Vec<Selection> = cursors
+            .iter()
+            .map(|c| {
+                if let Some(anchor) = c.anchor {
+                    Selection::new(c.position, anchor)
+                } else {
+                    Selection::cursor(c.position)
+                }
+            })
+            .collect();
 
         let mut collection = Self {
             selections,
@@ -924,13 +939,16 @@ impl SelectionCollection {
 
     /// Convert to the legacy Cursor format
     pub fn to_cursors(&self) -> Vec<Cursor> {
-        self.selections.iter().map(|s| {
-            if s.is_cursor() {
-                Cursor::new(s.head_offset())
-            } else {
-                Cursor::with_selection(s.head_offset(), s.anchor_offset())
-            }
-        }).collect()
+        self.selections
+            .iter()
+            .map(|s| {
+                if s.is_cursor() {
+                    Cursor::new(s.head_offset())
+                } else {
+                    Cursor::with_selection(s.head_offset(), s.anchor_offset())
+                }
+            })
+            .collect()
     }
 }
 
@@ -991,12 +1009,16 @@ impl Cursor {
 
     /// Get the start of the selection (or cursor position if no selection)
     pub fn selection_start(&self) -> usize {
-        self.anchor.map(|a| a.min(self.position)).unwrap_or(self.position)
+        self.anchor
+            .map(|a| a.min(self.position))
+            .unwrap_or(self.position)
     }
 
     /// Get the end of the selection (or cursor position if no selection)
     pub fn selection_end(&self) -> usize {
-        self.anchor.map(|a| a.max(self.position)).unwrap_or(self.position)
+        self.anchor
+            .map(|a| a.max(self.position))
+            .unwrap_or(self.position)
     }
 }
 
@@ -1110,7 +1132,10 @@ impl EditHistory {
                 }
 
                 // Certain operations always start a new transaction
-                if matches!(op_kind, EditKind::Newline | EditKind::Paste | EditKind::Other) {
+                if matches!(
+                    op_kind,
+                    EditKind::Newline | EditKind::Paste | EditKind::Other
+                ) {
                     return self.start_new_transaction(operation, now);
                 }
 
@@ -1218,7 +1243,11 @@ impl EditHistory {
 
     /// Check if undo is available
     pub fn can_undo(&self) -> bool {
-        !self.undo_stack.is_empty() || self.current_transaction.as_ref().is_some_and(|tx| !tx.is_empty())
+        !self.undo_stack.is_empty()
+            || self
+                .current_transaction
+                .as_ref()
+                .is_some_and(|tx| !tx.is_empty())
     }
 
     /// Check if redo is available
@@ -1319,7 +1348,10 @@ impl DisplayMap {
     pub fn display_to_buffer(&self, display_row: usize, display_col: usize) -> (usize, usize) {
         if let Some(row) = self.rows.get(display_row) {
             let buffer_col = row.start_offset + display_col;
-            (row.buffer_line, buffer_col.min(row.end_offset.saturating_sub(1)))
+            (
+                row.buffer_line,
+                buffer_col.min(row.end_offset.saturating_sub(1)),
+            )
         } else if let Some(last_row) = self.rows.last() {
             (last_row.buffer_line, last_row.end_offset)
         } else {
@@ -1339,21 +1371,22 @@ impl DisplayMap {
 
     /// Get the buffer line for a display row
     pub fn row_to_buffer_line(&self, display_row: usize) -> usize {
-        self.rows.get(display_row).map(|r| r.buffer_line).unwrap_or(0)
+        self.rows
+            .get(display_row)
+            .map(|r| r.buffer_line)
+            .unwrap_or(0)
     }
 
     /// Check if a display row is a continuation (wrapped) row
     pub fn is_continuation(&self, display_row: usize) -> bool {
-        self.rows.get(display_row).map(|r| r.is_continuation).unwrap_or(false)
+        self.rows
+            .get(display_row)
+            .map(|r| r.is_continuation)
+            .unwrap_or(false)
     }
 
     /// Build the display map from buffer lines
-    pub fn rebuild(
-        &mut self,
-        lines: &[Vec<LineSegment>],
-        wrap_width: usize,
-        _char_width: f32,
-    ) {
+    pub fn rebuild(&mut self, lines: &[Vec<LineSegment>], wrap_width: usize, _char_width: f32) {
         self.rows.clear();
         self.wrap_width = wrap_width;
 
@@ -1502,6 +1535,23 @@ pub struct HighlightedToken {
     pub highlight_type: Option<String>,
 }
 
+/// Configuration for viewport behavior
+#[derive(Resource, Clone, Copy, Debug)]
+pub struct ViewportConfig {
+    /// If true, viewport automatically resizes to match window size.
+    /// If false, you must manually set ViewportDimensions.
+    /// Default: true (for backward compatibility)
+    pub auto_resize_to_window: bool,
+}
+
+impl Default for ViewportConfig {
+    fn default() -> Self {
+        Self {
+            auto_resize_to_window: true,
+        }
+    }
+}
+
 /// Viewport dimensions and layout information
 ///
 /// This resource tracks both the viewport size and the computed layout for rendering.
@@ -1515,11 +1565,15 @@ pub struct ViewportDimensions {
     /// Viewport height in pixels
     pub height: u32,
 
-    /// Horizontal offset for the editor content (useful for sidebars)
+    /// Horizontal offset for the editor content center (useful for sidebars/panels)
+    /// This is the center X position in world coordinates
     pub offset_x: f32,
 
-    // === Computed Layout (set by UI plugin) ===
+    /// Vertical offset for the editor content center (useful for panels)
+    /// This is the center Y position in world coordinates
+    pub offset_y: f32,
 
+    // === Computed Layout (set by UI plugin) ===
     /// Left margin/padding before text starts
     pub text_area_left: f32,
 
@@ -1539,6 +1593,7 @@ impl Default for ViewportDimensions {
             width: 800,
             height: 600,
             offset_x: 0.0,
+            offset_y: 0.0,
             // Default layout values (can be overridden by UI plugin)
             text_area_left: 80.0,
             text_area_top: 10.0,
@@ -1559,6 +1614,14 @@ pub struct CodeEditorState {
 
     /// Last cursor position (for detecting cursor movement)
     pub last_cursor_pos: usize,
+
+    /// Time (in seconds since app start) when cursor was last moved
+    /// Used to reset cursor blink animation after movement
+    pub cursor_moved_time: f64,
+
+    /// Last cursor position for blink reset tracking (separate from last_cursor_pos)
+    /// This is tracked independently to avoid race conditions with auto_scroll_to_cursor
+    pub last_cursor_pos_for_blink: usize,
 
     /// Selection start (None = no selection) - primary cursor for backward compatibility
     pub selection_start: Option<usize>,
@@ -1620,6 +1683,11 @@ pub struct CodeEditorState {
     /// Track line count for detecting changes
     pub previous_line_count: usize,
 
+    /// When line count changes (insert/delete newline), this stores the line index
+    /// from which all subsequent line entities should be invalidated.
+    /// This prevents stale entity mappings after line insertions/deletions.
+    pub invalidate_lines_from: Option<usize>,
+
     /// Content version - incremented on every text change (for skipping re-highlight on cursor-only moves)
     pub content_version: u64,
 
@@ -1666,7 +1734,6 @@ pub struct CodeEditorState {
     /// Format: (start_byte, old_end_byte, new_end_byte)
     #[cfg(feature = "tree-sitter")]
     pub pending_tree_sitter_edit: Option<(usize, usize, usize)>,
-
 }
 
 impl Default for CodeEditorState {
@@ -1679,6 +1746,8 @@ impl Default for CodeEditorState {
             rope,
             cursor_pos: 0,
             last_cursor_pos: 0,
+            cursor_moved_time: 0.0,
+            last_cursor_pos_for_blink: 0,
             selection_start: None,
             selection_end: None,
             cursors: vec![Cursor::new(0)],
@@ -1698,6 +1767,7 @@ impl Default for CodeEditorState {
             line_number_pool: Vec::new(),
             dirty_lines: None,
             previous_line_count: line_count,
+            invalidate_lines_from: None,
             content_version: 0,
             last_highlighted_version: u64::MAX, // Force initial highlighting
             last_lines_version: 0,
@@ -1727,6 +1797,8 @@ impl CodeEditorState {
             rope,
             cursor_pos: 0,
             last_cursor_pos: 0,
+            cursor_moved_time: 0.0,
+            last_cursor_pos_for_blink: 0,
             selection_start: None,
             selection_end: None,
             cursors: vec![Cursor::new(0)],
@@ -1746,6 +1818,7 @@ impl CodeEditorState {
             line_number_pool: Vec::new(),
             dirty_lines: None,
             previous_line_count: line_count,
+            invalidate_lines_from: None,
             content_version: 0,
             last_highlighted_version: u64::MAX, // Force initial highlighting
             last_lines_version: 0,
@@ -1807,14 +1880,18 @@ impl CodeEditorState {
         {
             self.pending_tree_sitter_edit = Some((
                 start_byte,
-                start_byte,  // old_end = start for insertion
-                start_byte + char_byte_len,  // new_end = start + inserted bytes
+                start_byte,                 // old_end = start for insertion
+                start_byte + char_byte_len, // new_end = start + inserted bytes
             ));
         }
 
         // Record for undo
         if record_history {
-            let kind = if c == '\n' { EditKind::Newline } else { EditKind::Insert };
+            let kind = if c == '\n' {
+                EditKind::Newline
+            } else {
+                EditKind::Insert
+            };
             self.history.record(EditOperation {
                 removed_text: String::new(),
                 inserted_text: c.to_string(),
@@ -1828,6 +1905,13 @@ impl CodeEditorState {
         let new_line_count = self.rope.len_lines();
         // Only mark current line as dirty - tree-sitter will handle the rest
         self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
+
+        // If newline was inserted, invalidate all lines from the insertion point
+        // to prevent stale entity mappings (line indices shift after newline insert)
+        if c == '\n' {
+            self.invalidate_lines_from = Some(line_idx);
+        }
+
         self.previous_line_count = new_line_count;
     }
 
@@ -1849,7 +1933,8 @@ impl CodeEditorState {
             let byte_idx_end = self.rope.char_to_byte(self.cursor_pos);
 
             // Record anchor edit (character-based)
-            self.anchors.record_edit(TextEdit::delete(self.cursor_pos - 1, self.cursor_pos));
+            self.anchors
+                .record_edit(TextEdit::delete(self.cursor_pos - 1, self.cursor_pos));
 
             self.rope.remove(char_idx..byte_idx_end);
             self.cursor_pos -= 1;
@@ -1862,9 +1947,9 @@ impl CodeEditorState {
             #[cfg(feature = "tree-sitter")]
             {
                 self.pending_tree_sitter_edit = Some((
-                    char_idx,       // start_byte
-                    byte_idx_end,   // old_end = end of deleted character
-                    char_idx,       // new_end = start (nothing inserted)
+                    char_idx,     // start_byte
+                    byte_idx_end, // old_end = end of deleted character
+                    char_idx,     // new_end = start (nothing inserted)
                 ));
             }
 
@@ -1882,6 +1967,13 @@ impl CodeEditorState {
 
             let new_line_count = self.rope.len_lines();
             self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
+
+            // If newline was deleted, invalidate all lines from the deletion point
+            // to prevent stale entity mappings (line indices shift after newline delete)
+            if deleted_char == '\n' {
+                self.invalidate_lines_from = Some(line_idx);
+            }
+
             self.previous_line_count = new_line_count;
         }
     }
@@ -1904,7 +1996,8 @@ impl CodeEditorState {
             let byte_idx_end = self.rope.char_to_byte(self.cursor_pos + 1);
 
             // Record anchor edit (character-based)
-            self.anchors.record_edit(TextEdit::delete(self.cursor_pos, self.cursor_pos + 1));
+            self.anchors
+                .record_edit(TextEdit::delete(self.cursor_pos, self.cursor_pos + 1));
 
             self.rope.remove(char_idx..byte_idx_end);
             self.sync_cursors_from_primary();
@@ -1916,9 +2009,9 @@ impl CodeEditorState {
             #[cfg(feature = "tree-sitter")]
             {
                 self.pending_tree_sitter_edit = Some((
-                    char_idx,       // start_byte
-                    byte_idx_end,   // old_end = end of deleted character
-                    char_idx,       // new_end = start (nothing inserted)
+                    char_idx,     // start_byte
+                    byte_idx_end, // old_end = end of deleted character
+                    char_idx,     // new_end = start (nothing inserted)
                 ));
             }
 
@@ -1936,6 +2029,13 @@ impl CodeEditorState {
 
             let new_line_count = self.rope.len_lines();
             self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
+
+            // If newline was deleted, invalidate all lines from the deletion point
+            // to prevent stale entity mappings (line indices shift after newline delete)
+            if deleted_char == '\n' {
+                self.invalidate_lines_from = Some(line_idx);
+            }
+
             self.previous_line_count = new_line_count;
         }
     }
@@ -1944,6 +2044,7 @@ impl CodeEditorState {
     pub fn insert_text_at(&mut self, pos: usize, text: &str) {
         let pos = pos.min(self.rope.len_chars());
         let text_char_len = text.chars().count();
+        let line_idx = self.rope.char_to_line(pos);
 
         // Record byte positions for tree-sitter incremental parsing
         #[cfg(feature = "tree-sitter")]
@@ -1952,12 +2053,19 @@ impl CodeEditorState {
         let text_byte_len = text.len();
 
         // Record anchor edit (character-based)
-        self.anchors.record_edit(TextEdit::insert(pos, text_char_len));
+        self.anchors
+            .record_edit(TextEdit::insert(pos, text_char_len));
 
         self.rope.insert(pos, text);
         self.pending_update = true;
         self.content_version += 1;
         self.dirty_lines = None; // Full rehighlight
+
+        // If text contains newlines, invalidate all lines from the insertion point
+        if text.contains('\n') {
+            self.invalidate_lines_from = Some(line_idx);
+        }
+
         self.previous_line_count = self.rope.len_lines();
 
         // Record edit for tree-sitter incremental parsing
@@ -1965,8 +2073,8 @@ impl CodeEditorState {
         {
             self.pending_tree_sitter_edit = Some((
                 start_byte,
-                start_byte,  // old_end = start for insertion
-                start_byte + text_byte_len,  // new_end = start + inserted bytes
+                start_byte,                 // old_end = start for insertion
+                start_byte + text_byte_len, // new_end = start + inserted bytes
             ));
         }
     }
@@ -1976,8 +2084,13 @@ impl CodeEditorState {
         let start = start.min(self.rope.len_chars());
         let end = end.min(self.rope.len_chars());
         if start < end {
+            let line_idx = self.rope.char_to_line(start);
             let start_byte = self.rope.char_to_byte(start);
             let end_byte = self.rope.char_to_byte(end);
+
+            // Check if the removed range contains newlines
+            let removed_text: String = self.rope.slice(start..end).chars().collect();
+            let has_newlines = removed_text.contains('\n');
 
             // Record anchor edit (character-based)
             self.anchors.record_edit(TextEdit::delete(start, end));
@@ -1986,15 +2099,21 @@ impl CodeEditorState {
             self.pending_update = true;
             self.content_version += 1;
             self.dirty_lines = None; // Full rehighlight
+
+            // If removed text contains newlines, invalidate all lines from the deletion point
+            if has_newlines {
+                self.invalidate_lines_from = Some(line_idx);
+            }
+
             self.previous_line_count = self.rope.len_lines();
 
             // Record edit for tree-sitter incremental parsing
             #[cfg(feature = "tree-sitter")]
             {
                 self.pending_tree_sitter_edit = Some((
-                    start_byte,  // start_byte
-                    end_byte,    // old_end = end of deleted range
-                    start_byte,  // new_end = start (nothing inserted)
+                    start_byte, // start_byte
+                    end_byte,   // old_end = end of deleted range
+                    start_byte, // new_end = start (nothing inserted)
                 ));
             }
         }
@@ -2093,9 +2212,9 @@ impl CodeEditorState {
         #[cfg(feature = "tree-sitter")]
         {
             self.pending_tree_sitter_edit = Some((
-                0,              // start_byte = beginning of document
-                old_byte_len,   // old_end = old document length
-                new_byte_len,   // new_end = new document length
+                0,            // start_byte = beginning of document
+                old_byte_len, // old_end = old document length
+                new_byte_len, // new_end = new document length
             ));
         }
     }
@@ -2426,7 +2545,9 @@ impl CodeEditorState {
         }
 
         // Find the last cursor's selection end to search from
-        let search_from = self.cursors.iter()
+        let search_from = self
+            .cursors
+            .iter()
             .map(|c| c.selection_end())
             .max()
             .unwrap_or(0);
@@ -2562,6 +2683,12 @@ pub struct GpuMinimapMesh {
     pub built_at_version: u64,
     /// The scroll offset when this mesh was built
     pub built_at_scroll: f32,
+    /// The viewport width when this mesh was built
+    pub built_at_width: u32,
+    /// The viewport height when this mesh was built
+    pub built_at_height: u32,
+    /// The viewport offset_x when this mesh was built
+    pub built_at_offset_x: f32,
 }
 
 /// Component marker for the minimap camera
@@ -2589,8 +2716,7 @@ pub struct MinimapDragState {
 }
 
 /// Resource to track key repeat state for editor actions
-#[derive(Resource)]
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct KeyRepeatState {
     /// The action currently being repeated (if any)
     pub current_action: Option<crate::input::EditorAction>,
@@ -2599,7 +2725,6 @@ pub struct KeyRepeatState {
     /// When the last repeat occurred
     pub last_repeat: Option<Instant>,
 }
-
 
 /// Represents a matched bracket pair
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2624,161 +2749,6 @@ pub struct FindHighlight {
     pub match_index: usize,
 }
 
-/// A single search match
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct FindMatch {
-    /// Start position (char index)
-    pub start: usize,
-    /// End position (char index)
-    pub end: usize,
-}
-
-/// Resource to track find/search state
-#[derive(Resource, Clone, Debug)]
-#[derive(Default)]
-pub struct FindState {
-    /// Whether find mode is active
-    pub active: bool,
-    /// The search query
-    pub query: String,
-    /// All matches in the document
-    pub matches: Vec<FindMatch>,
-    /// Index of the currently selected match
-    pub current_match_index: Option<usize>,
-    /// Case-sensitive search
-    pub case_sensitive: bool,
-    /// Use regex search
-    pub use_regex: bool,
-    /// Whole word matching
-    pub whole_word: bool,
-}
-
-
-impl FindState {
-    /// Find all matches in the given rope
-    pub fn search(&mut self, rope: &Rope) {
-        self.matches.clear();
-        self.current_match_index = None;
-
-        if self.query.is_empty() {
-            return;
-        }
-
-        let query_len_chars = self.query.chars().count();
-        let total_chars = rope.len_chars();
-
-        // Prepare query for case-insensitive comparison if needed
-        let query_chars: Vec<char> = if self.case_sensitive {
-            self.query.chars().collect()
-        } else {
-            self.query.to_lowercase().chars().collect()
-        };
-
-        // Iterate character by character through the rope
-        let mut char_idx = 0;
-        while char_idx + query_len_chars <= total_chars {
-            // Check if query matches at this position
-            let mut matches = true;
-            for (q_idx, q_char) in query_chars.iter().enumerate() {
-                let rope_char = rope.char(char_idx + q_idx);
-                let cmp_char = if self.case_sensitive {
-                    rope_char
-                } else {
-                    rope_char.to_lowercase().next().unwrap_or(rope_char)
-                };
-
-                if cmp_char != *q_char {
-                    matches = false;
-                    break;
-                }
-            }
-
-            if matches {
-                let start_char = char_idx;
-                let end_char = char_idx + query_len_chars;
-
-                // Check whole word if enabled
-                let is_whole_word = if self.whole_word {
-                    let before_ok = start_char == 0 || {
-                        let prev_char = rope.char(start_char - 1);
-                        !prev_char.is_alphanumeric() && prev_char != '_'
-                    };
-                    let after_ok = end_char >= total_chars || {
-                        let next_char = rope.char(end_char);
-                        !next_char.is_alphanumeric() && next_char != '_'
-                    };
-                    before_ok && after_ok
-                } else {
-                    true
-                };
-
-                if is_whole_word {
-                    self.matches.push(FindMatch {
-                        start: start_char,
-                        end: end_char,
-                    });
-                }
-            }
-
-            char_idx += 1;
-        }
-
-        // Select first match if any
-        if !self.matches.is_empty() {
-            self.current_match_index = Some(0);
-        }
-    }
-
-    /// Find the next match from the current cursor position
-    pub fn find_next(&mut self, cursor_pos: usize) {
-        if self.matches.is_empty() {
-            return;
-        }
-
-        // Find the first match after cursor
-        for (i, m) in self.matches.iter().enumerate() {
-            if m.start > cursor_pos {
-                self.current_match_index = Some(i);
-                return;
-            }
-        }
-
-        // Wrap around to first match
-        self.current_match_index = Some(0);
-    }
-
-    /// Find the previous match from the current cursor position
-    pub fn find_previous(&mut self, cursor_pos: usize) {
-        if self.matches.is_empty() {
-            return;
-        }
-
-        // Find the last match before cursor
-        for (i, m) in self.matches.iter().enumerate().rev() {
-            if m.end <= cursor_pos {
-                self.current_match_index = Some(i);
-                return;
-            }
-        }
-
-        // Wrap around to last match
-        self.current_match_index = Some(self.matches.len() - 1);
-    }
-
-    /// Get the current match
-    pub fn current_match(&self) -> Option<FindMatch> {
-        self.current_match_index.and_then(|i| self.matches.get(i).copied())
-    }
-
-    /// Clear the search
-    pub fn clear(&mut self) {
-        self.active = false;
-        self.query.clear();
-        self.matches.clear();
-        self.current_match_index = None;
-    }
-}
-
 /// State for "Go to line" functionality
 #[derive(Clone, Debug, Default, Resource)]
 pub struct GotoLineState {
@@ -2800,7 +2770,9 @@ impl GotoLineState {
         if let Some(line_num) = self.parse_line_number() {
             let total_lines = state.rope.len_lines();
             // Clamp line number to valid range (1-indexed input, convert to 0-indexed)
-            let target_line = line_num.saturating_sub(1).min(total_lines.saturating_sub(1));
+            let target_line = line_num
+                .saturating_sub(1)
+                .min(total_lines.saturating_sub(1));
 
             // Move cursor to the start of the target line
             let char_pos = state.rope.line_to_char(target_line);
@@ -2943,7 +2915,8 @@ impl FoldState {
     /// Add a fold region, maintaining sorted order by start_line
     pub fn add_region(&mut self, region: FoldRegion) {
         // Find insertion point to maintain sorted order
-        let pos = self.regions
+        let pos = self
+            .regions
             .iter()
             .position(|r| r.start_line > region.start_line)
             .unwrap_or(self.regions.len());
@@ -3004,7 +2977,9 @@ impl FoldState {
 
     /// Check if a line is the start of a folded region
     pub fn is_folded_line(&self, line: usize) -> bool {
-        self.regions.iter().any(|r| r.start_line == line && r.is_folded)
+        self.regions
+            .iter()
+            .any(|r| r.start_line == line && r.is_folded)
     }
 
     /// Fold all regions
@@ -3032,7 +3007,8 @@ impl FoldState {
 
     /// Get total number of hidden lines
     pub fn total_hidden_lines(&self) -> usize {
-        self.regions.iter()
+        self.regions
+            .iter()
             .filter(|r| r.is_folded)
             .map(|r| r.hidden_line_count())
             .sum()
@@ -3071,7 +3047,8 @@ impl FoldState {
 
     /// Get the innermost fold region containing a line (for nested folds)
     pub fn innermost_region_containing(&self, line: usize) -> Option<&FoldRegion> {
-        self.regions.iter()
+        self.regions
+            .iter()
             .filter(|r| r.contains_line(line))
             .max_by_key(|r| r.start_line) // The one starting latest is the innermost
     }

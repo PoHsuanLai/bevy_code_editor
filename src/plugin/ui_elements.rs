@@ -1,9 +1,10 @@
 //! UI elements: line numbers, selection, indent guides
 
-use bevy::prelude::*;
+use super::editor_ui_plugin::EditorRenderConfig;
+use super::to_bevy_coords_left_aligned;
 use crate::settings::*;
 use crate::types::*;
-use super::to_bevy_coords_left_aligned;
+use bevy::prelude::*;
 
 pub(crate) fn update_line_numbers(
     mut commands: Commands,
@@ -15,7 +16,11 @@ pub(crate) fn update_line_numbers(
     performance: Res<PerformanceSettings>,
     viewport: Res<ViewportDimensions>,
     fold_state: Res<FoldState>,
-    mut line_numbers_query: Query<(&mut Text2d, &mut Transform, &mut Visibility, &mut TextColor), With<LineNumbers>>,
+    render_config: Res<EditorRenderConfig>,
+    mut line_numbers_query: Query<
+        (&mut Text2d, &mut Transform, &mut Visibility, &mut TextColor),
+        With<LineNumbers>,
+    >,
 ) {
     // Hide all line numbers if disabled in settings
     if !ui.show_line_numbers {
@@ -25,7 +30,16 @@ pub(crate) fn update_line_numbers(
         return;
     }
 
-    if !state.is_changed() && !fold_state.is_changed() {
+    // Update line numbers when:
+    // - state.needs_update (text changed)
+    // - state.needs_scroll_update (scrolled)
+    // - fold_state changed
+    // - state was mutated this frame (cursor moved, etc.)
+    if !state.needs_update
+        && !state.needs_scroll_update
+        && !state.is_changed()
+        && !fold_state.is_changed()
+    {
         return;
     }
 
@@ -50,8 +64,9 @@ pub(crate) fn update_line_numbers(
     let viewport_top = -state.scroll_offset - line_height * buffer_lines;
     let viewport_bottom = viewport_top + viewport.height as f32 + line_height * buffer_lines * 2.0;
 
-    let first_visible_display_row =
-        ((viewport_top - viewport.text_area_top) / line_height).floor().max(0.0) as usize;
+    let first_visible_display_row = ((viewport_top - viewport.text_area_top) / line_height)
+        .floor()
+        .max(0.0) as usize;
     let last_visible_display_row =
         ((viewport_bottom - viewport.text_area_top) / line_height).ceil() as usize;
 
@@ -100,14 +115,16 @@ pub(crate) fn update_line_numbers(
         // All lines from start_buffer_line should be in or after visible range
         if current_display_row <= last_visible_display_row {
             // Calculate Y position based on display row (not buffer line)
-            let y = viewport.text_area_top + state.scroll_offset + (current_display_row as f32 * line_height);
+            let y = viewport.text_area_top
+                + state.scroll_offset
+                + (current_display_row as f32 * line_height);
             let translation = to_bevy_coords_left_aligned(
-                viewport.gutter_width / 2.0,  // Center line numbers in gutter area
+                viewport.gutter_width / 2.0, // Center line numbers in gutter area
                 y,
                 viewport.width as f32,
                 viewport.height as f32,
-                viewport.offset_x,
-                0.0,  // line numbers don't scroll horizontally
+                0.0, // Camera viewport handles panel positioning
+                0.0, // line numbers don't scroll horizontally
             );
 
             // For continuation rows, show empty or continuation indicator
@@ -140,7 +157,7 @@ pub(crate) fn update_line_numbers(
                     ..default()
                 };
 
-                commands.spawn((
+                let mut entity_cmd = commands.spawn((
                     Text2d::new(line_number_text),
                     text_font,
                     TextColor(line_color),
@@ -149,6 +166,9 @@ pub(crate) fn update_line_numbers(
                     Name::new(format!("LineNumber_buffer_{}", buffer_line)),
                     Visibility::Visible,
                 ));
+                if let Some(ref layers) = render_config.render_layers {
+                    entity_cmd.insert(layers.clone());
+                }
             }
 
             entity_index += 1;
@@ -179,6 +199,7 @@ pub(crate) fn update_selection_highlight(
     indentation: Res<IndentationSettings>,
     viewport: Res<ViewportDimensions>,
     fold_state: Res<FoldState>,
+    render_config: Res<EditorRenderConfig>,
     mut selection_query: Query<(
         Entity,
         &mut Transform,
@@ -187,7 +208,8 @@ pub(crate) fn update_selection_highlight(
         &mut SelectionHighlight,
     )>,
 ) {
-    if !state.is_changed() {
+    // Update selection when state changes (text edits, cursor moves, selection changes)
+    if !state.needs_update && !state.needs_scroll_update && !state.is_changed() {
         return;
     }
 
@@ -246,13 +268,25 @@ pub(crate) fn update_selection_highlight(
                                 // Convert to display column (relative to row start)
                                 let display_start = row_sel_start - row.start_offset;
                                 let display_end = row_sel_end - row.start_offset;
-                                selection_rects.push((cursor_idx, row_idx, display_start, display_end, row.is_continuation));
+                                selection_rects.push((
+                                    cursor_idx,
+                                    row_idx,
+                                    display_start,
+                                    display_end,
+                                    row.is_continuation,
+                                ));
                             }
                         }
                     } else {
                         // Convert buffer line to display row
                         let display_row = fold_state.actual_to_display_line(line_idx);
-                        selection_rects.push((cursor_idx, display_row, sel_start_in_line, sel_end_in_line, false));
+                        selection_rects.push((
+                            cursor_idx,
+                            display_row,
+                            sel_start_in_line,
+                            sel_end_in_line,
+                            false,
+                        ));
                     }
                 }
             }
@@ -305,13 +339,25 @@ pub(crate) fn update_selection_highlight(
                                 if row_sel_start < row_sel_end {
                                     let display_start = row_sel_start - row.start_offset;
                                     let display_end = row_sel_end - row.start_offset;
-                                    selection_rects.push((0, row_idx, display_start, display_end, row.is_continuation));
+                                    selection_rects.push((
+                                        0,
+                                        row_idx,
+                                        display_start,
+                                        display_end,
+                                        row.is_continuation,
+                                    ));
                                 }
                             }
                         } else {
                             // Convert buffer line to display row
                             let display_row = fold_state.actual_to_display_line(line_idx);
-                            selection_rects.push((0, display_row, sel_start_in_line, sel_end_in_line, false));
+                            selection_rects.push((
+                                0,
+                                display_row,
+                                sel_start_in_line,
+                                sel_end_in_line,
+                                false,
+                            ));
                         }
                     }
                 }
@@ -340,11 +386,12 @@ pub(crate) fn update_selection_highlight(
             0.0
         };
 
-        let x_left_edge = viewport.text_area_left + extra_indent + (sel_start_col as f32 * char_width);
-        let y_from_top = viewport.text_area_top + state.scroll_offset + (row_idx as f32 * line_height);
+        let x_left_edge =
+            viewport.text_area_left + extra_indent + (sel_start_col as f32 * char_width);
+        let y_from_top =
+            viewport.text_area_top + state.scroll_offset + (row_idx as f32 * line_height);
 
-        let sprite_center_x =
-            -(viewport.width as f32) / 2.0 + x_left_edge + selection_width / 2.0;
+        let sprite_center_x = -(viewport.width as f32) / 2.0 + x_left_edge + selection_width / 2.0;
         let sprite_center_y = (viewport.height as f32) / 2.0 - y_from_top;
 
         let translation = Vec3::new(sprite_center_x, sprite_center_y, 0.5);
@@ -358,17 +405,23 @@ pub(crate) fn update_selection_highlight(
             marker.cursor_index = cursor_idx;
             **visibility = Visibility::Visible;
         } else {
-            commands.spawn((
+            let mut entity_cmd = commands.spawn((
                 Sprite {
                     color: theme.selection_background,
                     custom_size: Some(Vec2::new(selection_width, line_height)),
                     ..default()
                 },
                 Transform::from_translation(translation),
-                SelectionHighlight { line_index: row_idx, cursor_index: cursor_idx },
+                SelectionHighlight {
+                    line_index: row_idx,
+                    cursor_index: cursor_idx,
+                },
                 Name::new(format!("Selection_C{}_R{}", cursor_idx, row_idx)),
                 Visibility::Visible,
             ));
+            if let Some(ref layers) = render_config.render_layers {
+                entity_cmd.insert(layers.clone());
+            }
         }
 
         entity_index += 1;
@@ -391,6 +444,7 @@ pub(crate) fn update_indent_guides(
     indentation: Res<IndentationSettings>,
     viewport: Res<ViewportDimensions>,
     fold_state: Res<FoldState>,
+    render_config: Res<EditorRenderConfig>,
     mut guide_query: Query<(Entity, &mut Transform, &mut Visibility, &mut IndentGuide)>,
 ) {
     // Hide all guides if disabled
@@ -401,7 +455,8 @@ pub(crate) fn update_indent_guides(
         return;
     }
 
-    if !state.is_changed() {
+    // Update when state changes (text edits, scroll, etc.)
+    if !state.needs_update && !state.needs_scroll_update && !state.is_changed() {
         return;
     }
 
@@ -499,23 +554,26 @@ pub(crate) fn update_indent_guides(
 
     for (display_row, level) in needed_guides.iter() {
         let x_offset = viewport.text_area_left + (*level * indent_size) as f32 * char_width;
-        let y_offset = viewport.text_area_top + state.scroll_offset + (*display_row as f32 * line_height);
+        let y_offset =
+            viewport.text_area_top + state.scroll_offset + (*display_row as f32 * line_height);
 
         // Position the guide line (thin vertical line)
-        let sprite_x = -viewport_width / 2.0 + x_offset - state.horizontal_scroll_offset + viewport.offset_x;
+        // Camera viewport handles panel positioning, so no offset_x here
+        let sprite_x = -viewport_width / 2.0 + x_offset - state.horizontal_scroll_offset;
         let sprite_y = viewport_height / 2.0 - y_offset;
         let translation = Vec3::new(sprite_x, sprite_y, 0.1); // z=0.1 behind text
 
         if entity_index < existing_guides.len() {
             // Reuse existing entity
-            let (_, ref mut transform, ref mut visibility, ref mut guide) = &mut existing_guides[entity_index];
+            let (_, ref mut transform, ref mut visibility, ref mut guide) =
+                &mut existing_guides[entity_index];
             transform.translation = translation;
             guide.level = *level;
             guide.line_index = *display_row;
             **visibility = Visibility::Visible;
         } else {
             // Spawn new guide entity
-            commands.spawn((
+            let mut entity_cmd = commands.spawn((
                 Sprite {
                     color: theme.indent_guide,
                     custom_size: Some(Vec2::new(1.0, line_height)),
@@ -529,6 +587,9 @@ pub(crate) fn update_indent_guides(
                 Name::new(format!("IndentGuide_{}_{}", display_row, level)),
                 Visibility::Visible,
             ));
+            if let Some(ref layers) = render_config.render_layers {
+                entity_cmd.insert(layers.clone());
+            }
         }
 
         entity_index += 1;
@@ -593,24 +654,36 @@ pub(crate) fn animate_smooth_scroll(
     }
 }
 
+/// Run condition: only run auto_scroll_to_cursor when cursor has moved and not dragging scrollbar
+pub(crate) fn should_auto_scroll(
+    state: Res<CodeEditorState>,
+    scrollbar_drag: Res<super::scrollbar::ScrollbarDragState>,
+    mouse_drag: Res<crate::input::MouseDragState>,
+) -> bool {
+    // Don't run when dragging scrollbar
+    if scrollbar_drag.is_dragging {
+        return false;
+    }
+
+    // Don't run when mouse dragging (causes selection issues due to scroll animation)
+    if mouse_drag.is_dragging {
+        return false;
+    }
+
+    // Only run when cursor has moved
+    let cursor_pos = state.cursor_pos.min(state.rope.len_chars());
+    cursor_pos != state.last_cursor_pos
+}
+
 /// Auto-scroll viewport to keep cursor visible
 /// Writes to target_scroll_offset, not scroll_offset (applied by animate_smooth_scroll)
 pub(crate) fn auto_scroll_to_cursor(
     mut state: ResMut<CodeEditorState>,
     font: Res<FontSettings>,
     viewport: Res<ViewportDimensions>,
-    scrollbar_drag: Res<super::scrollbar::ScrollbarDragState>,
 ) {
-    // Skip auto-scroll when dragging scrollbar (user has manual control priority)
-    if scrollbar_drag.is_dragging {
-        return;
-    }
-
-    // Only auto-scroll when cursor actually moves (not when scroll changes)
+    // Get cursor position
     let cursor_pos = state.cursor_pos.min(state.rope.len_chars());
-    if cursor_pos == state.last_cursor_pos {
-        return;
-    }
 
     // Update last cursor position
     state.last_cursor_pos = cursor_pos;
@@ -661,7 +734,9 @@ pub(crate) fn auto_scroll_to_cursor(
     // Define horizontal visible range (with some margin)
     let margin_horizontal = char_width * 5.0; // 5 characters of margin
     let visible_left = state.horizontal_scroll_offset;
-    let visible_right = state.horizontal_scroll_offset + viewport_width - viewport.text_area_left - margin_horizontal;
+    let visible_right = state.horizontal_scroll_offset + viewport_width
+        - viewport.text_area_left
+        - margin_horizontal;
 
     // Adjust horizontal target scroll if cursor is outside visible range
     if cursor_x < visible_left {
@@ -669,7 +744,8 @@ pub(crate) fn auto_scroll_to_cursor(
         state.target_horizontal_scroll_offset = cursor_x.max(0.0);
     } else if cursor_x > visible_right {
         // Cursor is right of visible area - scroll right
-        state.target_horizontal_scroll_offset = cursor_x - (viewport_width - viewport.text_area_left - margin_horizontal);
+        state.target_horizontal_scroll_offset =
+            cursor_x - (viewport_width - viewport.text_area_left - margin_horizontal);
     }
 
     // Clamp target_horizontal_scroll_offset to valid range
@@ -678,5 +754,7 @@ pub(crate) fn auto_scroll_to_cursor(
 
     // Maximum is when rightmost content reaches viewport edge
     let max_horizontal_scroll = (state.max_content_width - viewport_width).max(0.0);
-    state.target_horizontal_scroll_offset = state.target_horizontal_scroll_offset.min(max_horizontal_scroll);
+    state.target_horizontal_scroll_offset = state
+        .target_horizontal_scroll_offset
+        .min(max_horizontal_scroll);
 }

@@ -35,9 +35,9 @@ fn run_with_lsp() {
             ..default()
         }))
         .add_plugins(CodeEditorPlugin::default())
-        .add_plugins(EditorUiPlugin::default())  // Add Editor UI plugin
+        .add_plugins(EditorUiPlugin::default()) // Add Editor UI plugin
         .add_plugins(LspPlugin::default())
-        .add_plugins(LspUiPlugin::default())     // Add LSP UI plugin
+        .add_plugins(LspUiPlugin::default()) // Add LSP UI plugin
         .add_systems(Startup, setup_editor)
         .add_systems(Update, display_lsp_info)
         .run();
@@ -48,39 +48,44 @@ fn setup_editor(
     mut state: ResMut<CodeEditorState>,
     mut lsp_client: ResMut<bevy_code_editor::lsp::LspClient>,
     mut lsp_sync: ResMut<bevy_code_editor::lsp::LspSyncState>,
-    #[cfg(feature = "tree-sitter")]
-    mut syntax: ResMut<bevy_code_editor::plugin::SyntaxResource>,
+    #[cfg(feature = "tree-sitter")] mut syntax: ResMut<bevy_code_editor::plugin::SyntaxResource>,
 ) {
     // Read the source code of this example file
     let current_dir = std::env::current_dir().expect("Failed to get current directory");
     let example_file_path = current_dir.join("examples/lsp.rs");
-    let rust_code = std::fs::read_to_string(&example_file_path).expect("Failed to read example file");
+    let rust_code =
+        std::fs::read_to_string(&example_file_path).expect("Failed to read example file");
 
     state.set_text(&rust_code);
 
-    // Set up tree-sitter syntax highlighting for Rust
+    // Define Rust language configuration
+    let rust_lang = Language {
+        name: "rust",
+        #[cfg(feature = "tree-sitter")]
+        tree_sitter: Some(TreeSitterConfig {
+            grammar: tree_sitter_rust::LANGUAGE.into(),
+            highlights_query: tree_sitter_rust::HIGHLIGHTS_QUERY,
+        }),
+        lsp_command: Some(("rust-analyzer", &[])),
+    };
+
+    // Set up tree-sitter syntax highlighting
     #[cfg(feature = "tree-sitter")]
     {
-        use bevy_code_editor::syntax::TreeSitterProvider;
-
-        let language = tree_sitter_rust::LANGUAGE.into();
-
-        // Create a TreeSitterProvider and set it up with the Rust query
-        let mut provider = TreeSitterProvider::new();
-        provider.set_query(tree_sitter_rust::HIGHLIGHTS_QUERY, language)
-            .expect("Failed to create highlight query");
-
-
-        // Set the provider in the syntax resource
-        syntax.set_provider(provider);
+        if let Some(provider) = rust_lang.create_tree_sitter_provider() {
+            syntax.set_provider(provider);
+        }
     }
 
     let file_uri_str = format!("file://{}", example_file_path.to_string_lossy());
     #[cfg(target_os = "windows")]
-    let file_uri_str = format!("file:///{}", example_file_path.to_string_lossy().replace('\\', "/"));
+    let file_uri_str = format!(
+        "file:///{}",
+        example_file_path.to_string_lossy().replace('\\', "/")
+    );
 
     let doc_uri = lsp_types::Url::parse(&file_uri_str).expect("Failed to parse URI");
-    
+
     // Start rust-analyzer
     // Make sure 'rust-analyzer' is in your PATH (rustup component add rust-analyzer)
     if let Err(e) = lsp_client.start("rust-analyzer", &[]) {
@@ -88,13 +93,14 @@ fn setup_editor(
         // Fallback or just return
         return;
     }
-    
+
     // Initialize
     // rootUri is the project root, which is usually the directory containing Cargo.toml
-    let project_root = current_dir; 
-    let root_uri = lsp_types::Url::from_directory_path(&project_root).expect("Failed to get project root URI");
+    let project_root = current_dir;
+    let root_uri =
+        lsp_types::Url::from_directory_path(&project_root).expect("Failed to get project root URI");
     let capabilities = lsp_types::ClientCapabilities::default();
-    
+
     lsp_client.send(bevy_code_editor::lsp::LspMessage::Initialize {
         root_uri: root_uri.clone(),
         capabilities,
@@ -102,7 +108,7 @@ fn setup_editor(
 
     // Send initialized notification immediately
     lsp_client.send(bevy_code_editor::lsp::LspMessage::Initialized);
-    
+
     // Open the document
     lsp_client.send(bevy_code_editor::lsp::LspMessage::DidOpen {
         uri: doc_uri.clone(), // Use the actual example file's URI
@@ -112,14 +118,12 @@ fn setup_editor(
     });
 
     lsp_sync.document_uri = Some(doc_uri); // Store the document URI in lsp_sync
-    
+
     info!("LSP started for file: {:?}", example_file_path);
 }
 
 #[cfg(feature = "lsp")]
-fn display_lsp_info(
-    lsp_client: Res<LspClient>,
-) {
+fn display_lsp_info(lsp_client: Res<LspClient>) {
     // This would display LSP information in a real implementation
     // For now, it's just a placeholder showing the structure
 

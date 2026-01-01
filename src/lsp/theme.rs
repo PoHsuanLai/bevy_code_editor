@@ -64,7 +64,6 @@ impl Default for LspUiTheme {
     }
 }
 
-
 /// Theme for completion popup
 #[derive(Clone, Debug)]
 pub struct CompletionTheme {

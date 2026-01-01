@@ -583,6 +583,7 @@ version = "0.1.0"
 dependencies = [
  "arboard",
  "bevy",
+ "bevy_camera",
  "cosmic-text 0.12.1",
  "futures-lite",
  "fuzzy-matcher",

@@ -97,30 +97,30 @@ pub mod prelude {
         DocumentHighlightData, HoverPopupData, InlayHintData, InlayHintKind, LspUiElement,
         LspUiVisual, RenameInputData, SignatureHelpPopupData,
     };
+    pub use super::event_listeners::{
+        listen_apply_completion, listen_completion_requests, listen_dismiss_completion,
+        listen_hover_requests, listen_rename_requests, listen_signature_help_requests,
+        listen_text_edit_events,
+    };
     pub use super::messages::{CodeActionOrCommand, LspMessage, LspResponse, RequestType};
+    pub use super::render::{
+        cleanup_lsp_ui_visuals, render_code_actions_popup, render_completion_popup,
+        render_document_highlights, render_hover_popup, render_inlay_hints, render_rename_input,
+        render_signature_help_popup,
+    };
     pub use super::state::{
         CodeActionState, CompletionState, HoverState, InlayHintState, LspSyncState,
         SignatureHelpState, UnifiedCompletionItem, WordCompletionItem,
         COMPLETION_MAX_VISIBLE_DEFAULT,
     };
     pub use super::sync::{
-        sync_code_actions_popup, sync_completion_popup, sync_document_highlights,
-        sync_hover_popup, sync_inlay_hints, sync_rename_input, sync_signature_help_popup,
-    };
-    pub use super::render::{
-        cleanup_lsp_ui_visuals, render_code_actions_popup, render_completion_popup,
-        render_document_highlights, render_hover_popup, render_inlay_hints,
-        render_rename_input, render_signature_help_popup,
+        sync_code_actions_popup, sync_completion_popup, sync_document_highlights, sync_hover_popup,
+        sync_inlay_hints, sync_rename_input, sync_signature_help_popup,
     };
     pub use super::systems::{
         cleanup_lsp_timeouts, execute_code_action, process_lsp_messages, request_code_actions,
         request_inlay_hints, request_signature_help, sync_lsp_document, DiagnosticMarker,
         LocationType, MultipleLocationsEvent, NavigateToFileEvent,
-    };
-    pub use super::event_listeners::{
-        listen_apply_completion, listen_completion_requests, listen_dismiss_completion,
-        listen_hover_requests, listen_rename_requests, listen_signature_help_requests,
-        listen_text_edit_events,
     };
     pub use super::theme::{
         CodeActionsTheme, CommonTheme, CompletionTheme, DocumentHighlightsTheme, HoverTheme,
@@ -137,7 +137,10 @@ pub mod prelude {
 // Re-export commonly used types at module level for backward compatibility
 pub use client::LspClient;
 pub use messages::{LspMessage, LspResponse};
-pub use state::{CompletionState, HoverState, LspSyncState, UnifiedCompletionItem, WordCompletionItem, COMPLETION_MAX_VISIBLE_DEFAULT};
+pub use state::{
+    CompletionState, HoverState, LspSyncState, UnifiedCompletionItem, WordCompletionItem,
+    COMPLETION_MAX_VISIBLE_DEFAULT,
+};
 pub use systems::{
     process_lsp_messages, sync_lsp_document, DiagnosticMarker, LocationType,
     MultipleLocationsEvent, NavigateToFileEvent,

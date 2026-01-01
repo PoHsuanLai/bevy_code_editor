@@ -2,15 +2,17 @@
 //!
 //! These systems listen to editor events and translate them into LSP operations
 
-use bevy::prelude::*;
 use crate::events::{
     ApplyCompletionEvent, DismissCompletionEvent, RequestCompletionEvent, RequestHoverEvent,
     RequestRenameEvent, RequestSignatureHelpEvent, TextEditEvent,
 };
 use crate::lsp::client::LspClient;
 use crate::lsp::messages::LspMessage;
-use crate::lsp::state::{CompletionState, HoverState, LspSyncState, RenameState, SignatureHelpState};
+use crate::lsp::state::{
+    CompletionState, HoverState, LspSyncState, RenameState, SignatureHelpState,
+};
 use crate::types::CodeEditorState;
+use bevy::prelude::*;
 
 /// System that listens to TextEditEvent and sends didChange to LSP
 pub fn listen_text_edit_events(

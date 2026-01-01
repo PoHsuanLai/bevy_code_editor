@@ -1,13 +1,13 @@
 //! Tree-sitter syntax highlighting provider using low-level QueryCursor API
 //! This approach matches Zed's implementation for better performance.
 
-use bevy::prelude::*;
-use tree_sitter::{Language, Parser, Query, QueryCursor, Tree};
+use super::highlighter::{map_highlight_color, SyntaxProvider};
 use crate::types::LineSegment;
-use super::highlighter::{SyntaxProvider, map_highlight_color};
+use bevy::prelude::*;
+use ropey::Rope;
 use std::ops::Range;
 use streaming_iterator::StreamingIterator;
-use ropey::Rope;
+use tree_sitter::{Language, Parser, Query, QueryCursor, Tree};
 
 /// Text provider for tree-sitter that wraps a Rope (like Zed does)
 struct RopeProvider<'a>(&'a Rope);
@@ -133,7 +133,11 @@ impl TreeSitterProvider {
     }
 
     /// Set the highlight query and language
-    pub fn set_query(&mut self, query_source: &str, language: Language) -> Result<(), tree_sitter::QueryError> {
+    pub fn set_query(
+        &mut self,
+        query_source: &str,
+        language: Language,
+    ) -> Result<(), tree_sitter::QueryError> {
         let query = Query::new(&language, query_source)?;
         self.query = Some(query);
         self.cached_language = Some(language);
@@ -340,11 +344,9 @@ impl SyntaxProvider for TreeSitterProvider {
         self.query_cursor.set_byte_range(byte_range.clone());
 
         // Execute query using captures with RopeProvider (like Zed does)
-        let mut captures = self.query_cursor.captures(
-            query,
-            tree.root_node(),
-            RopeProvider(rope),
-        );
+        let mut captures = self
+            .query_cursor
+            .captures(query, tree.root_node(), RopeProvider(rope));
 
         // Build a map of byte ranges to highlight names
         // Using streaming_iterator pattern like Zed

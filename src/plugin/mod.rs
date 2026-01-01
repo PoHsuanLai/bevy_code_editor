@@ -2,15 +2,15 @@
 //!
 //! Renders text using custom GPU-accelerated glyph atlas and shaders
 
-mod ui_elements;
-mod cursor;
 mod brackets;
-mod minimap;
+mod cursor;
+mod editor_ui_plugin;
 mod folding;
 mod gpu_text_render;
+mod minimap;
 mod scrollbar;
 mod syntax_highlighting;
-mod editor_ui_plugin;
+mod ui_elements;
 
 #[cfg(feature = "lsp")]
 mod lsp_plugin;
@@ -18,21 +18,21 @@ mod lsp_plugin;
 #[cfg(feature = "lsp")]
 mod lsp_ui_plugin;
 
-pub(crate) use ui_elements::*;
-pub(crate) use cursor::*;
 pub(crate) use brackets::*;
-pub(crate) use minimap::*;
+pub(crate) use cursor::*;
 pub(crate) use folding::*;
 pub(crate) use gpu_text_render::*;
+pub(crate) use minimap::*;
+pub(crate) use ui_elements::*;
 
 // Re-export scrollbar plugin publicly
-pub use scrollbar::{ScrollbarPlugin, Scrollbar, mouse_not_over_scrollbar};
+pub use scrollbar::{mouse_not_over_scrollbar, Scrollbar, ScrollbarPlugin};
 
 // Re-export syntax plugin publicly
-pub use syntax_highlighting::{SyntaxPlugin, SyntaxResource, HighlightCache};
+pub use syntax_highlighting::{HighlightCache, SyntaxPlugin, SyntaxResource};
 
-// Re-export editor UI plugin publicly
-pub use editor_ui_plugin::EditorUiPlugin;
+// Re-export editor UI plugin and render config publicly
+pub use editor_ui_plugin::{EditorCamera, EditorRenderConfig, EditorUiPlugin};
 
 // Re-export LSP plugins publicly (feature-gated)
 #[cfg(feature = "lsp")]
@@ -41,12 +41,12 @@ pub use lsp_plugin::LspPlugin;
 #[cfg(feature = "lsp")]
 pub use lsp_ui_plugin::LspUiPlugin;
 
-use bevy::prelude::*;
-use leafwing_input_manager::prelude::{InputManagerPlugin, InputMap, ActionState};
+use crate::gpu_text::GpuTextPlugin;
 use crate::input::EditorAction;
 use crate::settings::*;
 use crate::types::*;
-use crate::gpu_text::GpuTextPlugin;
+use bevy::prelude::*;
+use leafwing_input_manager::prelude::{ActionState, InputManagerPlugin, InputMap};
 
 /// System set for core editor setup (runs in Startup schedule)
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -141,20 +141,11 @@ impl Plugin for CodeEditorPlugin {
         app.add_systems(Startup, spawn_input_manager);
 
         // Configure SystemSet ordering: Input → ApplyState → Rendering
-        app.configure_sets(Update, (
-            InputSet,
-            ApplyStateSet,
-            RenderingSet,
-        ).chain());
+        app.configure_sets(Update, (InputSet, ApplyStateSet, RenderingSet).chain());
 
         // Add input handling systems (needed for all render modes)
-        app.add_systems(
-            Update,
-            (
-                crate::input::handle_keyboard_input,
-                debounce_updates,
-            ).in_set(InputSet),
-        );
+        app.add_systems(Update, crate::input::handle_keyboard_input);
+        app.add_systems(Update, debounce_updates);
 
         // Register editor events for file operations
         // These events are emitted by keybindings and should be handled by the host application
@@ -163,9 +154,9 @@ impl Plugin for CodeEditorPlugin {
 
         // Add rendering resources
         app.insert_resource(ClearColor(self.settings.theme.background));
+        app.init_resource::<ViewportConfig>();
         app.insert_resource(ViewportDimensions::default());
         app.insert_resource(BracketMatchState::default());
-        app.insert_resource(FindState::default());
         app.insert_resource(GotoLineState::default());
         app.insert_resource(MinimapHoverState::default());
         app.insert_resource(MinimapDragState::default());
@@ -181,7 +172,7 @@ impl Plugin for CodeEditorPlugin {
         // Add the syntax highlighting plugin
         app.add_plugins(SyntaxPlugin);
 
-        app.add_systems(Startup, (init_viewport_from_window, setup).chain().in_set(EditorSetupSet));
+        app.add_systems(Startup, init_viewport_from_window.in_set(EditorSetupSet));
 
         // GPU text rendering systems - split into smaller groups to avoid tuple limits
         // Input systems - handle user input and write to target state
@@ -200,7 +191,7 @@ impl Plugin for CodeEditorPlugin {
             Update,
             (
                 animate_smooth_scroll,
-                auto_scroll_to_cursor,
+                auto_scroll_to_cursor.run_if(crate::plugin::ui_elements::should_auto_scroll),
                 detect_viewport_resize,
                 update_separator_on_resize,
             )
@@ -213,7 +204,7 @@ impl Plugin for CodeEditorPlugin {
             (
                 detect_foldable_regions,
                 // Note: handle_scroll_for_gpu_text removed - per-line renderer handles scroll natively
-                update_gpu_text_per_line,  // NEW: Per-line mesh system for incremental updates
+                update_gpu_text_per_line, // NEW: Per-line mesh system for incremental updates
             )
                 .chain()
                 .in_set(RenderingSet),
@@ -221,10 +212,7 @@ impl Plugin for CodeEditorPlugin {
 
         // Update syntax tree AFTER rendering (async) to avoid blocking display
         #[cfg(feature = "tree-sitter")]
-        app.add_systems(
-            Update,
-            update_syntax_tree.after(update_gpu_text_per_line),
-        );
+        app.add_systems(Update, update_syntax_tree.after(update_gpu_text_per_line));
     }
 }
 
@@ -243,7 +231,13 @@ fn spawn_input_manager(mut commands: Commands, pending: Res<PendingInputMap>) {
 }
 
 /// Convert top-left coordinates (0,0 = top-left) to Bevy world coordinates (center-origin)
-fn to_bevy_coords_dynamic(x: f32, y: f32, viewport_width: f32, viewport_height: f32, offset_x: f32) -> Vec3 {
+fn to_bevy_coords_dynamic(
+    x: f32,
+    y: f32,
+    viewport_width: f32,
+    viewport_height: f32,
+    offset_x: f32,
+) -> Vec3 {
     Vec3::new(
         x - viewport_width / 2.0 + offset_x,
         viewport_height / 2.0 - y,
@@ -258,17 +252,13 @@ fn to_bevy_coords_left_aligned(
     viewport_width: f32,
     viewport_height: f32,
     offset_x: f32,
-    _horizontal_scroll: f32,  // Unused: horizontal scrolling is handled by character culling
+    _horizontal_scroll: f32, // Unused: horizontal scrolling is handled by character culling
 ) -> Vec3 {
     // Text always starts at the code margin position
     // Horizontal scrolling is handled by substring culling in the rendering code
     let x = -viewport_width / 2.0 + margin_from_left + offset_x;
 
-    Vec3::new(
-        x,
-        viewport_height / 2.0 - y,
-        0.0,
-    )
+    Vec3::new(x, viewport_height / 2.0 - y, 0.0)
 }
 
 /// Debouncing system: Only promote pending_update to needs_update if enough time has passed
@@ -295,10 +285,7 @@ fn debounce_updates(mut state: ResMut<CodeEditorState>, time: Res<Time>) {
 }
 
 /// Initialize viewport dimensions from the actual window size
-fn init_viewport_from_window(
-    mut viewport: ResMut<ViewportDimensions>,
-    windows: Query<&Window>,
-) {
+fn init_viewport_from_window(mut viewport: ResMut<ViewportDimensions>, windows: Query<&Window>) {
     if let Some(window) = windows.iter().next() {
         viewport.width = window.resolution.width() as u32;
         viewport.height = window.resolution.height() as u32;
@@ -306,11 +293,18 @@ fn init_viewport_from_window(
 }
 
 /// Detect viewport resize and trigger position update
+/// Only runs when ViewportConfig::auto_resize_to_window is true
 fn detect_viewport_resize(
+    config: Res<ViewportConfig>,
     mut viewport: ResMut<ViewportDimensions>,
     windows: Query<&Window>,
     mut state: ResMut<CodeEditorState>,
 ) {
+    // Skip auto-resize if disabled - user controls viewport manually
+    if !config.auto_resize_to_window {
+        return;
+    }
+
     if let Some(window) = windows.iter().next() {
         let new_width = window.resolution.width() as u32;
         let new_height = window.resolution.height() as u32;
@@ -344,28 +338,9 @@ fn update_separator_on_resize(
                 viewport_height / 2.0,
                 viewport_width,
                 viewport_height,
-                viewport.offset_x,
-                0.0,  // separator doesn't scroll horizontally
+                0.0, // Camera viewport handles panel positioning
+                0.0, // separator doesn't scroll horizontally
             );
         }
     }
-}
-
-fn setup(
-    mut commands: Commands,
-    theme: Res<ThemeSettings>,
-) {
-    // Spawn 2D camera for the editor with 1:1 pixel mapping
-    commands.spawn((
-        Camera2d,
-        Projection::Orthographic(OrthographicProjection {
-            scale: 1.0,  // 1:1 world units to pixels
-            ..OrthographicProjection::default_2d()
-        }),
-        Camera {
-            clear_color: ClearColorConfig::Custom(theme.background),
-            ..default()
-        },
-        Name::new("EditorCamera"),
-    ));
 }

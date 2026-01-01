@@ -44,7 +44,6 @@ pub struct UiSettings {
     pub margin_top: f32,
 }
 
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WhitespaceMode {
     None,
@@ -131,12 +130,7 @@ impl Default for BracketSettings {
             style: BracketHighlightStyle::Background,
             auto_close: true,
             auto_close_quotes: true,
-            pairs: vec![
-                ('(', ')'),
-                ('[', ']'),
-                ('{', '}'),
-                ('<', '>'),
-            ],
+            pairs: vec![('(', ')'), ('[', ']'), ('{', '}'), ('<', '>')],
         }
     }
 }

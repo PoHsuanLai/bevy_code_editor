@@ -1,11 +1,11 @@
 //! GPU text rendering
 
-use bevy::prelude::*;
-use bevy::tasks::{AsyncComputeTaskPool, Task};
+use super::{HighlightCache, SyntaxResource};
+use crate::gpu_text::{GlyphAtlas, TextRenderState};
 use crate::settings::*;
 use crate::types::*;
-use crate::gpu_text::{GlyphAtlas, TextRenderState};
-use super::{SyntaxResource, HighlightCache};
+use bevy::prelude::*;
+use bevy::tasks::{AsyncComputeTaskPool, Task};
 
 /// Marker component for the main GPU text mesh (DEPRECATED - being replaced with per-line meshes)
 #[derive(Component)]
@@ -29,7 +29,29 @@ pub struct LineMeshEntity {
 #[derive(Resource, Default)]
 pub struct LineMeshPool {
     /// Currently active line entities (buffer_line -> Entity)
-    active: std::collections::HashMap<usize, Entity>,
+    pub active: std::collections::HashMap<usize, Entity>,
+}
+
+impl LineMeshPool {
+    /// Invalidate all entries at or after the given line index.
+    /// Call this when lines are inserted or deleted to prevent stale mappings.
+    /// Returns the entities that should be despawned.
+    pub fn invalidate_from_line(&mut self, from_line: usize) -> Vec<Entity> {
+        let to_remove: Vec<usize> = self
+            .active
+            .keys()
+            .filter(|&&line| line >= from_line)
+            .copied()
+            .collect();
+
+        let mut entities = Vec::with_capacity(to_remove.len());
+        for line in to_remove {
+            if let Some(entity) = self.active.remove(&line) {
+                entities.push(entity);
+            }
+        }
+        entities
+    }
 }
 
 /// Component to track async parse tasks
@@ -52,7 +74,9 @@ pub(crate) fn update_syntax_tree(
     // Check if there's a completed parse task
     if let Some((entity, mut parse_task)) = parse_task_query.iter_mut().next() {
         // Poll the task without blocking
-        if let Some(tree) = futures_lite::future::block_on(futures_lite::future::poll_once(&mut parse_task.task)) {
+        if let Some(tree) =
+            futures_lite::future::block_on(futures_lite::future::poll_once(&mut parse_task.task))
+        {
             if let Some(tree) = tree {
                 // Update the syntax provider with the completed tree and current rope
                 // This increments syntax.tree_version, which will trigger a re-render automatically
@@ -77,8 +101,10 @@ pub(crate) fn update_syntax_tree(
 
     // Only start a new parse if content changed and no task is running
     if state.content_version != state.last_highlighted_version && syntax.is_available() {
-        info!("Starting tree-sitter parse task (content_version: {}, last_highlighted: {})",
-              state.content_version, state.last_highlighted_version);
+        info!(
+            "Starting tree-sitter parse task (content_version: {}, last_highlighted: {})",
+            state.content_version, state.last_highlighted_version
+        );
         // OPTIMIZATION: Don't clear cache here - let it invalidate naturally by version mismatch
         // This allows unchanged lines to remain cached during typing
         // highlight_cache.clear();
@@ -88,12 +114,20 @@ pub(crate) fn update_syntax_tree(
         let content_version = state.content_version;
 
         // Clone the provider's state for incremental parsing (keeps main state intact)
-        let (parser, language, cached_tree, pending_edits, deferred_edits) = syntax.clone_parse_state();
+        let (parser, language, cached_tree, pending_edits, deferred_edits) =
+            syntax.clone_parse_state();
 
         // Spawn async parse task
         let task_pool = AsyncComputeTaskPool::get();
         let task = task_pool.spawn(async move {
-            parse_tree_async(rope, parser, language, cached_tree, pending_edits, deferred_edits)
+            parse_tree_async(
+                rope,
+                parser,
+                language,
+                cached_tree,
+                pending_edits,
+                deferred_edits,
+            )
         });
 
         // Spawn entity to track the task
@@ -114,13 +148,12 @@ fn parse_tree_async(
     deferred_edits: Vec<crate::syntax::tree_sitter::DeferredEdit>,
 ) -> Option<tree_sitter::Tree> {
     // Same parsing logic as update_tree, but runs async
-    use crate::syntax::tree_sitter::RopeReader;
     use super::syntax_highlighting::byte_to_point;
+    use crate::syntax::tree_sitter::RopeReader;
 
     let mut reader = RopeReader::new(&rope);
-    let mut callback = |byte_offset: usize, _position: tree_sitter::Point| -> &[u8] {
-        reader.read(byte_offset)
-    };
+    let mut callback =
+        |byte_offset: usize, _position: tree_sitter::Point| -> &[u8] { reader.read(byte_offset) };
 
     // Try incremental parsing first
     if let Some(ref mut tree) = cached_tree {
@@ -176,7 +209,12 @@ fn parse_tree_async(
 pub(crate) fn update_gpu_text_display(
     mut commands: Commands,
     mut state: ResMut<CodeEditorState>,
-    (font, theme, syntax_settings, performance): (Res<FontSettings>, Res<ThemeSettings>, Res<SyntaxSettings>, Res<PerformanceSettings>),
+    (font, theme, syntax_settings, performance): (
+        Res<FontSettings>,
+        Res<ThemeSettings>,
+        Res<SyntaxSettings>,
+        Res<PerformanceSettings>,
+    ),
     viewport: Res<ViewportDimensions>,
     fold_state: Res<FoldState>,
     mut atlas: ResMut<GlyphAtlas>,
@@ -188,10 +226,11 @@ pub(crate) fn update_gpu_text_display(
     mut syntax: ResMut<SyntaxResource>,
     mut highlight_cache: ResMut<HighlightCache>,
     time: Res<Time>,
+    render_config: Option<Res<super::editor_ui_plugin::EditorRenderConfig>>,
 ) {
-    use bevy::mesh::{Mesh2d, Indices, PrimitiveTopology};
-    use bevy::asset::RenderAssetUsages;
     use crate::gpu_text::{GlyphKey, GlyphRasterizer};
+    use bevy::asset::RenderAssetUsages;
+    use bevy::mesh::{Indices, Mesh2d, PrimitiveTopology};
 
     // Check if we need to update due to tree-sitter parse completion
     #[cfg(feature = "tree-sitter")]
@@ -251,21 +290,31 @@ pub(crate) fn update_gpu_text_display(
     };
 
     // Estimate end buffer line for lazy highlighting
-    let estimated_end_buffer_line = (start_buffer_line + visible_count + 10).min(total_buffer_lines);
+    let estimated_end_buffer_line =
+        (start_buffer_line + visible_count + 10).min(total_buffer_lines);
 
     // === LAZY HIGHLIGHTING with CACHING ===
     // Inspired by VS Code: Always show highlights when available, parse in background
     // The tree-sitter parsing already happens asynchronously, so we just need to highlight on-demand
     #[cfg(feature = "tree-sitter")]
-    let highlighted_lines = if syntax.is_available() && estimated_end_buffer_line > start_buffer_line {
+    let highlighted_lines = if syntax.is_available()
+        && estimated_end_buffer_line > start_buffer_line
+    {
         // Try to get from cache first - ALWAYS use cache if available (no debounce on display)
-        if let Some(cached) = highlight_cache.get(start_buffer_line, estimated_end_buffer_line, state.content_version, syntax.tree_version) {
+        if let Some(cached) = highlight_cache.get(
+            start_buffer_line,
+            estimated_end_buffer_line,
+            state.content_version,
+            syntax.tree_version,
+        ) {
             cached
         } else {
             // Cache miss - need to highlight this range
             // Extract ONLY the visible text range (not the entire file!)
             let start_char = state.rope.line_to_char(start_buffer_line);
-            let end_char = state.rope.line_to_char(estimated_end_buffer_line.min(state.rope.len_lines()));
+            let end_char = state
+                .rope
+                .line_to_char(estimated_end_buffer_line.min(state.rope.len_lines()));
             // OPTIMIZATION: Use chunks instead of to_string() to avoid allocation
             let visible_text: String = state.rope.slice(start_char..end_char).chunks().collect();
             let start_byte = state.rope.char_to_byte(start_char);
@@ -280,7 +329,13 @@ pub(crate) fn update_gpu_text_display(
             );
 
             // Cache the result for future frames
-            highlight_cache.insert(start_buffer_line, estimated_end_buffer_line, state.content_version, syntax.tree_version, lines.clone());
+            highlight_cache.insert(
+                start_buffer_line,
+                estimated_end_buffer_line,
+                state.content_version,
+                syntax.tree_version,
+                lines.clone(),
+            );
             lines
         }
     } else {
@@ -302,18 +357,22 @@ pub(crate) fn update_gpu_text_display(
         // Calculate base Y position
         // Add baseline offset to align GPU text with Text2d line numbers
         let baseline_offset = font_size * 0.32;
-        let base_y = viewport.text_area_top + state.scroll_offset + (current_display_row as f32 * line_height) + baseline_offset;
+        let base_y = viewport.text_area_top
+            + state.scroll_offset
+            + (current_display_row as f32 * line_height)
+            + baseline_offset;
 
         // Get text segments for this line
         // Use lazy-highlighted lines if available
         let relative_line = buffer_line.saturating_sub(start_buffer_line);
 
         // OPTIMIZATION: Avoid String clones - borrow from highlighted_lines or rope directly
-        let segments_ref = if !highlighted_lines.is_empty() && relative_line < highlighted_lines.len() {
-            Some(&highlighted_lines[relative_line])
-        } else {
-            None
-        };
+        let segments_ref =
+            if !highlighted_lines.is_empty() && relative_line < highlighted_lines.len() {
+                Some(&highlighted_lines[relative_line])
+            } else {
+                None
+            };
 
         // Build glyph quads for this line
         let mut x = viewport.text_area_left - state.horizontal_scroll_offset;
@@ -322,7 +381,12 @@ pub(crate) fn update_gpu_text_display(
         if let Some(segments) = segments_ref {
             for seg in segments {
                 let color_rgba = seg.color.to_linear();
-                let color_arr = [color_rgba.red, color_rgba.green, color_rgba.blue, color_rgba.alpha];
+                let color_arr = [
+                    color_rgba.red,
+                    color_rgba.green,
+                    color_rgba.blue,
+                    color_rgba.alpha,
+                ];
 
                 for ch in seg.text.chars() {
                     if ch == '\n' || ch == '\r' {
@@ -335,15 +399,16 @@ pub(crate) fn update_gpu_text_display(
                     }
 
                     let key = GlyphKey::new(ch, font_size);
-                    if let Some(info) = atlas.get_or_insert(key, || {
-                        GlyphRasterizer::rasterize(ch, font_size)
-                    }) {
+                    if let Some(info) =
+                        atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, font_size))
+                    {
                         // Convert to Bevy coordinates (center origin, Y up)
                         let screen_x = x + info.offset.x;
                         let screen_y = base_y - info.offset.y;
 
                         // Convert screen coords to Bevy world coords
-                        let world_x = screen_x - viewport.width as f32 / 2.0 + viewport.offset_x;
+                        // Note: offset_x/offset_y handled by camera viewport, not content positioning
+                        let world_x = screen_x - viewport.width as f32 / 2.0;
                         let world_y = viewport.height as f32 / 2.0 - screen_y;
 
                         // Create quad vertices (bottom-left origin)
@@ -351,10 +416,10 @@ pub(crate) fn update_gpu_text_display(
                         let h = info.size.y;
 
                         // Four corners of the glyph quad
-                        positions.push([world_x, world_y - h, 0.0]);       // bottom-left
-                        positions.push([world_x + w, world_y - h, 0.0]);   // bottom-right
-                        positions.push([world_x + w, world_y, 0.0]);       // top-right
-                        positions.push([world_x, world_y, 0.0]);           // top-left
+                        positions.push([world_x, world_y - h, 0.0]); // bottom-left
+                        positions.push([world_x + w, world_y - h, 0.0]); // bottom-right
+                        positions.push([world_x + w, world_y, 0.0]); // top-right
+                        positions.push([world_x, world_y, 0.0]); // top-left
 
                         // UV coordinates from atlas
                         uvs.push([info.uv_min.x, info.uv_max.y]); // bottom-left (flipped Y)
@@ -387,7 +452,12 @@ pub(crate) fn update_gpu_text_display(
             // Fallback: render directly from rope without highlighting
             let rope_line = state.rope.line(buffer_line);
             let color_rgba = theme.foreground.to_linear();
-            let color_arr = [color_rgba.red, color_rgba.green, color_rgba.blue, color_rgba.alpha];
+            let color_arr = [
+                color_rgba.red,
+                color_rgba.green,
+                color_rgba.blue,
+                color_rgba.alpha,
+            ];
 
             for ch in rope_line.chars() {
                 if ch == '\n' || ch == '\r' {
@@ -400,15 +470,16 @@ pub(crate) fn update_gpu_text_display(
                 }
 
                 let key = GlyphKey::new(ch, font_size);
-                if let Some(info) = atlas.get_or_insert(key, || {
-                    GlyphRasterizer::rasterize(ch, font_size)
-                }) {
+                if let Some(info) =
+                    atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, font_size))
+                {
                     // Convert to Bevy coordinates (center origin, Y up)
                     let screen_x = x + info.offset.x;
                     let screen_y = base_y - info.offset.y;
 
                     // Convert screen coords to Bevy world coords
-                    let world_x = screen_x - viewport.width as f32 / 2.0 + viewport.offset_x;
+                    // Note: offset_x/offset_y handled by camera viewport, not content positioning
+                    let world_x = screen_x - viewport.width as f32 / 2.0;
                     let world_y = viewport.height as f32 / 2.0 - screen_y;
 
                     // Create quad vertices (bottom-left origin)
@@ -416,10 +487,10 @@ pub(crate) fn update_gpu_text_display(
                     let h = info.size.y;
 
                     // Four corners of the glyph quad
-                    positions.push([world_x, world_y - h, 0.0]);       // bottom-left
-                    positions.push([world_x + w, world_y - h, 0.0]);   // bottom-right
-                    positions.push([world_x + w, world_y, 0.0]);       // top-right
-                    positions.push([world_x, world_y, 0.0]);           // top-left
+                    positions.push([world_x, world_y - h, 0.0]); // bottom-left
+                    positions.push([world_x + w, world_y - h, 0.0]); // bottom-right
+                    positions.push([world_x + w, world_y, 0.0]); // top-right
+                    positions.push([world_x, world_y, 0.0]); // top-left
 
                     // UV coordinates from atlas
                     uvs.push([info.uv_min.x, info.uv_max.y]); // bottom-left (flipped Y)
@@ -494,14 +565,21 @@ pub(crate) fn update_gpu_text_display(
     } else {
         // Create new mesh entity
         let mesh_handle = meshes.add(mesh);
-        commands.spawn((
+        let mut entity_cmd = commands.spawn((
             Mesh2d(mesh_handle),
             crate::gpu_text::MeshMaterial2d(material_handle.clone()),
             Transform::default(),
-            GpuTextMesh,  // Marker component to distinguish from minimap mesh
+            GpuTextMesh, // Marker component to distinguish from minimap mesh
             Name::new("GpuTextMesh"),
             Visibility::Visible,
         ));
+
+        // Apply render layers if configured
+        if let Some(ref config) = render_config {
+            if let Some(ref layers) = config.render_layers {
+                entity_cmd.insert(layers.clone());
+            }
+        }
     }
 
     state.needs_update = false;
@@ -523,7 +601,12 @@ pub(crate) fn update_gpu_text_per_line(
     mut commands: Commands,
     mut state: ResMut<CodeEditorState>,
     mut pool: ResMut<LineMeshPool>,
-    (font, theme, syntax_settings, performance): (Res<FontSettings>, Res<ThemeSettings>, Res<SyntaxSettings>, Res<PerformanceSettings>),
+    (font, theme, syntax_settings, performance): (
+        Res<FontSettings>,
+        Res<ThemeSettings>,
+        Res<SyntaxSettings>,
+        Res<PerformanceSettings>,
+    ),
     viewport: Res<ViewportDimensions>,
     fold_state: Res<FoldState>,
     mut atlas: ResMut<GlyphAtlas>,
@@ -531,10 +614,18 @@ pub(crate) fn update_gpu_text_per_line(
     _materials: ResMut<Assets<crate::gpu_text::TextMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut images: ResMut<Assets<Image>>,
-    mut line_query: Query<(Entity, &mut LineMeshEntity, &mut Transform, &mut Visibility, &mut bevy::mesh::Mesh2d, Option<&mut crate::gpu_text::MeshMaterial2d<crate::gpu_text::TextMaterial>>)>,
+    mut line_query: Query<(
+        Entity,
+        &mut LineMeshEntity,
+        &mut Transform,
+        &mut Visibility,
+        &mut bevy::mesh::Mesh2d,
+        Option<&mut crate::gpu_text::MeshMaterial2d<crate::gpu_text::TextMaterial>>,
+    )>,
     mut syntax: ResMut<SyntaxResource>,
     mut highlight_cache: ResMut<HighlightCache>,
     time: Res<Time>,
+    render_config: Option<Res<super::editor_ui_plugin::EditorRenderConfig>>,
 ) {
     use bevy::mesh::Mesh2d;
 
@@ -545,21 +636,22 @@ pub(crate) fn update_gpu_text_per_line(
         return;
     }
 
-    // Debug: Log why we're updating
-    if state.needs_update {
-        info!("[UPDATE] needs_update=true, dirty_lines: {:?}, pending_update: {}", state.dirty_lines, state.pending_update);
-    }
-    if needs_scroll_update {
-        info!("[UPDATE] needs_scroll_update=true");
+    // Handle line invalidation (when lines are inserted/deleted)
+    // This prevents stale entity mappings after newline insert/delete
+    if let Some(from_line) = state.invalidate_lines_from.take() {
+        let entities_to_despawn = pool.invalidate_from_line(from_line);
+        for entity in entities_to_despawn {
+            commands.entity(entity).despawn();
+        }
     }
 
-    // DEBUG: Log what triggered the update
-    if state.needs_update {
-        info!("[PER-LINE] Update triggered by needs_update, dirty_lines: {:?}", state.dirty_lines);
-    }
-    if needs_scroll_update {
-        info!("[PER-LINE] Update triggered by scroll");
-    }
+    // Debug logging (uncomment if needed):
+    // if state.needs_update {
+    //     info!("[UPDATE] needs_update=true, dirty_lines: {:?}", state.dirty_lines);
+    // }
+    // if needs_scroll_update {
+    //     info!("[UPDATE] needs_scroll_update=true");
+    // }
 
     let font_size = font.size;
     let line_height = font.line_height;
@@ -574,6 +666,10 @@ pub(crate) fn update_gpu_text_per_line(
     let first_visible_display_row = (start_pixels / line_height).floor().max(0.0) as usize;
     let visible_count = ((viewport.height as f32 + buffer * 2.0) / line_height).ceil() as usize;
     let last_visible_display_row = first_visible_display_row + visible_count;
+
+    // Debug logging (uncomment if needed):
+    // warn!("[PER-LINE-DEBUG] viewport.height={}, visible_count={}, first={}, last={}, total_lines={}",
+    //     viewport.height, visible_count, first_visible_display_row, last_visible_display_row, total_buffer_lines);
 
     // Map buffer lines to display rows (accounting for folding)
     let has_folding = !fold_state.regions.is_empty();
@@ -592,7 +688,8 @@ pub(crate) fn update_gpu_text_per_line(
         (start, start)
     };
 
-    let estimated_end_buffer_line = (start_buffer_line + visible_count + 10).min(total_buffer_lines);
+    let estimated_end_buffer_line =
+        (start_buffer_line + visible_count + 10).min(total_buffer_lines);
 
     // Determine which lines need mesh rebuilding
     let dirty_range = if let Some(ref dirty) = state.dirty_lines {
@@ -632,31 +729,40 @@ pub(crate) fn update_gpu_text_per_line(
         current_display_row += 1;
     }
 
-    // Hide entities for offscreen lines
-    for (_entity, line_entity, _transform, mut visibility, _mesh, _material) in line_query.iter_mut() {
+    // Hide entities for offscreen lines AND move them off-screen
+    for (_entity, line_entity, mut transform, mut visibility, _mesh, _material) in
+        line_query.iter_mut()
+    {
         if !visible_buffer_lines.contains(&line_entity.buffer_line) {
             *visibility = Visibility::Hidden;
-            // Note: We keep hidden entities in pool.active - they'll be despawned if that line becomes dirty
+            // Also move off-screen as a backup (some render pipelines ignore visibility)
+            transform.translation.y = -10000.0;
         }
     }
 
     // Update/create meshes for visible lines
     if let Some(dirty_range) = dirty_range {
-        info!("[PERF] Dirty range: {}..{} ({} lines)", dirty_range.start, dirty_range.end, dirty_range.end - dirty_range.start);
+        // Debug: info!("[PERF] Dirty range: {}..{} ({} lines)", dirty_range.start, dirty_range.end, dirty_range.end - dirty_range.start);
 
         // Pre-load highlights for the entire dirty range
         // Try cache first, then highlight if needed
         #[cfg(feature = "tree-sitter")]
         let highlighted_lines = if syntax.is_available() && dirty_range.end > dirty_range.start {
             // Try to get from cache first
-            if let Some(cached) = highlight_cache.get(dirty_range.start, dirty_range.end, state.content_version, syntax.tree_version) {
-                info!("[PER-LINE] Cache HIT for range {}..{}", dirty_range.start, dirty_range.end);
+            if let Some(cached) = highlight_cache.get(
+                dirty_range.start,
+                dirty_range.end,
+                state.content_version,
+                syntax.tree_version,
+            ) {
                 cached
             } else {
-                info!("[PER-LINE] Cache MISS - highlighting range {}..{}", dirty_range.start, dirty_range.end);
                 let start_char = state.rope.line_to_char(dirty_range.start);
-                let end_char = state.rope.line_to_char(dirty_range.end.min(state.rope.len_lines()));
-                let visible_text: String = state.rope.slice(start_char..end_char).chunks().collect();
+                let end_char = state
+                    .rope
+                    .line_to_char(dirty_range.end.min(state.rope.len_lines()));
+                let visible_text: String =
+                    state.rope.slice(start_char..end_char).chunks().collect();
                 let start_byte = state.rope.char_to_byte(start_char);
 
                 let lines = syntax.highlight_range(
@@ -668,7 +774,13 @@ pub(crate) fn update_gpu_text_per_line(
                     theme.foreground,
                 );
 
-                highlight_cache.insert(dirty_range.start, dirty_range.end, state.content_version, syntax.tree_version, lines.clone());
+                highlight_cache.insert(
+                    dirty_range.start,
+                    dirty_range.end,
+                    state.content_version,
+                    syntax.tree_version,
+                    lines.clone(),
+                );
                 lines
             }
         } else {
@@ -681,8 +793,8 @@ pub(crate) fn update_gpu_text_per_line(
         // Process ONLY visible lines (not all buffer lines!)
         current_display_row = if has_folding { 0 } else { start_buffer_line };
 
-        let mut despawn_count = 0;
-        let mut spawn_count = 0;
+        let mut _despawn_count = 0;
+        let mut _spawn_count = 0;
 
         for buffer_line in start_buffer_line..estimated_end_buffer_line.min(total_buffer_lines) {
             if fold_state.is_line_hidden(buffer_line) {
@@ -702,7 +814,9 @@ pub(crate) fn update_gpu_text_per_line(
 
             // Check if entity has valid mesh/versions
             let entity_is_stale = if let Some(&existing_entity) = pool.active.get(&buffer_line) {
-                if let Ok((_ent, line_comp, _transform, _visibility, _mesh, _material)) = line_query.get(existing_entity) {
+                if let Ok((_ent, line_comp, _transform, _visibility, _mesh, _material)) =
+                    line_query.get(existing_entity)
+                {
                     #[cfg(feature = "tree-sitter")]
                     {
                         // Check if highlights are stale (tree updated since this entity was created)
@@ -722,11 +836,25 @@ pub(crate) fn update_gpu_text_per_line(
             let needs_mesh_rebuild = !entity_exists || is_dirty || entity_is_stale;
 
             if !needs_mesh_rebuild {
-                // Just update display_row and visibility if entity is up-to-date
-                if let Some(&existing_entity) = pool.active.get(&buffer_line) {
-                    if let Ok((_ent, mut line_comp, _transform, mut visibility, _mesh, _material)) = line_query.get_mut(existing_entity) {
-                        line_comp.display_row = current_display_row;
-                        *visibility = Visibility::Visible;
+                // Update display_row and visibility only
+                // NOTE: Do NOT update transform here! Mesh vertices have absolute world
+                // coordinates baked in. If scroll/viewport changes, staleness detection
+                // will trigger mesh rebuild. Setting transform.translation.y would
+                // double the Y offset since mesh already has world_y in vertices.
+                if visible_buffer_lines.contains(&buffer_line) {
+                    if let Some(&existing_entity) = pool.active.get(&buffer_line) {
+                        if let Ok((
+                            _ent,
+                            mut line_comp,
+                            _transform,
+                            mut visibility,
+                            _mesh,
+                            _material,
+                        )) = line_query.get_mut(existing_entity)
+                        {
+                            line_comp.display_row = current_display_row;
+                            *visibility = Visibility::Visible;
+                        }
                     }
                 }
                 current_display_row += 1;
@@ -735,7 +863,10 @@ pub(crate) fn update_gpu_text_per_line(
 
             // Build mesh for this line
             let baseline_offset = font_size * 0.32;
-            let base_y = viewport.text_area_top + state.scroll_offset + (current_display_row as f32 * line_height) + baseline_offset;
+            let base_y = viewport.text_area_top
+                + state.scroll_offset
+                + (current_display_row as f32 * line_height)
+                + baseline_offset;
 
             // Get highlights for this specific line
             // Strategy: Try highlighted batch -> cache -> plain text fallback
@@ -751,7 +882,7 @@ pub(crate) fn update_gpu_text_per_line(
                         if line_text.trim().is_empty() {
                             Vec::new()
                         } else {
-                            warn!("[HIGHLIGHT] Line {} has empty segments from tree-sitter, using plain text fallback", buffer_line);
+                            // Empty segments from tree-sitter, using plain text fallback
                             vec![LineSegment {
                                 text: line_text.trim_end_matches('\n').to_string(),
                                 color: theme.foreground,
@@ -775,8 +906,6 @@ pub(crate) fn update_gpu_text_per_line(
                         if line_text.trim().is_empty() {
                             Vec::new()
                         } else {
-                            warn!("[HIGHLIGHT] Line {} cache miss during rebuild (content_v={}, tree_v={}), using plain text fallback",
-                                  buffer_line, state.content_version, syntax.tree_version);
                             vec![LineSegment {
                                 text: line_text.trim_end_matches('\n').to_string(),
                                 color: theme.foreground,
@@ -799,8 +928,6 @@ pub(crate) fn update_gpu_text_per_line(
                     if line_text.trim().is_empty() {
                         Vec::new()
                     } else {
-                        warn!("[HIGHLIGHT] Line {} no batch + cache miss (content_v={}, tree_v={}), using plain text fallback",
-                              buffer_line, state.content_version, syntax.tree_version);
                         vec![LineSegment {
                             text: line_text.trim_end_matches('\n').to_string(),
                             color: theme.foreground,
@@ -837,18 +964,24 @@ pub(crate) fn update_gpu_text_per_line(
                 &mut meshes,
             );
 
+            // Skip lines outside visible range
+            if !visible_buffer_lines.contains(&buffer_line) {
+                current_display_row += 1;
+                continue;
+            }
+
             // OPTIMIZED FIX: Despawn and recreate only when dirty
             // Entity mutation causes rendering glitches, so we despawn+respawn instead
             // But only when the line actually changed (content or highlighting)
             if let Some(&existing_entity) = pool.active.get(&buffer_line) {
                 commands.entity(existing_entity).despawn();
                 pool.active.remove(&buffer_line);
-                despawn_count += 1;
+                _despawn_count += 1;
             }
 
             // Spawn fresh entity with new mesh
-            spawn_count += 1;
-            let entity = commands.spawn((
+            _spawn_count += 1;
+            let mut entity_cmd = commands.spawn((
                 Mesh2d(mesh_handle),
                 crate::gpu_text::MeshMaterial2d(material_handle.clone()),
                 Transform::default(),
@@ -862,14 +995,23 @@ pub(crate) fn update_gpu_text_per_line(
                     tree_version: 0,
                 },
                 Name::new(format!("LineMesh_{}", buffer_line)),
-            )).id();
+            ));
+
+            // Apply render layers if configured
+            if let Some(ref config) = render_config {
+                if let Some(ref layers) = config.render_layers {
+                    entity_cmd.insert(layers.clone());
+                }
+            }
+
+            let entity = entity_cmd.id();
 
             pool.active.insert(buffer_line, entity);
 
             current_display_row += 1;
         }
 
-        info!("[PERF] Despawned {} entities, spawned {} entities", despawn_count, spawn_count);
+        // Debug: info!("[PERF] Despawned {} entities, spawned {} entities", despawn_count, spawn_count);
     }
 
     // Clear update flags
@@ -893,9 +1035,9 @@ fn build_line_mesh(
     _images: &mut Assets<Image>,
     meshes: &mut Assets<Mesh>,
 ) -> Handle<Mesh> {
-    use bevy::mesh::{Indices, PrimitiveTopology};
-    use bevy::asset::RenderAssetUsages;
     use crate::gpu_text::{GlyphKey, GlyphRasterizer};
+    use bevy::asset::RenderAssetUsages;
+    use bevy::mesh::{Indices, PrimitiveTopology};
 
     let mut positions: Vec<[f32; 3]> = Vec::new();
     let mut uvs: Vec<[f32; 2]> = Vec::new();
@@ -914,7 +1056,12 @@ fn build_line_mesh(
     if !segments.is_empty() {
         for seg in segments {
             let color_rgba = seg.color.to_linear();
-            let color_arr = [color_rgba.red, color_rgba.green, color_rgba.blue, color_rgba.alpha];
+            let color_arr = [
+                color_rgba.red,
+                color_rgba.green,
+                color_rgba.blue,
+                color_rgba.alpha,
+            ];
 
             for ch in seg.text.chars() {
                 if ch == '\n' || ch == '\r' {
@@ -926,13 +1073,15 @@ fn build_line_mesh(
                 }
 
                 let key = GlyphKey::new(ch, font_size);
-                if let Some(info) = atlas.get_or_insert(key, || {
-                    GlyphRasterizer::rasterize(ch, font_size)
-                }) {
+                if let Some(info) =
+                    atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, font_size))
+                {
                     let screen_x = x + info.offset.x;
                     let screen_y = base_y - info.offset.y;
 
-                    let world_x = screen_x - viewport.width as f32 / 2.0 + viewport.offset_x;
+                    // Position content relative to viewport center
+                    // Note: offset_x/offset_y are handled by camera viewport, not content positioning
+                    let world_x = screen_x - viewport.width as f32 / 2.0;
                     let world_y = viewport.height as f32 / 2.0 - screen_y;
 
                     let w = info.size.x;
@@ -951,8 +1100,12 @@ fn build_line_mesh(
                     colors.extend_from_slice(&[color_arr; 4]);
 
                     indices.extend_from_slice(&[
-                        vertex_count, vertex_count + 1, vertex_count + 2,
-                        vertex_count, vertex_count + 2, vertex_count + 3,
+                        vertex_count,
+                        vertex_count + 1,
+                        vertex_count + 2,
+                        vertex_count,
+                        vertex_count + 2,
+                        vertex_count + 3,
                     ]);
                     vertex_count += 4;
 
@@ -964,7 +1117,12 @@ fn build_line_mesh(
         // Plain text fallback
         let rope_line = rope.line(buffer_line);
         let color_rgba = theme.foreground.to_linear();
-        let color_arr = [color_rgba.red, color_rgba.green, color_rgba.blue, color_rgba.alpha];
+        let color_arr = [
+            color_rgba.red,
+            color_rgba.green,
+            color_rgba.blue,
+            color_rgba.alpha,
+        ];
 
         for ch in rope_line.chars() {
             if ch == '\n' || ch == '\r' {
@@ -976,13 +1134,14 @@ fn build_line_mesh(
             }
 
             let key = GlyphKey::new(ch, font_size);
-            if let Some(info) = atlas.get_or_insert(key, || {
-                GlyphRasterizer::rasterize(ch, font_size)
-            }) {
+            if let Some(info) =
+                atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, font_size))
+            {
                 let screen_x = x + info.offset.x;
                 let screen_y = base_y - info.offset.y;
 
-                let world_x = screen_x - viewport.width as f32 / 2.0 + viewport.offset_x;
+                // Position content relative to viewport center
+                let world_x = screen_x - viewport.width as f32 / 2.0;
                 let world_y = viewport.height as f32 / 2.0 - screen_y;
 
                 let w = info.size.x;
@@ -1001,8 +1160,12 @@ fn build_line_mesh(
                 colors.extend_from_slice(&[color_arr; 4]);
 
                 indices.extend_from_slice(&[
-                    vertex_count, vertex_count + 1, vertex_count + 2,
-                    vertex_count, vertex_count + 2, vertex_count + 3,
+                    vertex_count,
+                    vertex_count + 1,
+                    vertex_count + 2,
+                    vertex_count,
+                    vertex_count + 2,
+                    vertex_count + 3,
                 ]);
                 vertex_count += 4;
 
@@ -1012,7 +1175,10 @@ fn build_line_mesh(
     }
 
     // Build mesh
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD);
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
     mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);

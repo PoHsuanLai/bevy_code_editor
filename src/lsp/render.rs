@@ -28,15 +28,17 @@
 
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
+use bevy_camera::visibility::RenderLayers;
 
+use crate::plugin::editor_ui_plugin::EditorRenderConfig;
 use crate::settings::FontSettings;
 use crate::types::ViewportDimensions;
 
 use super::components::*;
 use super::theme::LspUiTheme;
 use super::ui::{
-    CodeActionUI, CompletionUI, HoverUI, InlayHintText, RenameUI, SignatureHelpUI,
-    DocumentHighlightMarker,
+    CodeActionUI, CompletionUI, DocumentHighlightMarker, HoverUI, InlayHintText, RenameUI,
+    SignatureHelpUI,
 };
 
 /// Render the completion popup from marker component data
@@ -47,6 +49,7 @@ pub fn render_completion_popup(
     font: Res<FontSettings>,
     viewport: Res<ViewportDimensions>,
     theme: Res<LspUiTheme>,
+    render_config: Res<EditorRenderConfig>,
 ) {
     for (_popup_entity, popup) in popup_query.iter() {
         // Clear old visuals
@@ -64,94 +67,103 @@ pub fn render_completion_popup(
             theme.completion.z_index,
         );
 
-        commands
-            .spawn((
-                Sprite {
-                    color: theme.completion.background,
-                    custom_size: Some(Vec2::new(popup.width, popup.height)),
-                    ..default()
-                },
-                Transform::from_translation(pos),
-                CompletionUI,
-                LspUiVisual,
-                Name::new("CompletionBox"),
-            ))
-            .with_children(|parent| {
-                let visible_items = popup
-                    .items
-                    .iter()
-                    .skip(popup.scroll_offset)
-                    .take(popup.max_visible);
+        let mut entity_cmd = commands.spawn((
+            Sprite {
+                color: theme.completion.background,
+                custom_size: Some(Vec2::new(popup.width, popup.height)),
+                ..default()
+            },
+            Transform::from_translation(pos),
+            CompletionUI,
+            LspUiVisual,
+            Name::new("CompletionBox"),
+        ));
 
-                for (i, item) in visible_items.enumerate() {
-                    let absolute_index = popup.scroll_offset + i;
-                    let is_selected = absolute_index == popup.selected_index;
-                    let item_y = (popup.height / 2.0) - (i as f32 * line_height) - (line_height / 2.0) - 5.0;
+        if let Some(ref layers) = render_config.render_layers {
+            entity_cmd.insert(layers.clone());
+        }
 
-                    // Selection background
-                    if is_selected {
-                        parent.spawn((
-                            Sprite {
-                                color: theme.completion.selected_background,
-                                custom_size: Some(Vec2::new(popup.width - 4.0, line_height)),
-                                ..default()
-                            },
-                            Transform::from_translation(Vec3::new(0.0, item_y, 0.1)),
-                            LspUiVisual,
-                        ));
-                    }
+        entity_cmd.with_children(|parent| {
+            let visible_items = popup
+                .items
+                .iter()
+                .skip(popup.scroll_offset)
+                .take(popup.max_visible);
 
-                    // Kind icon
+            for (i, item) in visible_items.enumerate() {
+                let absolute_index = popup.scroll_offset + i;
+                let is_selected = absolute_index == popup.selected_index;
+                let item_y =
+                    (popup.height / 2.0) - (i as f32 * line_height) - (line_height / 2.0) - 5.0;
+
+                // Selection background
+                if is_selected {
                     parent.spawn((
-                        Text2d::new(&item.kind_icon),
-                        TextFont {
-                            font: font.handle.clone().unwrap_or_default(),
-                            font_size: font.size * 0.9,
+                        Sprite {
+                            color: theme.completion.selected_background,
+                            custom_size: Some(Vec2::new(popup.width - 4.0, line_height)),
                             ..default()
                         },
-                        TextColor(theme.completion.icon_color),
-                        Transform::from_translation(Vec3::new(-popup.width / 2.0 + 12.0, item_y, 0.2)),
-                        Anchor::CENTER_LEFT,
+                        Transform::from_translation(Vec3::new(0.0, item_y, 0.1)),
                         LspUiVisual,
                     ));
-
-                    // Item label
-                    let label_color = if item.is_word {
-                        theme.completion.word_text_color
-                    } else {
-                        theme.completion.text_color
-                    };
-
-                    parent.spawn((
-                        Text2d::new(&item.label),
-                        TextFont {
-                            font: font.handle.clone().unwrap_or_default(),
-                            font_size: font.size,
-                            ..default()
-                        },
-                        TextColor(label_color),
-                        Transform::from_translation(Vec3::new(-popup.width / 2.0 + 28.0, item_y, 0.2)),
-                        Anchor::CENTER_LEFT,
-                        LspUiVisual,
-                    ));
-
-                    // Item detail
-                    if let Some(detail) = &item.detail {
-                        parent.spawn((
-                            Text2d::new(detail),
-                            TextFont {
-                                font: font.handle.clone().unwrap_or_default(),
-                                font_size: font.size * 0.8,
-                                ..default()
-                            },
-                            TextColor(theme.completion.detail_color),
-                            Transform::from_translation(Vec3::new(popup.width / 2.0 - 10.0, item_y, 0.2)),
-                            Anchor::CENTER_RIGHT,
-                            LspUiVisual,
-                        ));
-                    }
                 }
-            });
+
+                // Kind icon
+                parent.spawn((
+                    Text2d::new(&item.kind_icon),
+                    TextFont {
+                        font: font.handle.clone().unwrap_or_default(),
+                        font_size: font.size * 0.9,
+                        ..default()
+                    },
+                    TextColor(theme.completion.icon_color),
+                    Transform::from_translation(Vec3::new(-popup.width / 2.0 + 12.0, item_y, 0.2)),
+                    Anchor::CENTER_LEFT,
+                    LspUiVisual,
+                ));
+
+                // Item label
+                let label_color = if item.is_word {
+                    theme.completion.word_text_color
+                } else {
+                    theme.completion.text_color
+                };
+
+                parent.spawn((
+                    Text2d::new(&item.label),
+                    TextFont {
+                        font: font.handle.clone().unwrap_or_default(),
+                        font_size: font.size,
+                        ..default()
+                    },
+                    TextColor(label_color),
+                    Transform::from_translation(Vec3::new(-popup.width / 2.0 + 28.0, item_y, 0.2)),
+                    Anchor::CENTER_LEFT,
+                    LspUiVisual,
+                ));
+
+                // Item detail
+                if let Some(detail) = &item.detail {
+                    parent.spawn((
+                        Text2d::new(detail),
+                        TextFont {
+                            font: font.handle.clone().unwrap_or_default(),
+                            font_size: font.size * 0.8,
+                            ..default()
+                        },
+                        TextColor(theme.completion.detail_color),
+                        Transform::from_translation(Vec3::new(
+                            popup.width / 2.0 - 10.0,
+                            item_y,
+                            0.2,
+                        )),
+                        Anchor::CENTER_RIGHT,
+                        LspUiVisual,
+                    ));
+                }
+            }
+        });
     }
 }
 
@@ -163,6 +175,7 @@ pub fn render_hover_popup(
     font: Res<FontSettings>,
     viewport: Res<ViewportDimensions>,
     theme: Res<LspUiTheme>,
+    render_config: Res<EditorRenderConfig>,
 ) {
     for (_popup_entity, popup) in popup_query.iter() {
         for entity in visual_query.iter() {
@@ -178,35 +191,39 @@ pub fn render_hover_popup(
             theme.hover.z_index,
         );
 
-        commands
-            .spawn((
-                Sprite {
-                    color: theme.hover.background,
-                    custom_size: Some(Vec2::new(popup.width, popup.height)),
+        let mut entity_cmd = commands.spawn((
+            Sprite {
+                color: theme.hover.background,
+                custom_size: Some(Vec2::new(popup.width, popup.height)),
+                ..default()
+            },
+            Transform::from_translation(pos),
+            HoverUI,
+            LspUiVisual,
+            Name::new("HoverBox"),
+        ));
+
+        if let Some(ref layers) = render_config.render_layers {
+            entity_cmd.insert(layers.clone());
+        }
+
+        entity_cmd.with_children(|parent| {
+            let text_x = -popup.width / 2.0 + theme.hover.padding;
+            let text_y = popup.height / 2.0 - theme.hover.padding;
+
+            parent.spawn((
+                Text2d::new(&popup.content),
+                TextFont {
+                    font: font.handle.clone().unwrap_or_default(),
+                    font_size: font.size * 0.9,
                     ..default()
                 },
-                Transform::from_translation(pos),
-                HoverUI,
+                TextColor(theme.hover.text_color),
+                Transform::from_translation(Vec3::new(text_x, text_y, 0.1)),
+                Anchor::TOP_LEFT,
                 LspUiVisual,
-                Name::new("HoverBox"),
-            ))
-            .with_children(|parent| {
-                let text_x = -popup.width / 2.0 + theme.hover.padding;
-                let text_y = popup.height / 2.0 - theme.hover.padding;
-
-                parent.spawn((
-                    Text2d::new(&popup.content),
-                    TextFont {
-                        font: font.handle.clone().unwrap_or_default(),
-                        font_size: font.size * 0.9,
-                        ..default()
-                    },
-                    TextColor(theme.hover.text_color),
-                    Transform::from_translation(Vec3::new(text_x, text_y, 0.1)),
-                    Anchor::TOP_LEFT,
-                    LspUiVisual,
-                ));
-            });
+            ));
+        });
     }
 }
 
@@ -218,6 +235,7 @@ pub fn render_signature_help_popup(
     font: Res<FontSettings>,
     viewport: Res<ViewportDimensions>,
     theme: Res<LspUiTheme>,
+    render_config: Res<EditorRenderConfig>,
 ) {
     for (_popup_entity, popup) in popup_query.iter() {
         for entity in visual_query.iter() {
@@ -263,7 +281,8 @@ pub fn render_signature_help_popup(
 
                 // Show active signature indicator if multiple
                 if popup.total_signatures > 1 {
-                    let indicator = format!("{}/{}", popup.current_index + 1, popup.total_signatures);
+                    let indicator =
+                        format!("{}/{}", popup.current_index + 1, popup.total_signatures);
                     parent.spawn((
                         Text2d::new(indicator),
                         TextFont {
@@ -293,6 +312,7 @@ pub fn render_code_actions_popup(
     font: Res<FontSettings>,
     viewport: Res<ViewportDimensions>,
     theme: Res<LspUiTheme>,
+    render_config: Res<EditorRenderConfig>,
 ) {
     for (_popup_entity, popup) in popup_query.iter() {
         for entity in visual_query.iter() {
@@ -324,7 +344,8 @@ pub fn render_code_actions_popup(
             .with_children(|parent| {
                 for (i, action) in popup.actions.iter().enumerate() {
                     let is_selected = i == popup.selected_index;
-                    let item_y = (popup.height / 2.0) - (i as f32 * line_height) - (line_height / 2.0) - 5.0;
+                    let item_y =
+                        (popup.height / 2.0) - (i as f32 * line_height) - (line_height / 2.0) - 5.0;
 
                     if is_selected {
                         parent.spawn((
@@ -346,7 +367,11 @@ pub fn render_code_actions_popup(
                             ..default()
                         },
                         TextColor(theme.code_actions.text_color),
-                        Transform::from_translation(Vec3::new(-popup.width / 2.0 + 10.0, item_y, 0.2)),
+                        Transform::from_translation(Vec3::new(
+                            -popup.width / 2.0 + 10.0,
+                            item_y,
+                            0.2,
+                        )),
                         Anchor::CENTER_LEFT,
                         LspUiVisual,
                     ));
@@ -363,6 +388,7 @@ pub fn render_rename_input(
     font: Res<FontSettings>,
     viewport: Res<ViewportDimensions>,
     theme: Res<LspUiTheme>,
+    render_config: Res<EditorRenderConfig>,
 ) {
     for (_popup_entity, popup) in popup_query.iter() {
         for entity in visual_query.iter() {
@@ -379,66 +405,70 @@ pub fn render_rename_input(
             theme.rename.z_index,
         );
 
-        commands
-            .spawn((
+        let mut entity_cmd = commands.spawn((
+            Sprite {
+                color: theme.rename.background,
+                custom_size: Some(Vec2::new(popup.width, popup.height)),
+                ..default()
+            },
+            Transform::from_translation(Vec3::new(pos.x + popup.width / 2.0, pos.y, pos.z)),
+            RenameUI,
+            LspUiVisual,
+            Name::new("RenameInput"),
+        ));
+
+        if let Some(ref layers) = render_config.render_layers {
+            entity_cmd.insert(layers.clone());
+        }
+
+        entity_cmd.with_children(|parent| {
+            // Blue border
+            parent.spawn((
                 Sprite {
-                    color: theme.rename.background,
-                    custom_size: Some(Vec2::new(popup.width, popup.height)),
+                    color: theme.rename.border,
+                    custom_size: Some(Vec2::new(
+                        popup.width + theme.rename.border_width * 2.0,
+                        popup.height + theme.rename.border_width * 2.0,
+                    )),
                     ..default()
                 },
-                Transform::from_translation(Vec3::new(pos.x + popup.width / 2.0, pos.y, pos.z)),
-                RenameUI,
+                Transform::from_translation(Vec3::new(0.0, 0.0, -0.1)),
                 LspUiVisual,
-                Name::new("RenameInput"),
-            ))
-            .with_children(|parent| {
-                // Blue border
-                parent.spawn((
-                    Sprite {
-                        color: theme.rename.border,
-                        custom_size: Some(Vec2::new(
-                            popup.width + theme.rename.border_width * 2.0,
-                            popup.height + theme.rename.border_width * 2.0,
-                        )),
-                        ..default()
-                    },
-                    Transform::from_translation(Vec3::new(0.0, 0.0, -0.1)),
-                    LspUiVisual,
-                ));
+            ));
 
-                // Input text
-                parent.spawn((
-                    Text2d::new(&popup.text),
-                    TextFont {
-                        font: font.handle.clone().unwrap_or_default(),
-                        font_size: font.size,
-                        ..default()
-                    },
-                    TextColor(theme.rename.text_color),
-                    Transform::from_translation(Vec3::new(
-                        -popup.width / 2.0 + theme.rename.padding_x + 2.0,
-                        0.0,
-                        0.2,
-                    )),
-                    Anchor::CENTER_LEFT,
-                    LspUiVisual,
-                ));
+            // Input text
+            parent.spawn((
+                Text2d::new(&popup.text),
+                TextFont {
+                    font: font.handle.clone().unwrap_or_default(),
+                    font_size: font.size,
+                    ..default()
+                },
+                TextColor(theme.rename.text_color),
+                Transform::from_translation(Vec3::new(
+                    -popup.width / 2.0 + theme.rename.padding_x + 2.0,
+                    0.0,
+                    0.2,
+                )),
+                Anchor::CENTER_LEFT,
+                LspUiVisual,
+            ));
 
-                // Text cursor at end of text
-                let cursor_x = -popup.width / 2.0
-                    + theme.rename.padding_x
-                    + 2.0
-                    + (popup.cursor_position as f32 * char_width);
-                parent.spawn((
-                    Sprite {
-                        color: theme.rename.cursor_color,
-                        custom_size: Some(Vec2::new(1.5, font.size * 0.9)),
-                        ..default()
-                    },
-                    Transform::from_translation(Vec3::new(cursor_x, 0.0, 0.3)),
-                    LspUiVisual,
-                ));
-            });
+            // Text cursor at end of text
+            let cursor_x = -popup.width / 2.0
+                + theme.rename.padding_x
+                + 2.0
+                + (popup.cursor_position as f32 * char_width);
+            parent.spawn((
+                Sprite {
+                    color: theme.rename.cursor_color,
+                    custom_size: Some(Vec2::new(1.5, font.size * 0.9)),
+                    ..default()
+                },
+                Transform::from_translation(Vec3::new(cursor_x, 0.0, 0.3)),
+                LspUiVisual,
+            ));
+        });
     }
 }
 
@@ -449,6 +479,7 @@ pub fn render_inlay_hints(
     font: Res<FontSettings>,
     viewport: Res<ViewportDimensions>,
     theme: Res<LspUiTheme>,
+    render_config: Res<EditorRenderConfig>,
 ) {
     let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
@@ -466,7 +497,8 @@ pub fn render_inlay_hints(
             theme.inlay_hints.z_index,
         );
 
-        commands.entity(entity).insert((
+        let mut entity_cmd = commands.entity(entity);
+        entity_cmd.insert((
             Text2d::new(&hint.label),
             TextFont {
                 font: font.handle.clone().unwrap_or_default(),
@@ -482,6 +514,10 @@ pub fn render_inlay_hints(
             },
             LspUiVisual,
         ));
+
+        if let Some(ref layers) = render_config.render_layers {
+            entity_cmd.insert(layers.clone());
+        }
     }
 }
 
@@ -491,6 +527,7 @@ pub fn render_document_highlights(
     highlight_query: Query<(Entity, &DocumentHighlightData), Added<DocumentHighlightData>>,
     viewport: Res<ViewportDimensions>,
     theme: Res<LspUiTheme>,
+    render_config: Res<EditorRenderConfig>,
 ) {
     let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
@@ -508,16 +545,23 @@ pub fn render_document_highlights(
             5.0, // Behind text
         );
 
-        commands.entity(entity).insert((
+        let mut entity_cmd = commands.entity(entity);
+        entity_cmd.insert((
             Sprite {
                 color,
                 custom_size: Some(Vec2::new(highlight.width, highlight.height)),
                 ..default()
             },
             Transform::from_translation(pos),
-            DocumentHighlightMarker { line: highlight.line },
+            DocumentHighlightMarker {
+                line: highlight.line,
+            },
             LspUiVisual,
         ));
+
+        if let Some(ref layers) = render_config.render_layers {
+            entity_cmd.insert(layers.clone());
+        }
     }
 }
 

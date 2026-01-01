@@ -28,8 +28,8 @@ pub use atlas::{GlyphAtlas, GlyphInfo, GlyphKey, GlyphRasterizer, RasterizedGlyp
 // Re-export new_with_font for creating atlas with custom font
 pub use atlas::GlyphAtlas as GlyphAtlasType;
 pub use render::{
-    GlyphBatch, GlyphInstance, GpuTextPlugin, TextBatchBuilder, TextMaterial, TextRenderState,
-    update_atlas_texture,
+    update_atlas_texture, GlyphBatch, GlyphInstance, GpuTextPlugin, TextBatchBuilder, TextMaterial,
+    TextRenderState,
 };
 
 // Re-export from bevy for convenience

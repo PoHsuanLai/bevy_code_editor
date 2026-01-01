@@ -2,6 +2,7 @@
 //!
 //! Provides a reusable scrollbar component that can be added to any entity
 
+use super::editor_ui_plugin::EditorRenderConfig;
 use bevy::prelude::*;
 
 /// Scrollbar plugin - manages scrollbar rendering and interaction
@@ -11,9 +12,18 @@ impl Plugin for ScrollbarPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ScrollbarDragState::default());
         // Scrollbar mouse input goes in InputSet
-        app.add_systems(Update, handle_scrollbar_mouse.in_set(crate::plugin::InputSet));
-        // Scrollbar visual updates go in RenderingSet
-        app.add_systems(Update, update_scrollbars.in_set(crate::plugin::RenderingSet));
+        app.add_systems(
+            Update,
+            handle_scrollbar_mouse.in_set(crate::plugin::InputSet),
+        );
+        // Scrollbar visual updates go AFTER auto_scroll in ApplyStateSet
+        // This ensures Transform is synced with scroll_offset BEFORE next frame's input check
+        app.add_systems(
+            Update,
+            update_scrollbars
+                .in_set(crate::plugin::ApplyStateSet)
+                .after(crate::plugin::ui_elements::auto_scroll_to_cursor),
+        );
     }
 }
 
@@ -35,8 +45,12 @@ pub fn mouse_not_over_scrollbar(
     windows: Query<&Window>,
     scrollbar_query: Query<&Scrollbar, With<EditorScrollbar>>,
 ) -> bool {
-    let Ok(window) = windows.single() else { return true; };
-    let Some(cursor_pos_window) = window.cursor_position() else { return true; };
+    let Ok(window) = windows.single() else {
+        return true;
+    };
+    let Some(cursor_pos_window) = window.cursor_position() else {
+        return true;
+    };
 
     // Convert to world coordinates
     let cursor_x = cursor_pos_window.x - window.width() / 2.0;
@@ -127,7 +141,9 @@ fn handle_scrollbar_mouse(
     font: Res<crate::settings::FontSettings>,
     viewport: Res<crate::types::ViewportDimensions>,
 ) {
-    let Ok(window) = windows.single() else { return; };
+    let Ok(window) = windows.single() else {
+        return;
+    };
     let Some(cursor_pos_window) = window.cursor_position() else {
         // No cursor, release drag if active
         if mouse_button.just_released(MouseButton::Left) {
@@ -144,17 +160,26 @@ fn handle_scrollbar_mouse(
     // Handle mouse button just pressed - check if clicking on a thumb
     if mouse_button.just_pressed(MouseButton::Left) {
         for (thumb, transform, sprite) in thumb_query.iter() {
-            let Some(size) = sprite.custom_size else { continue; };
+            let Some(size) = sprite.custom_size else {
+                continue;
+            };
             let thumb_x = transform.translation.x;
             let thumb_y = transform.translation.y;
             let thumb_half_width = size.x / 2.0;
             let thumb_half_height = size.y / 2.0;
 
             // Check if cursor is over this thumb
-            if cursor_x >= thumb_x - thumb_half_width && cursor_x <= thumb_x + thumb_half_width &&
-               cursor_y >= thumb_y - thumb_half_height && cursor_y <= thumb_y + thumb_half_height {
+            if cursor_x >= thumb_x - thumb_half_width
+                && cursor_x <= thumb_x + thumb_half_width
+                && cursor_y >= thumb_y - thumb_half_height
+                && cursor_y <= thumb_y + thumb_half_height
+            {
                 // Start dragging
                 if let Ok((entity, _scrollbar)) = scrollbar_query.get(thumb.parent) {
+                    eprintln!(
+                        "[Scrollbar] DRAG STARTED at cursor_y={}, scroll_offset={}",
+                        cursor_y, state.scroll_offset
+                    );
                     drag_state.is_dragging = true;
                     drag_state.dragging_entity = Some(entity);
                     drag_state.drag_start_y = cursor_y;
@@ -173,7 +198,8 @@ fn handle_scrollbar_mouse(
                 let delta_y = cursor_y - drag_state.drag_start_y;
 
                 // Calculate thumb height and scrollable range
-                let thumb_height = (scrollbar.visible_fraction * scrollbar.track_height).max(scrollbar.min_thumb_height);
+                let thumb_height = (scrollbar.visible_fraction * scrollbar.track_height)
+                    .max(scrollbar.min_thumb_height);
                 let scrollable_range = scrollbar.track_height - thumb_height;
 
                 // Convert pixel movement to scroll offset change
@@ -187,7 +213,8 @@ fn handle_scrollbar_mouse(
 
                     // Scale pixel delta to scroll offset
                     let scroll_delta = (delta_y / scrollable_range) * max_scroll;
-                    let new_scroll_offset = (drag_state.drag_start_scroll + scroll_delta).clamp(max_scroll.min(0.0), 0.0);
+                    let new_scroll_offset = (drag_state.drag_start_scroll + scroll_delta)
+                        .clamp(max_scroll.min(0.0), 0.0);
 
                     // Only update target - the apply_scroll system will handle actual scroll update
                     // For scrollbar dragging, we want immediate response (no smoothing)
@@ -205,6 +232,12 @@ fn handle_scrollbar_mouse(
 
     // Handle mouse release
     if mouse_button.just_released(MouseButton::Left) {
+        if drag_state.is_dragging {
+            eprintln!(
+                "[Scrollbar] DRAG ENDED at scroll_offset={}, target={}",
+                state.scroll_offset, state.target_scroll_offset
+            );
+        }
         drag_state.is_dragging = false;
         drag_state.dragging_entity = None;
     }
@@ -216,18 +249,34 @@ fn handle_scrollbar_mouse(
 /// Also updates when editor state changes (for scroll position)
 fn update_scrollbars(
     mut commands: Commands,
-    scrollbar_query: Query<(Entity, &Scrollbar), Or<(Changed<Scrollbar>, With<EditorScrollbar>)>>,
-    mut track_query: Query<(Entity, &ScrollbarTrack, &mut Transform, &mut Sprite, &mut Visibility)>,
-    mut thumb_query: Query<(Entity, &ScrollbarThumb, &mut Transform, &mut Sprite, &mut Visibility), Without<ScrollbarTrack>>,
+    scrollbar_query: Query<(Entity, &Scrollbar), With<EditorScrollbar>>,
+    mut track_query: Query<(
+        Entity,
+        &ScrollbarTrack,
+        &mut Transform,
+        &mut Sprite,
+        &mut Visibility,
+    )>,
+    mut thumb_query: Query<
+        (
+            Entity,
+            &ScrollbarThumb,
+            &mut Transform,
+            &mut Sprite,
+            &mut Visibility,
+        ),
+        Without<ScrollbarTrack>,
+    >,
     state: Res<crate::types::CodeEditorState>,
     font: Res<crate::settings::FontSettings>,
     viewport: Res<crate::types::ViewportDimensions>,
     drag_state: Res<ScrollbarDragState>,
+    render_config: Res<EditorRenderConfig>,
     mut last_scroll: Local<f32>,
 ) {
     // Only update if scroll offset changed (but always update during drag for smooth thumb movement)
     let scroll_changed = (*last_scroll - state.scroll_offset).abs() >= 0.01;
-    if !scroll_changed && !drag_state.is_dragging && scrollbar_query.iter().count() > 0 {
+    if !scroll_changed && !drag_state.is_dragging {
         return;
     }
     if scroll_changed {
@@ -264,7 +313,8 @@ fn update_scrollbars(
         };
 
         // Calculate thumb dimensions
-        let thumb_height = (scrollbar.visible_fraction * scrollbar.track_height).max(scrollbar.min_thumb_height);
+        let thumb_height =
+            (scrollbar.visible_fraction * scrollbar.track_height).max(scrollbar.min_thumb_height);
         let scrollable_range = scrollbar.track_height - thumb_height;
         let thumb_offset = scroll_progress * scrollable_range;
 
@@ -272,7 +322,8 @@ fn update_scrollbars(
         let track_y = scrollbar.y;
 
         // Thumb Y position (from top)
-        let thumb_y = scrollbar.y + scrollbar.track_height / 2.0 - thumb_offset - thumb_height / 2.0;
+        let thumb_y =
+            scrollbar.y + scrollbar.track_height / 2.0 - thumb_offset - thumb_height / 2.0;
 
         // Find or create track
         let mut track_found = false;
@@ -288,17 +339,22 @@ fn update_scrollbars(
         }
 
         if !track_found {
-            commands.spawn((
+            let mut entity_cmd = commands.spawn((
                 Sprite {
                     color: scrollbar.track_color,
                     custom_size: Some(Vec2::new(scrollbar.width, scrollbar.track_height)),
                     ..default()
                 },
                 Transform::from_translation(Vec3::new(scrollbar.x, track_y, scrollbar.z_index)),
-                ScrollbarTrack { parent: scrollbar_entity },
+                ScrollbarTrack {
+                    parent: scrollbar_entity,
+                },
                 Name::new(format!("ScrollbarTrack_{:?}", scrollbar_entity)),
                 Visibility::Visible,
             ));
+            if let Some(ref layers) = render_config.render_layers {
+                entity_cmd.insert(layers.clone());
+            }
         }
 
         // Find or create thumb
@@ -315,17 +371,26 @@ fn update_scrollbars(
         }
 
         if !thumb_found {
-            commands.spawn((
+            let mut entity_cmd = commands.spawn((
                 Sprite {
                     color: scrollbar.thumb_color,
                     custom_size: Some(Vec2::new(scrollbar.width, thumb_height)),
                     ..default()
                 },
-                Transform::from_translation(Vec3::new(scrollbar.x, thumb_y, scrollbar.z_index + 0.1)),
-                ScrollbarThumb { parent: scrollbar_entity },
+                Transform::from_translation(Vec3::new(
+                    scrollbar.x,
+                    thumb_y,
+                    scrollbar.z_index + 0.1,
+                )),
+                ScrollbarThumb {
+                    parent: scrollbar_entity,
+                },
                 Name::new(format!("ScrollbarThumb_{:?}", scrollbar_entity)),
                 Visibility::Visible,
             ));
+            if let Some(ref layers) = render_config.render_layers {
+                entity_cmd.insert(layers.clone());
+            }
         }
     }
 }
@@ -394,4 +459,3 @@ pub fn update_editor_scrollbar(
         ));
     }
 }
-

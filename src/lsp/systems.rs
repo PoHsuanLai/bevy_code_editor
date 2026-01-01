@@ -89,7 +89,10 @@ pub fn process_lsp_messages(
                 eprintln!("[LSP] Server initialized");
             }
 
-            LspResponse::Diagnostics { uri: _, diagnostics } => {
+            LspResponse::Diagnostics {
+                uri: _,
+                diagnostics,
+            } => {
                 // Clear old diagnostics
                 for entity in diagnostics_query.iter() {
                     commands.entity(entity).despawn();
@@ -105,9 +108,16 @@ pub fn process_lsp_messages(
                 }
             }
 
-            LspResponse::Completion { items, is_incomplete } => {
+            LspResponse::Completion {
+                items,
+                is_incomplete,
+            } => {
                 #[cfg(debug_assertions)]
-                eprintln!("[LSP] Completion: {} items, incomplete={}", items.len(), is_incomplete);
+                eprintln!(
+                    "[LSP] Completion: {} items, incomplete={}",
+                    items.len(),
+                    is_incomplete
+                );
                 completion_state.items = items;
                 completion_state.is_incomplete = is_incomplete;
                 completion_state.visible = !completion_state.items.is_empty();
@@ -156,7 +166,8 @@ pub fn process_lsp_messages(
                     if line_num < editor_state.rope.len_lines() {
                         let line_start_char = editor_state.rope.line_to_char(line_num);
                         let target_char_pos = line_start_char + char_in_line;
-                        editor_state.cursor_pos = target_char_pos.min(editor_state.rope.len_chars());
+                        editor_state.cursor_pos =
+                            target_char_pos.min(editor_state.rope.len_chars());
                         editor_state.needs_update = true;
                     }
                 } else {
@@ -219,7 +230,10 @@ pub fn process_lsp_messages(
 
             LspResponse::DocumentHighlights { highlights } => {
                 #[cfg(debug_assertions)]
-                eprintln!("[LSP] DocumentHighlights: {} highlight(s)", highlights.len());
+                eprintln!(
+                    "[LSP] DocumentHighlights: {} highlight(s)",
+                    highlights.len()
+                );
 
                 highlight_state.highlights = highlights;
                 highlight_state.visible = !highlight_state.highlights.is_empty();
@@ -227,7 +241,10 @@ pub fn process_lsp_messages(
 
             LspResponse::PrepareRename { range, placeholder } => {
                 #[cfg(debug_assertions)]
-                eprintln!("[LSP] PrepareRename: range={:?}, placeholder={:?}", range, placeholder);
+                eprintln!(
+                    "[LSP] PrepareRename: range={:?}, placeholder={:?}",
+                    range, placeholder
+                );
 
                 rename_state.on_prepare_response(range, placeholder);
             }
@@ -351,7 +368,7 @@ pub fn request_inlay_hints(
     editor_state: Res<CodeEditorState>,
     lsp_sync: Res<LspSyncState>,
     mut hint_state: ResMut<InlayHintState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
     viewport: Res<crate::types::ViewportDimensions>,
 ) {
     if !lsp_client.is_ready() || !lsp_client.capabilities.supports_inlay_hints() {
@@ -367,9 +384,10 @@ pub fn request_inlay_hints(
     };
 
     // Calculate visible range with some buffer
-    let visible_start_line = (editor_state.scroll_offset / settings.font.line_height) as u32;
-    let visible_lines = (viewport.height as f32 / settings.font.line_height) as u32 + 10;
-    let visible_end_line = (visible_start_line + visible_lines).min(editor_state.rope.len_lines() as u32);
+    let visible_start_line = (editor_state.scroll_offset / font.line_height) as u32;
+    let visible_lines = (viewport.height as f32 / font.line_height) as u32 + 10;
+    let visible_end_line =
+        (visible_start_line + visible_lines).min(editor_state.rope.len_lines() as u32);
 
     let range = Range {
         start: Position {
@@ -510,9 +528,11 @@ pub fn request_document_highlights(
 
 /// Helper to request prepare rename
 pub fn request_prepare_rename(lsp_client: &LspClient, uri: &Url, position: Position) {
-    eprintln!("[LSP] request_prepare_rename called, supports_prepare: {}, supports_rename: {}",
+    eprintln!(
+        "[LSP] request_prepare_rename called, supports_prepare: {}, supports_rename: {}",
         lsp_client.capabilities.supports_prepare_rename(),
-        lsp_client.capabilities.supports_rename());
+        lsp_client.capabilities.supports_rename()
+    );
 
     if lsp_client.capabilities.supports_prepare_rename() {
         eprintln!("[LSP] Sending PrepareRename request");

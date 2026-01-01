@@ -162,7 +162,11 @@ impl LspClient {
 
             let mut content_len = 0;
             if buffer.starts_with("Content-Length: ") {
-                if let Ok(len) = buffer.trim_start_matches("Content-Length: ").trim().parse::<usize>() {
+                if let Ok(len) = buffer
+                    .trim_start_matches("Content-Length: ")
+                    .trim()
+                    .parse::<usize>()
+                {
                     content_len = len;
                 }
             }
@@ -191,7 +195,9 @@ impl LspClient {
                                 None
                             };
 
-                            if let Some(response) = parse_lsp_response(&json, request_type, &capabilities) {
+                            if let Some(response) =
+                                parse_lsp_response(&json, request_type, &capabilities)
+                            {
                                 let _ = tx.send(response);
                             }
                         }
@@ -216,7 +222,10 @@ impl LspClient {
         // Check capabilities before sending (skip for Initialize and notifications)
         if !self.should_send(&message) {
             #[cfg(debug_assertions)]
-            eprintln!("[LSP] Skipping unsupported request: {:?}", std::mem::discriminant(&message));
+            eprintln!(
+                "[LSP] Skipping unsupported request: {:?}",
+                std::mem::discriminant(&message)
+            );
             return;
         }
 
@@ -275,20 +284,29 @@ impl LspClient {
                 Some((id, RequestType::Rename))
             }
             // Notifications don't have IDs
-            LspMessage::Initialized | LspMessage::DidOpen { .. } | LspMessage::DidChange { .. } => None,
+            LspMessage::Initialized | LspMessage::DidOpen { .. } | LspMessage::DidChange { .. } => {
+                None
+            }
         };
 
         // Track the request
         if let Some((id, request_type)) = id_info {
             if let Ok(mut pending) = self.pending_requests.lock() {
-                pending.insert(id, PendingRequest {
-                    request_type,
-                    sent_at: Instant::now(),
-                    timeout: Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECS),
-                });
+                pending.insert(
+                    id,
+                    PendingRequest {
+                        request_type,
+                        sent_at: Instant::now(),
+                        timeout: Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECS),
+                    },
+                );
             }
             #[cfg(debug_assertions)]
-            eprintln!("[LSP] Sending request (id={}): {:?}", id, std::mem::discriminant(&message));
+            eprintln!(
+                "[LSP] Sending request (id={}): {:?}",
+                id,
+                std::mem::discriminant(&message)
+            );
         }
 
         let _ = self.tx.send((message, id_info));
@@ -373,7 +391,10 @@ impl Drop for LspClient {
 /// Convert LspMessage to JSON-RPC string
 fn msg_to_json(msg: &LspMessage, id: Option<i64>) -> serde_json::Result<String> {
     let (method, params, is_notification) = match msg {
-        LspMessage::Initialize { root_uri, capabilities } => (
+        LspMessage::Initialize {
+            root_uri,
+            capabilities,
+        } => (
             "initialize",
             json!({
                 "processId": std::process::id(),
@@ -387,7 +408,12 @@ fn msg_to_json(msg: &LspMessage, id: Option<i64>) -> serde_json::Result<String> 
             false,
         ),
         LspMessage::Initialized => ("initialized", json!({}), true),
-        LspMessage::DidOpen { uri, language_id, version, text } => (
+        LspMessage::DidOpen {
+            uri,
+            language_id,
+            version,
+            text,
+        } => (
             "textDocument/didOpen",
             json!({
                 "textDocument": {
@@ -399,7 +425,11 @@ fn msg_to_json(msg: &LspMessage, id: Option<i64>) -> serde_json::Result<String> 
             }),
             true,
         ),
-        LspMessage::DidChange { uri, version, changes } => (
+        LspMessage::DidChange {
+            uri,
+            version,
+            changes,
+        } => (
             "textDocument/didChange",
             json!({
                 "textDocument": { "uri": uri, "version": version },
@@ -456,7 +486,11 @@ fn msg_to_json(msg: &LspMessage, id: Option<i64>) -> serde_json::Result<String> 
             }),
             false,
         ),
-        LspMessage::CodeAction { uri, range, diagnostics } => (
+        LspMessage::CodeAction {
+            uri,
+            range,
+            diagnostics,
+        } => (
             "textDocument/codeAction",
             json!({
                 "textDocument": { "uri": uri },
@@ -499,7 +533,11 @@ fn msg_to_json(msg: &LspMessage, id: Option<i64>) -> serde_json::Result<String> 
             }),
             false,
         ),
-        LspMessage::Rename { uri, position, new_name } => (
+        LspMessage::Rename {
+            uri,
+            position,
+            new_name,
+        } => (
             "textDocument/rename",
             json!({
                 "textDocument": { "uri": uri },
@@ -565,7 +603,10 @@ fn parse_lsp_response(
         Some(RequestType::Completion) => {
             // Result can be CompletionList or Vec<CompletionItem>
             if let Ok(items) = serde_json::from_value::<Vec<CompletionItem>>(result.clone()) {
-                return Some(LspResponse::Completion { items, is_incomplete: false });
+                return Some(LspResponse::Completion {
+                    items,
+                    is_incomplete: false,
+                });
             }
             if let Ok(list) = serde_json::from_value::<CompletionList>(result.clone()) {
                 return Some(LspResponse::Completion {
@@ -588,7 +629,9 @@ fn parse_lsp_response(
         Some(RequestType::GotoDefinition) => {
             // Can be Location, Vec<Location>, or Vec<LocationLink>
             if let Ok(location) = serde_json::from_value::<Location>(result.clone()) {
-                return Some(LspResponse::Definition { locations: vec![location] });
+                return Some(LspResponse::Definition {
+                    locations: vec![location],
+                });
             }
             if let Ok(locations) = serde_json::from_value::<Vec<Location>>(result.clone()) {
                 if !locations.is_empty() {
@@ -632,11 +675,14 @@ fn parse_lsp_response(
             None
         }
         Some(RequestType::CodeAction) => {
-            if let Ok(actions) = serde_json::from_value::<Vec<CodeActionOrCommand>>(result.clone()) {
+            if let Ok(actions) = serde_json::from_value::<Vec<CodeActionOrCommand>>(result.clone())
+            {
                 return Some(LspResponse::CodeActions { actions });
             }
             // Try parsing as lsp_types::CodeActionOrCommand
-            if let Ok(lsp_actions) = serde_json::from_value::<Vec<lsp_types::CodeActionOrCommand>>(result.clone()) {
+            if let Ok(lsp_actions) =
+                serde_json::from_value::<Vec<lsp_types::CodeActionOrCommand>>(result.clone())
+            {
                 let actions: Vec<CodeActionOrCommand> = lsp_actions
                     .into_iter()
                     .map(|a| match a {
@@ -659,7 +705,8 @@ fn parse_lsp_response(
             None
         }
         Some(RequestType::DocumentHighlight) => {
-            if let Ok(highlights) = serde_json::from_value::<Vec<DocumentHighlight>>(result.clone()) {
+            if let Ok(highlights) = serde_json::from_value::<Vec<DocumentHighlight>>(result.clone())
+            {
                 return Some(LspResponse::DocumentHighlights { highlights });
             }
             None
@@ -672,17 +719,26 @@ fn parse_lsp_response(
             if let Ok(range) = serde_json::from_value::<Range>(result.clone()) {
                 #[cfg(debug_assertions)]
                 eprintln!("[LSP] Parsed PrepareRename as Range: {:?}", range);
-                return Some(LspResponse::PrepareRename { range, placeholder: None });
+                return Some(LspResponse::PrepareRename {
+                    range,
+                    placeholder: None,
+                });
             }
             if let Ok(prepare) = serde_json::from_value::<PrepareRenameResponse>(result.clone()) {
                 #[cfg(debug_assertions)]
                 eprintln!("[LSP] Parsed PrepareRename as PrepareRenameResponse");
                 match prepare {
                     PrepareRenameResponse::Range(range) => {
-                        return Some(LspResponse::PrepareRename { range, placeholder: None });
+                        return Some(LspResponse::PrepareRename {
+                            range,
+                            placeholder: None,
+                        });
                     }
                     PrepareRenameResponse::RangeWithPlaceholder { range, placeholder } => {
-                        return Some(LspResponse::PrepareRename { range, placeholder: Some(placeholder) });
+                        return Some(LspResponse::PrepareRename {
+                            range,
+                            placeholder: Some(placeholder),
+                        });
                     }
                     PrepareRenameResponse::DefaultBehavior { .. } => {
                         // Server uses default behavior, we need to extract word at position
@@ -711,7 +767,9 @@ fn parse_notification(json: &Value, method: &str) -> Option<LspResponse> {
     match method {
         "textDocument/publishDiagnostics" => {
             if let Some(params) = json.get("params") {
-                if let Ok(diag_params) = serde_json::from_value::<PublishDiagnosticsParams>(params.clone()) {
+                if let Ok(diag_params) =
+                    serde_json::from_value::<PublishDiagnosticsParams>(params.clone())
+                {
                     return Some(LspResponse::Diagnostics {
                         uri: diag_params.uri,
                         diagnostics: diag_params.diagnostics,

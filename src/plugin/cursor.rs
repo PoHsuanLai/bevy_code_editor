@@ -1,9 +1,25 @@
 //! Cursor rendering and animation
 
-use bevy::prelude::*;
-use crate::settings::{FontSettings, CursorSettings, CursorLineSettings, ThemeSettings, WrappingSettings, IndentationSettings};
-use crate::types::*;
+use super::editor_ui_plugin::EditorRenderConfig;
 use super::to_bevy_coords_left_aligned;
+use crate::settings::{
+    CursorLineSettings, CursorSettings, FontSettings, IndentationSettings, ThemeSettings,
+    WrappingSettings,
+};
+use crate::types::*;
+use bevy::prelude::*;
+
+/// Track when cursor position changes and update the timestamp for blink reset
+/// Uses a separate field (last_cursor_pos_for_blink) to avoid race conditions
+/// with auto_scroll_to_cursor which also uses last_cursor_pos
+pub(crate) fn track_cursor_movement(mut state: ResMut<CodeEditorState>, time: Res<Time>) {
+    // Check if cursor position has changed (use cursors[0].position for multi-cursor support)
+    let current_pos = state.cursors.first().map(|c| c.position).unwrap_or(0);
+    if current_pos != state.last_cursor_pos_for_blink {
+        state.cursor_moved_time = time.elapsed_secs_f64();
+        state.last_cursor_pos_for_blink = current_pos;
+    }
+}
 
 pub(crate) fn update_cursor(
     mut commands: Commands,
@@ -15,6 +31,7 @@ pub(crate) fn update_cursor(
     indentation: Res<IndentationSettings>,
     viewport: Res<ViewportDimensions>,
     fold_state: Res<FoldState>,
+    render_config: Res<EditorRenderConfig>,
     mut cursor_query: Query<(Entity, &EditorCursor, &mut Transform, &mut Visibility)>,
 ) {
     if !state.is_changed() {
@@ -30,7 +47,8 @@ pub(crate) fn update_cursor(
     let use_wrapping = wrapping.enabled && state.display_map.wrap_width > 0;
 
     // Collect existing cursor entities by their index
-    let mut cursor_entities: std::collections::HashMap<usize, Entity> = std::collections::HashMap::new();
+    let mut cursor_entities: std::collections::HashMap<usize, Entity> =
+        std::collections::HashMap::new();
     for (entity, cursor, _, _) in cursor_query.iter() {
         cursor_entities.insert(cursor.cursor_index, entity);
     }
@@ -63,17 +81,22 @@ pub(crate) fn update_cursor(
         };
 
         let x_offset = viewport.text_area_left + extra_indent + (display_col as f32 * char_width);
-        let y_offset = viewport.text_area_top + state.scroll_offset + (display_row as f32 * line_height);
+        let y_offset =
+            viewport.text_area_top + state.scroll_offset + (display_row as f32 * line_height);
 
         // No horizontal scroll in wrapped mode
-        let h_scroll = if use_wrapping { 0.0 } else { state.horizontal_scroll_offset };
+        let h_scroll = if use_wrapping {
+            0.0
+        } else {
+            state.horizontal_scroll_offset
+        };
 
         let translation = to_bevy_coords_left_aligned(
             x_offset,
             y_offset,
             viewport.width as f32,
             viewport.height as f32,
-            viewport.offset_x,
+            0.0, // Camera viewport handles panel positioning
             h_scroll,
         );
 
@@ -86,7 +109,7 @@ pub(crate) fn update_cursor(
             cursor_entities.remove(&idx);
         } else {
             // Spawn new cursor entity
-            commands.spawn((
+            let mut entity_cmd = commands.spawn((
                 Sprite {
                     color: theme.cursor,
                     custom_size: Some(Vec2::new(cursor_settings.width, cursor_height)),
@@ -97,6 +120,9 @@ pub(crate) fn update_cursor(
                 EditorCursor { cursor_index: idx },
                 Name::new(format!("EditorCursor_{}", idx)),
             ));
+            if let Some(ref layers) = render_config.render_layers {
+                entity_cmd.insert(layers.clone());
+            }
         }
     }
 
@@ -115,9 +141,11 @@ pub(crate) fn update_cursor(
 }
 
 /// Animate cursor blinking for all cursors
+/// The cursor stays visible for a short period after movement before blinking resumes
 pub(crate) fn animate_cursor(
     time: Res<Time>,
     cursor: Res<CursorSettings>,
+    state: Res<CodeEditorState>,
     mut cursor_query: Query<&mut Visibility, With<EditorCursor>>,
 ) {
     if cursor.blink_rate == 0.0 {
@@ -127,11 +155,22 @@ pub(crate) fn animate_cursor(
         return;
     }
 
-    let blink_phase = (time.elapsed_secs() * cursor.blink_rate) % 1.0;
-    let new_visibility = if blink_phase < 0.5 {
+    // Keep cursor visible for 0.5 seconds after movement before blinking
+    let time_since_move = time.elapsed_secs_f64() - state.cursor_moved_time;
+    let blink_pause_duration = 0.5; // seconds
+
+    let new_visibility = if time_since_move < blink_pause_duration {
+        // Cursor was recently moved - stay visible
         Visibility::Visible
     } else {
-        Visibility::Hidden
+        // Resume blinking, starting from the time after the pause
+        let blink_time = (time_since_move - blink_pause_duration) as f32;
+        let blink_phase = (blink_time * cursor.blink_rate) % 1.0;
+        if blink_phase < 0.5 {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        }
     };
 
     for mut visibility in cursor_query.iter_mut() {
@@ -148,8 +187,24 @@ pub(crate) fn update_cursor_line_highlight(
     _indentation: Res<IndentationSettings>,
     viewport: Res<ViewportDimensions>,
     fold_state: Res<FoldState>,
-    mut border_query: Query<(Entity, &CursorLineBorder, &mut Transform, &mut Sprite, &mut Visibility)>,
-    mut word_query: Query<(Entity, &CursorWordHighlight, &mut Transform, &mut Sprite, &mut Visibility), Without<CursorLineBorder>>,
+    render_config: Res<EditorRenderConfig>,
+    mut border_query: Query<(
+        Entity,
+        &CursorLineBorder,
+        &mut Transform,
+        &mut Sprite,
+        &mut Visibility,
+    )>,
+    mut word_query: Query<
+        (
+            Entity,
+            &CursorWordHighlight,
+            &mut Transform,
+            &mut Sprite,
+            &mut Visibility,
+        ),
+        Without<CursorLineBorder>,
+    >,
 ) {
     // Skip if cursor line highlighting is disabled entirely
     if !cursor_line.enabled {
@@ -194,12 +249,14 @@ pub(crate) fn update_cursor_line_highlight(
     let word_highlight_color = cursor_line.word_highlight_color;
 
     // Collect existing entities
-    let mut border_entities: std::collections::HashMap<(usize, bool), Entity> = std::collections::HashMap::new();
+    let mut border_entities: std::collections::HashMap<(usize, bool), Entity> =
+        std::collections::HashMap::new();
     for (entity, border, _, _, _) in border_query.iter() {
         border_entities.insert((border.cursor_index, border.is_top), entity);
     }
 
-    let mut word_entities: std::collections::HashMap<usize, Entity> = std::collections::HashMap::new();
+    let mut word_entities: std::collections::HashMap<usize, Entity> =
+        std::collections::HashMap::new();
     for (entity, word_hl, _, _, _) in word_query.iter() {
         word_entities.insert(word_hl.cursor_index, entity);
     }
@@ -207,7 +264,8 @@ pub(crate) fn update_cursor_line_highlight(
     // Calculate border width (code area only, not the gutter)
     let code_area_start = viewport.text_area_left;
     let border_width = viewport.width as f32 - code_area_start;
-    let border_center_x = -(viewport.width as f32) / 2.0 + code_area_start + border_width / 2.0 + viewport.offset_x;
+    // Camera viewport handles panel positioning, so no offset_x here
+    let border_center_x = -(viewport.width as f32) / 2.0 + code_area_start + border_width / 2.0;
 
     // Process each cursor
     for (idx, cursor) in state.cursors.iter().enumerate() {
@@ -232,15 +290,19 @@ pub(crate) fn update_cursor_line_highlight(
             visible_row
         };
 
-        let y_from_top = viewport.text_area_top + state.scroll_offset + (display_row as f32 * line_height);
+        let y_from_top =
+            viewport.text_area_top + state.scroll_offset + (display_row as f32 * line_height);
 
         // === TOP BORDER ===
         if cursor_line.show_border {
-            let top_y = (viewport.height as f32) / 2.0 - y_from_top + line_height / 2.0 - border_thickness / 2.0;
+            let top_y = (viewport.height as f32) / 2.0 - y_from_top + line_height / 2.0
+                - border_thickness / 2.0;
             let top_translation = Vec3::new(border_center_x, top_y, -0.4);
 
             if let Some(&entity) = border_entities.get(&(idx, true)) {
-                if let Ok((_, _, mut transform, mut sprite, mut visibility)) = border_query.get_mut(entity) {
+                if let Ok((_, _, mut transform, mut sprite, mut visibility)) =
+                    border_query.get_mut(entity)
+                {
                     transform.translation = top_translation;
                     sprite.custom_size = Some(Vec2::new(border_width, border_thickness));
                     sprite.color = border_color;
@@ -248,7 +310,7 @@ pub(crate) fn update_cursor_line_highlight(
                 }
                 border_entities.remove(&(idx, true));
             } else {
-                commands.spawn((
+                let mut entity_cmd = commands.spawn((
                     Sprite {
                         color: border_color,
                         custom_size: Some(Vec2::new(border_width, border_thickness)),
@@ -256,17 +318,26 @@ pub(crate) fn update_cursor_line_highlight(
                     },
                     Transform::from_translation(top_translation),
                     Visibility::Visible,
-                    CursorLineBorder { cursor_index: idx, is_top: true },
+                    CursorLineBorder {
+                        cursor_index: idx,
+                        is_top: true,
+                    },
                     Name::new(format!("CursorLineBorder_top_{}", idx)),
                 ));
+                if let Some(ref layers) = render_config.render_layers {
+                    entity_cmd.insert(layers.clone());
+                }
             }
 
             // === BOTTOM BORDER ===
-            let bottom_y = (viewport.height as f32) / 2.0 - y_from_top - line_height / 2.0 + border_thickness / 2.0;
+            let bottom_y = (viewport.height as f32) / 2.0 - y_from_top - line_height / 2.0
+                + border_thickness / 2.0;
             let bottom_translation = Vec3::new(border_center_x, bottom_y, -0.4);
 
             if let Some(&entity) = border_entities.get(&(idx, false)) {
-                if let Ok((_, _, mut transform, mut sprite, mut visibility)) = border_query.get_mut(entity) {
+                if let Ok((_, _, mut transform, mut sprite, mut visibility)) =
+                    border_query.get_mut(entity)
+                {
                     transform.translation = bottom_translation;
                     sprite.custom_size = Some(Vec2::new(border_width, border_thickness));
                     sprite.color = border_color;
@@ -274,7 +345,7 @@ pub(crate) fn update_cursor_line_highlight(
                 }
                 border_entities.remove(&(idx, false));
             } else {
-                commands.spawn((
+                let mut entity_cmd = commands.spawn((
                     Sprite {
                         color: border_color,
                         custom_size: Some(Vec2::new(border_width, border_thickness)),
@@ -282,9 +353,15 @@ pub(crate) fn update_cursor_line_highlight(
                     },
                     Transform::from_translation(bottom_translation),
                     Visibility::Visible,
-                    CursorLineBorder { cursor_index: idx, is_top: false },
+                    CursorLineBorder {
+                        cursor_index: idx,
+                        is_top: false,
+                    },
                     Name::new(format!("CursorLineBorder_bottom_{}", idx)),
                 ));
+                if let Some(ref layers) = render_config.render_layers {
+                    entity_cmd.insert(layers.clone());
+                }
             }
         }
 
@@ -305,7 +382,9 @@ pub(crate) fn update_cursor_line_highlight(
 
         let on_word = if col < line_chars.len() && is_word_char(line_chars[col]) {
             true
-        } else { col > 0 && col <= line_chars.len() && is_word_char(line_chars[col - 1]) };
+        } else {
+            col > 0 && col <= line_chars.len() && is_word_char(line_chars[col - 1])
+        };
 
         // Find word start and end
         let (word_start, word_end) = if on_word {
@@ -338,13 +417,17 @@ pub(crate) fn update_cursor_line_highlight(
             let word_width = (word_end - word_start) as f32 * char_width;
             let word_x_left = viewport.text_area_left + (word_start as f32 * char_width);
 
-            let word_center_x = -(viewport.width as f32) / 2.0 + word_x_left + word_width / 2.0 + viewport.offset_x - state.horizontal_scroll_offset;
+            // Camera viewport handles panel positioning, so no offset_x here
+            let word_center_x = -(viewport.width as f32) / 2.0 + word_x_left + word_width / 2.0
+                - state.horizontal_scroll_offset;
             let word_center_y = (viewport.height as f32) / 2.0 - y_from_top;
 
             let word_translation = Vec3::new(word_center_x, word_center_y, -0.5);
 
             if let Some(&entity) = word_entities.get(&idx) {
-                if let Ok((_, _, mut transform, mut sprite, mut visibility)) = word_query.get_mut(entity) {
+                if let Ok((_, _, mut transform, mut sprite, mut visibility)) =
+                    word_query.get_mut(entity)
+                {
                     transform.translation = word_translation;
                     sprite.custom_size = Some(Vec2::new(word_width, line_height));
                     sprite.color = word_highlight_color;
@@ -352,7 +435,7 @@ pub(crate) fn update_cursor_line_highlight(
                 }
                 word_entities.remove(&idx);
             } else {
-                commands.spawn((
+                let mut entity_cmd = commands.spawn((
                     Sprite {
                         color: word_highlight_color,
                         custom_size: Some(Vec2::new(word_width, line_height)),
@@ -363,6 +446,9 @@ pub(crate) fn update_cursor_line_highlight(
                     CursorWordHighlight { cursor_index: idx },
                     Name::new(format!("CursorWordHighlight_{}", idx)),
                 ));
+                if let Some(ref layers) = render_config.render_layers {
+                    entity_cmd.insert(layers.clone());
+                }
             }
         } else {
             // No word under cursor, hide word highlight
@@ -383,4 +469,3 @@ pub(crate) fn update_cursor_line_highlight(
         commands.entity(entity).despawn();
     }
 }
-

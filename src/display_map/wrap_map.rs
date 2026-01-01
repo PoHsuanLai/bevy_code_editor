@@ -3,8 +3,8 @@
 //! The wrap map handles soft line wrapping, where a single buffer/fold line
 //! can be displayed across multiple screen lines.
 
+use super::{DisplayMapLayer, FoldMap, FoldPoint, WrapPoint};
 use ropey::Rope;
-use super::{FoldPoint, WrapPoint, FoldMap, DisplayMapLayer};
 
 /// Information about how a single fold line is wrapped
 #[derive(Clone, Debug)]
@@ -194,9 +194,9 @@ impl WrapMap {
 
     /// Get wrap information for a fold row
     pub fn wrap_info_for_fold_row(&self, fold_row: u32) -> Option<(u32, u32)> {
-        self.wrap_info.get(fold_row as usize).map(|info| {
-            (info.display_row_start, info.wrap_count)
-        })
+        self.wrap_info
+            .get(fold_row as usize)
+            .map(|info| (info.display_row_start, info.wrap_count))
     }
 }
 

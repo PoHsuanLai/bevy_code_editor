@@ -9,23 +9,23 @@
 
 use bevy::prelude::*;
 
+use crate::lsp::event_listeners::{
+    listen_apply_completion, listen_completion_requests, listen_dismiss_completion,
+    listen_hover_requests, listen_rename_requests, listen_signature_help_requests,
+    listen_text_edit_events,
+};
 use crate::lsp::prelude::*;
 use crate::lsp::state::{
     CodeActionState, CompletionState, DocumentHighlightState, HoverState, InlayHintState,
     LspSyncState, RenameState, SignatureHelpState,
 };
-use crate::lsp::systems::{
-    cleanup_lsp_timeouts, process_lsp_messages, request_document_highlights, request_inlay_hints,
-    sync_lsp_document, MultipleLocationsEvent, NavigateToFileEvent, WorkspaceEditEvent,
-};
 use crate::lsp::sync::{
     sync_code_actions_popup, sync_completion_popup, sync_document_highlights, sync_hover_popup,
     sync_inlay_hints, sync_rename_input, sync_signature_help_popup,
 };
-use crate::lsp::event_listeners::{
-    listen_apply_completion, listen_completion_requests, listen_dismiss_completion,
-    listen_hover_requests, listen_rename_requests, listen_signature_help_requests,
-    listen_text_edit_events,
+use crate::lsp::systems::{
+    cleanup_lsp_timeouts, process_lsp_messages, request_document_highlights, request_inlay_hints,
+    sync_lsp_document, MultipleLocationsEvent, NavigateToFileEvent, WorkspaceEditEvent,
 };
 use crate::lsp::{LspUiRenderSet, LspUiSyncSet};
 

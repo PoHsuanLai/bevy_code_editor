@@ -3,10 +3,10 @@
 //! Manages syntax highlighting as a Bevy resource, completely decoupled from editor state.
 //! Also provides caching and debouncing for efficient highlighting during scrolling.
 
+use crate::syntax::{SyntaxProvider, TreeSitterProvider};
+use crate::types::{CodeEditorState, LineSegment};
 use bevy::prelude::*;
 use std::collections::VecDeque;
-use crate::syntax::{SyntaxProvider, TreeSitterProvider};
-use crate::types::{LineSegment, CodeEditorState};
 
 /// Resource that holds the syntax highlighting provider
 #[derive(Resource)]
@@ -53,7 +53,10 @@ impl SyntaxResource {
     pub fn is_available(&self) -> bool {
         #[cfg(feature = "tree-sitter")]
         {
-            self.provider.as_ref().map(|p| p.is_available()).unwrap_or(false)
+            self.provider
+                .as_ref()
+                .map(|p| p.is_available())
+                .unwrap_or(false)
         }
 
         #[cfg(not(feature = "tree-sitter"))]
@@ -111,7 +114,9 @@ impl SyntaxResource {
     /// Clone the parse state for async parsing (returns parser, language, tree, edits, deferred_edits)
     /// Note: Creates new parser/clones tree to avoid blocking main thread access
     #[cfg(feature = "tree-sitter")]
-    pub fn clone_parse_state(&mut self) -> (
+    pub fn clone_parse_state(
+        &mut self,
+    ) -> (
         Option<tree_sitter::Parser>,
         Option<tree_sitter::Language>,
         Option<tree_sitter::Tree>,
@@ -188,11 +193,7 @@ impl SyntaxResource {
         new_end_byte: usize,
     ) {
         if let Some(provider) = &mut self.provider {
-            provider.record_edit_deferred(
-                start_byte,
-                old_end_byte,
-                new_end_byte,
-            );
+            provider.record_edit_deferred(start_byte, old_end_byte, new_end_byte);
         }
     }
 }
@@ -256,7 +257,13 @@ impl HighlightCache {
     /// Returns Some if the requested range is fully covered by cache
     /// NOTE: Only checks content_version, not tree_version. Tree version changes are handled
     /// by the stale entity detection system which marks entities for rebuild when tree updates.
-    pub fn get(&mut self, start_line: usize, end_line: usize, content_version: u64, _tree_version: u64) -> Option<Vec<Vec<LineSegment>>> {
+    pub fn get(
+        &mut self,
+        start_line: usize,
+        end_line: usize,
+        content_version: u64,
+        _tree_version: u64,
+    ) -> Option<Vec<Vec<LineSegment>>> {
         // Look for exact match or overlapping range
         let mut found_idx: Option<(usize, usize, usize)> = None;
         for (idx, range) in self.ranges.iter().enumerate() {
@@ -273,7 +280,8 @@ impl HighlightCache {
 
         if let Some((idx, offset, count)) = found_idx {
             // Extract the subset we need first
-            let result: Vec<Vec<LineSegment>> = self.ranges[idx].lines
+            let result: Vec<Vec<LineSegment>> = self.ranges[idx]
+                .lines
                 .iter()
                 .skip(offset)
                 .take(count)
@@ -293,7 +301,14 @@ impl HighlightCache {
     }
 
     /// Store highlighted lines in cache
-    pub fn insert(&mut self, start_line: usize, end_line: usize, content_version: u64, _tree_version: u64, lines: Vec<Vec<LineSegment>>) {
+    pub fn insert(
+        &mut self,
+        start_line: usize,
+        end_line: usize,
+        content_version: u64,
+        _tree_version: u64,
+        lines: Vec<Vec<LineSegment>>,
+    ) {
         // Remove old entries if cache is full
         if self.ranges.len() >= self.max_ranges {
             self.ranges.pop_back();
@@ -372,11 +387,7 @@ fn record_edits_for_incremental_parsing(
     for event in events.read() {
         // Record the edit with deferred Point calculation
         // This avoids expensive rope traversals on the main thread
-        syntax.record_edit_deferred(
-            event.start_byte,
-            event.old_end_byte,
-            event.new_end_byte,
-        );
+        syntax.record_edit_deferred(event.start_byte, event.old_end_byte, event.new_end_byte);
     }
 }
 
@@ -400,12 +411,16 @@ impl Plugin for SyntaxPlugin {
         // Add systems for tree-sitter incremental parsing
         #[cfg(feature = "tree-sitter")]
         {
-            app.add_systems(Update, (
-                // First: send events for pending edits
-                send_text_edit_events,
-                // Second: record events for incremental parsing
-                record_edits_for_incremental_parsing,
-            ).chain());
+            app.add_systems(
+                Update,
+                (
+                    // First: send events for pending edits
+                    send_text_edit_events,
+                    // Second: record events for incremental parsing
+                    record_edits_for_incremental_parsing,
+                )
+                    .chain(),
+            );
         }
     }
 }

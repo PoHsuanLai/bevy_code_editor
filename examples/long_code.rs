@@ -8,9 +8,9 @@ use bevy::window::{CursorIcon, SystemCursorIcon};
 use bevy_code_editor::prelude::*;
 
 #[cfg(feature = "tree-sitter")]
-use bevy_code_editor::syntax::TreeSitterProvider;
-#[cfg(feature = "tree-sitter")]
 use bevy_code_editor::plugin::SyntaxResource;
+#[cfg(feature = "tree-sitter")]
+use bevy_code_editor::syntax::TreeSitterProvider;
 
 fn main() {
     App::new()
@@ -30,10 +30,7 @@ fn main() {
 }
 
 #[cfg(feature = "tree-sitter")]
-fn setup_editor(
-    mut state: ResMut<CodeEditorState>,
-    mut syntax: ResMut<SyntaxResource>,
-) {
+fn setup_editor(mut state: ResMut<CodeEditorState>, mut syntax: ResMut<SyntaxResource>) {
     // Always focused in basic editor (no UI competing for input)
     state.is_focused = true;
 
@@ -44,12 +41,19 @@ fn setup_editor(
 
     let content = match std::fs::read_to_string(&file_path) {
         Ok(content) => {
-            println!("Loaded {} with {} lines", file_path.display(), content.lines().count());
+            println!(
+                "Loaded {} with {} lines",
+                file_path.display(),
+                content.lines().count()
+            );
             content
         }
         Err(e) => {
             eprintln!("Failed to load {}: {}", file_path.display(), e);
-            format!("// Failed to load sqlite3.c: {}\n// Make sure assets/sqlite3.c exists", e)
+            format!(
+                "// Failed to load sqlite3.c: {}\n// Make sure assets/sqlite3.c exists",
+                e
+            )
         }
     };
 
@@ -60,9 +64,9 @@ fn setup_editor(
 
     // Create a TreeSitterProvider and set it up with the C query
     let mut provider = TreeSitterProvider::new();
-    provider.set_query(tree_sitter_c::HIGHLIGHT_QUERY, language)
+    provider
+        .set_query(tree_sitter_c::HIGHLIGHT_QUERY, language)
         .expect("Failed to create highlight query");
-
 
     // Set the provider in the syntax resource
     syntax.set_provider(provider);
@@ -82,12 +86,19 @@ fn setup_editor(mut state: ResMut<CodeEditorState>) {
 
     let content = match std::fs::read_to_string(&file_path) {
         Ok(content) => {
-            println!("Loaded {} with {} lines (tree-sitter feature not enabled)", file_path.display(), content.lines().count());
+            println!(
+                "Loaded {} with {} lines (tree-sitter feature not enabled)",
+                file_path.display(),
+                content.lines().count()
+            );
             content
         }
         Err(e) => {
             eprintln!("Failed to load {}: {}", file_path.display(), e);
-            format!("// Failed to load sqlite3.c: {}\n// Make sure assets/sqlite3.c exists", e)
+            format!(
+                "// Failed to load sqlite3.c: {}\n// Make sure assets/sqlite3.c exists",
+                e
+            )
         }
     };
 
@@ -99,7 +110,6 @@ fn update_cursor_icon(
     mut commands: Commands,
     windows: Query<(Entity, &Window), With<Window>>,
     viewport: Res<ViewportDimensions>,
-    ui_settings: Res<UiSettings>,
 ) {
     if let Ok((window_entity, window)) = windows.single() {
         let Some(cursor_pos) = window.cursor_position() else {

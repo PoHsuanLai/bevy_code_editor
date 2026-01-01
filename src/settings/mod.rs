@@ -4,28 +4,28 @@
 //! Use `EditorSettingsBuilder` for convenient initialization.
 
 mod core;
-mod ui;
-mod syntax;
-mod scrollbar;
-mod minimap;
 mod cursor;
+mod minimap;
+mod performance;
+mod scrollbar;
 mod scrolling;
 mod search;
-mod performance;
+mod syntax;
+mod ui;
 mod wrapping;
 
 #[cfg(feature = "lsp")]
 mod lsp;
 
 pub use core::*;
-pub use ui::*;
-pub use syntax::*;
-pub use scrollbar::*;
-pub use minimap::*;
 pub use cursor::*;
+pub use minimap::*;
+pub use performance::*;
+pub use scrollbar::*;
 pub use scrolling::*;
 pub use search::*;
-pub use performance::*;
+pub use syntax::*;
+pub use ui::*;
 pub use wrapping::*;
 
 #[cfg(feature = "lsp")]

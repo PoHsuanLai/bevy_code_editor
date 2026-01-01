@@ -1,9 +1,9 @@
-use crate::types::*;
+use super::cursor::*;
+use super::keybindings::EditorAction;
 use crate::settings::IndentationSettings;
 #[cfg(feature = "lsp")]
 use crate::settings::LspSettings;
-use super::keybindings::EditorAction;
-use super::cursor::*;
+use crate::types::*;
 use arboard::Clipboard;
 
 #[cfg(feature = "lsp")]
@@ -137,10 +137,7 @@ fn delete_selection_with_history(state: &mut CodeEditorState, record_history: bo
 
 /// Apply selected completion item
 #[cfg(feature = "lsp")]
-pub fn apply_completion(
-    state: &mut CodeEditorState,
-    completion_state: &mut lsp::CompletionState,
-) {
+pub fn apply_completion(state: &mut CodeEditorState, completion_state: &mut lsp::CompletionState) {
     // Get filtered items and select from that list
     let filtered = completion_state.filtered_items();
     if let Some(item) = filtered.get(completion_state.selected_index) {
@@ -229,8 +226,8 @@ pub fn request_completion(
     completion_state: &mut lsp::CompletionState,
     lsp_sync: &lsp::LspSyncState,
 ) {
-    use lsp_types::Position;
     use crate::lsp::LspMessage;
+    use lsp_types::Position;
 
     let cursor_pos = state.cursor_pos.min(state.rope.len_chars());
     let line_index = state.rope.char_to_line(cursor_pos);
@@ -243,8 +240,13 @@ pub fn request_completion(
 
     if let Some(uri) = &lsp_sync.document_uri {
         #[cfg(debug_assertions)]
-        eprintln!("[LSP] Requesting completion at line={}, char={}, visible={}, start_idx={}",
-            lsp_position.line, lsp_position.character, completion_state.visible, completion_state.start_char_index);
+        eprintln!(
+            "[LSP] Requesting completion at line={}, char={}, visible={}, start_idx={}",
+            lsp_position.line,
+            lsp_position.character,
+            completion_state.visible,
+            completion_state.start_char_index
+        );
 
         lsp_client.send(LspMessage::Completion {
             uri: uri.clone(),
@@ -277,8 +279,10 @@ pub fn request_completion(
         completion_state.visible = true;
 
         #[cfg(debug_assertions)]
-        eprintln!("[bevy_code_editor] No LSP document URI - using word completions only ({} words)",
-            completion_state.word_items.len());
+        eprintln!(
+            "[bevy_code_editor] No LSP document URI - using word completions only ({} words)",
+            completion_state.word_items.len()
+        );
     }
 }
 
@@ -320,7 +324,6 @@ fn execute_action_core(
     state: &mut CodeEditorState,
     action: EditorAction,
     indentation: &IndentationSettings,
-    find_state: &mut FindState,
     goto_line_state: &mut GotoLineState,
     fold_state: &mut FoldState,
 ) -> ActionResult {
@@ -381,115 +384,137 @@ fn execute_action_core(
             state.selection_start = None;
             state.selection_end = None;
             state.move_cursor(-1);
+            state.sync_cursors_from_primary();
             result.horizontal_move = true;
         }
         EditorAction::MoveCursorRight => {
             state.selection_start = None;
             state.selection_end = None;
             state.move_cursor(1);
+            state.sync_cursors_from_primary();
             result.horizontal_move = true;
         }
         EditorAction::MoveCursorUp => {
             state.selection_start = None;
             state.selection_end = None;
             move_cursor_up(state);
+            state.sync_cursors_from_primary();
         }
         EditorAction::MoveCursorDown => {
             state.selection_start = None;
             state.selection_end = None;
             move_cursor_down(state);
+            state.sync_cursors_from_primary();
         }
         EditorAction::MoveCursorWordLeft => {
             state.selection_start = None;
             state.selection_end = None;
             move_cursor_word_left(state);
+            state.sync_cursors_from_primary();
             result.horizontal_move = true;
         }
         EditorAction::MoveCursorWordRight => {
             state.selection_start = None;
             state.selection_end = None;
             move_cursor_word_right(state);
+            state.sync_cursors_from_primary();
             result.horizontal_move = true;
         }
         EditorAction::MoveCursorLineStart => {
             state.selection_start = None;
             state.selection_end = None;
             move_cursor_line_start(state);
+            state.sync_cursors_from_primary();
         }
         EditorAction::MoveCursorLineEnd => {
             state.selection_start = None;
             state.selection_end = None;
             move_cursor_line_end(state);
+            state.sync_cursors_from_primary();
         }
         EditorAction::MoveCursorDocumentStart => {
             state.selection_start = None;
             state.selection_end = None;
             state.cursor_pos = 0;
+            state.sync_cursors_from_primary();
         }
         EditorAction::MoveCursorDocumentEnd => {
             state.selection_start = None;
             state.selection_end = None;
             state.cursor_pos = state.rope.len_chars();
+            state.sync_cursors_from_primary();
         }
         EditorAction::MoveCursorPageUp => {
             state.selection_start = None;
             state.selection_end = None;
             // TODO: Implement page up
+            state.sync_cursors_from_primary();
         }
         EditorAction::MoveCursorPageDown => {
             state.selection_start = None;
             state.selection_end = None;
             // TODO: Implement page down
+            state.sync_cursors_from_primary();
         }
 
         EditorAction::SelectLeft => {
             init_selection(state);
             state.move_cursor(-1);
             state.selection_end = Some(state.cursor_pos);
+            state.sync_cursors_from_primary();
         }
         EditorAction::SelectRight => {
             init_selection(state);
             state.move_cursor(1);
             state.selection_end = Some(state.cursor_pos);
+            state.sync_cursors_from_primary();
         }
         EditorAction::SelectUp => {
             init_selection(state);
             move_cursor_up(state);
             state.selection_end = Some(state.cursor_pos);
+            state.sync_cursors_from_primary();
         }
         EditorAction::SelectDown => {
             init_selection(state);
             move_cursor_down(state);
             state.selection_end = Some(state.cursor_pos);
+            state.sync_cursors_from_primary();
         }
         EditorAction::SelectWordLeft => {
             init_selection(state);
             move_cursor_word_left(state);
             state.selection_end = Some(state.cursor_pos);
+            state.sync_cursors_from_primary();
         }
         EditorAction::SelectWordRight => {
             init_selection(state);
             move_cursor_word_right(state);
             state.selection_end = Some(state.cursor_pos);
+            state.sync_cursors_from_primary();
         }
         EditorAction::SelectLineStart => {
             init_selection(state);
             move_cursor_line_start(state);
             state.selection_end = Some(state.cursor_pos);
+            state.sync_cursors_from_primary();
         }
         EditorAction::SelectLineEnd => {
             init_selection(state);
             move_cursor_line_end(state);
             state.selection_end = Some(state.cursor_pos);
+            state.sync_cursors_from_primary();
         }
         EditorAction::SelectAll => {
             state.selection_start = Some(0);
             state.selection_end = Some(state.rope.len_chars());
             state.cursor_pos = state.rope.len_chars();
+            state.sync_cursors_from_primary();
         }
         EditorAction::ClearSelection => {
             state.selection_start = None;
             state.selection_end = None;
+            state.sync_cursors_from_primary();
         }
 
         EditorAction::Copy => {
@@ -560,8 +585,14 @@ fn execute_action_core(
                         let paste_position;
 
                         // Delete selection if any
-                        if let (Some(start), Some(end)) = (state.selection_start, state.selection_end) {
-                            let (start, end) = if start < end { (start, end) } else { (end, start) };
+                        if let (Some(start), Some(end)) =
+                            (state.selection_start, state.selection_end)
+                        {
+                            let (start, end) = if start < end {
+                                (start, end)
+                            } else {
+                                (end, start)
+                            };
                             let start = start.min(state.rope.len_chars());
                             let end = end.min(state.rope.len_chars());
 
@@ -631,75 +662,6 @@ fn execute_action_core(
             }
         }
 
-        EditorAction::Find => {
-            // Search for selected text or word at cursor
-            if let (Some(start), Some(end)) = (state.selection_start, state.selection_end) {
-                let (start, end) = if start < end { (start, end) } else { (end, start) };
-                let query: String = state.rope.slice(start..end).chars().collect();
-                if !query.is_empty() {
-                    find_state.query = query;
-                    find_state.active = true;
-                    find_state.search(&state.rope);
-                }
-            } else {
-                // Find word at cursor
-                let cursor = state.cursor_pos.min(state.rope.len_chars());
-                if cursor < state.rope.len_chars() {
-                    let c = state.rope.char(cursor);
-                    if c.is_alphanumeric() || c == '_' {
-                        // Find word boundaries
-                        let mut start = cursor;
-                        while start > 0 {
-                            let prev = state.rope.char(start - 1);
-                            if prev.is_alphanumeric() || prev == '_' {
-                                start -= 1;
-                            } else {
-                                break;
-                            }
-                        }
-                        let mut end = cursor;
-                        while end < state.rope.len_chars() {
-                            let ch = state.rope.char(end);
-                            if ch.is_alphanumeric() || ch == '_' {
-                                end += 1;
-                            } else {
-                                break;
-                            }
-                        }
-                        let query: String = state.rope.slice(start..end).chars().collect();
-                        if !query.is_empty() {
-                            find_state.query = query;
-                            find_state.active = true;
-                            find_state.search(&state.rope);
-                        }
-                    }
-                }
-            }
-        }
-        EditorAction::FindNext => {
-            if find_state.active && !find_state.matches.is_empty() {
-                find_state.find_next(state.cursor_pos);
-                // Move cursor to the match
-                if let Some(m) = find_state.current_match() {
-                    state.cursor_pos = m.start;
-                    state.selection_start = Some(m.start);
-                    state.selection_end = Some(m.end);
-                    state.pending_update = true;
-                }
-            }
-        }
-        EditorAction::FindPrevious => {
-            if find_state.active && !find_state.matches.is_empty() {
-                find_state.find_previous(state.cursor_pos);
-                // Move cursor to the match
-                if let Some(m) = find_state.current_match() {
-                    state.cursor_pos = m.start;
-                    state.selection_start = Some(m.start);
-                    state.selection_end = Some(m.end);
-                    state.pending_update = true;
-                }
-            }
-        }
         EditorAction::Replace => {
             // TODO: Implement replace
         }
@@ -836,7 +798,6 @@ pub fn execute_action(
     state: &mut CodeEditorState,
     action: EditorAction,
     indentation: &IndentationSettings,
-    find_state: &mut FindState,
     goto_line_state: &mut GotoLineState,
     fold_state: &mut FoldState,
 ) {
@@ -851,16 +812,9 @@ pub fn execute_action(
             goto_line_state.clear();
             return;
         }
-        if find_state.active {
-            find_state.clear();
-            state.selection_start = None;
-            state.selection_end = None;
-            state.pending_update = true;
-            return;
-        }
     }
 
-    let _ = execute_action_core(state, action, indentation, find_state, goto_line_state, fold_state);
+    let _ = execute_action_core(state, action, indentation, goto_line_state, fold_state);
 }
 
 /// Execute an editor action (LSP version)
@@ -870,7 +824,6 @@ pub fn execute_action(
     action: EditorAction,
     indentation: &IndentationSettings,
     lsp: &LspSettings,
-    find_state: &mut FindState,
     goto_line_state: &mut GotoLineState,
     fold_state: &mut FoldState,
     lsp_client: &lsp::LspClient,
@@ -888,18 +841,11 @@ pub fn execute_action(
             goto_line_state.clear();
             return;
         }
-        if find_state.active {
-            find_state.clear();
-            state.selection_start = None;
-            state.selection_end = None;
-            state.pending_update = true;
-            return;
-        }
     }
 
     // Handle Completion UI Navigation first
     let filtered_count = completion_state.filtered_items().len();
-    let max_visible = lsp.completion.max_visible_items;
+    let max_visible = lsp.completion.max_items;
 
     if completion_state.visible && filtered_count > 0 {
         match action {
@@ -943,7 +889,7 @@ pub fn execute_action(
     }
 
     // Execute the core action
-    let result = execute_action_core(state, action, indentation, find_state, goto_line_state, fold_state);
+    let result = execute_action_core(state, action, indentation, goto_line_state, fold_state);
 
     // LSP-specific post-processing: dismiss completion on horizontal move
     if result.horizontal_move {

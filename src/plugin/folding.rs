@@ -1,10 +1,10 @@
 //! Code folding
 
-use bevy::prelude::*;
+use super::editor_ui_plugin::EditorRenderConfig;
+use super::to_bevy_coords_left_aligned;
 use crate::settings::*;
 use crate::types::*;
-use super::to_bevy_coords_left_aligned;
-
+use bevy::prelude::*;
 
 pub(crate) fn detect_foldable_regions(
     state: Res<CodeEditorState>,
@@ -41,7 +41,10 @@ pub(crate) fn detect_foldable_regions(
     let old_regions = std::mem::take(&mut fold_state.regions);
     for mut region in regions {
         // Check if this region was previously folded
-        if let Some(old) = old_regions.iter().find(|r| r.start_line == region.start_line && r.end_line == region.end_line) {
+        if let Some(old) = old_regions
+            .iter()
+            .find(|r| r.start_line == region.start_line && r.end_line == region.end_line)
+        {
             region.is_folded = old.is_folded;
         }
         fold_state.regions.push(region);
@@ -61,7 +64,8 @@ pub(crate) fn collect_foldable_regions(
     let kind = node.kind();
 
     // Check if this is a function-like or class-like construct that contains a body
-    let is_foldable_construct = matches!(kind,
+    let is_foldable_construct = matches!(
+        kind,
         // Function-like constructs
         "function_item" | "function_definition" | "function_declaration" |
         "method_definition" | "method_declaration" | "function_expression" |
@@ -73,10 +77,17 @@ pub(crate) fn collect_foldable_regions(
 
     // Skip block/body nodes that are direct children of foldable constructs
     // to avoid creating duplicate fold regions at the same line
-    let skip_this_node = parent_is_foldable_construct && matches!(kind,
-        "block" | "compound_statement" | "statement_block" | "body" |
-        "field_declaration_list" | "declaration_list" | "enum_variant_list"
-    );
+    let skip_this_node = parent_is_foldable_construct
+        && matches!(
+            kind,
+            "block"
+                | "compound_statement"
+                | "statement_block"
+                | "body"
+                | "field_declaration_list"
+                | "declaration_list"
+                | "enum_variant_list"
+        );
 
     if !skip_this_node {
         // Check if this node is foldable
@@ -107,21 +118,30 @@ pub(crate) fn node_to_fold_region(
     // These mappings work for most languages (Rust, JavaScript, TypeScript, Python, etc.)
     let fold_kind = match kind {
         // Function-like constructs
-        "function_item" | "function_definition" | "function_declaration" |
-        "method_definition" | "method_declaration" | "function_expression" |
-        "arrow_function" | "lambda" | "closure_expression" => Some(FoldKind::Function),
+        "function_item"
+        | "function_definition"
+        | "function_declaration"
+        | "method_definition"
+        | "method_declaration"
+        | "function_expression"
+        | "arrow_function"
+        | "lambda"
+        | "closure_expression" => Some(FoldKind::Function),
 
         // Class-like constructs
-        "class_definition" | "class_declaration" | "struct_item" |
-        "enum_item" | "interface_declaration" | "trait_item" |
-        "impl_item" => Some(FoldKind::Class),
+        "class_definition"
+        | "class_declaration"
+        | "struct_item"
+        | "enum_item"
+        | "interface_declaration"
+        | "trait_item"
+        | "impl_item" => Some(FoldKind::Class),
 
         // Block constructs
-        "block" | "compound_statement" | "statement_block" |
-        "if_expression" | "if_statement" | "match_expression" |
-        "switch_statement" | "for_statement" | "for_expression" |
-        "while_statement" | "while_expression" | "loop_expression" |
-        "try_statement" | "catch_clause" | "finally_clause" => Some(FoldKind::Block),
+        "block" | "compound_statement" | "statement_block" | "if_expression" | "if_statement"
+        | "match_expression" | "switch_statement" | "for_statement" | "for_expression"
+        | "while_statement" | "while_expression" | "loop_expression" | "try_statement"
+        | "catch_clause" | "finally_clause" => Some(FoldKind::Block),
 
         // Import/use statements (when grouped)
         "use_declaration" | "import_statement" | "import_declaration" => Some(FoldKind::Imports),
@@ -136,8 +156,8 @@ pub(crate) fn node_to_fold_region(
         "region" | "preproc_region" => Some(FoldKind::Region),
 
         // Array/object literals (when multi-line)
-        "array" | "array_expression" | "object" | "object_expression" |
-        "struct_expression" | "tuple_expression" => Some(FoldKind::Other),
+        "array" | "array_expression" | "object" | "object_expression" | "struct_expression"
+        | "tuple_expression" => Some(FoldKind::Other),
 
         _ => None,
     };
@@ -215,7 +235,10 @@ pub(crate) fn detect_foldable_regions(
 
         // Look for closing braces at start of line (after whitespace)
         let trimmed_start = line_str.trim_start();
-        if trimmed_start.starts_with('}') || trimmed_start.starts_with(']') || trimmed_start.starts_with(')') {
+        if trimmed_start.starts_with('}')
+            || trimmed_start.starts_with(']')
+            || trimmed_start.starts_with(')')
+        {
             if let Some((start_line, start_indent)) = brace_stack.pop() {
                 if line_idx > start_line {
                     regions.push(FoldRegion {
@@ -233,7 +256,10 @@ pub(crate) fn detect_foldable_regions(
     // Preserve fold state for existing regions
     let old_regions = std::mem::take(&mut fold_state.regions);
     for mut region in regions {
-        if let Some(old) = old_regions.iter().find(|r| r.start_line == region.start_line && r.end_line == region.end_line) {
+        if let Some(old) = old_regions
+            .iter()
+            .find(|r| r.start_line == region.start_line && r.end_line == region.end_line)
+        {
             region.is_folded = old.is_folded;
         }
         fold_state.regions.push(region);
@@ -251,7 +277,14 @@ pub(crate) fn update_fold_indicators(
     ui: Res<UiSettings>,
     viewport: Res<ViewportDimensions>,
     fold_state: Res<FoldState>,
-    mut indicator_query: Query<(Entity, &FoldIndicator, &mut Transform, &mut Text2d, &mut Visibility)>,
+    render_config: Res<EditorRenderConfig>,
+    mut indicator_query: Query<(
+        Entity,
+        &FoldIndicator,
+        &mut Transform,
+        &mut Text2d,
+        &mut Visibility,
+    )>,
 ) {
     // Hide all if folding is disabled
     if !fold_state.enabled || !ui.show_line_numbers {
@@ -272,12 +305,15 @@ pub(crate) fn update_fold_indicators(
     let visible_end_line = (visible_start_line + visible_lines).min(state.rope.len_lines());
 
     // Collect fold regions that start within visible range
-    let visible_regions: Vec<_> = fold_state.regions.iter()
+    let visible_regions: Vec<_> = fold_state
+        .regions
+        .iter()
         .filter(|r| r.start_line >= visible_start_line && r.start_line < visible_end_line)
         .collect();
 
     // Collect existing indicators
-    let mut existing_indicators: std::collections::HashMap<usize, Entity> = std::collections::HashMap::new();
+    let mut existing_indicators: std::collections::HashMap<usize, Entity> =
+        std::collections::HashMap::new();
     for (entity, indicator, _, _, _) in indicator_query.iter() {
         existing_indicators.insert(indicator.line_index, entity);
     }
@@ -287,7 +323,9 @@ pub(crate) fn update_fold_indicators(
     // Calculate hidden lines for proper display positioning
     // We need to count how many lines are hidden before each fold region
     let count_hidden_lines_before = |line: usize| -> usize {
-        fold_state.regions.iter()
+        fold_state
+            .regions
+            .iter()
             .filter(|r| r.is_folded && r.start_line < line)
             .map(|r| r.end_line.saturating_sub(r.start_line))
             .sum()
@@ -310,14 +348,15 @@ pub(crate) fn update_fold_indicators(
         // Position in fold gutter (between line numbers and separator)
         // In VSCode style, this is a narrow gutter just before the separator
         let x_offset = viewport.separator_x - 12.0; // Just before the separator
-        let y_offset = viewport.text_area_top + state.scroll_offset + (display_line as f32 * line_height);
+        let y_offset =
+            viewport.text_area_top + state.scroll_offset + (display_line as f32 * line_height);
 
         let translation = to_bevy_coords_left_aligned(
             x_offset,
             y_offset,
             viewport_width,
             viewport_height,
-            viewport.offset_x,
+            0.0, // Camera viewport handles panel positioning
             0.0,
         );
 
@@ -326,7 +365,9 @@ pub(crate) fn update_fold_indicators(
 
         if let Some(entity) = existing_indicators.get(&line_idx) {
             // Update existing indicator
-            if let Ok((_, _, mut transform, mut text, mut visibility)) = indicator_query.get_mut(*entity) {
+            if let Ok((_, _, mut transform, mut text, mut visibility)) =
+                indicator_query.get_mut(*entity)
+            {
                 transform.translation = translation;
                 text.0 = indicator_char.to_string();
                 *visibility = Visibility::Visible;
@@ -339,16 +380,20 @@ pub(crate) fn update_fold_indicators(
                 ..default()
             };
 
-            commands.spawn((
+            let mut entity_cmd = commands.spawn((
                 Text2d::new(indicator_char.to_string()),
                 text_font,
                 TextColor(theme.line_numbers.with_alpha(0.8)),
                 Transform::from_translation(translation),
-                
-                FoldIndicator { line_index: line_idx },
+                FoldIndicator {
+                    line_index: line_idx,
+                },
                 Name::new(format!("FoldIndicator_{}", line_idx)),
                 Visibility::Visible,
             ));
+            if let Some(ref layers) = render_config.render_layers {
+                entity_cmd.insert(layers.clone());
+            }
         }
     }
 

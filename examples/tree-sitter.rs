@@ -7,8 +7,6 @@ use bevy::prelude::*;
 use bevy_code_editor::prelude::*;
 
 #[cfg(feature = "tree-sitter")]
-use bevy_code_editor::syntax::TreeSitterProvider;
-#[cfg(feature = "tree-sitter")]
 use bevy_code_editor::plugin::SyntaxResource;
 
 fn main() {
@@ -98,17 +96,21 @@ fn main() {
 
     state.set_text(rust_code);
 
-    // Set up tree-sitter highlighting for Rust
-    let language = tree_sitter_rust::LANGUAGE.into();
+    // Define Rust language configuration
+    let rust_lang = Language {
+        name: "rust",
+        tree_sitter: Some(TreeSitterConfig {
+            grammar: tree_sitter_rust::LANGUAGE.into(),
+            highlights_query: tree_sitter_rust::HIGHLIGHTS_QUERY,
+        }),
+        #[cfg(feature = "lsp")]
+        lsp_command: Some(("rust-analyzer", &[])),
+    };
 
-    // Create a TreeSitterProvider and set it up with the Rust query
-    let mut provider = TreeSitterProvider::new();
-    provider.set_query(tree_sitter_rust::HIGHLIGHTS_QUERY, language)
-        .expect("Failed to create highlight query");
-
-    // Set the provider in the syntax resource
-    // The tree will be updated automatically when rendering
-    syntax.set_provider(provider);
+    // Set up tree-sitter highlighting using the language configuration
+    if let Some(provider) = rust_lang.create_tree_sitter_provider() {
+        syntax.set_provider(provider);
+    }
 
     state.needs_update = true;
 }

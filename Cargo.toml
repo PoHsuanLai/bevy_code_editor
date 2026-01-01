@@ -21,7 +21,11 @@ bevy = { version = "0.17", default-features = false, features = [
     "bevy_sprite_render",  # For Material2d and custom shaders
     "bevy_color",
     "bevy_mesh",           # For Mesh2d
+    "bevy_camera",         # For RenderLayers (render-to-texture support)
 ] }
+
+# Bevy camera for RenderLayers
+bevy_camera = "0.17"
 
 # Text buffer with efficient rope data structure
 ropey = "1.6"

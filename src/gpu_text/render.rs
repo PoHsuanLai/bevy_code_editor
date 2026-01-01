@@ -5,12 +5,12 @@
 //! - Glyph atlas texture caching
 //! - Custom WGSL shader for text with color support
 
+use bevy::asset::RenderAssetUsages;
+use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::render::render_resource::AsBindGroup;
-use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
-use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::shader::ShaderRef;
-use bevy::asset::RenderAssetUsages;
+use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
 
 use super::atlas::{GlyphAtlas, GlyphKey};
 
@@ -137,17 +137,18 @@ impl Material2d for TextMaterial {
 }
 
 /// Resource to track the current text material
-#[derive(Resource)]
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct TextRenderState {
     pub material_handle: Option<Handle<TextMaterial>>,
     pub mesh_handle: Option<Handle<Mesh>>,
 }
 
-
 /// Create a quad mesh for rendering glyphs
 pub fn create_quad_mesh() -> Mesh {
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
 
     // Vertices for a unit quad (0,0) to (1,1)
     mesh.insert_attribute(
@@ -202,10 +203,7 @@ impl Plugin for GpuTextPlugin {
 }
 
 /// System to update the atlas texture - must run after glyphs are added
-pub fn update_atlas_texture(
-    mut atlas: ResMut<GlyphAtlas>,
-    mut images: ResMut<Assets<Image>>,
-) {
+pub fn update_atlas_texture(mut atlas: ResMut<GlyphAtlas>, mut images: ResMut<Assets<Image>>) {
     atlas.update_texture(&mut images);
 }
 
@@ -260,12 +258,7 @@ impl<'a> TextBatchBuilder<'a> {
     }
 
     /// Add a line of text with syntax highlighting segments
-    pub fn add_line(
-        &mut self,
-        y: f32,
-        start_x: f32,
-        segments: &[(String, Color)],
-    ) {
+    pub fn add_line(&mut self, y: f32, start_x: f32, segments: &[(String, Color)]) {
         let mut x = start_x;
         for (text, color) in segments {
             for ch in text.chars() {

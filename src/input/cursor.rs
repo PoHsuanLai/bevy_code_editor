@@ -54,7 +54,7 @@ pub fn move_cursor_line_end(state: &mut CodeEditorState) {
 #[derive(PartialEq, Eq, Clone, Copy)]
 enum CharClass {
     Whitespace,
-    Word,       // alphanumeric or underscore
+    Word, // alphanumeric or underscore
     Punctuation,
 }
 
@@ -187,7 +187,11 @@ pub fn delete_word_backward(state: &mut CodeEditorState) {
 
     if word_start < cursor_before {
         // Get the text being deleted for undo
-        let deleted_text: String = state.rope.slice(word_start..cursor_before).chars().collect();
+        let deleted_text: String = state
+            .rope
+            .slice(word_start..cursor_before)
+            .chars()
+            .collect();
 
         // Remove the text
         let start_byte = state.rope.char_to_byte(word_start);

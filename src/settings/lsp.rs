@@ -22,6 +22,9 @@ pub struct CompletionSettings {
     /// Trigger characters that auto-open completion
     pub trigger_characters: Vec<String>,
 
+    /// Minimum word length before auto-triggering completion
+    pub min_word_length: usize,
+
     /// Delay before showing completion (milliseconds)
     pub delay_ms: u64,
 
@@ -83,6 +86,7 @@ impl Default for CompletionSettings {
         Self {
             enabled: true,
             trigger_characters: vec![".".to_string(), "::".to_string()],
+            min_word_length: 3,
             delay_ms: 100,
             max_items: 10,
             window_width: 300.0,

@@ -49,7 +49,9 @@ pub fn update_completion_ui(
     mut commands: Commands,
     completion_state: Res<CompletionState>,
     editor_state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    ui: Res<UiSettings>,
+    lsp: Res<LspSettings>,
     viewport: Res<ViewportDimensions>,
     ui_query: Query<Entity, With<CompletionUI>>,
 ) {
@@ -63,14 +65,8 @@ pub fn update_completion_ui(
         return;
     }
 
-    // Skip update if nothing changed
-    if !completion_state.is_changed()
-        && !editor_state.is_changed()
-        && !viewport.is_changed()
-        && !settings.is_changed()
-    {
-        return;
-    }
+    // Always update when visible - filtering happens on every keystroke
+    // (Change detection doesn't always catch filter updates properly)
 
     // Clear old UI
     for entity in ui_query.iter() {
@@ -83,13 +79,12 @@ pub fn update_completion_ui(
     let line_start = editor_state.rope.line_to_char(line_index);
     let col_index = cursor_pos - line_start;
 
-    let char_width = settings.font.char_width;
-    let line_height = settings.font.line_height;
+    let char_width = font.char_width;
+    let line_height = font.line_height;
 
-    let x_offset = settings.ui.layout.code_margin_left + (col_index as f32 * char_width);
-    let y_offset = settings.ui.layout.margin_top
-        + editor_state.scroll_offset
-        + ((line_index + 1) as f32 * line_height);
+    let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
+    let y_offset =
+        ui.margin_top + editor_state.scroll_offset + ((line_index + 1) as f32 * line_height);
 
     let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
@@ -109,7 +104,7 @@ pub fn update_completion_ui(
     let calculated_width = (max_char_count as f32 * char_width) + 20.0;
     let box_width = calculated_width.max(200.0).min(600.0);
 
-    let max_visible = settings.completion.max_visible_items;
+    let max_visible = lsp.completion.max_items;
     let total_items = filtered_items.len();
     let visible_count = total_items.min(max_visible);
     let box_height = (visible_count as f32 * line_height) + 10.0;
@@ -144,7 +139,8 @@ pub fn update_completion_ui(
                     Color::NONE
                 };
 
-                let item_y = (box_height / 2.0) - (i as f32 * line_height) - (line_height / 2.0) - 5.0;
+                let item_y =
+                    (box_height / 2.0) - (i as f32 * line_height) - (line_height / 2.0) - 5.0;
 
                 // Selection background
                 if is_selected {
@@ -162,8 +158,8 @@ pub fn update_completion_ui(
                 parent.spawn((
                     Text2d::new(item.kind_icon()),
                     TextFont {
-                        font: settings.font.handle.clone().unwrap_or_default(),
-                        font_size: settings.font.size * 0.9,
+                        font: font.handle.clone().unwrap_or_default(),
+                        font_size: font.size * 0.9,
                         ..default()
                     },
                     TextColor(Color::srgba(0.6, 0.6, 0.6, 1.0)),
@@ -181,8 +177,8 @@ pub fn update_completion_ui(
                 parent.spawn((
                     Text2d::new(item.label()),
                     TextFont {
-                        font: settings.font.handle.clone().unwrap_or_default(),
-                        font_size: settings.font.size,
+                        font: font.handle.clone().unwrap_or_default(),
+                        font_size: font.size,
                         ..default()
                     },
                     TextColor(label_color),
@@ -195,8 +191,8 @@ pub fn update_completion_ui(
                     parent.spawn((
                         Text2d::new(detail),
                         TextFont {
-                            font: settings.font.handle.clone().unwrap_or_default(),
-                            font_size: settings.font.size * 0.8,
+                            font: font.handle.clone().unwrap_or_default(),
+                            font_size: font.size * 0.8,
                             ..default()
                         },
                         TextColor(Color::srgba(0.7, 0.7, 0.7, 1.0)),
@@ -213,7 +209,8 @@ pub fn update_hover_ui(
     mut commands: Commands,
     hover_state: Res<HoverState>,
     editor_state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    ui: Res<UiSettings>,
     viewport: Res<ViewportDimensions>,
     ui_query: Query<Entity, With<HoverUI>>,
 ) {
@@ -227,7 +224,8 @@ pub fn update_hover_ui(
     if !hover_state.is_changed()
         && !editor_state.is_changed()
         && !viewport.is_changed()
-        && !settings.is_changed()
+        && !font.is_changed()
+        && !ui.is_changed()
     {
         return;
     }
@@ -236,23 +234,24 @@ pub fn update_hover_ui(
         commands.entity(entity).despawn();
     }
 
-    let trigger_char_index = hover_state.trigger_char_index.min(editor_state.rope.len_chars());
+    let trigger_char_index = hover_state
+        .trigger_char_index
+        .min(editor_state.rope.len_chars());
     let line_index = editor_state.rope.char_to_line(trigger_char_index);
     let line_start = editor_state.rope.line_to_char(line_index);
     let col_index = trigger_char_index - line_start;
 
-    let char_width = settings.font.char_width;
-    let line_height = settings.font.line_height;
+    let char_width = font.char_width;
+    let line_height = font.line_height;
 
-    let x_offset = settings.ui.layout.code_margin_left + (col_index as f32 * char_width);
-    let y_offset = settings.ui.layout.margin_top
-        + editor_state.scroll_offset
-        + ((line_index + 1) as f32 * line_height);
+    let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
+    let y_offset =
+        ui.margin_top + editor_state.scroll_offset + ((line_index + 1) as f32 * line_height);
 
     let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
 
-    let font_size = settings.font.size * 0.9;
+    let font_size = font.size * 0.9;
     let padding = 10.0;
 
     let max_line_chars = hover_state
@@ -261,7 +260,7 @@ pub fn update_hover_ui(
         .map(|l| l.chars().count())
         .max()
         .unwrap_or(0);
-    let hover_char_width = settings.font.char_width * 0.9;
+    let hover_char_width = font.char_width * 0.9;
 
     let calculated_width = (max_line_chars as f32 * hover_char_width) + padding * 2.0;
     let box_width = calculated_width.max(100.0).min(600.0);
@@ -293,7 +292,7 @@ pub fn update_hover_ui(
             parent.spawn((
                 Text2d::new(hover_state.content.clone()),
                 TextFont {
-                    font: settings.font.handle.clone().unwrap_or_default(),
+                    font: font.handle.clone().unwrap_or_default(),
                     font_size,
                     ..default()
                 },
@@ -309,7 +308,8 @@ pub fn update_signature_help_ui(
     mut commands: Commands,
     sig_state: Res<SignatureHelpState>,
     editor_state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    ui: Res<UiSettings>,
     viewport: Res<ViewportDimensions>,
     ui_query: Query<Entity, With<SignatureHelpUI>>,
 ) {
@@ -323,7 +323,8 @@ pub fn update_signature_help_ui(
     if !sig_state.is_changed()
         && !editor_state.is_changed()
         && !viewport.is_changed()
-        && !settings.is_changed()
+        && !font.is_changed()
+        && !ui.is_changed()
     {
         return;
     }
@@ -342,20 +343,18 @@ pub fn update_signature_help_ui(
     let line_start = editor_state.rope.line_to_char(line_index);
     let col_index = cursor_pos - line_start;
 
-    let char_width = settings.font.char_width;
-    let line_height = settings.font.line_height;
+    let char_width = font.char_width;
+    let line_height = font.line_height;
 
-    let x_offset = settings.ui.layout.code_margin_left + (col_index as f32 * char_width);
+    let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
     // Position ABOVE the current line
-    let y_offset = settings.ui.layout.margin_top
-        + editor_state.scroll_offset
-        + (line_index as f32 * line_height)
+    let y_offset = ui.margin_top + editor_state.scroll_offset + (line_index as f32 * line_height)
         - line_height;
 
     let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
 
-    let font_size = settings.font.size * 0.9;
+    let font_size = font.size * 0.9;
     let padding = 8.0;
 
     // Build signature text with highlighted parameter
@@ -388,7 +387,7 @@ pub fn update_signature_help_ui(
             parent.spawn((
                 Text2d::new(sig_label.clone()),
                 TextFont {
-                    font: settings.font.handle.clone().unwrap_or_default(),
+                    font: font.handle.clone().unwrap_or_default(),
                     font_size,
                     ..default()
                 },
@@ -399,11 +398,15 @@ pub fn update_signature_help_ui(
 
             // Show active signature indicator if multiple
             if sig_state.signatures.len() > 1 {
-                let indicator = format!("{}/{}", sig_state.active_signature + 1, sig_state.signatures.len());
+                let indicator = format!(
+                    "{}/{}",
+                    sig_state.active_signature + 1,
+                    sig_state.signatures.len()
+                );
                 parent.spawn((
                     Text2d::new(indicator),
                     TextFont {
-                        font: settings.font.handle.clone().unwrap_or_default(),
+                        font: font.handle.clone().unwrap_or_default(),
                         font_size: font_size * 0.8,
                         ..default()
                     },
@@ -420,7 +423,8 @@ pub fn update_code_action_ui(
     mut commands: Commands,
     action_state: Res<CodeActionState>,
     editor_state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    ui: Res<UiSettings>,
     viewport: Res<ViewportDimensions>,
     ui_query: Query<Entity, With<CodeActionUI>>,
 ) {
@@ -434,7 +438,8 @@ pub fn update_code_action_ui(
     if !action_state.is_changed()
         && !editor_state.is_changed()
         && !viewport.is_changed()
-        && !settings.is_changed()
+        && !font.is_changed()
+        && !ui.is_changed()
     {
         return;
     }
@@ -446,14 +451,13 @@ pub fn update_code_action_ui(
     let cursor_pos = editor_state.cursor_pos.min(editor_state.rope.len_chars());
     let line_index = editor_state.rope.char_to_line(cursor_pos);
 
-    let line_height = settings.font.line_height;
-    let char_width = settings.font.char_width;
+    let line_height = font.line_height;
+    let char_width = font.char_width;
 
     // Position at line start (gutter area)
-    let x_offset = settings.ui.layout.code_margin_left - 20.0;
-    let y_offset = settings.ui.layout.margin_top
-        + editor_state.scroll_offset
-        + ((line_index + 1) as f32 * line_height);
+    let x_offset = ui.code_margin_left - 20.0;
+    let y_offset =
+        ui.margin_top + editor_state.scroll_offset + ((line_index + 1) as f32 * line_height);
 
     let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
@@ -469,7 +473,9 @@ pub fn update_code_action_ui(
         .max()
         .unwrap_or(20);
 
-    let box_width = (max_label_len as f32 * char_width + 20.0).max(200.0).min(400.0);
+    let box_width = (max_label_len as f32 * char_width + 20.0)
+        .max(200.0)
+        .min(400.0);
     let visible_count = action_state.actions.len().min(10);
     let box_height = (visible_count as f32 * line_height) + 10.0;
 
@@ -493,7 +499,8 @@ pub fn update_code_action_ui(
         .with_children(|parent| {
             for (i, action) in action_state.actions.iter().take(10).enumerate() {
                 let is_selected = i == action_state.selected_index;
-                let item_y = (box_height / 2.0) - (i as f32 * line_height) - (line_height / 2.0) - 5.0;
+                let item_y =
+                    (box_height / 2.0) - (i as f32 * line_height) - (line_height / 2.0) - 5.0;
 
                 if is_selected {
                     parent.spawn((
@@ -522,8 +529,8 @@ pub fn update_code_action_ui(
                 parent.spawn((
                     Text2d::new(format!("{} {}", icon, title)),
                     TextFont {
-                        font: settings.font.handle.clone().unwrap_or_default(),
-                        font_size: settings.font.size,
+                        font: font.handle.clone().unwrap_or_default(),
+                        font_size: font.size,
                         ..default()
                     },
                     TextColor(Color::WHITE),
@@ -539,7 +546,8 @@ pub fn update_inlay_hints_ui(
     mut commands: Commands,
     hint_state: Res<InlayHintState>,
     editor_state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    ui: Res<UiSettings>,
     viewport: Res<ViewportDimensions>,
     hint_query: Query<Entity, With<InlayHintText>>,
 ) {
@@ -555,14 +563,14 @@ pub fn update_inlay_hints_ui(
     }
 
     // Only render hints in visible viewport
-    let visible_start_line = (editor_state.scroll_offset / settings.font.line_height) as u32;
-    let visible_lines = (viewport.height as f32 / settings.font.line_height) as u32 + 2;
+    let visible_start_line = (editor_state.scroll_offset / font.line_height) as u32;
+    let visible_lines = (viewport.height as f32 / font.line_height) as u32 + 2;
     let visible_end_line = visible_start_line + visible_lines;
 
     let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
-    let char_width = settings.font.char_width;
-    let line_height = settings.font.line_height;
+    let char_width = font.char_width;
+    let line_height = font.line_height;
 
     for hint in &hint_state.hints {
         let line = hint.position.line;
@@ -576,13 +584,15 @@ pub fn update_inlay_hints_ui(
         // Get hint label text
         let label_text = match &hint.label {
             lsp_types::InlayHintLabel::String(s) => s.clone(),
-            lsp_types::InlayHintLabel::LabelParts(parts) => {
-                parts.iter().map(|p| p.value.as_str()).collect::<Vec<_>>().join("")
-            }
+            lsp_types::InlayHintLabel::LabelParts(parts) => parts
+                .iter()
+                .map(|p| p.value.as_str())
+                .collect::<Vec<_>>()
+                .join(""),
         };
 
-        let x_offset = settings.ui.layout.code_margin_left + (character as f32 * char_width);
-        let y_offset = settings.ui.layout.margin_top
+        let x_offset = ui.code_margin_left + (character as f32 * char_width);
+        let y_offset = ui.margin_top
             + editor_state.scroll_offset
             + (line as f32 * line_height)
             + (line_height / 2.0);
@@ -603,8 +613,8 @@ pub fn update_inlay_hints_ui(
         commands.spawn((
             Text2d::new(label_text),
             TextFont {
-                font: settings.font.handle.clone().unwrap_or_default(),
-                font_size: settings.font.size * 0.85,
+                font: font.handle.clone().unwrap_or_default(),
+                font_size: font.size * 0.85,
                 ..default()
             },
             TextColor(color),
@@ -621,7 +631,8 @@ pub fn update_document_highlights_ui(
     mut commands: Commands,
     highlight_state: Res<DocumentHighlightState>,
     editor_state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    ui: Res<UiSettings>,
     viewport: Res<ViewportDimensions>,
     highlight_query: Query<Entity, With<DocumentHighlightMarker>>,
 ) {
@@ -638,8 +649,8 @@ pub fn update_document_highlights_ui(
 
     let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
-    let char_width = settings.font.char_width;
-    let line_height = settings.font.line_height;
+    let char_width = font.char_width;
+    let line_height = font.line_height;
 
     // Calculate visible line range
     let visible_start_line = (editor_state.scroll_offset / line_height) as u32;
@@ -672,8 +683,8 @@ pub fn update_document_highlights_ui(
             let end_char = highlight.range.end.character;
             let width = (end_char - start_char) as f32 * char_width;
 
-            let x_offset = settings.ui.layout.code_margin_left + (start_char as f32 * char_width);
-            let y_offset = settings.ui.layout.margin_top
+            let x_offset = ui.code_margin_left + (start_char as f32 * char_width);
+            let y_offset = ui.margin_top
                 + editor_state.scroll_offset
                 + (line as f32 * line_height)
                 + (line_height / 2.0);
@@ -710,8 +721,8 @@ pub fn update_document_highlights_ui(
                 };
 
                 let width = (end_char - start_char).min(200) as f32 * char_width;
-                let x_offset = settings.ui.layout.code_margin_left + (start_char as f32 * char_width);
-                let y_offset = settings.ui.layout.margin_top
+                let x_offset = ui.code_margin_left + (start_char as f32 * char_width);
+                let y_offset = ui.margin_top
                     + editor_state.scroll_offset
                     + (line as f32 * line_height)
                     + (line_height / 2.0);
@@ -742,7 +753,8 @@ pub fn update_rename_ui(
     mut commands: Commands,
     rename_state: Res<RenameState>,
     editor_state: Res<CodeEditorState>,
-    settings: Res<EditorSettings>,
+    font: Res<FontSettings>,
+    ui: Res<UiSettings>,
     viewport: Res<ViewportDimensions>,
     ui_query: Query<Entity, With<RenameUI>>,
 ) {
@@ -756,7 +768,8 @@ pub fn update_rename_ui(
     if !rename_state.is_changed()
         && !editor_state.is_changed()
         && !viewport.is_changed()
-        && !settings.is_changed()
+        && !font.is_changed()
+        && !ui.is_changed()
     {
         return;
     }
@@ -772,12 +785,12 @@ pub fn update_rename_ui(
     let line = range.start.line as usize;
     let character = range.start.character as usize;
 
-    let char_width = settings.font.char_width;
-    let line_height = settings.font.line_height;
+    let char_width = font.char_width;
+    let line_height = font.line_height;
 
     // Position the input box directly at the symbol location
-    let x_offset = settings.ui.layout.code_margin_left + (character as f32 * char_width);
-    let y_offset = settings.ui.layout.margin_top
+    let x_offset = ui.code_margin_left + (character as f32 * char_width);
+    let y_offset = ui.margin_top
         + editor_state.scroll_offset
         + (line as f32 * line_height)
         + (line_height / 2.0);
@@ -785,7 +798,7 @@ pub fn update_rename_ui(
     let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
 
-    let font_size = settings.font.size;
+    let font_size = font.size;
     let padding_x = 4.0;
     let padding_y = 2.0;
 
@@ -797,7 +810,8 @@ pub fn update_rename_ui(
     };
 
     // Width based on text length, with minimum width
-    let text_width = (display_text.chars().count().max(8) as f32 * char_width) + padding_x * 2.0 + 4.0;
+    let text_width =
+        (display_text.chars().count().max(8) as f32 * char_width) + padding_x * 2.0 + 4.0;
     let box_width = text_width.max(100.0).min(300.0);
     let box_height = line_height + padding_y * 2.0;
 
@@ -833,7 +847,7 @@ pub fn update_rename_ui(
             parent.spawn((
                 Text2d::new(display_text.clone()),
                 TextFont {
-                    font: settings.font.handle.clone().unwrap_or_default(),
+                    font: font.handle.clone().unwrap_or_default(),
                     font_size,
                     ..default()
                 },
@@ -847,7 +861,10 @@ pub fn update_rename_ui(
             ));
 
             // Text cursor at end of text
-            let cursor_x = -box_width / 2.0 + padding_x + 2.0 + (display_text.chars().count() as f32 * char_width);
+            let cursor_x = -box_width / 2.0
+                + padding_x
+                + 2.0
+                + (display_text.chars().count() as f32 * char_width);
             parent.spawn((
                 Sprite {
                     color: Color::WHITE,

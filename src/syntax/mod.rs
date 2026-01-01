@@ -9,7 +9,7 @@ pub mod highlighter;
 pub mod tree_sitter;
 
 // Re-export main types
-pub use highlighter::{SyntaxProvider, map_highlight_color};
+pub use highlighter::{map_highlight_color, SyntaxProvider};
 
 #[cfg(feature = "tree-sitter")]
 pub use tree_sitter::TreeSitterProvider;

@@ -85,11 +85,13 @@ impl ServerCapabilitiesCache {
             .read()
             .ok()
             .and_then(|guard| {
-                guard.as_ref().map(|c| match &c.document_formatting_provider {
-                    Some(OneOf::Left(b)) => *b,
-                    Some(OneOf::Right(_)) => true,
-                    None => false,
-                })
+                guard
+                    .as_ref()
+                    .map(|c| match &c.document_formatting_provider {
+                        Some(OneOf::Left(b)) => *b,
+                        Some(OneOf::Right(_)) => true,
+                        None => false,
+                    })
             })
             .unwrap_or(false)
     }
@@ -140,9 +142,9 @@ impl ServerCapabilitiesCache {
             .ok()
             .and_then(|guard| {
                 guard.as_ref().and_then(|c| {
-                    c.signature_help_provider.as_ref().and_then(|p| {
-                        p.trigger_characters.clone()
-                    })
+                    c.signature_help_provider
+                        .as_ref()
+                        .and_then(|p| p.trigger_characters.clone())
                 })
             })
             .unwrap_or_default()
@@ -155,9 +157,9 @@ impl ServerCapabilitiesCache {
             .ok()
             .and_then(|guard| {
                 guard.as_ref().and_then(|c| {
-                    c.completion_provider.as_ref().and_then(|p| {
-                        p.trigger_characters.clone()
-                    })
+                    c.completion_provider
+                        .as_ref()
+                        .and_then(|p| p.trigger_characters.clone())
                 })
             })
             .unwrap_or_default()
@@ -169,11 +171,13 @@ impl ServerCapabilitiesCache {
             .read()
             .ok()
             .and_then(|guard| {
-                guard.as_ref().map(|c| match &c.document_highlight_provider {
-                    Some(OneOf::Left(b)) => *b,
-                    Some(OneOf::Right(_)) => true,
-                    None => false,
-                })
+                guard
+                    .as_ref()
+                    .map(|c| match &c.document_highlight_provider {
+                        Some(OneOf::Left(b)) => *b,
+                        Some(OneOf::Right(_)) => true,
+                        None => false,
+                    })
             })
             .unwrap_or(false)
     }

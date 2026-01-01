@@ -3,8 +3,8 @@
 //! The fold map handles code folding by mapping buffer lines to fold lines,
 //! where folded regions are collapsed to a single line.
 
+use super::{BufferPoint, DisplayMapLayer, FoldPoint, FoldRegion};
 use ropey::Rope;
-use super::{BufferPoint, FoldPoint, FoldRegion, DisplayMapLayer};
 
 /// Cached summary for a fold region to enable O(log n) lookups
 #[derive(Clone, Debug)]
@@ -78,7 +78,9 @@ impl FoldMap {
         let buffer_line = buffer_line as usize;
 
         // Binary search for a fold that might contain this line
-        let idx = self.fold_summaries.partition_point(|s| s.region.start_line < buffer_line);
+        let idx = self
+            .fold_summaries
+            .partition_point(|s| s.region.start_line < buffer_line);
 
         // Check if this line is inside the fold at idx-1 (the one just before or at this line)
         if idx > 0 {
@@ -119,12 +121,15 @@ impl FoldMap {
         }
 
         // Find the first fold that starts at or after buffer_row
-        let idx = self.fold_summaries.partition_point(|s| s.region.start_line < buffer_row_usize);
+        let idx = self
+            .fold_summaries
+            .partition_point(|s| s.region.start_line < buffer_row_usize);
 
         // Check if we're inside the previous fold
         if idx > 0 {
             let prev = &self.fold_summaries[idx - 1];
-            if buffer_row_usize > prev.region.start_line && buffer_row_usize <= prev.region.end_line {
+            if buffer_row_usize > prev.region.start_line && buffer_row_usize <= prev.region.end_line
+            {
                 // Inside a fold - map to the fold start line
                 return (prev.region.start_line as u32).saturating_sub(prev.hidden_before);
             }

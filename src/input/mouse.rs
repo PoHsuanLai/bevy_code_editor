@@ -1,11 +1,11 @@
-use bevy::prelude::*;
-use bevy::input::mouse::MouseWheel;
-use bevy::window::PrimaryWindow;
-use crate::types::*;
 use crate::settings::*;
+use crate::types::*;
+use bevy::input::mouse::MouseWheel;
+use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
 
 #[cfg(feature = "lsp")]
-use crate::lsp::{LspMessage, reset_hover_state};
+use crate::lsp::{reset_hover_state, LspMessage};
 
 /// Mouse drag state for selection
 #[derive(Resource, Default)]
@@ -14,9 +14,15 @@ pub struct MouseDragState {
     pub is_dragging: bool,
     /// Position where drag started (character index)
     pub drag_start_pos: Option<usize>,
+    /// Scroll offset when drag started (to prevent auto-scroll from affecting selection)
+    pub drag_start_scroll_offset: f32,
+    /// Last screen position of the mouse (to detect actual mouse movement vs scroll changes)
+    pub last_screen_pos: Option<Vec2>,
 }
 
 /// Convert screen coordinates to character position in the editor
+/// screen_pos should already be in viewport-local coordinates (0,0 at top-left of viewport)
+/// scroll_offset_override: if provided, use this instead of state.scroll_offset (for stable drag selection)
 fn screen_to_char_pos(
     screen_pos: Vec2,
     state: &CodeEditorState,
@@ -25,15 +31,19 @@ fn screen_to_char_pos(
     _viewport_width: f32,
     _viewport_height: f32,
     fold_state: &FoldState,
+    scroll_offset_override: Option<f32>,
 ) -> usize {
-    // Calculate the clicked position relative to code start, accounting for sidebar offset
-    // Note: scroll_offset is negative when scrolled down, and screen_pos.y is 0 at top in window coords
-    // But Bevy's cursor_position() returns (0,0) at top-left, so we need to account for that
-    let relative_x = screen_pos.x - viewport.text_area_left - viewport.offset_x;
+    // Calculate the clicked position relative to code start
+    // Note: screen_pos is already viewport-local, so no offset_x needed
+    // scroll_offset is negative when scrolled down
+    let relative_x = screen_pos.x - viewport.text_area_left;
+
+    // Use override if provided (for drag operations), otherwise use current scroll
+    let scroll_offset = scroll_offset_override.unwrap_or(state.scroll_offset);
 
     // scroll_offset is negative when scrolled, so -scroll_offset gives how many pixels we've scrolled
-    // screen_pos.y starts at 0 at top of window
-    let relative_y = screen_pos.y - viewport.text_area_top - state.scroll_offset;
+    // screen_pos.y starts at 0 at top of viewport
+    let relative_y = screen_pos.y - viewport.text_area_top - scroll_offset;
 
     // Calculate line and column from pixel position
     let line_height = font.line_height;
@@ -73,32 +83,59 @@ pub fn handle_mouse_input(
     #[cfg(feature = "lsp")] lsp_client: Res<crate::lsp::LspClient>,
     #[cfg(feature = "lsp")] lsp_sync: Res<crate::lsp::LspSyncState>,
     #[cfg(feature = "lsp")] mut hover_state: ResMut<crate::lsp::HoverState>,
-    #[cfg(feature = "lsp")] hover_settings: Res<crate::lsp::LspSettings>,
+    #[cfg(feature = "lsp")] hover_settings: Res<crate::settings::LspSettings>,
 ) {
     // Get cursor position
-    let cursor_pos_screen = window_query.iter().next()
+    let cursor_pos_screen = window_query
+        .iter()
+        .next()
         .and_then(|window| window.cursor_position());
 
     // Calculate char position if mouse is over the editor
     let char_pos = if let Some(cursor_pos_screen) = cursor_pos_screen {
-        // Check if mouse is within the editor area
         // cursor_position() returns window coordinates: (0,0) at top-left, Y increases downward
         let viewport_width = viewport.width as f32;
         let viewport_height = viewport.height as f32;
 
-        // Window coordinate bounds (0 to width, 0 to height)
-        let mouse_in_editor_area = cursor_pos_screen.x >= 0.0 && cursor_pos_screen.x <= viewport_width &&
-                                 cursor_pos_screen.y >= 0.0 && cursor_pos_screen.y <= viewport_height;
+        // Get window dimensions to calculate viewport bounds in window coordinates
+        let window = window_query.iter().next();
+        let (window_width, window_height) = window
+            .map(|w| (w.width(), w.height()))
+            .unwrap_or((viewport_width, viewport_height));
+
+        // Calculate viewport bounds in window coordinates
+        // viewport.offset_x/offset_y are the center of the viewport in world coords
+        // World coords: center of window is (0,0), X+ is right, Y+ is up
+        // Window coords: top-left is (0,0), X+ is right, Y+ is down
+        let viewport_left =
+            (window_width / 2.0 + viewport.offset_x - viewport_width / 2.0).max(0.0);
+        let viewport_top =
+            (window_height / 2.0 - viewport.offset_y - viewport_height / 2.0).max(0.0);
+        let viewport_right = viewport_left + viewport_width;
+        let viewport_bottom = viewport_top + viewport_height;
+
+        // Check if mouse is within the editor viewport area
+        let mouse_in_editor_area = cursor_pos_screen.x >= viewport_left
+            && cursor_pos_screen.x <= viewport_right
+            && cursor_pos_screen.y >= viewport_top
+            && cursor_pos_screen.y <= viewport_bottom;
 
         if mouse_in_editor_area {
+            // Convert to viewport-local coordinates (0,0 at top-left of viewport)
+            let viewport_local_pos = Vec2::new(
+                cursor_pos_screen.x - viewport_left,
+                cursor_pos_screen.y - viewport_top,
+            );
+
             Some(screen_to_char_pos(
-                cursor_pos_screen,
+                viewport_local_pos,
                 &state,
                 &font,
                 &viewport,
                 viewport_width,
                 viewport_height,
                 &fold_state,
+                None, // Use current scroll offset for initial position calculation
             ))
         } else {
             None
@@ -114,15 +151,15 @@ pub fn handle_mouse_input(
         use lsp_types::Position;
 
         // Only process hover if enabled in settings
-        if hover_settings.hover_enabled {
+        if hover_settings.hover.enabled {
             if let Some(current_char_pos) = char_pos {
                 // If mouse moved to a different character
                 if hover_state.trigger_char_index != current_char_pos {
                     hover_state.trigger_char_index = current_char_pos;
                     // Use delay_ms from settings
                     hover_state.timer = Some(Timer::new(
-                        std::time::Duration::from_millis(hover_settings.hover_delay_ms),
-                        TimerMode::Once
+                        std::time::Duration::from_millis(hover_settings.hover.delay_ms),
+                        TimerMode::Once,
                     ));
                     hover_state.visible = false; // Hide previous hover immediately
                     hover_state.request_sent = false; // Reset request flag
@@ -136,7 +173,8 @@ pub fn handle_mouse_input(
                         let line_start = state.rope.line_to_char(line_index);
                         let line_len = state.rope.line(line_index).len_chars();
                         // Clamp column to actual line length (excluding newline)
-                        let char_in_line_index = (current_char_pos - line_start).min(line_len.saturating_sub(1));
+                        let char_in_line_index =
+                            (current_char_pos - line_start).min(line_len.saturating_sub(1));
 
                         let lsp_position = Position {
                             line: line_index as u32,
@@ -149,7 +187,8 @@ pub fn handle_mouse_input(
                                 position: lsp_position,
                             });
                             hover_state.request_sent = true;
-                            hover_state.pending_char_index = Some(current_char_pos); // Remember which position we requested
+                            hover_state.pending_char_index = Some(current_char_pos);
+                            // Remember which position we requested
                         }
                     }
                 }
@@ -163,22 +202,39 @@ pub fn handle_mouse_input(
         }
     }
 
-
     // Handle mouse button press
     if mouse_button.just_pressed(MouseButton::Left) {
         // Check for fold indicator click (in the fold gutter area)
         if let Some(cursor_pos_screen) = cursor_pos_screen {
             let line_height = font.line_height;
+            let viewport_width = viewport.width as f32;
+            let viewport_height = viewport.height as f32;
+
+            // Get window dimensions to calculate viewport bounds
+            let window = window_query.iter().next();
+            let (window_width, window_height) = window
+                .map(|w| (w.width(), w.height()))
+                .unwrap_or((viewport_width, viewport_height));
+
+            // Calculate viewport bounds in window coordinates
+            let viewport_left =
+                (window_width / 2.0 + viewport.offset_x - viewport_width / 2.0).max(0.0);
+            let viewport_top =
+                (window_height / 2.0 - viewport.offset_y - viewport_height / 2.0).max(0.0);
+
+            // Convert to viewport-local coordinates
+            let local_x = cursor_pos_screen.x - viewport_left;
+            let local_y = cursor_pos_screen.y - viewport_top;
 
             // Fold gutter is a narrow area just before the separator (where fold indicators are)
             // Fold indicators are positioned at: separator_x - 12.0
             let gutter_start = viewport.separator_x - 18.0;
             let gutter_end = viewport.separator_x + 5.0;
 
-            // Check if click is in the fold gutter area (horizontally)
-            if cursor_pos_screen.x >= gutter_start && cursor_pos_screen.x < gutter_end {
+            // Check if click is in the fold gutter area (horizontally) using viewport-local coords
+            if local_x >= gutter_start && local_x < gutter_end {
                 // Calculate which display row was clicked
-                let relative_y = cursor_pos_screen.y - viewport.text_area_top + state.scroll_offset;
+                let relative_y = local_y - viewport.text_area_top + state.scroll_offset;
                 let display_row = (relative_y / line_height).max(0.0) as usize;
 
                 // Convert display row to buffer line
@@ -206,7 +262,9 @@ pub fn handle_mouse_input(
             #[cfg(feature = "lsp")]
             {
                 // Go to definition on Ctrl + Click
-                if keyboard_input.pressed(KeyCode::ControlLeft) || keyboard_input.pressed(KeyCode::ControlRight) {
+                if keyboard_input.pressed(KeyCode::ControlLeft)
+                    || keyboard_input.pressed(KeyCode::ControlRight)
+                {
                     use lsp_types::Position;
 
                     let line_index = state.rope.char_to_line(char_pos);
@@ -228,7 +286,8 @@ pub fn handle_mouse_input(
             }
 
             // Check for Alt+Click to add a new cursor
-            let alt_pressed = keyboard_input.pressed(KeyCode::AltLeft) || keyboard_input.pressed(KeyCode::AltRight);
+            let alt_pressed = keyboard_input.pressed(KeyCode::AltLeft)
+                || keyboard_input.pressed(KeyCode::AltRight);
 
             if alt_pressed {
                 // Add cursor at clicked position
@@ -240,9 +299,11 @@ pub fn handle_mouse_input(
                 return;
             }
 
-            // Start drag
+            // Start drag - capture scroll offset and screen position to prevent auto-scroll from affecting selection
             drag_state.is_dragging = true;
             drag_state.drag_start_pos = Some(char_pos);
+            drag_state.drag_start_scroll_offset = state.scroll_offset;
+            drag_state.last_screen_pos = cursor_pos_screen;
 
             // Clear secondary cursors on regular click
             if state.has_multiple_cursors() {
@@ -273,23 +334,56 @@ pub fn handle_mouse_input(
 
     // Handle dragging (mouse held and moving)
     if drag_state.is_dragging && mouse_button.pressed(MouseButton::Left) {
-        if let (Some(cursor_pos_screen), Some(start_pos)) = (cursor_pos_screen, drag_state.drag_start_pos) {
-            let current_pos = screen_to_char_pos(
-                cursor_pos_screen,
-                &state,
-                &font,
-                &viewport,
-                viewport.width as f32,
-                viewport.height as f32,
-                &fold_state,
-            );
+        if let (Some(cursor_pos_screen), Some(start_pos)) =
+            (cursor_pos_screen, drag_state.drag_start_pos)
+        {
+            // Only process drag if mouse actually moved (prevents auto-scroll from creating selections)
+            let mouse_moved = drag_state
+                .last_screen_pos
+                .map(|last| (cursor_pos_screen - last).length() > 2.0)
+                .unwrap_or(false);
 
-            // Only update if position changed
-            if current_pos != state.cursor_pos {
-                state.cursor_pos = current_pos;
-                state.selection_start = Some(start_pos);
-                state.selection_end = Some(current_pos);
-                state.pending_update = true;
+            if mouse_moved {
+                // Update last screen position
+                drag_state.last_screen_pos = Some(cursor_pos_screen);
+
+                // Convert window coordinates to viewport-local coordinates
+                let viewport_width = viewport.width as f32;
+                let viewport_height = viewport.height as f32;
+                let window = window_query.iter().next();
+                let (window_width, window_height) = window
+                    .map(|w| (w.width(), w.height()))
+                    .unwrap_or((viewport_width, viewport_height));
+
+                let viewport_left =
+                    (window_width / 2.0 + viewport.offset_x - viewport_width / 2.0).max(0.0);
+                let viewport_top =
+                    (window_height / 2.0 - viewport.offset_y - viewport_height / 2.0).max(0.0);
+
+                let viewport_local_pos = Vec2::new(
+                    cursor_pos_screen.x - viewport_left,
+                    cursor_pos_screen.y - viewport_top,
+                );
+
+                // Use the scroll offset from drag start to prevent auto-scroll from affecting selection
+                let current_pos = screen_to_char_pos(
+                    viewport_local_pos,
+                    &state,
+                    &font,
+                    &viewport,
+                    viewport_width,
+                    viewport_height,
+                    &fold_state,
+                    Some(drag_state.drag_start_scroll_offset),
+                );
+
+                // Only update if position changed
+                if current_pos != state.cursor_pos {
+                    state.cursor_pos = current_pos;
+                    state.selection_start = Some(start_pos);
+                    state.selection_end = Some(current_pos);
+                    state.pending_update = true;
+                }
             }
         }
     }
@@ -330,14 +424,17 @@ pub fn handle_mouse_wheel(
 
                 // Clamp horizontal scroll:
                 // Minimum is 0 (can't scroll left past column 0)
-                let max_horizontal_scroll = (state.max_content_width - available_text_width).max(0.0);
+                let max_horizontal_scroll =
+                    (state.max_content_width - available_text_width).max(0.0);
 
                 if use_smooth {
-                    state.target_horizontal_scroll_offset = state.target_horizontal_scroll_offset
+                    state.target_horizontal_scroll_offset = state
+                        .target_horizontal_scroll_offset
                         .max(0.0)
                         .min(max_horizontal_scroll);
                 } else {
-                    state.horizontal_scroll_offset = state.horizontal_scroll_offset
+                    state.horizontal_scroll_offset = state
+                        .horizontal_scroll_offset
                         .max(0.0)
                         .min(max_horizontal_scroll);
                 }
@@ -361,15 +458,12 @@ pub fn handle_mouse_wheel(
             if use_smooth {
                 // Update target for smooth scrolling
                 state.target_scroll_offset += scroll_delta;
-                state.target_scroll_offset = state.target_scroll_offset
-                    .min(0.0)
-                    .max(max_scroll.min(0.0));
+                state.target_scroll_offset =
+                    state.target_scroll_offset.min(0.0).max(max_scroll.min(0.0));
             } else {
                 // Direct update
                 state.scroll_offset += scroll_delta;
-                state.scroll_offset = state.scroll_offset
-                    .min(0.0)
-                    .max(max_scroll.min(0.0));
+                state.scroll_offset = state.scroll_offset.min(0.0).max(max_scroll.min(0.0));
             }
 
             scrolled = true;

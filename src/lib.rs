@@ -38,37 +38,36 @@
 //! }
 //! ```
 
+pub mod display_map;
+pub mod events;
+pub mod gpu_text;
+pub mod input;
+pub mod language;
+pub mod line_width;
 pub mod plugin;
 pub mod settings;
-pub mod types;
-pub mod input;
-pub mod display_map;
-pub mod line_width;
-pub mod gpu_text;
 pub mod syntax;
-pub mod events;
+pub mod types;
 
 #[cfg(feature = "lsp")]
 pub mod lsp;
 
 pub mod prelude {
     //! Convenient re-exports for common usage
+    pub use crate::events::*;
+    pub use crate::input::*;
+    pub use crate::language::{Language, TreeSitterConfig};
     pub use crate::plugin::{
-        CodeEditorPlugin, EditorInputManager, EditorUiPlugin,
-        ScrollbarPlugin, Scrollbar,
-        InputSet, ApplyStateSet, RenderingSet, EditorSetupSet,
+        ApplyStateSet, CodeEditorPlugin, EditorInputManager, EditorSetupSet, EditorUiPlugin,
+        InputSet, RenderingSet, Scrollbar, ScrollbarPlugin,
     };
     pub use crate::settings::*;
     pub use crate::types::*;
-    pub use crate::input::*;
-    pub use crate::events::*;
 
     // Selective re-exports from display_map to avoid name conflicts with types.rs
     pub use crate::display_map::{
-        LayeredDisplayMap, DisplaySnapshot, DisplayMapLayer,
-        BufferPoint, FoldPoint, WrapPoint, DisplayPoint, Point,
-        FoldMap, WrapMap, TabMap,
-        BufferRowDisplayInfo, DisplayRowInfo,
+        BufferPoint, BufferRowDisplayInfo, DisplayMapLayer, DisplayPoint, DisplayRowInfo,
+        DisplaySnapshot, FoldMap, FoldPoint, LayeredDisplayMap, Point, TabMap, WrapMap, WrapPoint,
     };
 
     #[cfg(feature = "lsp")]

@@ -1,22 +1,24 @@
-use bevy::prelude::*;
-use bevy::input::keyboard::KeyboardInput;
-use leafwing_input_manager::prelude::*;
-use std::time::Instant;
-use crate::types::*;
-use crate::settings::{CursorSettings, BracketSettings, IndentationSettings};
-#[cfg(feature = "lsp")]
-use crate::settings::LspSettings;
-use crate::plugin::EditorInputManager;
-use super::keybindings::EditorAction;
 use super::actions::{
-    insert_char, execute_action, insert_closing_char,
-    get_closing_bracket, get_closing_quote, should_skip_auto_close,
+    execute_action, get_closing_bracket, get_closing_quote, insert_char, insert_closing_char,
+    should_skip_auto_close,
 };
 #[cfg(feature = "lsp")]
-use super::actions::{send_did_change, request_completion, update_completion_filter, find_word_start};
+use super::actions::{
+    find_word_start, request_completion, send_did_change, update_completion_filter,
+};
+use super::keybindings::EditorAction;
+use crate::plugin::EditorInputManager;
+#[cfg(feature = "lsp")]
+use crate::settings::LspSettings;
+use crate::settings::{BracketSettings, CursorSettings, IndentationSettings};
+use crate::types::*;
+use bevy::input::keyboard::KeyboardInput;
+use bevy::prelude::*;
+use leafwing_input_manager::prelude::*;
+use std::time::Instant;
 
 /// All possible editor actions for iteration
-const ALL_ACTIONS: [EditorAction; 48] = [
+const ALL_ACTIONS: [EditorAction; 45] = [
     EditorAction::DeleteBackward,
     EditorAction::DeleteForward,
     EditorAction::DeleteWordBackward,
@@ -51,9 +53,6 @@ const ALL_ACTIONS: [EditorAction; 48] = [
     EditorAction::Paste,
     EditorAction::Undo,
     EditorAction::Redo,
-    EditorAction::Find,
-    EditorAction::FindNext,
-    EditorAction::FindPrevious,
     EditorAction::Replace,
     EditorAction::GotoLine,
     EditorAction::RequestCompletion,
@@ -76,12 +75,13 @@ pub fn handle_keyboard_input(
     brackets: Res<BracketSettings>,
     indentation: Res<IndentationSettings>,
     #[cfg(feature = "lsp")] lsp: Res<LspSettings>,
-    mut find_state: ResMut<FindState>,
     mut goto_line_state: ResMut<GotoLineState>,
     mut fold_state: ResMut<FoldState>,
     mut key_repeat_state: ResMut<KeyRepeatState>,
-    mut save_events: MessageWriter<crate::types::SaveRequested>,
-    mut open_events: MessageWriter<crate::types::OpenRequested>,
+    (mut save_events, mut open_events): (
+        MessageWriter<crate::types::SaveRequested>,
+        MessageWriter<crate::types::OpenRequested>,
+    ),
     #[cfg(feature = "lsp")] lsp_client: Res<crate::lsp::LspClient>,
     #[cfg(feature = "lsp")] mut completion_state: ResMut<crate::lsp::CompletionState>,
     #[cfg(feature = "lsp")] mut rename_state: ResMut<crate::lsp::state::RenameState>,
@@ -232,17 +232,18 @@ pub fn handle_keyboard_input(
                             // Check for quote skip-over (typing closing quote when already there)
                             if brackets.auto_close_quotes
                                 && get_closing_quote(c).is_some()
-                                    && should_skip_auto_close(&state, c) {
-                                        // Just move cursor past the existing quote
-                                        state.move_cursor(1);
-                                        state.pending_update = true;
-                                        continue;
-                                    }
+                                && should_skip_auto_close(&state, c)
+                            {
+                                // Just move cursor past the existing quote
+                                state.move_cursor(1);
+                                state.pending_update = true;
+                                continue;
+                            }
 
                             // Check for bracket skip-over (typing closing bracket when already there)
                             if brackets.auto_close {
-                                let is_closing_bracket = brackets.pairs.iter()
-                                    .any(|(_, close)| *close == c);
+                                let is_closing_bracket =
+                                    brackets.pairs.iter().any(|(_, close)| *close == c);
                                 if is_closing_bracket && should_skip_auto_close(&state, c) {
                                     // Just move cursor past the existing bracket
                                     state.move_cursor(1);
@@ -291,26 +292,90 @@ pub fn handle_keyboard_input(
                             // Auto-trigger completion on trigger chars, OR update filter if already visible
                             #[cfg(feature = "lsp")]
                             if lsp.completion.enabled {
-                                if lsp.completion.trigger_characters.contains(&c) {
-                                    // Trigger character (. or ::) - open new completion
-                                    // Mark completion as not visible to force start_char_index reset
-                                    completion_state.visible = false;
-                                    request_completion(&state, &lsp_client, &mut completion_state, &lsp_sync);
-                                } else if completion_state.visible && (c.is_alphanumeric() || c == '_') {
-                                    // Completion visible and typing identifier chars - update filter
-                                    update_completion_filter(&state, &mut completion_state);
-                                } else if !completion_state.visible && (c.is_alphanumeric() || c == '_') {
-                                    // Not visible yet - check if we should auto-trigger after N chars
-                                    // Find the start of the current word
-                                    let word_start = find_word_start(&state.rope, state.cursor_pos);
-                                    let word_len = state.cursor_pos - word_start;
+                                // Check for trigger characters (including multi-char like "::")
+                                let mut is_trigger = false;
+                                let cursor_pos = state.cursor_pos;
 
-                                    // Trigger after min_word_length characters (configurable, like VSCode's 3)
-                                    if word_len >= lsp.completion.min_word_length {
-                                        // Set start_char_index to word start so filter works correctly
-                                        completion_state.start_char_index = word_start;
-                                        request_completion(&state, &lsp_client, &mut completion_state, &lsp_sync);
+                                for trigger in &lsp.completion.trigger_characters {
+                                    if trigger.len() == 1 {
+                                        // Single character trigger (like ".")
+                                        if c.to_string() == *trigger {
+                                            is_trigger = true;
+                                            #[cfg(debug_assertions)]
+                                            eprintln!(
+                                                "[LSP] Single-char trigger detected: '{}'",
+                                                trigger
+                                            );
+                                            break;
+                                        }
+                                    } else {
+                                        // Multi-character trigger (like "::")
+                                        // Check if we just completed typing this trigger
+                                        if cursor_pos >= trigger.len() {
+                                            let start = cursor_pos - trigger.len();
+                                            let recent_text: String = state
+                                                .rope
+                                                .slice(start..cursor_pos)
+                                                .chars()
+                                                .collect();
+                                            #[cfg(debug_assertions)]
+                                            eprintln!("[LSP] Checking multi-char trigger '{}' against recent text '{}'", trigger, recent_text);
+                                            if recent_text == *trigger {
+                                                is_trigger = true;
+                                                #[cfg(debug_assertions)]
+                                                eprintln!(
+                                                    "[LSP] Multi-char trigger MATCHED: '{}'",
+                                                    trigger
+                                                );
+                                                break;
+                                            }
+                                        }
                                     }
+                                }
+
+                                if is_trigger {
+                                    // Trigger character detected - open new completion
+                                    // Mark completion as not visible to force start_char_index reset
+                                    #[cfg(debug_assertions)]
+                                    eprintln!("[LSP] Trigger detected, requesting completion, was_visible={}", completion_state.visible);
+                                    completion_state.visible = false;
+                                    request_completion(
+                                        &state,
+                                        &lsp_client,
+                                        &mut completion_state,
+                                        &lsp_sync,
+                                    );
+                                } else if (c.is_alphanumeric() || c == '_') {
+                                    // Typing identifier characters
+                                    if completion_state.visible {
+                                        // Completion already visible - update filter
+                                        #[cfg(debug_assertions)]
+                                        eprintln!("[LSP] Completion visible, updating filter for char '{}'", c);
+                                        update_completion_filter(&state, &mut completion_state);
+                                    } else {
+                                        // Not visible yet - check if we should auto-trigger after N chars
+                                        let word_start =
+                                            find_word_start(&state.rope, state.cursor_pos);
+                                        let word_len = state.cursor_pos - word_start;
+
+                                        // Trigger after min_word_length characters (configurable, like VSCode's 3)
+                                        if word_len >= lsp.completion.min_word_length {
+                                            // Set start_char_index to word start so filter works correctly
+                                            completion_state.start_char_index = word_start;
+                                            request_completion(
+                                                &state,
+                                                &lsp_client,
+                                                &mut completion_state,
+                                                &lsp_sync,
+                                            );
+                                        }
+                                    }
+                                } else if completion_state.visible {
+                                    // Non-identifier, non-trigger character while completion is visible - dismiss it
+                                    #[cfg(debug_assertions)]
+                                    eprintln!("[LSP] Non-identifier char '{}' while completion visible, dismissing", c);
+                                    completion_state.visible = false;
+                                    completion_state.filter.clear();
                                 }
                             }
                         }
@@ -356,9 +421,11 @@ pub fn handle_keyboard_input(
         #[cfg(feature = "lsp")]
         if action == EditorAction::RenameSymbol {
             eprintln!("[Rename] RenameSymbol action triggered");
-            eprintln!("[Rename] supports_rename: {}, supports_prepare_rename: {}",
+            eprintln!(
+                "[Rename] supports_rename: {}, supports_prepare_rename: {}",
                 lsp_client.capabilities.supports_rename(),
-                lsp_client.capabilities.supports_prepare_rename());
+                lsp_client.capabilities.supports_prepare_rename()
+            );
             eprintln!("[Rename] document_uri: {:?}", lsp_sync.document_uri);
 
             if lsp_client.capabilities.supports_rename() {
@@ -374,7 +441,10 @@ pub fn handle_keyboard_input(
                         character: character as u32,
                     };
 
-                    eprintln!("[Rename] Requesting prepare rename at line={}, char={}", position.line, position.character);
+                    eprintln!(
+                        "[Rename] Requesting prepare rename at line={}, char={}",
+                        position.line, position.character
+                    );
 
                     // Start prepare rename flow
                     rename_state.start_prepare(position);
@@ -387,8 +457,24 @@ pub fn handle_keyboard_input(
         }
 
         #[cfg(not(feature = "lsp"))]
-        execute_action(&mut state, action, &indentation, &mut find_state, &mut goto_line_state, &mut fold_state);
+        execute_action(
+            &mut state,
+            action,
+            &indentation,
+            &mut goto_line_state,
+            &mut fold_state,
+        );
         #[cfg(feature = "lsp")]
-        execute_action(&mut state, action, &indentation, &lsp, &mut find_state, &mut goto_line_state, &mut fold_state, &lsp_client, &mut completion_state, &mut lsp_sync);
+        execute_action(
+            &mut state,
+            action,
+            &indentation,
+            &lsp,
+            &mut goto_line_state,
+            &mut fold_state,
+            &lsp_client,
+            &mut completion_state,
+            &mut lsp_sync,
+        );
     }
 }

@@ -3,8 +3,8 @@
 //! Uses cosmic_text (same as Zed) for high-quality font rasterization.
 //! Glyphs are rasterized once and cached in a texture atlas for efficient GPU rendering.
 
-use bevy::prelude::*;
 use bevy::asset::RenderAssetUsages;
+use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use cosmic_text::{CacheKey, FontSystem, SwashCache};
 use std::collections::HashMap;
@@ -136,7 +136,10 @@ impl GlyphAtlas {
     }
 
     /// Find or load a font by path or family name
-    fn find_or_load_font(font_system: &mut FontSystem, font_path: &str) -> Option<cosmic_text::fontdb::ID> {
+    fn find_or_load_font(
+        font_system: &mut FontSystem,
+        font_path: &str,
+    ) -> Option<cosmic_text::fontdb::ID> {
         // First, try to load as a file path
         if font_path.ends_with(".ttf") || font_path.ends_with(".otf") {
             // Try different base paths
@@ -159,7 +162,9 @@ impl GlyphAtlas {
                     if count_after > count_before {
                         if let Some(face) = db.faces().last() {
                             // Get the font family name for logging
-                            let family_name = face.families.first()
+                            let family_name = face
+                                .families
+                                .first()
                                 .map(|f| f.0.as_str())
                                 .unwrap_or("Unknown");
                             info!("GPU Text: Loaded font '{}' from {}", family_name, path);
@@ -179,7 +184,9 @@ impl GlyphAtlas {
                 .and_then(|s| s.to_str())
                 .map(|s| {
                     // Convert "FiraMono-Regular" to "Fira Mono"
-                    s.split('-').next().unwrap_or(s)
+                    s.split('-')
+                        .next()
+                        .unwrap_or(s)
                         .chars()
                         .fold(String::new(), |mut acc, c| {
                             if c.is_uppercase() && !acc.is_empty() && !acc.ends_with(' ') {
@@ -211,12 +218,19 @@ impl GlyphAtlas {
         }
 
         // Fall back to any monospace font
-        warn!("GPU Text: Could not find font '{}', using system monospace fallback", font_path);
+        warn!(
+            "GPU Text: Could not find font '{}', using system monospace fallback",
+            font_path
+        );
         None
     }
 
     /// Get or create a glyph entry in the atlas
-    pub fn get_or_insert(&mut self, key: GlyphKey, rasterize: impl FnOnce() -> Option<RasterizedGlyph>) -> Option<GlyphInfo> {
+    pub fn get_or_insert(
+        &mut self,
+        key: GlyphKey,
+        rasterize: impl FnOnce() -> Option<RasterizedGlyph>,
+    ) -> Option<GlyphInfo> {
         if let Some(info) = self.glyphs.get(&key) {
             return Some(*info);
         }
@@ -231,10 +245,7 @@ impl GlyphAtlas {
         self.copy_glyph_to_atlas(x, y, &glyph);
 
         // Calculate UV coordinates
-        let uv_min = Vec2::new(
-            x as f32 / ATLAS_SIZE as f32,
-            y as f32 / ATLAS_SIZE as f32,
-        );
+        let uv_min = Vec2::new(x as f32 / ATLAS_SIZE as f32, y as f32 / ATLAS_SIZE as f32);
         let uv_max = Vec2::new(
             (x + glyph.width) as f32 / ATLAS_SIZE as f32,
             (y + glyph.height) as f32 / ATLAS_SIZE as f32,
@@ -245,7 +256,10 @@ impl GlyphAtlas {
         let info = GlyphInfo {
             uv_min,
             uv_max,
-            size: Vec2::new(glyph.width as f32 / DPI_SCALE, glyph.height as f32 / DPI_SCALE),
+            size: Vec2::new(
+                glyph.width as f32 / DPI_SCALE,
+                glyph.height as f32 / DPI_SCALE,
+            ),
             offset: Vec2::new(glyph.bearing_x, glyph.bearing_y),
             advance: glyph.advance,
         };
@@ -272,16 +286,12 @@ impl GlyphAtlas {
         } else {
             let db = self.font_system.db();
             // Find a monospace font first for code editing
-            db.faces().find_map(|face| {
-                if face.monospaced {
-                    Some(face.id)
-                } else {
-                    None
-                }
-            }).or_else(|| {
-                // Fall back to any font
-                db.faces().next().map(|f| f.id)
-            })?
+            db.faces()
+                .find_map(|face| if face.monospaced { Some(face.id) } else { None })
+                .or_else(|| {
+                    // Fall back to any font
+                    db.faces().next().map(|f| f.id)
+                })?
         };
 
         // Get the font
@@ -314,7 +324,9 @@ impl GlyphAtlas {
         );
 
         // Get the rasterized image at higher resolution
-        let image = self.swash_cache.get_image_uncached(&mut self.font_system, cache_key.0)?;
+        let image = self
+            .swash_cache
+            .get_image_uncached(&mut self.font_system, cache_key.0)?;
 
         // Handle empty glyphs (like space)
         if image.placement.width == 0 || image.placement.height == 0 {
@@ -348,9 +360,11 @@ impl GlyphAtlas {
             }
             cosmic_text::SwashContent::SubpixelMask => {
                 // Subpixel rendering, convert to grayscale
-                image.data.chunks(3).map(|pixel| {
-                    ((pixel[0] as u16 + pixel[1] as u16 + pixel[2] as u16) / 3) as u8
-                }).collect()
+                image
+                    .data
+                    .chunks(3)
+                    .map(|pixel| ((pixel[0] as u16 + pixel[1] as u16 + pixel[2] as u16) / 3) as u8)
+                    .collect()
             }
         };
 
@@ -415,7 +429,7 @@ impl GlyphAtlas {
                 if dst_idx + 3 < self.pixels.len() && src_idx < glyph.pixels.len() {
                     let alpha = glyph.pixels[src_idx];
                     // Store as white with alpha (for colored text)
-                    self.pixels[dst_idx] = 255;     // R
+                    self.pixels[dst_idx] = 255; // R
                     self.pixels[dst_idx + 1] = 255; // G
                     self.pixels[dst_idx + 2] = 255; // B
                     self.pixels[dst_idx + 3] = alpha; // A
