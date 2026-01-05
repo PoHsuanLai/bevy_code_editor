@@ -2,15 +2,24 @@
 //!
 //! Renders text using custom GPU-accelerated glyph atlas and shaders
 
-mod brackets;
 mod cursor;
 mod editor_ui_plugin;
-mod folding;
+mod gpu_line_numbers;
 mod gpu_text_render;
-mod minimap;
-mod scrollbar;
 mod syntax_highlighting;
 mod ui_elements;
+
+#[cfg(feature = "brackets")]
+mod brackets;
+
+#[cfg(feature = "folding")]
+mod folding;
+
+#[cfg(feature = "minimap")]
+mod minimap;
+
+#[cfg(feature = "scrollbar")]
+mod scrollbar;
 
 #[cfg(feature = "lsp")]
 mod lsp_plugin;
@@ -18,14 +27,22 @@ mod lsp_plugin;
 #[cfg(feature = "lsp")]
 mod lsp_ui_plugin;
 
-pub(crate) use brackets::*;
 pub(crate) use cursor::*;
-pub(crate) use folding::*;
+pub(crate) use gpu_line_numbers::*;
 pub(crate) use gpu_text_render::*;
-pub(crate) use minimap::*;
 pub(crate) use ui_elements::*;
 
+#[cfg(feature = "brackets")]
+pub(crate) use brackets::*;
+
+#[cfg(feature = "folding")]
+pub(crate) use folding::*;
+
+#[cfg(feature = "minimap")]
+pub(crate) use minimap::*;
+
 // Re-export scrollbar plugin publicly
+#[cfg(feature = "scrollbar")]
 pub use scrollbar::{mouse_not_over_scrollbar, Scrollbar, ScrollbarPlugin};
 
 // Re-export syntax plugin publicly
@@ -156,17 +173,28 @@ impl Plugin for CodeEditorPlugin {
         app.insert_resource(ClearColor(self.settings.theme.background));
         app.init_resource::<ViewportConfig>();
         app.insert_resource(ViewportDimensions::default());
-        app.insert_resource(BracketMatchState::default());
         app.insert_resource(GotoLineState::default());
-        app.insert_resource(MinimapHoverState::default());
-        app.insert_resource(MinimapDragState::default());
         app.insert_resource(FoldState::default());
         app.insert_resource(gpu_text_render::LineMeshPool::default());
+
+        // Feature-gated resources
+        #[cfg(feature = "brackets")]
+        app.insert_resource(BracketMatchState::default());
+
+        #[cfg(feature = "minimap")]
+        {
+            app.insert_resource(MinimapHoverState::default());
+            app.insert_resource(MinimapDragState::default());
+        }
+
+        #[cfg(feature = "folding")]
+        app.insert_resource(FoldState::default());
 
         // Add the GPU text rendering plugin
         app.add_plugins(GpuTextPlugin);
 
-        // Add the scrollbar plugin
+        // Add the scrollbar plugin (feature-gated)
+        #[cfg(feature = "scrollbar")]
         app.add_plugins(scrollbar::ScrollbarPlugin);
 
         // Add the syntax highlighting plugin
@@ -176,10 +204,22 @@ impl Plugin for CodeEditorPlugin {
 
         // GPU text rendering systems - split into smaller groups to avoid tuple limits
         // Input systems - handle user input and write to target state
+        #[cfg(feature = "scrollbar")]
         app.add_systems(
             Update,
             (
                 crate::input::handle_mouse_input.run_if(mouse_not_over_scrollbar),
+                crate::input::handle_mouse_wheel,
+            )
+                .chain()
+                .in_set(InputSet),
+        );
+
+        #[cfg(not(feature = "scrollbar"))]
+        app.add_systems(
+            Update,
+            (
+                crate::input::handle_mouse_input,
                 crate::input::handle_mouse_wheel,
             )
                 .chain()
@@ -199,14 +239,23 @@ impl Plugin for CodeEditorPlugin {
                 .in_set(ApplyStateSet),
         );
         // Rendering systems - update visuals based on state
+        #[cfg(feature = "folding")]
         app.add_systems(
             Update,
             (
                 detect_foldable_regions,
-                // Note: handle_scroll_for_gpu_text removed - per-line renderer handles scroll natively
-                update_gpu_text_per_line, // NEW: Per-line mesh system for incremental updates
+                update_gpu_text_per_line,
             )
                 .chain()
+                .run_if(crate::gpu_text::atlas_ready)
+                .in_set(RenderingSet),
+        );
+
+        #[cfg(not(feature = "folding"))]
+        app.add_systems(
+            Update,
+            update_gpu_text_per_line
+                .run_if(crate::gpu_text::atlas_ready)
                 .in_set(RenderingSet),
         );
 

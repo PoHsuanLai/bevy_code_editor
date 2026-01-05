@@ -1,193 +1,9 @@
-//! UI elements: line numbers, selection, indent guides
+//! UI elements: selection, indent guides
 
 use super::editor_ui_plugin::EditorRenderConfig;
-use super::to_bevy_coords_left_aligned;
 use crate::settings::*;
 use crate::types::*;
 use bevy::prelude::*;
-
-pub(crate) fn update_line_numbers(
-    mut commands: Commands,
-    state: Res<CodeEditorState>,
-    font: Res<FontSettings>,
-    theme: Res<ThemeSettings>,
-    ui: Res<UiSettings>,
-    wrapping: Res<WrappingSettings>,
-    performance: Res<PerformanceSettings>,
-    viewport: Res<ViewportDimensions>,
-    fold_state: Res<FoldState>,
-    render_config: Res<EditorRenderConfig>,
-    mut line_numbers_query: Query<
-        (&mut Text2d, &mut Transform, &mut Visibility, &mut TextColor),
-        With<LineNumbers>,
-    >,
-) {
-    // Hide all line numbers if disabled in settings
-    if !ui.show_line_numbers {
-        for (_, _, mut visibility, _) in line_numbers_query.iter_mut() {
-            *visibility = Visibility::Hidden;
-        }
-        return;
-    }
-
-    // Update line numbers when:
-    // - state.needs_update (text changed)
-    // - state.needs_scroll_update (scrolled)
-    // - fold_state changed
-    // - state was mutated this frame (cursor moved, etc.)
-    if !state.needs_update
-        && !state.needs_scroll_update
-        && !state.is_changed()
-        && !fold_state.is_changed()
-    {
-        return;
-    }
-
-    let line_height = font.line_height;
-    let font_size = font.size;
-
-    // Collect cursor lines for highlighting active line numbers
-    let cursor_lines: std::collections::HashSet<usize> = state
-        .cursors
-        .iter()
-        .map(|c| {
-            let pos = c.position.min(state.rope.len_chars());
-            state.rope.char_to_line(pos)
-        })
-        .collect();
-
-    // Check if we're using soft line wrapping
-    let use_wrapping = wrapping.enabled && state.display_map.wrap_width > 0;
-
-    // Use configurable buffer for viewport calculations
-    let buffer_lines = performance.viewport_buffer_lines as f32;
-    let viewport_top = -state.scroll_offset - line_height * buffer_lines;
-    let viewport_bottom = viewport_top + viewport.height as f32 + line_height * buffer_lines * 2.0;
-
-    let first_visible_display_row = ((viewport_top - viewport.text_area_top) / line_height)
-        .floor()
-        .max(0.0) as usize;
-    let last_visible_display_row =
-        ((viewport_bottom - viewport.text_area_top) / line_height).ceil() as usize;
-
-    let total_buffer_lines = state.line_count();
-
-    let mut existing_line_numbers: Vec<_> = line_numbers_query.iter_mut().collect();
-    let mut entity_index = 0;
-
-    // === OPTIMIZATION: Skip to visible start instead of iterating from 0 ===
-    let has_folding = !fold_state.regions.is_empty();
-
-    // Calculate starting buffer line and display row
-    let (start_buffer_line, mut current_display_row) = if has_folding {
-        // With folding, we need to iterate to find the right buffer line
-        let mut display_row = 0;
-        let mut buffer_line = 0;
-        while buffer_line < total_buffer_lines && display_row < first_visible_display_row {
-            if !fold_state.is_line_hidden(buffer_line) {
-                display_row += 1;
-            }
-            buffer_line += 1;
-        }
-        (buffer_line, display_row)
-    } else {
-        // No folding: display_row == buffer_line, jump directly
-        let start = first_visible_display_row.min(total_buffer_lines);
-        (start, start)
-    };
-
-    // Iterate over buffer lines starting from visible area
-    for buffer_line in start_buffer_line..total_buffer_lines {
-        // Skip lines that are hidden due to folding
-        if fold_state.is_line_hidden(buffer_line) {
-            continue;
-        }
-
-        // For wrapped mode, handle continuation rows
-        let is_continuation = if use_wrapping {
-            // In wrapped mode, we need to check if this display row is a continuation
-            // For now, we'll use the simpler approach without wrapping for folded content
-            false
-        } else {
-            false
-        };
-
-        // All lines from start_buffer_line should be in or after visible range
-        if current_display_row <= last_visible_display_row {
-            // Calculate Y position based on display row (not buffer line)
-            let y = viewport.text_area_top
-                + state.scroll_offset
-                + (current_display_row as f32 * line_height);
-            let translation = to_bevy_coords_left_aligned(
-                viewport.gutter_width / 2.0, // Center line numbers in gutter area
-                y,
-                viewport.width as f32,
-                viewport.height as f32,
-                0.0, // Camera viewport handles panel positioning
-                0.0, // line numbers don't scroll horizontally
-            );
-
-            // For continuation rows, show empty or continuation indicator
-            let line_number_text = if is_continuation {
-                // Show nothing or a continuation indicator for wrapped lines
-                String::new()
-            } else {
-                // Show actual buffer line number (1-indexed)
-                (buffer_line + 1).to_string()
-            };
-
-            // Use active color for cursor lines
-            let line_color = if cursor_lines.contains(&buffer_line) {
-                theme.line_numbers_active
-            } else {
-                theme.line_numbers
-            };
-
-            if entity_index < existing_line_numbers.len() {
-                let (ref mut text, ref mut transform, ref mut visibility, ref mut text_color) =
-                    &mut existing_line_numbers[entity_index];
-                text.0 = line_number_text;
-                transform.translation = translation;
-                text_color.0 = line_color;
-                **visibility = Visibility::Visible;
-            } else {
-                let text_font = TextFont {
-                    font: font.handle.clone().unwrap_or_default(),
-                    font_size,
-                    ..default()
-                };
-
-                let mut entity_cmd = commands.spawn((
-                    Text2d::new(line_number_text),
-                    text_font,
-                    TextColor(line_color),
-                    Transform::from_translation(translation),
-                    LineNumbers,
-                    Name::new(format!("LineNumber_buffer_{}", buffer_line)),
-                    Visibility::Visible,
-                ));
-                if let Some(ref layers) = render_config.render_layers {
-                    entity_cmd.insert(layers.clone());
-                }
-            }
-
-            entity_index += 1;
-        }
-
-        current_display_row += 1;
-
-        // Early exit if we've passed the visible area
-        if current_display_row > last_visible_display_row {
-            break;
-        }
-    }
-
-    // Hide unused line numbers
-    for i in entity_index..existing_line_numbers.len() {
-        let (_, _, ref mut visibility, _) = &mut existing_line_numbers[i];
-        **visibility = Visibility::Hidden;
-    }
-}
 
 /// Update selection highlight rectangles for all cursors
 pub(crate) fn update_selection_highlight(
@@ -607,10 +423,16 @@ pub(crate) fn animate_smooth_scroll(
     mut state: ResMut<CodeEditorState>,
     time: Res<Time>,
     scrolling: Res<ScrollingSettings>,
+    #[cfg(feature = "scrollbar")]
     scrollbar_drag: Res<super::scrollbar::ScrollbarDragState>,
 ) {
     // When dragging scrollbar or smooth scrolling disabled, apply target immediately
-    let use_smooth = scrolling.smooth && !scrollbar_drag.is_dragging;
+    #[cfg(feature = "scrollbar")]
+    let is_dragging = scrollbar_drag.is_dragging;
+    #[cfg(not(feature = "scrollbar"))]
+    let is_dragging = false;
+
+    let use_smooth = scrolling.smooth && !is_dragging;
 
     if !use_smooth {
         // Instant update - no interpolation
@@ -657,10 +479,12 @@ pub(crate) fn animate_smooth_scroll(
 /// Run condition: only run auto_scroll_to_cursor when cursor has moved and not dragging scrollbar
 pub(crate) fn should_auto_scroll(
     state: Res<CodeEditorState>,
+    #[cfg(feature = "scrollbar")]
     scrollbar_drag: Res<super::scrollbar::ScrollbarDragState>,
     mouse_drag: Res<crate::input::MouseDragState>,
 ) -> bool {
     // Don't run when dragging scrollbar
+    #[cfg(feature = "scrollbar")]
     if scrollbar_drag.is_dragging {
         return false;
     }

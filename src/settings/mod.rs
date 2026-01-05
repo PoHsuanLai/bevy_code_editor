@@ -7,12 +7,14 @@ mod core;
 mod cursor;
 mod minimap;
 mod performance;
-mod scrollbar;
 mod scrolling;
 mod search;
 mod syntax;
 mod ui;
 mod wrapping;
+
+#[cfg(feature = "scrollbar")]
+mod scrollbar;
 
 #[cfg(feature = "lsp")]
 mod lsp;
@@ -21,12 +23,14 @@ pub use core::*;
 pub use cursor::*;
 pub use minimap::*;
 pub use performance::*;
-pub use scrollbar::*;
 pub use scrolling::*;
 pub use search::*;
 pub use syntax::*;
 pub use ui::*;
 pub use wrapping::*;
+
+#[cfg(feature = "scrollbar")]
+pub use scrollbar::*;
 
 #[cfg(feature = "lsp")]
 pub use lsp::*;
@@ -50,7 +54,6 @@ pub struct EditorSettingsBuilder {
     ui: UiSettings,
     indentation: IndentationSettings,
     brackets: BracketSettings,
-    scrollbar: ScrollbarSettings,
     minimap: MinimapSettings,
     cursor: CursorSettings,
     cursor_line: CursorLineSettings,
@@ -59,6 +62,9 @@ pub struct EditorSettingsBuilder {
     syntax: SyntaxSettings,
     performance: PerformanceSettings,
     wrapping: WrappingSettings,
+
+    #[cfg(feature = "scrollbar")]
+    scrollbar: ScrollbarSettings,
 
     #[cfg(feature = "lsp")]
     lsp: LspSettings,
@@ -72,7 +78,6 @@ impl Default for EditorSettingsBuilder {
             ui: UiSettings::default(),
             indentation: IndentationSettings::default(),
             brackets: BracketSettings::default(),
-            scrollbar: ScrollbarSettings::default(),
             minimap: MinimapSettings::default(),
             cursor: CursorSettings::default(),
             cursor_line: CursorLineSettings::default(),
@@ -81,6 +86,9 @@ impl Default for EditorSettingsBuilder {
             syntax: SyntaxSettings::default(),
             performance: PerformanceSettings::default(),
             wrapping: WrappingSettings::default(),
+
+            #[cfg(feature = "scrollbar")]
+            scrollbar: ScrollbarSettings::default(),
 
             #[cfg(feature = "lsp")]
             lsp: LspSettings::default(),
@@ -133,6 +141,7 @@ impl EditorSettingsBuilder {
         self
     }
 
+    #[cfg(feature = "scrollbar")]
     pub fn scrollbar(mut self, scrollbar: ScrollbarSettings) -> Self {
         self.scrollbar = scrollbar;
         self
@@ -203,7 +212,6 @@ impl EditorSettingsBuilder {
             ui: self.ui,
             indentation: self.indentation,
             brackets: self.brackets,
-            scrollbar: self.scrollbar,
             minimap: self.minimap,
             cursor: self.cursor,
             cursor_line: self.cursor_line,
@@ -212,6 +220,9 @@ impl EditorSettingsBuilder {
             syntax: self.syntax,
             performance: self.performance,
             wrapping: self.wrapping,
+
+            #[cfg(feature = "scrollbar")]
+            scrollbar: self.scrollbar,
 
             #[cfg(feature = "lsp")]
             lsp: self.lsp,
@@ -228,7 +239,6 @@ pub struct SettingsBundle {
     pub ui: UiSettings,
     pub indentation: IndentationSettings,
     pub brackets: BracketSettings,
-    pub scrollbar: ScrollbarSettings,
     pub minimap: MinimapSettings,
     pub cursor: CursorSettings,
     pub cursor_line: CursorLineSettings,
@@ -237,6 +247,9 @@ pub struct SettingsBundle {
     pub syntax: SyntaxSettings,
     pub performance: PerformanceSettings,
     pub wrapping: WrappingSettings,
+
+    #[cfg(feature = "scrollbar")]
+    pub scrollbar: ScrollbarSettings,
 
     #[cfg(feature = "lsp")]
     pub lsp: LspSettings,
@@ -250,7 +263,6 @@ impl SettingsBundle {
         app.insert_resource(self.ui);
         app.insert_resource(self.indentation);
         app.insert_resource(self.brackets);
-        app.insert_resource(self.scrollbar);
         app.insert_resource(self.minimap);
         app.insert_resource(self.cursor);
         app.insert_resource(self.cursor_line);
@@ -259,6 +271,9 @@ impl SettingsBundle {
         app.insert_resource(self.syntax);
         app.insert_resource(self.performance);
         app.insert_resource(self.wrapping);
+
+        #[cfg(feature = "scrollbar")]
+        app.insert_resource(self.scrollbar);
 
         #[cfg(feature = "lsp")]
         app.insert_resource(self.lsp);

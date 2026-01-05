@@ -30,6 +30,9 @@ pub struct LineMeshEntity {
 pub struct LineMeshPool {
     /// Currently active line entities (buffer_line -> Entity)
     pub active: std::collections::HashMap<usize, Entity>,
+    /// Last viewport dimensions used for mesh generation
+    /// Used to detect when meshes need rebuilding due to resize
+    pub last_viewport_size: Option<(u32, u32)>,
 }
 
 impl LineMeshPool {
@@ -634,6 +637,21 @@ pub(crate) fn update_gpu_text_per_line(
 
     if !state.needs_update && !needs_scroll_update {
         return;
+    }
+
+    // Handle viewport resize: invalidate all meshes when dimensions actually change
+    // Meshes have viewport width/height baked into vertex positions (world coords)
+    // so they become stale when viewport resizes
+    let current_viewport_size = (viewport.width, viewport.height);
+    let viewport_size_changed = pool.last_viewport_size != Some(current_viewport_size);
+
+    if viewport_size_changed {
+        let all_entities: Vec<Entity> = pool.active.values().copied().collect();
+        for entity in all_entities {
+            commands.entity(entity).despawn();
+        }
+        pool.active.clear();
+        pool.last_viewport_size = Some(current_viewport_size);
     }
 
     // Handle line invalidation (when lines are inserted/deleted)

@@ -60,9 +60,25 @@ tree-sitter-rust = "0.23"
 tree-sitter-c = "0.23"
 
 [features]
-default = ["tree-sitter"]
+default = ["tree-sitter", "scrollbar", "minimap", "folding", "brackets"]
+
+# Syntax highlighting via tree-sitter
 tree-sitter = ["dep:tree-sitter", "streaming-iterator"]
+
+# LSP support (language server protocol)
 lsp = ["lsp-types", "tower-lsp", "tokio", "serde_json", "fuzzy-matcher"]
+
+# Built-in scrollbar UI (disable to use your own scrollbar implementation)
+scrollbar = []
+
+# Code minimap view
+minimap = []
+
+# Code folding support
+folding = []
+
+# Bracket matching and highlighting
+brackets = []
 
 [profile.release]
 debug = true

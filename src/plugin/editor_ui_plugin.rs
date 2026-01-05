@@ -19,7 +19,7 @@ use bevy_camera::visibility::RenderLayers;
 
 use crate::settings::*;
 use crate::types::{
-    CodeEditorState, EditorCursor, LineNumbers, Separator, ViewportConfig, ViewportDimensions,
+    CodeEditorState, EditorCursor, Separator, ViewportConfig, ViewportDimensions,
 };
 use bevy_camera::Viewport;
 
@@ -27,12 +27,24 @@ use bevy_camera::Viewport;
 #[derive(Component)]
 pub struct EditorCamera;
 use super::{
-    animate_cursor, handle_minimap_mouse, scrollbar::update_editor_scrollbar,
+    animate_cursor,
     to_bevy_coords_dynamic, to_bevy_coords_left_aligned, track_cursor_movement,
-    update_bracket_highlight, update_bracket_match, update_cursor, update_cursor_line_highlight,
-    update_fold_indicators, update_gpu_text_display, update_indent_guides, update_line_numbers,
-    update_minimap, update_minimap_hover, update_selection_highlight, EditorSetupSet,
+    update_cursor, update_cursor_line_highlight,
+    update_gpu_line_numbers, update_gpu_text_display, update_indent_guides,
+    update_selection_highlight, EditorSetupSet,
 };
+
+#[cfg(feature = "brackets")]
+use super::{update_bracket_highlight, update_bracket_match};
+
+#[cfg(feature = "folding")]
+use super::update_fold_indicators;
+
+#[cfg(feature = "minimap")]
+use super::{handle_minimap_mouse, update_minimap, update_minimap_hover};
+
+#[cfg(feature = "scrollbar")]
+use super::scrollbar::update_editor_scrollbar;
 
 /// Resource to store render layer configuration for the editor
 #[derive(Resource, Clone)]
@@ -138,45 +150,69 @@ impl Plugin for EditorUiPlugin {
         );
 
         // All UI rendering systems go in RenderingSet
-        // Line numbers and fold indicators (run after text display)
+        // GPU Line numbers (run after text display, uses same rendering pipeline)
         app.add_systems(
             Update,
-            (
-                update_line_numbers,
-                // update_fold_indicators,
-            )
-                .chain()
+            update_gpu_line_numbers
                 .after(update_gpu_text_display)
+                .run_if(crate::gpu_text::atlas_ready)
                 .in_set(super::RenderingSet),
         );
 
-        // Selection and highlighting systems
+        // Fold indicators (feature-gated)
+        #[cfg(feature = "folding")]
+        app.add_systems(
+            Update,
+            update_fold_indicators
+                .after(update_gpu_line_numbers)
+                .in_set(super::RenderingSet),
+        );
+
+        // Selection and highlighting systems (core)
         app.add_systems(
             Update,
             (
                 update_selection_highlight,
                 update_cursor_line_highlight,
                 update_indent_guides,
-                update_bracket_match,
-                update_bracket_highlight,
             )
                 .chain()
-                .after(update_line_numbers)
+                .after(update_gpu_line_numbers)
                 .in_set(super::RenderingSet),
         );
 
-        // Minimap input goes in InputSet
+        // Bracket matching (feature-gated)
+        #[cfg(feature = "brackets")]
         app.add_systems(
             Update,
-            (update_minimap_hover, handle_minimap_mouse)
+            (update_bracket_match, update_bracket_highlight)
                 .chain()
-                .in_set(super::InputSet),
+                .after(update_indent_guides)
+                .in_set(super::RenderingSet),
         );
 
-        // Minimap rendering goes in RenderingSet
-        app.add_systems(Update, update_minimap.in_set(super::RenderingSet));
+        // Minimap (feature-gated)
+        #[cfg(feature = "minimap")]
+        {
+            // Minimap input goes in InputSet
+            app.add_systems(
+                Update,
+                (update_minimap_hover, handle_minimap_mouse)
+                    .chain()
+                    .in_set(super::InputSet),
+            );
 
-        // Editor scrollbar config update goes in ApplyStateSet
+            // Minimap rendering goes in RenderingSet
+            app.add_systems(
+                Update,
+                update_minimap
+                    .run_if(crate::gpu_text::atlas_ready)
+                    .in_set(super::RenderingSet),
+            );
+        }
+
+        // Editor scrollbar config update (feature-gated)
+        #[cfg(feature = "scrollbar")]
         app.add_systems(
             Update,
             update_editor_scrollbar
@@ -341,26 +377,8 @@ fn setup_editor_ui(
     let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
 
-    // Spawn line numbers
-    let mut line_numbers = commands.spawn((
-        Text2d::new("1"),
-        TextFont {
-            font: font_handle.clone(),
-            font_size: font.size,
-            ..default()
-        },
-        TextColor(theme.line_numbers),
-        Transform::from_translation(to_bevy_coords_dynamic(
-            viewport.gutter_width / 2.0,
-            viewport.text_area_top,
-            viewport_width,
-            viewport_height,
-            0.0, // Camera viewport handles panel positioning
-        )),
-        LineNumbers,
-        Name::new("LineNumbers"),
-    ));
-    apply_render_layers(&mut line_numbers, &render_config);
+    // GPU line numbers are created dynamically by update_gpu_line_numbers system
+    // No need to spawn Text2d entities here
 
     // Spawn separator line (only if enabled)
     if ui.show_separator {

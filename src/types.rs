@@ -3084,3 +3084,51 @@ pub struct SaveRequested {
 /// The host application should handle this event to show a file picker.
 #[derive(bevy::prelude::Message, Clone, Debug)]
 pub struct OpenRequested;
+
+// ========== External Scroll Control ==========
+
+/// Resource for external UI (egui) to control and read editor scroll state
+///
+/// This provides bidirectional communication:
+/// - External UI reads current scroll position and content dimensions
+/// - External UI sends scroll requests via pending_* fields
+/// - bevy_code_editor's systems apply these requests and update current state
+#[derive(Resource, Default)]
+pub struct EditorScrollControl {
+    /// Current vertical scroll offset (negative when scrolled down)
+    /// Updated by bevy_code_editor every frame
+    pub scroll_offset: f32,
+
+    /// Current horizontal scroll offset
+    /// Updated by bevy_code_editor every frame
+    pub horizontal_scroll_offset: f32,
+
+    /// Total content height in pixels
+    pub content_height: f32,
+
+    /// Total content width in pixels (longest line)
+    pub content_width: f32,
+
+    /// Visible viewport height in pixels
+    pub viewport_height: f32,
+
+    /// Visible viewport width in pixels (excluding gutter)
+    pub viewport_width: f32,
+
+    /// Line height for line-based scrolling
+    pub line_height: f32,
+
+    /// Pending vertical scroll request (absolute offset to scroll to)
+    /// Set by external UI, cleared by bevy_code_editor when applied
+    pub pending_scroll_to: Option<f32>,
+
+    /// Pending vertical scroll delta (relative scroll amount)
+    /// Set by external UI, cleared by bevy_code_editor when applied
+    pub pending_scroll_delta: Option<f32>,
+
+    /// Pending horizontal scroll request (absolute offset)
+    pub pending_horizontal_scroll_to: Option<f32>,
+
+    /// Pending horizontal scroll delta (relative amount)
+    pub pending_horizontal_scroll_delta: Option<f32>,
+}

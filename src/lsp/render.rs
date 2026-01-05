@@ -30,7 +30,7 @@ use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use bevy_camera::visibility::RenderLayers;
 
-use crate::plugin::editor_ui_plugin::EditorRenderConfig;
+use crate::plugin::EditorRenderConfig;
 use crate::settings::FontSettings;
 use crate::types::ViewportDimensions;
 
@@ -79,7 +79,7 @@ pub fn render_completion_popup(
             Name::new("CompletionBox"),
         ));
 
-        if let Some(ref layers) = render_config.render_layers {
+        if let Some(layers) = &render_config.render_layers {
             entity_cmd.insert(layers.clone());
         }
 
@@ -203,7 +203,7 @@ pub fn render_hover_popup(
             Name::new("HoverBox"),
         ));
 
-        if let Some(ref layers) = render_config.render_layers {
+        if let Some(layers) = &render_config.render_layers {
             entity_cmd.insert(layers.clone());
         }
 
@@ -417,7 +417,7 @@ pub fn render_rename_input(
             Name::new("RenameInput"),
         ));
 
-        if let Some(ref layers) = render_config.render_layers {
+        if let Some(layers) = &render_config.render_layers {
             entity_cmd.insert(layers.clone());
         }
 
@@ -515,7 +515,7 @@ pub fn render_inlay_hints(
             LspUiVisual,
         ));
 
-        if let Some(ref layers) = render_config.render_layers {
+        if let Some(layers) = &render_config.render_layers {
             entity_cmd.insert(layers.clone());
         }
     }
@@ -559,7 +559,7 @@ pub fn render_document_highlights(
             LspUiVisual,
         ));
 
-        if let Some(ref layers) = render_config.render_layers {
+        if let Some(layers) = &render_config.render_layers {
             entity_cmd.insert(layers.clone());
         }
     }

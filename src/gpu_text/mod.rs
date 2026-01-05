@@ -23,6 +23,8 @@
 mod atlas;
 mod render;
 
+use bevy::prelude::*;
+
 pub use atlas::{GlyphAtlas, GlyphInfo, GlyphKey, GlyphRasterizer, RasterizedGlyph, ATLAS_SIZE};
 
 // Re-export new_with_font for creating atlas with custom font
@@ -34,3 +36,9 @@ pub use render::{
 
 // Re-export from bevy for convenience
 pub use bevy::sprite_render::MeshMaterial2d;
+
+/// System condition that checks if the glyph atlas is ready to use
+/// This ensures font assets are loaded before rendering text
+pub fn atlas_ready(atlas: Option<Res<GlyphAtlas>>) -> bool {
+    atlas.is_some()
+}
