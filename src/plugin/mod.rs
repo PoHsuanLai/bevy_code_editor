@@ -6,6 +6,10 @@ mod cursor;
 mod editor_ui_plugin;
 mod gpu_line_numbers;
 mod gpu_text_render;
+
+#[cfg(feature = "instanced-rendering")]
+pub(crate) mod gpu_text_instanced;
+
 mod syntax_highlighting;
 mod ui_elements;
 
@@ -190,8 +194,11 @@ impl Plugin for CodeEditorPlugin {
         #[cfg(feature = "folding")]
         app.insert_resource(FoldState::default());
 
-        // Add the GPU text rendering plugin
+        // Add the GPU text rendering plugins
         app.add_plugins(GpuTextPlugin);
+
+        #[cfg(feature = "instanced-rendering")]
+        app.add_plugins(crate::gpu_text::InstancedTextRenderPlugin);
 
         // Add the scrollbar plugin (feature-gated)
         #[cfg(feature = "scrollbar")]
@@ -239,7 +246,30 @@ impl Plugin for CodeEditorPlugin {
                 .in_set(ApplyStateSet),
         );
         // Rendering systems - update visuals based on state
-        #[cfg(feature = "folding")]
+
+        // INSTANCED RENDERING (experimental - single draw call for all glyphs)
+        #[cfg(all(feature = "instanced-rendering", feature = "folding"))]
+        app.add_systems(
+            Update,
+            (
+                detect_foldable_regions,
+                gpu_text_instanced::update_gpu_text_instanced,
+            )
+                .chain()
+                .run_if(crate::gpu_text::atlas_ready)
+                .in_set(RenderingSet),
+        );
+
+        #[cfg(all(feature = "instanced-rendering", not(feature = "folding")))]
+        app.add_systems(
+            Update,
+            gpu_text_instanced::update_gpu_text_instanced
+                .run_if(crate::gpu_text::atlas_ready)
+                .in_set(RenderingSet),
+        );
+
+        // PER-LINE MESH RENDERING (default - stable approach)
+        #[cfg(all(not(feature = "instanced-rendering"), feature = "folding"))]
         app.add_systems(
             Update,
             (
@@ -251,7 +281,7 @@ impl Plugin for CodeEditorPlugin {
                 .in_set(RenderingSet),
         );
 
-        #[cfg(not(feature = "folding"))]
+        #[cfg(all(not(feature = "instanced-rendering"), not(feature = "folding")))]
         app.add_systems(
             Update,
             update_gpu_text_per_line
@@ -260,7 +290,10 @@ impl Plugin for CodeEditorPlugin {
         );
 
         // Update syntax tree AFTER rendering (async) to avoid blocking display
-        #[cfg(feature = "tree-sitter")]
+        #[cfg(all(feature = "tree-sitter", feature = "instanced-rendering"))]
+        app.add_systems(Update, update_syntax_tree.after(gpu_text_instanced::update_gpu_text_instanced));
+
+        #[cfg(all(feature = "tree-sitter", not(feature = "instanced-rendering")))]
         app.add_systems(Update, update_syntax_tree.after(update_gpu_text_per_line));
     }
 }

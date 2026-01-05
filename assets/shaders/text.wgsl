@@ -7,12 +7,16 @@
 #import bevy_sprite::mesh2d_vertex_output::VertexOutput
 
 // Uniforms
-@group(2) @binding(0) var<uniform> viewport_size: vec2<f32>;
-@group(2) @binding(1) var<uniform> scroll_offset: vec2<f32>;
+struct TextGlobals {
+    viewport_size: vec2<f32>,
+    scroll_offset: vec2<f32>,
+}
+
+@group(0) @binding(0) var<uniform> globals: TextGlobals;
 
 // Atlas texture
-@group(2) @binding(2) var atlas_texture: texture_2d<f32>;
-@group(2) @binding(3) var atlas_sampler: sampler;
+@group(1) @binding(0) var atlas_texture: texture_2d<f32>;
+@group(1) @binding(1) var atlas_sampler: sampler;
 
 // Per-instance data (passed via vertex attributes in Bevy)
 struct GlyphInstance {
@@ -58,15 +62,23 @@ fn vertex(
     let unit_vertex = vec2<f32>(unit_x, unit_y);
 
     // Calculate screen position
-    let screen_pos = position + unit_vertex * size - scroll_offset;
+    // position is in Bevy world coordinates (center-origin)
+    // globals.scroll_offset is currently applied on the CPU side during layout,
+    // so we don't need to apply it here unless we change the CPU logic.
+    let screen_pos = position + unit_vertex * size;
 
     // Convert to clip space (-1 to 1)
-    let clip_pos = (screen_pos / viewport_size) * 2.0 - 1.0;
-    // Flip Y for Bevy's coordinate system
-    let final_pos = vec4<f32>(clip_pos.x, -clip_pos.y, 0.0, 1.0);
+    // Bevy World (0,0) is center.
+    // Clip (0,0) is center.
+    // Just divide by half-size.
+    let half_size = globals.viewport_size * 0.5;
+    let clip_pos = screen_pos / half_size;
+
+    let final_pos = vec4<f32>(clip_pos.x, clip_pos.y, 0.0, 1.0);
 
     // Interpolate UV coordinates
-    let uv = mix(uv_min, uv_max, unit_vertex);
+    // Flip Y for texture space (0=top, 1=bottom) vs geometry space (0=bottom, 1=top)
+    let uv = mix(uv_min, uv_max, vec2<f32>(unit_vertex.x, 1.0 - unit_vertex.y));
 
     var out: FragmentInput;
     out.position = final_pos;

@@ -23,9 +23,18 @@
 mod atlas;
 mod render;
 
+#[cfg(feature = "instanced-rendering")]
+mod instanced_render;
+
 use bevy::prelude::*;
 
 pub use atlas::{GlyphAtlas, GlyphInfo, GlyphKey, GlyphRasterizer, RasterizedGlyph, ATLAS_SIZE};
+
+#[cfg(feature = "instanced-rendering")]
+pub use atlas::{PlacementInfo, PositionedGlyph};
+
+#[cfg(feature = "instanced-rendering")]
+pub use instanced_render::InstancedTextRenderPlugin;
 
 // Re-export new_with_font for creating atlas with custom font
 pub use atlas::GlyphAtlas as GlyphAtlasType;
