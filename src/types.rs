@@ -1587,6 +1587,30 @@ pub struct ViewportDimensions {
     pub separator_x: f32,
 }
 
+impl ViewportDimensions {
+    /// Calculate the world coordinate of the viewport's left edge
+    pub fn world_left(&self) -> f32 {
+        if self.offset_x == 0.0 && self.offset_y == 0.0 {
+            // Auto-resize mode (default): viewport is centered at (0,0)
+            -(self.width as f32) / 2.0
+        } else {
+            // Manual mode: offset_x is the left edge
+            self.offset_x
+        }
+    }
+
+    /// Calculate the world coordinate of the viewport's top edge
+    pub fn world_top(&self) -> f32 {
+        if self.offset_x == 0.0 && self.offset_y == 0.0 {
+            // Auto-resize mode (default): viewport is centered at (0,0)
+            self.height as f32 / 2.0
+        } else {
+            // Manual mode: offset_y is the top edge
+            self.offset_y
+        }
+    }
+}
+
 impl Default for ViewportDimensions {
     fn default() -> Self {
         Self {

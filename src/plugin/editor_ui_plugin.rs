@@ -30,9 +30,10 @@ use super::{
     animate_cursor,
     to_bevy_coords_dynamic, to_bevy_coords_left_aligned, track_cursor_movement,
     update_cursor, update_cursor_line_highlight,
-    update_gpu_line_numbers, update_gpu_text_display, update_indent_guides,
+    update_gpu_line_numbers, update_gpu_text_instanced, update_indent_guides,
     update_selection_highlight, EditorSetupSet,
 };
+use crate::gpu_text::GlyphAtlas;
 
 #[cfg(feature = "brackets")]
 use super::{update_bracket_highlight, update_bracket_match};
@@ -135,6 +136,7 @@ impl Plugin for EditorUiPlugin {
         app.add_systems(
             Startup,
             (
+                init_viewport_from_window,
                 setup_editor_camera,
                 compute_viewport_layout,
                 setup_editor_ui,
@@ -143,10 +145,27 @@ impl Plugin for EditorUiPlugin {
                 .after(EditorSetupSet),
         );
 
+        // Update viewport when window resizes (if auto_resize_to_window is true)
+        app.add_systems(Update, detect_viewport_resize);
+
+        // Update separator position when viewport changes
+        app.add_systems(
+            Update,
+            update_separator_on_resize.run_if(resource_changed::<ViewportDimensions>),
+        );
+
         // Update layout when UI settings change
         app.add_systems(
             Update,
             compute_viewport_layout.run_if(resource_changed::<UiSettings>),
+        );
+
+        // Update font metrics when font loads
+        app.add_systems(
+            Update,
+            update_font_metrics
+                .run_if(crate::gpu_text::atlas_ready)
+                .in_set(super::RenderingSet),
         );
 
         // All UI rendering systems go in RenderingSet
@@ -154,7 +173,7 @@ impl Plugin for EditorUiPlugin {
         app.add_systems(
             Update,
             update_gpu_line_numbers
-                .after(update_gpu_text_display)
+                .after(update_gpu_text_instanced)
                 .run_if(crate::gpu_text::atlas_ready)
                 .in_set(super::RenderingSet),
         );
@@ -253,15 +272,19 @@ fn update_camera_viewport(
     config: Res<ViewportConfig>,
     viewport: Res<ViewportDimensions>,
     windows: Query<&Window>,
-    mut camera_query: Query<&mut Camera, With<EditorCamera>>,
+    mut camera_query: Query<(&mut Camera, &mut Transform), With<EditorCamera>>,
 ) {
+    println!("update_camera_viewport called! auto_resize={}, found {} editor cameras", config.auto_resize_to_window, camera_query.iter().count());
+
     // Only set camera viewport when NOT auto-resizing (manual viewport control)
     if config.auto_resize_to_window {
-        // Clear any existing viewport restriction
-        for mut camera in camera_query.iter_mut() {
+        println!("Auto-resize is ON, clearing camera viewport");
+        // Clear any existing viewport restriction and reset camera position
+        for (mut camera, mut transform) in camera_query.iter_mut() {
             if camera.viewport.is_some() {
                 camera.viewport = None;
             }
+            transform.translation = Vec3::ZERO;
         }
         return;
     }
@@ -270,19 +293,23 @@ fn update_camera_viewport(
         return;
     };
 
+    println!("=== UPDATE CAMERA VIEWPORT ===");
+    println!("Window size: {}x{}", window.width(), window.height());
+    println!("Viewport: offset=({}, {}), size={}x{}", viewport.offset_x, viewport.offset_y, viewport.width, viewport.height);
+
     // Convert from center-origin viewport coordinates to top-left origin window coordinates
-    // viewport.offset_x/offset_y are the center of the panel in world coords (center-origin)
+    // For resizable panels: viewport.offset_x/offset_y store the LEFT and TOP edges (not center!)
+    // For auto-resize mode: offset_x/y are (0, 0) and panel is centered
     // viewport.width/height are the panel dimensions
     let window_width = window.width();
     let window_height = window.height();
     let scale_factor = window.scale_factor() as f32;
 
     // Calculate top-left corner of panel in window coordinates
-    // World coords: center_x = offset_x, center_y = offset_y
-    // Panel extends from (offset_x - width/2) to (offset_x + width/2) in X
-    // and from (offset_y - height/2) to (offset_y + height/2) in Y
-    let panel_left_world = viewport.offset_x - viewport.width as f32 / 2.0;
-    let panel_top_world = viewport.offset_y + viewport.height as f32 / 2.0; // Top of panel in world Y
+    // When offset is (0,0), panel is centered in window (auto-resize mode)
+    // When offset is non-zero, it represents the panel's left/top edges (resizable mode)
+    let panel_left_world = viewport.world_left();
+    let panel_top_world = viewport.world_top();
 
     // Convert world coords to window coords (window: 0,0 = top-left, Y down)
     // Then scale to physical pixels (Viewport uses physical coordinates)
@@ -293,12 +320,21 @@ fn update_camera_viewport(
     let physical_width = (viewport.width as f32 * scale_factor) as u32;
     let physical_height = (viewport.height as f32 * scale_factor) as u32;
 
-    for mut camera in camera_query.iter_mut() {
+    // Calculate camera position (center of panel)
+    let camera_x = panel_left_world + viewport.width as f32 / 2.0;
+    let camera_y = panel_top_world - viewport.height as f32 / 2.0;
+
+    for (mut camera, mut transform) in camera_query.iter_mut() {
+        // Set the camera viewport to restrict which window pixels to render to
         camera.viewport = Some(Viewport {
             physical_position: UVec2::new(window_x, window_y),
             physical_size: UVec2::new(physical_width, physical_height),
             ..default()
         });
+
+        // Move the camera to the panel center
+        // Content is positioned relative to camera at (0,0)
+        transform.translation = Vec3::new(camera_x, camera_y, transform.translation.z);
     }
 }
 
@@ -335,6 +371,46 @@ fn apply_render_layers(entity: &mut EntityCommands, config: &EditorRenderConfig)
 }
 
 /// Setup camera for standalone editor mode (only if not using render layers)
+/// Initialize viewport dimensions from the actual window size
+fn init_viewport_from_window(
+    mut viewport: ResMut<ViewportDimensions>,
+    config: Res<ViewportConfig>,
+    windows: Query<&Window>,
+) {
+    // Only auto-initialize if auto_resize_to_window is true
+    if !config.auto_resize_to_window {
+        return;
+    }
+
+    if let Ok(window) = windows.single() {
+        viewport.width = window.resolution.width() as u32;
+        viewport.height = window.resolution.height() as u32;
+    }
+}
+
+/// Detect viewport resize and update dimensions
+fn detect_viewport_resize(
+    config: Res<ViewportConfig>,
+    mut viewport: ResMut<ViewportDimensions>,
+    windows: Query<&Window>,
+) {
+    // Only auto-resize when enabled
+    if !config.auto_resize_to_window {
+        return;
+    }
+
+    if let Ok(window) = windows.single() {
+        let new_width = window.resolution.width() as u32;
+        let new_height = window.resolution.height() as u32;
+
+        // Only update if changed to avoid unnecessary change detection
+        if viewport.width != new_width || viewport.height != new_height {
+            viewport.width = new_width;
+            viewport.height = new_height;
+        }
+    }
+}
+
 fn setup_editor_camera(
     mut commands: Commands,
     theme: Res<ThemeSettings>,
@@ -393,7 +469,8 @@ fn setup_editor_ui(
                 viewport_height / 2.0,
                 viewport_width,
                 viewport_height,
-                0.0, // Camera viewport handles panel positioning
+                viewport.offset_x,
+                viewport.offset_y,
                 0.0, // separator doesn't scroll horizontally
             )),
             Separator,
@@ -415,11 +492,69 @@ fn setup_editor_ui(
             viewport.text_area_top,
             viewport_width,
             viewport_height,
-            0.0, // Camera viewport handles panel positioning
+            viewport.offset_x,
+            viewport.offset_y,
         )),
         Visibility::Hidden,
         EditorCursor { cursor_index: 0 },
         Name::new("EditorCursor_0"),
     ));
     apply_render_layers(&mut cursor, &render_config);
+}
+
+/// Update separator SIZE and POSITION when viewport changes
+fn update_separator_on_resize(
+    viewport: Res<ViewportDimensions>,
+    mut separator_query: Query<(&mut Sprite, &mut Transform), With<Separator>>,
+) {
+    if !viewport.is_changed() {
+        return;
+    }
+
+    for (mut sprite, mut transform) in separator_query.iter_mut() {
+        let viewport_height = viewport.height as f32;
+        let viewport_width = viewport.width as f32;
+
+        // Only update separator height - position stays fixed relative to camera
+        sprite.custom_size = Some(Vec2::new(1.0, viewport_height));
+
+        // Update position (critical when viewport width changes or offset changes)
+        transform.translation = to_bevy_coords_left_aligned(
+            viewport.separator_x,
+            viewport_height / 2.0,
+            viewport_width,
+            viewport_height,
+            viewport.offset_x,
+            viewport.offset_y,
+            0.0, // separator doesn't scroll horizontally
+        );
+    }
+}
+
+/// Update font metrics (character width) based on actual loaded font
+
+fn update_font_metrics(
+
+    mut font: ResMut<FontSettings>,
+
+    mut atlas: ResMut<GlyphAtlas>,
+
+) {
+
+    // Measure '0' for monospace width (standard for code)
+
+    if let Some(width) = atlas.measure_char_width('0', font.size) {
+
+        // Only update if difference is significant
+
+        if (font.char_width - width).abs() > 0.01 {
+
+            info!("Updating font char_width from {:.3} to {:.3} (measured)", font.char_width, width);
+
+            font.char_width = width;
+
+        }
+
+    }
+
 }

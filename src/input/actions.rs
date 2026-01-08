@@ -325,7 +325,8 @@ fn execute_action_core(
     action: EditorAction,
     indentation: &IndentationSettings,
     goto_line_state: &mut GotoLineState,
-    fold_state: &mut FoldState,
+    #[cfg(feature = "folding")] fold_state: &mut FoldState,
+    #[cfg(not(feature = "folding"))] _fold_state_unused: Option<&mut ()>,
 ) -> ActionResult {
     let mut result = ActionResult {
         text_changed: false,
@@ -706,28 +707,37 @@ fn execute_action_core(
         }
 
         // Code folding actions
+        #[cfg(feature = "folding")]
         EditorAction::ToggleFold => {
             let line = state.rope.char_to_line(state.cursor_pos);
             fold_state.toggle_fold_at_line(line);
             state.pending_update = true;
         }
+        #[cfg(feature = "folding")]
         EditorAction::Fold => {
             let line = state.rope.char_to_line(state.cursor_pos);
             fold_state.fold_at_line(line);
             state.pending_update = true;
         }
+        #[cfg(feature = "folding")]
         EditorAction::Unfold => {
             let line = state.rope.char_to_line(state.cursor_pos);
             fold_state.unfold_at_line(line);
             state.pending_update = true;
         }
+        #[cfg(feature = "folding")]
         EditorAction::FoldAll => {
             fold_state.fold_all();
             state.pending_update = true;
         }
+        #[cfg(feature = "folding")]
         EditorAction::UnfoldAll => {
             fold_state.unfold_all();
             state.pending_update = true;
+        }
+        #[cfg(not(feature = "folding"))]
+        EditorAction::ToggleFold | EditorAction::Fold | EditorAction::Unfold | EditorAction::FoldAll | EditorAction::UnfoldAll => {
+            // Folding feature is disabled, no-op
         }
 
         // File operations are handled in keyboard.rs before execute_action is called
@@ -793,7 +803,7 @@ fn add_cursor_below(state: &mut CodeEditorState) {
 }
 
 /// Execute an editor action (Non-LSP version)
-#[cfg(not(feature = "lsp"))]
+#[cfg(all(not(feature = "lsp"), feature = "folding"))]
 pub fn execute_action(
     state: &mut CodeEditorState,
     action: EditorAction,
@@ -817,8 +827,32 @@ pub fn execute_action(
     let _ = execute_action_core(state, action, indentation, goto_line_state, fold_state);
 }
 
-/// Execute an editor action (LSP version)
-#[cfg(feature = "lsp")]
+/// Execute an editor action (Non-LSP, no folding version)
+#[cfg(all(not(feature = "lsp"), not(feature = "folding")))]
+pub fn execute_action(
+    state: &mut CodeEditorState,
+    action: EditorAction,
+    indentation: &IndentationSettings,
+    goto_line_state: &mut GotoLineState,
+) {
+    // Handle Escape to clear multi-cursors, find mode, or goto line mode
+    if action == EditorAction::ClearSelection {
+        // First priority: clear secondary cursors if we have multiple
+        if state.has_multiple_cursors() {
+            state.clear_secondary_cursors();
+            return;
+        }
+        if goto_line_state.active {
+            goto_line_state.clear();
+            return;
+        }
+    }
+
+    let _ = execute_action_core(state, action, indentation, goto_line_state, None);
+}
+
+/// Execute an editor action (LSP version with folding)
+#[cfg(all(feature = "lsp", feature = "folding"))]
 pub fn execute_action(
     state: &mut CodeEditorState,
     action: EditorAction,
@@ -890,6 +924,103 @@ pub fn execute_action(
 
     // Execute the core action
     let result = execute_action_core(state, action, indentation, goto_line_state, fold_state);
+
+    // LSP-specific post-processing: dismiss completion on horizontal move
+    if result.horizontal_move {
+        completion_state.visible = false;
+    }
+
+    // Update completion filter on delete backward
+    if action == EditorAction::DeleteBackward && completion_state.visible {
+        if state.cursor_pos > completion_state.start_char_index {
+            update_completion_filter(state, completion_state);
+        } else if state.cursor_pos == completion_state.start_char_index {
+            completion_state.filter.clear();
+            completion_state.selected_index = 0;
+        } else {
+            completion_state.visible = false;
+            completion_state.filter.clear();
+        }
+    }
+
+    // Notify LSP of text changes
+    if result.text_changed {
+        send_did_change(state, lsp_client, lsp_sync);
+    }
+}
+
+/// Execute an editor action (LSP version without folding)
+#[cfg(all(feature = "lsp", not(feature = "folding")))]
+pub fn execute_action(
+    state: &mut CodeEditorState,
+    action: EditorAction,
+    indentation: &IndentationSettings,
+    lsp: &LspSettings,
+    goto_line_state: &mut GotoLineState,
+    lsp_client: &lsp::LspClient,
+    completion_state: &mut lsp::CompletionState,
+    lsp_sync: &mut lsp::LspSyncState,
+) {
+    // Handle Escape to clear multi-cursors, goto line mode, find mode, or completion
+    if action == EditorAction::ClearSelection {
+        // First priority: clear secondary cursors if we have multiple
+        if state.has_multiple_cursors() {
+            state.clear_secondary_cursors();
+            return;
+        }
+        if goto_line_state.active {
+            goto_line_state.clear();
+            return;
+        }
+    }
+
+    // Handle Completion UI Navigation first
+    let filtered_count = completion_state.filtered_items().len();
+    let max_visible = lsp.completion.max_items;
+
+    if completion_state.visible && filtered_count > 0 {
+        match action {
+            EditorAction::MoveCursorUp => {
+                if completion_state.selected_index > 0 {
+                    completion_state.selected_index -= 1;
+                } else {
+                    completion_state.selected_index = filtered_count.saturating_sub(1);
+                }
+                completion_state.ensure_selected_visible_with_max(max_visible);
+                return;
+            }
+            EditorAction::MoveCursorDown => {
+                if completion_state.selected_index + 1 < filtered_count {
+                    completion_state.selected_index += 1;
+                } else {
+                    completion_state.selected_index = 0;
+                }
+                completion_state.ensure_selected_visible_with_max(max_visible);
+                return;
+            }
+            EditorAction::InsertNewline | EditorAction::InsertTab => {
+                apply_completion(state, completion_state);
+                send_did_change(state, lsp_client, lsp_sync);
+                return;
+            }
+            EditorAction::ClearSelection => {
+                completion_state.visible = false;
+                completion_state.filter.clear();
+                completion_state.scroll_offset = 0;
+                return;
+            }
+            _ => {}
+        }
+    }
+
+    // Handle LSP-specific actions
+    if action == EditorAction::RequestCompletion {
+        request_completion(state, lsp_client, completion_state, lsp_sync);
+        return;
+    }
+
+    // Execute the core action
+    let result = execute_action_core(state, action, indentation, goto_line_state, None);
 
     // LSP-specific post-processing: dismiss completion on horizontal move
     if result.horizontal_move {

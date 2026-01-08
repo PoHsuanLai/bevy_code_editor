@@ -59,7 +59,7 @@ pub mod prelude {
     pub use crate::language::{Language, TreeSitterConfig};
     pub use crate::plugin::{
         ApplyStateSet, CodeEditorPlugin, EditorInputManager, EditorSetupSet, EditorUiPlugin,
-        InputSet, RenderingSet,
+        InputSet, RenderingSet, SyntaxResource, SyntaxPlugin, HighlightCache,
     };
 
     #[cfg(feature = "scrollbar")]

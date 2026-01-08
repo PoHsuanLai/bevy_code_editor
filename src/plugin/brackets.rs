@@ -5,6 +5,23 @@ use crate::settings::*;
 use crate::types::*;
 use bevy::prelude::*;
 
+pub struct BracketPlugin;
+
+impl Plugin for BracketPlugin {
+    fn build(&self, app: &mut App) {
+        #[cfg(feature = "brackets")]
+        app.add_systems(
+            Update,
+            (
+                update_bracket_match.in_set(super::ApplyStateSet),
+                update_bracket_highlight
+                    .after(super::ui_elements::update_indent_guides)
+                    .in_set(super::RenderingSet),
+            ),
+        );
+    }
+}
+
 pub(crate) fn find_matching_bracket(
     rope: &ropey::Rope,
     pos: usize,
@@ -146,6 +163,7 @@ pub(crate) fn update_bracket_highlight(
     brackets: Res<BracketSettings>,
     viewport: Res<ViewportDimensions>,
     bracket_state: Res<BracketMatchState>,
+    #[cfg(feature = "folding")]
     fold_state: Res<FoldState>,
     render_config: Res<EditorRenderConfig>,
     mut highlight_query: Query<(
@@ -180,6 +198,7 @@ pub(crate) fn update_bracket_highlight(
                 let line_idx = state.rope.char_to_line(bracket_pos);
 
                 // Skip if line is hidden due to folding
+                #[cfg(feature = "folding")]
                 if fold_state.is_line_hidden(line_idx) {
                     continue;
                 }
@@ -188,7 +207,10 @@ pub(crate) fn update_bracket_highlight(
                 let col_idx = bracket_pos - line_start;
 
                 // Calculate display row accounting for folded lines
+                #[cfg(feature = "folding")]
                 let display_row = fold_state.actual_to_display_line(line_idx);
+                #[cfg(not(feature = "folding"))]
+                let display_row = line_idx;
 
                 let x_offset = viewport.text_area_left + (col_idx as f32 * char_width);
                 let y_offset = viewport.text_area_top
@@ -197,9 +219,9 @@ pub(crate) fn update_bracket_highlight(
 
                 // Calculate base position (center of the bracket character cell)
                 // Camera viewport handles panel positioning, so no offset_x here
-                let base_x = -viewport_width / 2.0 + x_offset + char_width / 2.0
+                let base_x = viewport.world_left() + x_offset + char_width / 2.0
                     - state.horizontal_scroll_offset;
-                let base_y = viewport_height / 2.0 - y_offset;
+                let base_y = viewport.world_top() - y_offset;
 
                 if use_box_style {
                     // Box style: 4 edges per bracket (top, bottom, left, right)

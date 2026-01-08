@@ -76,7 +76,7 @@ pub fn handle_keyboard_input(
     indentation: Res<IndentationSettings>,
     #[cfg(feature = "lsp")] lsp: Res<LspSettings>,
     mut goto_line_state: ResMut<GotoLineState>,
-    mut fold_state: ResMut<FoldState>,
+    #[cfg(feature = "folding")] mut fold_state: ResMut<FoldState>,
     mut key_repeat_state: ResMut<KeyRepeatState>,
     (mut save_events, mut open_events): (
         MessageWriter<crate::types::SaveRequested>,
@@ -456,7 +456,7 @@ pub fn handle_keyboard_input(
             return;
         }
 
-        #[cfg(not(feature = "lsp"))]
+        #[cfg(all(not(feature = "lsp"), feature = "folding"))]
         execute_action(
             &mut state,
             action,
@@ -464,7 +464,14 @@ pub fn handle_keyboard_input(
             &mut goto_line_state,
             &mut fold_state,
         );
-        #[cfg(feature = "lsp")]
+        #[cfg(all(not(feature = "lsp"), not(feature = "folding")))]
+        execute_action(
+            &mut state,
+            action,
+            &indentation,
+            &mut goto_line_state,
+        );
+        #[cfg(all(feature = "lsp", feature = "folding"))]
         execute_action(
             &mut state,
             action,
@@ -472,6 +479,17 @@ pub fn handle_keyboard_input(
             &lsp,
             &mut goto_line_state,
             &mut fold_state,
+            &lsp_client,
+            &mut completion_state,
+            &mut lsp_sync,
+        );
+        #[cfg(all(feature = "lsp", not(feature = "folding")))]
+        execute_action(
+            &mut state,
+            action,
+            &indentation,
+            &lsp,
+            &mut goto_line_state,
             &lsp_client,
             &mut completion_state,
             &mut lsp_sync,

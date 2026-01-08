@@ -3,12 +3,11 @@
 //! This module provides a high-performance instanced rendering approach
 //! where all visible glyphs are rendered in a single draw call.
 
-use bevy::prelude::*;
-use bevy::tasks::{AsyncComputeTaskPool, Task};
+use super::{HighlightCache, SyntaxResource};
+use crate::gpu_text::{GlyphAtlas, GlyphKey, GlyphRasterizer};
 use crate::settings::*;
 use crate::types::*;
-use crate::gpu_text::GlyphAtlas;
-use super::{SyntaxResource, HighlightCache};
+use bevy::prelude::*;
 
 /// Marker component for GPU text batch entity
 #[derive(Component)]
@@ -19,6 +18,9 @@ pub struct GpuTextBatch {
     /// The visible line range when built
     pub first_line: usize,
     pub last_line: usize,
+    /// Viewport dimensions when built
+    pub built_at_width: u32,
+    pub built_at_height: u32,
 }
 
 /// Glyph instance data for GPU rendering
@@ -30,6 +32,8 @@ pub struct GlyphInstance {
     pub uv_max: Vec2,
     pub size: Vec2,
     pub color: [f32; 4],
+    pub z_index: f32,
+    pub _padding: [f32; 3], // Pad to 16-byte alignment
 }
 
 /// Component containing batch of glyph instances
@@ -51,16 +55,23 @@ pub(crate) fn update_gpu_text_instanced(
         Res<PerformanceSettings>,
     ),
     viewport: Res<ViewportDimensions>,
-    #[cfg(feature = "folding")]
-    fold_state: Res<FoldState>,
+    #[cfg(feature = "folding")] fold_state: Res<FoldState>,
     mut atlas: ResMut<GlyphAtlas>,
     mut images: ResMut<Assets<Image>>,
     batch_query: Query<(Entity, &GpuTextBatch)>,
     mut syntax: ResMut<SyntaxResource>,
-    mut highlight_cache: ResMut<HighlightCache>,
+    _highlight_cache: ResMut<HighlightCache>,
     time: Res<Time>,
 ) {
-    if !state.needs_update {
+    // Check if viewport changed
+    let viewport_changed = if let Some((_, batch)) = batch_query.iter().next() {
+        batch.built_at_width != viewport.width || batch.built_at_height != viewport.height
+    } else {
+        true
+    };
+
+    // Update if content changed OR scroll changed OR viewport changed
+    if !state.needs_update && !state.needs_scroll_update && !viewport_changed {
         return;
     }
 
@@ -69,12 +80,14 @@ pub(crate) fn update_gpu_text_instanced(
 
     let font_size = font.size;
     let line_height = font.line_height;
+    // Use the measured char_width for grid alignment
+    let char_width = font.char_width;
     let total_buffer_lines = state.line_count();
 
     // Calculate visible range
     let buffer = line_height * performance.viewport_buffer_lines as f32;
     let scroll_dist = state.scroll_offset.abs();
-    let start_pixels = scroll_dist - ui_settings.margin_top - buffer;
+    let start_pixels = scroll_dist - viewport.text_area_top - buffer;
     let first_visible_display_row = (start_pixels / line_height).floor().max(0.0) as usize;
     let visible_count = ((viewport.height as f32 + buffer * 2.0) / line_height).ceil() as usize;
     let last_visible_display_row = first_visible_display_row + visible_count;
@@ -111,66 +124,138 @@ pub(crate) fn update_gpu_text_instanced(
             break;
         }
 
-        // Calculate base Y position
+        // Calculate base Y position (use viewport.text_area_top to match line numbers)
         let baseline_offset = font_size * 0.32;
-        let base_y = ui_settings.margin_top + state.scroll_offset
-            + (current_display_row as f32 * line_height) + baseline_offset;
+        let base_y = viewport.text_area_top
+            + state.scroll_offset
+            + (current_display_row as f32 * line_height)
+            + baseline_offset;
 
-        // Get line text
-        let line_text: String = if buffer_line < state.rope.len_lines() {
-            let rope_line = state.rope.line(buffer_line);
-            rope_line.chars().filter(|&ch| ch != '\n' && ch != '\r').collect()
+        // Get line text from rope
+        let rope_line = state.rope.line(buffer_line);
+        let line_string = rope_line.to_string();
+
+        // Get syntax highlighting segments
+        let segments_vec = syntax.highlight_range(
+            &line_string,
+            buffer_line,
+            buffer_line + 1,
+            state.rope.line_to_byte(buffer_line),
+            &syntax_settings.theme,
+            theme.foreground,
+        );
+
+        let segments = if !segments_vec.is_empty() {
+            &segments_vec[0]
         } else {
-            String::new()
+            // Fallback: one segment for the whole line
+            // Only used if syntax highlighting returns nothing (e.g. error or initial state)
+            &vec![]
         };
 
-        if line_text.is_empty() {
-            current_display_row += 1;
-            continue;
-        }
+        // Base X position (starting point for this line)
+        let line_start_x = viewport
+            .text_area_left
+            .max(viewport.gutter_width + ui_settings.code_margin_left)
+            - state.horizontal_scroll_offset;
 
-        // Use cosmic_text to layout the line
-        let positioned_glyphs = atlas.layout_line(&line_text, font_size);
+        // Current X offset relative to line start (accumulated by char width)
+        let mut current_x_offset = 0.0;
 
-        // Base X position
-        let base_x = ui_settings.code_margin_left - state.horizontal_scroll_offset;
+        // Process segments
+        if segments.is_empty() {
+            // Plain text fallback
+            let color_linear = theme.foreground.to_linear();
+            let color_arr = [
+                color_linear.red,
+                color_linear.green,
+                color_linear.blue,
+                color_linear.alpha,
+            ];
 
-        // Process each glyph
-        for positioned_glyph in positioned_glyphs.iter() {
-            // Rasterize glyph
-            let (cache_key, _, _) = cosmic_text::CacheKey::new(
-                positioned_glyph.font_id,
-                positioned_glyph.glyph_id,
-                font_size * 2.0,
-                (0.0, 0.0),
-                cosmic_text::CacheKeyFlags::empty(),
-            );
+            for ch in line_string.chars() {
+                if ch == '\n' || ch == '\r' {
+                    continue;
+                }
+                if ch == '\t' {
+                    current_x_offset += char_width * 4.0;
+                    continue;
+                }
 
-            let (glyph_info, placement) = match atlas.get_or_rasterize_glyph(cache_key) {
-                Some(info) => info,
-                None => continue,
-            };
+                let key = GlyphKey::new(ch, font_size);
+                if let Some(info) =
+                    atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, font_size))
+                {
+                    // Strict Grid Positioning: use current_x_offset instead of info.advance
+                    let screen_x = line_start_x + current_x_offset + info.offset.x;
+                    let screen_y = base_y - info.offset.y;
 
-            // Calculate position
-            let screen_x = base_x + positioned_glyph.x + placement.left;
-            let screen_y = base_y + positioned_glyph.y - placement.top;
+                    let world_x = viewport.world_left() + screen_x;
+                    let world_y = viewport.world_top() - screen_y - info.size.y;
 
-            // Convert to Bevy world coords
-            let world_x = screen_x - viewport.width as f32 / 2.0 + viewport.offset_x;
-            let world_y = viewport.height as f32 / 2.0 - screen_y - glyph_info.size.y;
+                    instances.push(GlyphInstance {
+                        position: Vec2::new(world_x, world_y),
+                        uv_min: info.uv_min,
+                        uv_max: info.uv_max,
+                        size: info.size,
+                        color: color_arr,
+                        z_index: 0.0, // Main editor text
+                        _padding: [0.0; 3],
+                    });
 
-            let color = theme.foreground;
-            let color_linear = color.to_linear();
+                    // Advance by fixed char_width, NOT info.advance
+                    current_x_offset += char_width;
+                } else {
+                    current_x_offset += char_width;
+                }
+            }
+        } else {
+            // Syntax highlighted segments
+            for segment in segments {
+                let color_linear = segment.color.to_linear();
+                let color_arr = [
+                    color_linear.red,
+                    color_linear.green,
+                    color_linear.blue,
+                    color_linear.alpha,
+                ];
 
-            let instance = GlyphInstance {
-                position: Vec2::new(world_x, world_y),
-                uv_min: glyph_info.uv_min,
-                uv_max: glyph_info.uv_max,
-                size: glyph_info.size,
-                color: [color_linear.red, color_linear.green, color_linear.blue, color_linear.alpha],
-            };
+                for ch in segment.text.chars() {
+                    if ch == '\n' || ch == '\r' {
+                        continue;
+                    }
+                    if ch == '\t' {
+                        current_x_offset += char_width * 4.0;
+                        continue;
+                    }
 
-            instances.push(instance);
+                    let key = GlyphKey::new(ch, font_size);
+                    if let Some(info) =
+                        atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, font_size))
+                    {
+                        // Strict Grid Positioning
+                        let screen_x = line_start_x + current_x_offset + info.offset.x;
+                        let screen_y = base_y - info.offset.y;
+
+                        let world_x = viewport.world_left() + screen_x;
+                        let world_y = viewport.world_top() - screen_y - info.size.y;
+
+                        instances.push(GlyphInstance {
+                            position: Vec2::new(world_x, world_y),
+                            uv_min: info.uv_min,
+                            uv_max: info.uv_max,
+                            size: info.size,
+                            color: color_arr,
+                            z_index: 0.0, // Main editor text
+                            _padding: [0.0; 3],
+                        });
+
+                        current_x_offset += char_width;
+                    } else {
+                        current_x_offset += char_width;
+                    }
+                }
+            }
         }
 
         current_display_row += 1;
@@ -198,6 +283,8 @@ pub(crate) fn update_gpu_text_instanced(
                 built_at_horizontal_scroll: state.horizontal_scroll_offset,
                 first_line: first_visible_display_row,
                 last_line: last_visible_display_row,
+                built_at_width: viewport.width,
+                built_at_height: viewport.height,
             });
 
             // Despawn extras
@@ -217,6 +304,8 @@ pub(crate) fn update_gpu_text_instanced(
                     built_at_horizontal_scroll: state.horizontal_scroll_offset,
                     first_line: first_visible_display_row,
                     last_line: last_visible_display_row,
+                    built_at_width: viewport.width,
+                    built_at_height: viewport.height,
                 },
                 Name::new("GpuTextBatch"),
                 Visibility::Visible,

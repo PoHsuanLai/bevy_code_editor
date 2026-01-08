@@ -14,6 +14,7 @@ pub(crate) fn update_selection_highlight(
     wrapping: Res<WrappingSettings>,
     indentation: Res<IndentationSettings>,
     viewport: Res<ViewportDimensions>,
+    #[cfg(feature = "folding")]
     fold_state: Res<FoldState>,
     render_config: Res<EditorRenderConfig>,
     mut selection_query: Query<(
@@ -50,6 +51,7 @@ pub(crate) fn update_selection_highlight(
 
             for line_idx in start_line..=end_line {
                 // Skip hidden lines
+                #[cfg(feature = "folding")]
                 if fold_state.is_line_hidden(line_idx) {
                     continue;
                 }
@@ -95,7 +97,10 @@ pub(crate) fn update_selection_highlight(
                         }
                     } else {
                         // Convert buffer line to display row
+                        #[cfg(feature = "folding")]
                         let display_row = fold_state.actual_to_display_line(line_idx);
+                        #[cfg(not(feature = "folding"))]
+                        let display_row = line_idx;
                         selection_rects.push((
                             cursor_idx,
                             display_row,
@@ -124,6 +129,7 @@ pub(crate) fn update_selection_highlight(
 
                 for line_idx in start_line..=end_line {
                     // Skip hidden lines
+                    #[cfg(feature = "folding")]
                     if fold_state.is_line_hidden(line_idx) {
                         continue;
                     }
@@ -166,7 +172,10 @@ pub(crate) fn update_selection_highlight(
                             }
                         } else {
                             // Convert buffer line to display row
+                            #[cfg(feature = "folding")]
                             let display_row = fold_state.actual_to_display_line(line_idx);
+                            #[cfg(not(feature = "folding"))]
+                            let display_row = line_idx;
                             selection_rects.push((
                                 0,
                                 display_row,
@@ -207,8 +216,8 @@ pub(crate) fn update_selection_highlight(
         let y_from_top =
             viewport.text_area_top + state.scroll_offset + (row_idx as f32 * line_height);
 
-        let sprite_center_x = -(viewport.width as f32) / 2.0 + x_left_edge + selection_width / 2.0;
-        let sprite_center_y = (viewport.height as f32) / 2.0 - y_from_top;
+        let sprite_center_x = viewport.world_left() + x_left_edge + selection_width / 2.0;
+        let sprite_center_y = viewport.world_top() - y_from_top;
 
         let translation = Vec3::new(sprite_center_x, sprite_center_y, 0.5);
 
@@ -259,6 +268,7 @@ pub(crate) fn update_indent_guides(
     ui: Res<UiSettings>,
     indentation: Res<IndentationSettings>,
     viewport: Res<ViewportDimensions>,
+    #[cfg(feature = "folding")]
     fold_state: Res<FoldState>,
     render_config: Res<EditorRenderConfig>,
     mut guide_query: Query<(Entity, &mut Transform, &mut Visibility, &mut IndentGuide)>,
@@ -295,21 +305,31 @@ pub(crate) fn update_indent_guides(
     // For files with no folding, we can jump directly to the visible start
     // This changes O(all_lines) to O(visible_lines)
     let total_lines = state.rope.len_lines();
+    #[cfg(feature = "folding")]
     let has_folding = !fold_state.regions.is_empty();
+    #[cfg(not(feature = "folding"))]
+    let has_folding = false;
 
     // Calculate starting buffer line
     let start_buffer_line = if has_folding {
-        // With folding, we need to iterate to find the right buffer line
-        // But we can still skip most lines quickly
-        let mut display_row = 0;
-        let mut buffer_line = 0;
-        while buffer_line < total_lines && display_row < visible_start_row {
-            if !fold_state.is_line_hidden(buffer_line) {
-                display_row += 1;
+        #[cfg(feature = "folding")]
+        {
+            // With folding, we need to iterate to find the right buffer line
+            // But we can still skip most lines quickly
+            let mut display_row = 0;
+            let mut buffer_line = 0;
+            while buffer_line < total_lines && display_row < visible_start_row {
+                if !fold_state.is_line_hidden(buffer_line) {
+                    display_row += 1;
+                }
+                buffer_line += 1;
             }
-            buffer_line += 1;
+            buffer_line
         }
-        buffer_line
+        #[cfg(not(feature = "folding"))]
+        {
+            visible_start_row.min(total_lines)
+        }
     } else {
         // No folding: display_row == buffer_line, jump directly
         visible_start_row.min(total_lines)
@@ -317,14 +337,21 @@ pub(crate) fn update_indent_guides(
 
     // Start display row at visible_start_row (or the actual row if we started earlier)
     let mut current_display_row: usize = if has_folding {
-        // With folding, we tracked this while finding start_buffer_line
-        let mut display_row = 0;
-        for bl in 0..start_buffer_line {
-            if !fold_state.is_line_hidden(bl) {
-                display_row += 1;
+        #[cfg(feature = "folding")]
+        {
+            // With folding, we tracked this while finding start_buffer_line
+            let mut display_row = 0;
+            for bl in 0..start_buffer_line {
+                if !fold_state.is_line_hidden(bl) {
+                    display_row += 1;
+                }
             }
+            display_row
         }
-        display_row
+        #[cfg(not(feature = "folding"))]
+        {
+            start_buffer_line
+        }
     } else {
         start_buffer_line
     };
@@ -332,6 +359,7 @@ pub(crate) fn update_indent_guides(
     // Iterate only through visible buffer lines
     for buffer_line in start_buffer_line..total_lines {
         // Skip hidden lines
+        #[cfg(feature = "folding")]
         if fold_state.is_line_hidden(buffer_line) {
             continue;
         }
@@ -375,8 +403,8 @@ pub(crate) fn update_indent_guides(
 
         // Position the guide line (thin vertical line)
         // Camera viewport handles panel positioning, so no offset_x here
-        let sprite_x = -viewport_width / 2.0 + x_offset - state.horizontal_scroll_offset;
-        let sprite_y = viewport_height / 2.0 - y_offset;
+        let sprite_x = viewport.world_left() + x_offset - state.horizontal_scroll_offset;
+        let sprite_y = viewport.world_top() - y_offset;
         let translation = Vec3::new(sprite_x, sprite_y, 0.1); // z=0.1 behind text
 
         if entity_index < existing_guides.len() {

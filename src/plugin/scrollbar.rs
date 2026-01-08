@@ -154,8 +154,12 @@ fn handle_scrollbar_mouse(
     };
 
     // Convert window coordinates to world coordinates
-    let cursor_y = cursor_pos_window.y - window.height() / 2.0;
-    let cursor_x = cursor_pos_window.x - window.width() / 2.0;
+    // We need to account for the camera position which centers the viewport
+    let camera_x = viewport.world_left() + viewport.width as f32 / 2.0;
+    let camera_y = viewport.world_top() - viewport.height as f32 / 2.0;
+    
+    let cursor_y = camera_y + (window.height() / 2.0 - cursor_pos_window.y);
+    let cursor_x = camera_x + (cursor_pos_window.x - window.width() / 2.0);
 
     // Handle mouse button just pressed - check if clicking on a thumb
     if mouse_button.just_pressed(MouseButton::Left) {
@@ -209,16 +213,18 @@ fn handle_scrollbar_mouse(
                     let total_lines = state.line_count();
                     let total_content_height = total_lines as f32 * line_height;
                     let viewport_height = viewport.height as f32;
-                    let max_scroll = -(total_content_height - viewport_height).max(0.0);
+                    // Account for text_area_top margin (matches mouse wheel calculation)
+                    let max_scroll = -(total_content_height - viewport_height + viewport.text_area_top).max(0.0);
 
                     // Scale pixel delta to scroll offset
                     let scroll_delta = (delta_y / scrollable_range) * max_scroll;
                     let new_scroll_offset = (drag_state.drag_start_scroll + scroll_delta)
                         .clamp(max_scroll.min(0.0), 0.0);
 
-                    // Only update target - the apply_scroll system will handle actual scroll update
-                    // For scrollbar dragging, we want immediate response (no smoothing)
+                    // For scrollbar dragging, update both target AND actual scroll immediately
+                    // This ensures the scrollbar thumb stays in sync with the drag position
                     state.target_scroll_offset = new_scroll_offset;
+                    state.scroll_offset = new_scroll_offset;
                     state.needs_scroll_update = true;
 
                     // IMPORTANT: Update last_cursor_pos to prevent auto_scroll_to_cursor from
@@ -237,6 +243,8 @@ fn handle_scrollbar_mouse(
                 "[Scrollbar] DRAG ENDED at scroll_offset={}, target={}",
                 state.scroll_offset, state.target_scroll_offset
             );
+            // Ensure target matches actual to prevent smooth scroll animation after release
+            state.target_scroll_offset = state.scroll_offset;
         }
         drag_state.is_dragging = false;
         drag_state.dragging_entity = None;
@@ -304,7 +312,8 @@ fn update_scrollbars(
         let total_lines = state.line_count();
         let total_content_height = total_lines as f32 * line_height;
         let viewport_height = viewport.height as f32;
-        let max_scroll = (total_content_height - viewport_height).max(0.0);
+        // Account for text_area_top margin (matches drag and mouse wheel calculation)
+        let max_scroll = (total_content_height - viewport_height + viewport.text_area_top).max(0.0);
 
         let scroll_progress = if max_scroll > 0.0 {
             (-state.scroll_offset / max_scroll).clamp(0.0, 1.0)
@@ -423,13 +432,14 @@ pub fn update_editor_scrollbar(
     let total_content_height = total_lines as f32 * line_height;
 
     // Scrollbar position (always at right edge)
-    let scrollbar_x = viewport_width / 2.0 - scrollbar_settings.width / 2.0;
+    let scrollbar_x = viewport.world_left() + viewport_width - scrollbar_settings.width / 2.0;
+    let scrollbar_y = viewport.world_top() - viewport_height / 2.0;
 
     if let Ok(mut scrollbar) = scrollbar_query.single_mut() {
         // Update existing scrollbar (scroll position is read from editor state in update_scrollbars)
         scrollbar.enabled = total_content_height > viewport_height;
         scrollbar.x = scrollbar_x;
-        scrollbar.y = 0.0;
+        scrollbar.y = scrollbar_y;
         scrollbar.width = scrollbar_settings.width;
         scrollbar.track_height = viewport_height;
         scrollbar.visible_fraction = (viewport_height / total_content_height).min(1.0);
@@ -443,7 +453,7 @@ pub fn update_editor_scrollbar(
         commands.spawn((
             Scrollbar {
                 x: scrollbar_x,
-                y: 0.0,
+                y: scrollbar_y,
                 width: scrollbar_settings.width,
                 track_height: viewport_height,
                 visible_fraction: (viewport_height / total_content_height).min(1.0),

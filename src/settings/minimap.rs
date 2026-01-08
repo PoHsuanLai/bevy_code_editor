@@ -1,4 +1,21 @@
 //! Minimap settings
+//!
+//! ## Z-Index Layering
+//!
+//! The minimap uses Bevy's `GlobalZIndex` for proper layering. The default z-indices are:
+//! - Background: 100
+//! - Viewport Highlight: 200
+//! - Text Content: 300
+//!
+//! Users can customize these values to integrate with their own UI z-index system.
+//! Higher values render on top of lower values.
+//!
+//! Example:
+//! ```ignore
+//! minimap_settings.background_z_index = 50;
+//! minimap_settings.viewport_highlight_z_index = 51;
+//! minimap_settings.text_z_index = 52;
+//! ```
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -42,13 +59,21 @@ pub struct MinimapSettings {
     /// Minimum indicator height
     pub min_indicator_height: f32,
 
-    /// Background Z-index
-    pub background_z_index: f32,
+    /// Background Z-index (used for GlobalZIndex component)
+    /// Default: 100
+    pub background_z_index: i32,
 
-    /// Viewport highlight Z-index
-    pub viewport_highlight_z_index: f32,
+    /// Text content Z-index (used for GlobalZIndex component)
+    /// Should be higher than background and viewport highlight
+    /// Default: 300
+    pub text_z_index: i32,
 
-    /// Slider Z-index
+    /// Viewport highlight Z-index (used for GlobalZIndex component)
+    /// Should be between background and text
+    /// Default: 200
+    pub viewport_highlight_z_index: i32,
+
+    /// Slider Z-index (deprecated, use viewport_highlight_z_index)
     pub slider_z_index: f32,
 
     /// Scrollbar width
@@ -92,9 +117,10 @@ impl Default for MinimapSettings {
             show_slider: true,
             slider_on_hover_only: false,
             min_indicator_height: 20.0,
-            background_z_index: 5.0,
-            viewport_highlight_z_index: 5.05,
-            slider_z_index: 5.1,
+            background_z_index: 100,
+            text_z_index: 300,
+            viewport_highlight_z_index: 200,
+            slider_z_index: 5.1, // Deprecated
             scrollbar_width: 6.0,
             scrollbar_spacing: 2.0,
             scrollbar_min_thumb_height: 30.0,

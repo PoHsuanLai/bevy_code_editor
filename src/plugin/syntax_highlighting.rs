@@ -6,6 +6,7 @@
 use crate::syntax::{SyntaxProvider, TreeSitterProvider};
 use crate::types::{CodeEditorState, LineSegment};
 use bevy::prelude::*;
+use bevy::tasks::{AsyncComputeTaskPool, Task};
 use std::collections::VecDeque;
 
 /// Resource that holds the syntax highlighting provider
@@ -329,6 +330,153 @@ impl HighlightCache {
     }
 }
 
+// ========== Async Parsing Logic ==========
+
+/// Component to track async parse tasks
+#[cfg(feature = "tree-sitter")]
+#[derive(Component)]
+pub struct ParseTask {
+    task: Task<Option<tree_sitter::Tree>>,
+    content_version: u64,
+}
+
+/// Update tree-sitter tree asynchronously to avoid blocking frames
+#[cfg(feature = "tree-sitter")]
+pub(crate) fn update_syntax_tree(
+    mut commands: Commands,
+    mut state: ResMut<CodeEditorState>,
+    mut syntax: ResMut<SyntaxResource>,
+    mut highlight_cache: ResMut<HighlightCache>,
+    mut parse_task_query: Query<(Entity, &mut ParseTask)>,
+) {
+    // Check if there's a completed parse task
+    if let Some((entity, mut parse_task)) = parse_task_query.iter_mut().next() {
+        // Poll the task without blocking
+        if let Some(tree) =
+            futures_lite::future::block_on(futures_lite::future::poll_once(&mut parse_task.task))
+        {
+            if let Some(tree) = tree {
+                // Update the syntax provider with the completed tree and current rope
+                // This increments syntax.tree_version, which will trigger a re-render automatically
+                syntax.set_parsed_tree(tree, &state.rope);
+                state.last_highlighted_version = parse_task.content_version;
+
+                // CRITICAL: Clear the highlight cache when tree-sitter finishes!
+                // The cache may contain plain text fallbacks from before parsing completed
+                highlight_cache.clear();
+
+                // Force a render update to display the new highlights immediately
+                // NOTE: This causes the viewport to be marked dirty, but the stale detection
+                // will only rebuild lines that actually have outdated tree_version
+                state.needs_update = true;
+            }
+            // Remove the completed task
+            commands.entity(entity).despawn();
+        }
+        // Task still running, don't start a new one
+        return;
+    }
+
+    // Only start a new parse if content changed and no task is running
+    if state.content_version != state.last_highlighted_version && syntax.is_available() {
+        // OPTIMIZATION: Don't clear cache here - let it invalidate naturally by version mismatch
+        // This allows unchanged lines to remain cached during typing
+        // highlight_cache.clear();
+
+        // Clone rope for async task (Rope uses Arc internally so this is cheap)
+        let rope = state.rope.clone();
+        let content_version = state.content_version;
+
+        // Clone the provider's state for incremental parsing (keeps main state intact)
+        let (parser, language, cached_tree, pending_edits, deferred_edits) =
+            syntax.clone_parse_state();
+
+        // Spawn async parse task
+        let task_pool = AsyncComputeTaskPool::get();
+        let task = task_pool.spawn(async move {
+            parse_tree_async(
+                rope,
+                parser,
+                language,
+                cached_tree,
+                pending_edits,
+                deferred_edits,
+            )
+        });
+
+        // Spawn entity to track the task
+        commands.spawn(ParseTask {
+            task,
+            content_version,
+        });
+    }
+}
+
+#[cfg(feature = "tree-sitter")]
+fn parse_tree_async(
+    rope: ropey::Rope,
+    mut parser: Option<tree_sitter::Parser>,
+    language: Option<tree_sitter::Language>,
+    mut cached_tree: Option<tree_sitter::Tree>,
+    pending_edits: Vec<tree_sitter::InputEdit>,
+    deferred_edits: Vec<crate::syntax::tree_sitter::DeferredEdit>,
+) -> Option<tree_sitter::Tree> {
+    // Same parsing logic as update_tree, but runs async
+    // use super::syntax_highlighting::byte_to_point; // Use local function
+    use crate::syntax::tree_sitter::RopeReader;
+
+    let mut reader = RopeReader::new(&rope);
+    let mut callback =
+        |byte_offset: usize, _position: tree_sitter::Point| -> &[u8] { reader.read(byte_offset) };
+
+    // Try incremental parsing first
+    if let Some(ref mut tree) = cached_tree {
+        // Apply pending edits (already have full position info)
+        for edit in pending_edits {
+            tree.edit(&edit);
+        }
+
+        // Apply deferred edits (calculate Points now on async thread)
+        // OPTIMIZATION: This expensive work happens off the main thread
+        for deferred in deferred_edits {
+            let start_position = byte_to_point(&rope, deferred.start_byte);
+            let old_end_position = byte_to_point(&rope, deferred.old_end_byte);
+            let new_end_position = byte_to_point(&rope, deferred.new_end_byte);
+
+            let edit = tree_sitter::InputEdit {
+                start_byte: deferred.start_byte,
+                old_end_byte: deferred.old_end_byte,
+                new_end_byte: deferred.new_end_byte,
+                start_position,
+                old_end_position,
+                new_end_position,
+            };
+            tree.edit(&edit);
+        }
+
+        // Re-parse incrementally
+        if let Some(ref mut parser) = parser {
+            if let Some(new_tree) = parser.parse_with(&mut callback, Some(tree)) {
+                return Some(new_tree);
+            }
+        }
+    } else if let Some(ref lang) = language {
+        // First parse - initialize parser
+        if parser.is_none() {
+            let mut new_parser = tree_sitter::Parser::new();
+            if new_parser.set_language(lang).is_ok() {
+                parser = Some(new_parser);
+            }
+        }
+
+        if let Some(ref mut parser) = parser {
+            return parser.parse_with(&mut callback, None);
+        }
+    }
+
+    None
+}
+
 // ========== Edit Recording for Incremental Parsing ==========
 
 #[cfg(feature = "tree-sitter")]
@@ -421,6 +569,9 @@ impl Plugin for SyntaxPlugin {
                 )
                     .chain(),
             );
+            
+            // Register update_syntax_tree separately
+            app.add_systems(Update, update_syntax_tree);
         }
     }
 }

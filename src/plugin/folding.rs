@@ -2,7 +2,7 @@
 
 use super::editor_ui_plugin::EditorRenderConfig;
 use super::to_bevy_coords_left_aligned;
-use crate::settings::*;
+use crate::settings::{FontSettings, ThemeSettings, UiSettings};
 use crate::types::*;
 use bevy::prelude::*;
 
@@ -268,7 +268,25 @@ pub(crate) fn detect_foldable_regions(
     fold_state.enabled = true;
 }
 
-/// Update fold gutter indicators (arrows/chevrons)
+// Duplicate imports removed - already imported at top of file
+
+pub struct FoldingPlugin;
+
+impl Plugin for FoldingPlugin {
+    fn build(&self, app: &mut App) {
+        #[cfg(feature = "folding")]
+        app.add_systems(
+            Update,
+            (
+                detect_foldable_regions.in_set(super::ApplyStateSet),
+                update_fold_indicators
+                    .after(super::gpu_line_numbers::update_gpu_line_numbers)
+                    .in_set(super::RenderingSet),
+            ),
+        );
+    }
+}
+
 pub(crate) fn update_fold_indicators(
     mut commands: Commands,
     state: Res<CodeEditorState>,
@@ -356,7 +374,8 @@ pub(crate) fn update_fold_indicators(
             y_offset,
             viewport_width,
             viewport_height,
-            0.0, // Camera viewport handles panel positioning
+            viewport.offset_x,
+            viewport.offset_y,
             0.0,
         );
 

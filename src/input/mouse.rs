@@ -30,7 +30,7 @@ fn screen_to_char_pos(
     viewport: &ViewportDimensions,
     _viewport_width: f32,
     _viewport_height: f32,
-    fold_state: &FoldState,
+    #[cfg(feature = "folding")] fold_state: &FoldState,
     scroll_offset_override: Option<f32>,
 ) -> usize {
     // Calculate the clicked position relative to code start
@@ -53,7 +53,10 @@ fn screen_to_char_pos(
     let col = (relative_x / char_width).max(0.0) as usize;
 
     // Convert display row to buffer line (accounting for folds)
+    #[cfg(feature = "folding")]
     let buffer_line = fold_state.display_to_actual_line(display_row);
+    #[cfg(not(feature = "folding"))]
+    let buffer_line = display_row;
 
     // Convert line/col to character position
     let line_count = state.rope.len_lines();
@@ -78,7 +81,7 @@ pub fn handle_mouse_input(
     font: Res<FontSettings>,
     viewport: Res<ViewportDimensions>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut fold_state: ResMut<FoldState>,
+    #[cfg(feature = "folding")] mut fold_state: ResMut<FoldState>,
     #[cfg(feature = "lsp")] time: Res<Time>,
     #[cfg(feature = "lsp")] lsp_client: Res<crate::lsp::LspClient>,
     #[cfg(feature = "lsp")] lsp_sync: Res<crate::lsp::LspSyncState>,
@@ -134,6 +137,7 @@ pub fn handle_mouse_input(
                 &viewport,
                 viewport_width,
                 viewport_height,
+                #[cfg(feature = "folding")]
                 &fold_state,
                 None, // Use current scroll offset for initial position calculation
             ))
@@ -228,29 +232,32 @@ pub fn handle_mouse_input(
 
             // Fold gutter is a narrow area just before the separator (where fold indicators are)
             // Fold indicators are positioned at: separator_x - 12.0
-            let gutter_start = viewport.separator_x - 18.0;
-            let gutter_end = viewport.separator_x + 5.0;
+            #[cfg(feature = "folding")]
+            {
+                let gutter_start = viewport.separator_x - 18.0;
+                let gutter_end = viewport.separator_x + 5.0;
 
-            // Check if click is in the fold gutter area (horizontally) using viewport-local coords
-            if local_x >= gutter_start && local_x < gutter_end {
-                // Calculate which display row was clicked
-                let relative_y = local_y - viewport.text_area_top + state.scroll_offset;
-                let display_row = (relative_y / line_height).max(0.0) as usize;
+                // Check if click is in the fold gutter area (horizontally) using viewport-local coords
+                if local_x >= gutter_start && local_x < gutter_end {
+                    // Calculate which display row was clicked
+                    let relative_y = local_y - viewport.text_area_top + state.scroll_offset;
+                    let display_row = (relative_y / line_height).max(0.0) as usize;
 
-                // Convert display row to buffer line
-                let buffer_line = fold_state.display_to_actual_line(display_row);
+                    // Convert display row to buffer line
+                    let buffer_line = fold_state.display_to_actual_line(display_row);
 
-                // Check if there's a foldable region starting at this line
-                if fold_state.is_foldable_line(buffer_line) {
-                    fold_state.toggle_fold_at_line(buffer_line);
-                    state.pending_update = true;
-                    state.is_focused = true;
+                    // Check if there's a foldable region starting at this line
+                    if fold_state.is_foldable_line(buffer_line) {
+                        fold_state.toggle_fold_at_line(buffer_line);
+                        state.pending_update = true;
+                        state.is_focused = true;
 
-                    // Hide hover on click
-                    #[cfg(feature = "lsp")]
-                    reset_hover_state(&mut hover_state);
+                        // Hide hover on click
+                        #[cfg(feature = "lsp")]
+                        reset_hover_state(&mut hover_state);
 
-                    return; // Consume the click
+                        return; // Consume the click
+                    }
                 }
             }
         }
@@ -373,6 +380,7 @@ pub fn handle_mouse_input(
                     &viewport,
                     viewport_width,
                     viewport_height,
+                    #[cfg(feature = "folding")]
                     &fold_state,
                     Some(drag_state.drag_start_scroll_offset),
                 );

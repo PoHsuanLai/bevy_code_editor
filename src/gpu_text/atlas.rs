@@ -79,6 +79,8 @@ pub struct GlyphAtlas {
     swash_cache: SwashCache,
     /// Cached font ID for the configured font
     configured_font_id: Option<cosmic_text::fontdb::ID>,
+    /// Cache for cosmic_text cache keys (for instanced rendering)
+    cache: HashMap<cosmic_text::CacheKey, GlyphInfo>,
 }
 
 impl GlyphAtlas {
@@ -132,6 +134,7 @@ impl GlyphAtlas {
             font_system,
             swash_cache,
             configured_font_id,
+            cache: HashMap::new(),
         }
     }
 
@@ -469,6 +472,7 @@ impl GlyphAtlas {
         self.current_y = 0;
         self.pixels.fill(0);
         self.dirty = true;
+        self.cache.clear();
     }
 
     /// Check if a glyph is cached
@@ -479,6 +483,14 @@ impl GlyphAtlas {
     /// Get cached glyph info
     pub fn get(&self, key: &GlyphKey) -> Option<&GlyphInfo> {
         self.glyphs.get(key)
+    }
+
+    /// Measure the advance width of a character
+    pub fn measure_char_width(&mut self, character: char, font_size: f32) -> Option<f32> {
+        let key = GlyphKey::new(character, font_size);
+        // Force rasterize/load if not present to ensure we get a valid measurement
+        self.get_or_insert(key, || GlyphRasterizer::rasterize(character, font_size))
+            .map(|info| info.advance)
     }
 }
 
@@ -528,10 +540,8 @@ impl GlyphRasterizer {
 // These types and methods are only available when instanced-rendering feature is enabled
 // ============================================================================
 
-#[cfg(feature = "instanced-rendering")]
 pub use instanced_extensions::*;
 
-#[cfg(feature = "instanced-rendering")]
 mod instanced_extensions {
     use super::*;
     use cosmic_text::{Attrs, AttrsList, ShapeBuffer, ShapeLine, Shaping};
@@ -543,6 +553,7 @@ mod instanced_extensions {
         pub x: f32,
         pub y: f32,
         pub font_id: cosmic_text::fontdb::ID,
+        pub byte_index: usize,
     }
 
     /// Placement information for a rasterized glyph
@@ -555,20 +566,33 @@ mod instanced_extensions {
     impl GlyphAtlas {
         /// Pack a glyph into the atlas (simplified wrapper around get_or_insert)
         pub(crate) fn pack(&mut self, width: u32, height: u32) -> Option<(u32, u32)> {
-            // For now, return a simple position - actual packing done in write_glyph_data
-            // This is a placeholder to make the API compatible
-            if width == 0 || height == 0 {
-                return None;
-            }
-            // Simple placeholder - actual allocation happens in get_or_insert
-            Some((0, 0))
+            self.allocate(width, height)
         }
 
-        /// Write glyph data to the atlas (placeholder for compatibility)
-        pub(crate) fn write_glyph_data(&mut self, _x: u32, _y: u32, _width: u32, _height: u32, _data: &[u8]) {
+        /// Write glyph data to the atlas
+        pub(crate) fn write_glyph_data(&mut self, x: u32, y: u32, width: u32, height: u32, data: &[u8]) {
+            if width == 0 || height == 0 {
+                return;
+            }
+
+            for gy in 0..height {
+                for gx in 0..width {
+                    let src_idx = ((gy * width + gx) * 4) as usize;
+                    let dst_x = x + gx;
+                    let dst_y = y + gy;
+                    let dst_idx = ((dst_y * ATLAS_SIZE + dst_x) * 4) as usize;
+
+                    if dst_idx + 3 < self.pixels.len() && src_idx + 3 < data.len() {
+                        self.pixels[dst_idx] = data[src_idx];         // R
+                        self.pixels[dst_idx + 1] = data[src_idx + 1]; // G
+                        self.pixels[dst_idx + 2] = data[src_idx + 2]; // B
+                        self.pixels[dst_idx + 3] = data[src_idx + 3]; // A
+                    }
+                }
+            }
+
             // Mark atlas as dirty to trigger texture update
             self.dirty = true;
-            // Actual writing happens through the existing cache mechanism
         }
 
         /// Layout a line of text using cosmic_text
@@ -610,6 +634,7 @@ mod instanced_extensions {
                     x: glyph.x,
                     y: glyph.y,
                     font_id: glyph.font_id,
+                    byte_index: glyph.start,
                 });
             }
 
@@ -622,6 +647,24 @@ mod instanced_extensions {
             cache_key: cosmic_text::CacheKey,
         ) -> Option<(GlyphInfo, PlacementInfo)> {
             use swash::scale::image::Content;
+
+            // Check cache first
+            if let Some(info) = self.cache.get(&cache_key) {
+                // We don't cache PlacementInfo because it's specific to the layout engine's temporary cache
+                // But we can reconstruct it from the info or just re-query the image if placement is needed separately.
+                // Actually, the current usage in update_gpu_text_instanced needs PlacementInfo.
+                // The `GlyphInfo` struct stores `offset` which is basically placement.
+                // Let's see:
+                // GlyphInfo.offset = Vec2(left / scale, top / scale)
+                // PlacementInfo.left = left / scale, PlacementInfo.top = top / scale
+                // So we can reconstruct PlacementInfo from GlyphInfo.offset!
+                
+                let placement = PlacementInfo {
+                    left: info.offset.x,
+                    top: info.offset.y,
+                };
+                return Some((*info, placement));
+            }
 
             let image = self.swash_cache.get_image(&mut self.font_system, cache_key).clone()?;
 
@@ -670,6 +713,9 @@ mod instanced_extensions {
                     left: image.placement.left as f32 / DPI_SCALE,
                     top: image.placement.top as f32 / DPI_SCALE,
                 };
+
+                // Cache the result
+                self.cache.insert(cache_key, glyph_info);
 
                 Some((glyph_info, placement))
             } else {

@@ -21,16 +21,13 @@ use bevy::{
         render_resource::{binding_types::*, ShaderType, *},
         renderer::RenderDevice,
         texture::GpuImage,
-        view::{ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms},
+        view::ExtractedView,
         Render, RenderApp, RenderSystems,
-        MainWorld,
     },
-    window::PrimaryWindow,
 };
 
 use crate::types::{CodeEditorState, ViewportDimensions};
 
-#[cfg(feature = "instanced-rendering")]
 use crate::plugin::gpu_text_instanced::{GlyphBatchComponent, GlyphInstance};
 
 use bevy::render::Extract;
@@ -190,10 +187,11 @@ fn prepare_instance_buffers(
     pipeline: Res<InstancedTextPipeline>,
     gpu_images: Res<RenderAssets<GpuImage>>,
 ) {
-    let batch_count = query.iter().count();
-    if batch_count > 1 {
-        warn!("WARNING: Multiple batch entities detected in render world: {}", batch_count);
-    }
+    // We now expect multiple batches (main text + line numbers), so no warning needed.
+    // let batch_count = query.iter().count();
+    // if batch_count > 1 {
+    //     warn!("WARNING: Multiple batch entities detected in render world: {}", batch_count);
+    // }
 
     for (entity, batch) in &query {
         if batch.instances.is_empty() {
@@ -325,6 +323,12 @@ impl SpecializedRenderPipeline for InstancedTextPipeline {
                     offset: 32,
                     shader_location: 4,
                 },
+                // z_index (f32)
+                VertexAttribute {
+                    format: VertexFormat::Float32,
+                    offset: 48,
+                    shader_location: 5,
+                },
             ],
         };
 
@@ -341,7 +345,7 @@ impl SpecializedRenderPipeline for InstancedTextPipeline {
                 entry_point: Some("fragment".into()),
                 targets: vec![Some(ColorTargetState {
                     format: TextureFormat::bevy_default(),
-                    blend: Some(BlendState::ALPHA_BLENDING),
+                    blend: Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                     write_mask: ColorWrites::ALL,
                 })],
             }),
@@ -350,7 +354,7 @@ impl SpecializedRenderPipeline for InstancedTextPipeline {
                 self.texture_bind_group_layout.clone(),
             ],
             primitive: PrimitiveState {
-                topology: PrimitiveTopology::TriangleStrip,
+                topology: PrimitiveTopology::TriangleList,
                 cull_mode: None,
                 ..default()
             },
@@ -388,7 +392,7 @@ fn queue_instanced_text(
     instanced_text_pipeline: Res<InstancedTextPipeline>,
     mut pipelines: ResMut<SpecializedRenderPipelines<InstancedTextPipeline>>,
     pipeline_cache: Res<PipelineCache>,
-    batches: Query<Entity, With<GlyphBatchComponent>>,
+    batches: Query<(Entity, Option<&GlobalTransform>), With<GlyphBatchComponent>>,
     mut transparent_render_phases: ResMut<ViewSortedRenderPhases<Transparent2d>>,
     views: Query<&ExtractedView>,
 ) {
@@ -403,12 +407,16 @@ fn queue_instanced_text(
         // Use MSAA sample count of 4 (default for Bevy 2D)
         let pipeline_id = pipelines.specialize(&pipeline_cache, &instanced_text_pipeline, 4);
 
-        for entity in &batches {
+        for (entity, global_transform) in &batches {
+            // Use Z from GlobalTransform as sort key for proper layering with sprites
+            // Higher Z values render on top (later in the sorted phase)
+            let z = global_transform.map(|t| t.translation().z).unwrap_or(0.0);
+
             transparent_phase.add(Transparent2d {
                 entity: (entity, entity.into()),
                 pipeline: pipeline_id,
                 draw_function,
-                sort_key: bevy::math::FloatOrd(0.0),
+                sort_key: bevy::math::FloatOrd(z),
                 batch_range: 0..1,
                 extra_index: PhaseItemExtraIndex::None,
                 extracted_index: usize::MAX,
@@ -512,8 +520,8 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGlyphInstances {
         // Set instance buffer (slot 0, no mesh needed)
         pass.set_vertex_buffer(0, instance_buffer.buffer.slice(..));
 
-        // Draw quad instances (4 vertices per quad, triangle strip)
-        pass.draw(0..4, 0..instance_buffer.length as u32);
+        // Draw quad instances (6 vertices per quad, triangle list)
+        pass.draw(0..6, 0..instance_buffer.length as u32);
 
         RenderCommandResult::Success
     }

@@ -9,6 +9,30 @@ use crate::settings::{
 use crate::types::*;
 use bevy::prelude::*;
 
+pub struct CursorPlugin;
+
+impl Plugin for CursorPlugin {
+    fn build(&self, app: &mut App) {
+        // Track cursor movement for blink reset (must run before cursor rendering)
+        app.add_systems(Update, track_cursor_movement.in_set(super::ApplyStateSet));
+
+        // Cursor rendering and animation
+        app.add_systems(
+            Update,
+            (update_cursor, animate_cursor)
+                .chain()
+                .in_set(super::RenderingSet),
+        );
+        
+        // Cursor line highlight
+        app.add_systems(
+            Update,
+            update_cursor_line_highlight
+                .in_set(super::RenderingSet),
+        );
+    }
+}
+
 /// Track when cursor position changes and update the timestamp for blink reset
 /// Uses a separate field (last_cursor_pos_for_blink) to avoid race conditions
 /// with auto_scroll_to_cursor which also uses last_cursor_pos
@@ -30,6 +54,7 @@ pub(crate) fn update_cursor(
     wrapping: Res<WrappingSettings>,
     indentation: Res<IndentationSettings>,
     viewport: Res<ViewportDimensions>,
+    #[cfg(feature = "folding")]
     fold_state: Res<FoldState>,
     render_config: Res<EditorRenderConfig>,
     mut cursor_query: Query<(Entity, &EditorCursor, &mut Transform, &mut Visibility)>,
@@ -65,7 +90,10 @@ pub(crate) fn update_cursor(
             state.display_map.buffer_to_display(line_index, col_index)
         } else {
             // Account for folded lines
+            #[cfg(feature = "folding")]
             let display_row = fold_state.actual_to_display_line(line_index);
+            #[cfg(not(feature = "folding"))]
+            let display_row = line_index;
             (display_row, col_index)
         };
 
@@ -96,7 +124,8 @@ pub(crate) fn update_cursor(
             y_offset,
             viewport.width as f32,
             viewport.height as f32,
-            0.0, // Camera viewport handles panel positioning
+            viewport.offset_x,
+            viewport.offset_y,
             h_scroll,
         );
 
@@ -186,6 +215,7 @@ pub(crate) fn update_cursor_line_highlight(
     wrapping: Res<WrappingSettings>,
     _indentation: Res<IndentationSettings>,
     viewport: Res<ViewportDimensions>,
+    #[cfg(feature = "folding")]
     fold_state: Res<FoldState>,
     render_config: Res<EditorRenderConfig>,
     mut border_query: Query<(
@@ -265,7 +295,7 @@ pub(crate) fn update_cursor_line_highlight(
     let code_area_start = viewport.text_area_left;
     let border_width = viewport.width as f32 - code_area_start;
     // Camera viewport handles panel positioning, so no offset_x here
-    let border_center_x = -(viewport.width as f32) / 2.0 + code_area_start + border_width / 2.0;
+    let border_center_x = viewport.world_left() + code_area_start + border_width / 2.0;
 
     // Process each cursor
     for (idx, cursor) in state.cursors.iter().enumerate() {
@@ -273,6 +303,7 @@ pub(crate) fn update_cursor_line_highlight(
         let line_index = state.rope.char_to_line(cursor_pos);
 
         // Skip if line is hidden due to folding
+        #[cfg(feature = "folding")]
         if fold_state.is_line_hidden(line_index) {
             continue;
         }
@@ -281,13 +312,20 @@ pub(crate) fn update_cursor_line_highlight(
         let display_row = if use_wrapping {
             state.display_map.buffer_to_display(line_index, 0).0
         } else {
-            let mut visible_row = line_index;
-            for i in 0..line_index {
-                if fold_state.is_line_hidden(i) {
-                    visible_row = visible_row.saturating_sub(1);
+            #[cfg(feature = "folding")]
+            {
+                let mut visible_row = line_index;
+                for i in 0..line_index {
+                    if fold_state.is_line_hidden(i) {
+                        visible_row = visible_row.saturating_sub(1);
+                    }
                 }
+                visible_row
             }
-            visible_row
+            #[cfg(not(feature = "folding"))]
+            {
+                line_index
+            }
         };
 
         let y_from_top =
@@ -295,7 +333,7 @@ pub(crate) fn update_cursor_line_highlight(
 
         // === TOP BORDER ===
         if cursor_line.show_border {
-            let top_y = (viewport.height as f32) / 2.0 - y_from_top + line_height / 2.0
+            let top_y = viewport.world_top() - y_from_top + line_height / 2.0
                 - border_thickness / 2.0;
             let top_translation = Vec3::new(border_center_x, top_y, -0.4);
 
@@ -330,7 +368,7 @@ pub(crate) fn update_cursor_line_highlight(
             }
 
             // === BOTTOM BORDER ===
-            let bottom_y = (viewport.height as f32) / 2.0 - y_from_top - line_height / 2.0
+            let bottom_y = viewport.world_top() - y_from_top - line_height / 2.0
                 + border_thickness / 2.0;
             let bottom_translation = Vec3::new(border_center_x, bottom_y, -0.4);
 
@@ -418,9 +456,9 @@ pub(crate) fn update_cursor_line_highlight(
             let word_x_left = viewport.text_area_left + (word_start as f32 * char_width);
 
             // Camera viewport handles panel positioning, so no offset_x here
-            let word_center_x = -(viewport.width as f32) / 2.0 + word_x_left + word_width / 2.0
+            let word_center_x = viewport.world_left() + word_x_left + word_width / 2.0
                 - state.horizontal_scroll_offset;
-            let word_center_y = (viewport.height as f32) / 2.0 - y_from_top;
+            let word_center_y = viewport.world_top() - y_from_top;
 
             let word_translation = Vec3::new(word_center_x, word_center_y, -0.5);
 

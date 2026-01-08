@@ -1,22 +1,20 @@
 //! GPU-accelerated line numbers rendering
 //!
-//! Uses the same rendering pipeline as the main code text for visual consistency.
+//! Uses the same instanced rendering pipeline as the main code text for visual consistency.
 
 use super::editor_ui_plugin::EditorRenderConfig;
-use crate::gpu_text::{GlyphAtlas, GlyphKey, GlyphRasterizer, TextMaterial, TextRenderState};
+use crate::gpu_text::{GlyphAtlas, GlyphKey, GlyphRasterizer};
 use crate::settings::*;
 use crate::types::*;
-use bevy::asset::RenderAssetUsages;
-use bevy::mesh::{Indices, PrimitiveTopology};
+use crate::plugin::gpu_text_instanced::{GlyphBatchComponent, GlyphInstance};
 use bevy::prelude::*;
-use bevy::sprite_render::MeshMaterial2d;
 
-/// Marker component for the GPU line numbers mesh entity
+/// Marker component for the GPU line numbers batch entity
 #[derive(Component)]
-pub struct GpuLineNumbersMesh {
-    /// Content version when this mesh was built
+pub struct GpuLineNumbersBatch {
+    /// Content version when this batch was built
     pub built_at_version: u64,
-    /// Scroll offset when this mesh was built
+    /// Scroll offset when this batch was built
     pub built_at_scroll: f32,
     /// Viewport dimensions when built
     pub built_at_width: u32,
@@ -32,32 +30,35 @@ pub(crate) fn update_gpu_line_numbers(
     ui: Res<UiSettings>,
     performance: Res<PerformanceSettings>,
     viewport: Res<ViewportDimensions>,
+    #[cfg(feature = "folding")]
     fold_state: Res<FoldState>,
     mut atlas: ResMut<GlyphAtlas>,
-    render_state: Res<TextRenderState>,
     render_config: Res<EditorRenderConfig>,
-    mut materials: ResMut<Assets<TextMaterial>>,
-    mut meshes: ResMut<Assets<Mesh>>,
     mut images: ResMut<Assets<Image>>,
-    mesh_query: Query<(Entity, &GpuLineNumbersMesh, &bevy::mesh::Mesh2d)>,
+    batch_query: Query<(Entity, &GpuLineNumbersBatch)>,
 ) {
     // Hide if line numbers are disabled
     if !ui.show_line_numbers {
-        for (entity, _, _) in mesh_query.iter() {
+        for (entity, _) in batch_query.iter() {
             commands.entity(entity).insert(Visibility::Hidden);
         }
         return;
     }
 
     // Check if we need to update
-    if !state.needs_update && !state.needs_scroll_update && !state.is_changed() && !fold_state.is_changed() {
-        // Check if existing mesh is still valid
-        if let Some((entity, line_mesh, _)) = mesh_query.iter().next() {
-            let scroll_changed = (line_mesh.built_at_scroll - state.scroll_offset).abs() > 0.01;
-            let viewport_changed = line_mesh.built_at_width != viewport.width
-                || line_mesh.built_at_height != viewport.height;
+    #[cfg(feature = "folding")]
+    let fold_changed = fold_state.is_changed();
+    #[cfg(not(feature = "folding"))]
+    let fold_changed = false;
 
-            if !scroll_changed && !viewport_changed && line_mesh.built_at_version == state.content_version {
+    if !state.needs_update && !state.needs_scroll_update && !state.is_changed() && !fold_changed {
+        // Check if existing batch is still valid
+        if let Some((entity, batch)) = batch_query.iter().next() {
+            let scroll_changed = (batch.built_at_scroll - state.scroll_offset).abs() > 0.01;
+            let viewport_changed = batch.built_at_width != viewport.width
+                || batch.built_at_height != viewport.height;
+
+            if !scroll_changed && !viewport_changed && batch.built_at_version == state.content_version {
                 commands.entity(entity).insert(Visibility::Visible);
                 return;
             }
@@ -91,36 +92,46 @@ pub(crate) fn update_gpu_line_numbers(
         ((viewport_bottom - viewport.text_area_top) / line_height).ceil() as usize;
 
     let total_buffer_lines = state.line_count();
+    #[cfg(feature = "folding")]
     let has_folding = !fold_state.regions.is_empty();
+    #[cfg(not(feature = "folding"))]
+    let has_folding = false;
 
     // Calculate starting buffer line and display row
     let (start_buffer_line, mut current_display_row) = if has_folding {
-        let mut display_row = 0;
-        let mut buffer_line = 0;
-        while buffer_line < total_buffer_lines && display_row < first_visible_display_row {
-            if !fold_state.is_line_hidden(buffer_line) {
-                display_row += 1;
+        #[cfg(feature = "folding")]
+        {
+            let mut display_row = 0;
+            let mut buffer_line = 0;
+            while buffer_line < total_buffer_lines && display_row < first_visible_display_row {
+                if !fold_state.is_line_hidden(buffer_line) {
+                    display_row += 1;
+                }
+                buffer_line += 1;
             }
-            buffer_line += 1;
+            (buffer_line, display_row)
         }
-        (buffer_line, display_row)
+        #[cfg(not(feature = "folding"))]
+        {
+            let start = first_visible_display_row.min(total_buffer_lines);
+            (start, start)
+        }
     } else {
         let start = first_visible_display_row.min(total_buffer_lines);
         (start, start)
     };
 
-    // Build mesh data
-    let mut positions: Vec<[f32; 3]> = Vec::new();
-    let mut uvs: Vec<[f32; 2]> = Vec::new();
-    let mut colors: Vec<[f32; 4]> = Vec::new();
-    let mut indices: Vec<u32> = Vec::new();
-    let mut vertex_count: u32 = 0;
+    // Calculate gutter center X position (camera-relative, not world coords)
+    // Camera is at viewport center, so gutter is at -viewport_width/2 + gutter_width/2
+    let gutter_center_x = viewport.world_left() + viewport.gutter_width / 2.0;
 
-    // Calculate gutter center X position in world coordinates
-    let gutter_center_x = -viewport_width / 2.0 + viewport.gutter_width / 2.0;
+    // Pre-allocate instances
+    let estimated_capacity = (last_visible_display_row - first_visible_display_row + 2) * 4;
+    let mut instances: Vec<GlyphInstance> = Vec::with_capacity(estimated_capacity);
 
     // Iterate over visible buffer lines
     for buffer_line in start_buffer_line..total_buffer_lines {
+        #[cfg(feature = "folding")]
         if fold_state.is_line_hidden(buffer_line) {
             continue;
         }
@@ -145,12 +156,20 @@ pub(crate) fn update_gpu_line_numbers(
         } else {
             theme.line_numbers
         };
-        let color_arr = line_color.to_linear().to_f32_array();
+        let color_linear = line_color.to_linear();
+        let color_arr = [color_linear.red, color_linear.green, color_linear.blue, color_linear.alpha];
 
         // Calculate text width for right-alignment in gutter
-        let char_count = line_number_text.len();
-        let estimated_width = char_count as f32 * font.char_width;
-
+        // Use exact metrics if available, otherwise approximation
+        let mut estimated_width = 0.0;
+        for ch in line_number_text.chars() {
+             if let Some(w) = atlas.measure_char_width(ch, font_size) {
+                 estimated_width += w;
+             } else {
+                 estimated_width += font.char_width;
+             }
+        }
+        
         // Right-align: start X so that text ends near the right edge of gutter (with padding)
         let right_padding = 8.0;
         let start_x = gutter_center_x + viewport.gutter_width / 2.0 - right_padding - estimated_width;
@@ -161,42 +180,25 @@ pub(crate) fn update_gpu_line_numbers(
         for ch in line_number_text.chars() {
             let key = GlyphKey::new(ch, font_size);
             if let Some(info) = atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, font_size)) {
-                // Calculate screen position first (same as main text renderer)
+                // Calculate screen position (same logic as main text)
                 let screen_y = base_y - info.offset.y;
-                // Convert to world coordinates
+
+                // Convert to camera-relative world coordinates
+                // Camera is at viewport center, entities positioned relative to camera
                 let world_x = x + info.offset.x;
-                let world_y = viewport_height / 2.0 - screen_y;
+                let world_y = viewport.world_top() - screen_y - info.size.y;
 
-                let w = info.size.x;
-                let h = info.size.y;
-
-                // Four corners of the glyph quad
-                positions.push([world_x, world_y - h, 0.0]);
-                positions.push([world_x + w, world_y - h, 0.0]);
-                positions.push([world_x + w, world_y, 0.0]);
-                positions.push([world_x, world_y, 0.0]);
-
-                // UV coordinates
-                uvs.push([info.uv_min.x, info.uv_max.y]);
-                uvs.push([info.uv_max.x, info.uv_max.y]);
-                uvs.push([info.uv_max.x, info.uv_min.y]);
-                uvs.push([info.uv_min.x, info.uv_min.y]);
-
-                // Colors
-                colors.push(color_arr);
-                colors.push(color_arr);
-                colors.push(color_arr);
-                colors.push(color_arr);
-
-                // Indices
-                indices.push(vertex_count);
-                indices.push(vertex_count + 1);
-                indices.push(vertex_count + 2);
-                indices.push(vertex_count);
-                indices.push(vertex_count + 2);
-                indices.push(vertex_count + 3);
-
-                vertex_count += 4;
+                let instance = GlyphInstance {
+                    position: Vec2::new(world_x, world_y),
+                    uv_min: info.uv_min,
+                    uv_max: info.uv_max,
+                    size: info.size,
+                    color: color_arr,
+                    z_index: 0.0, // Line numbers at same level as main text
+                    _padding: [0.0; 3],
+                };
+                
+                instances.push(instance);
                 x += info.advance;
             } else {
                 x += font_size * 0.6;
@@ -206,74 +208,55 @@ pub(crate) fn update_gpu_line_numbers(
         current_display_row += 1;
     }
 
-    // Update material and atlas
-    let Some(material_handle) = &render_state.material_handle else {
-        return;
-    };
-
-    if let Some(material) = materials.get_mut(material_handle) {
-        material.atlas_texture = atlas.texture.clone();
-    }
-
+    // Update atlas texture
     atlas.update_texture(&mut images);
 
-    if positions.is_empty() {
-        for (entity, _, _) in mesh_query.iter() {
+    if instances.is_empty() {
+        for (entity, _) in batch_query.iter() {
             commands.entity(entity).insert(Visibility::Hidden);
         }
         return;
     }
 
-    // Build mesh
-    let mut mesh = Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::RENDER_WORLD,
-    );
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
-    mesh.insert_indices(Indices::U32(indices));
-
-    // Update or create mesh entity
-    if let Some((entity, line_mesh, _)) = mesh_query.iter().next() {
-        let scroll_changed = (line_mesh.built_at_scroll - state.scroll_offset).abs() > 0.01;
-        let viewport_changed = line_mesh.built_at_width != viewport.width
-            || line_mesh.built_at_height != viewport.height;
-        let needs_rebuild = line_mesh.built_at_version != state.content_version
-            || scroll_changed
-            || viewport_changed;
-
-        if needs_rebuild {
-            let new_mesh_handle = meshes.add(mesh);
-            commands
-                .entity(entity)
-                .insert(bevy::mesh::Mesh2d(new_mesh_handle))
-                .insert(GpuLineNumbersMesh {
-                    built_at_version: state.content_version,
-                    built_at_scroll: state.scroll_offset,
-                    built_at_width: viewport.width,
-                    built_at_height: viewport.height,
-                })
-                .insert(Visibility::Visible);
-        } else {
-            commands.entity(entity).insert(Visibility::Visible);
+    // Update or create batch entity
+    if let Some((entity, _)) = batch_query.iter().next() {
+        commands.entity(entity)
+            .insert(GlyphBatchComponent {
+                instances,
+                atlas_texture: atlas.texture.clone(),
+            })
+            .insert(GpuLineNumbersBatch {
+                built_at_version: state.content_version,
+                built_at_scroll: state.scroll_offset,
+                built_at_width: viewport.width,
+                built_at_height: viewport.height,
+            })
+            .insert(Visibility::Visible);
+            
+        // Despawn extras if any (shouldn't happen with single query)
+        for (extra_entity, _) in batch_query.iter().skip(1) {
+            commands.entity(extra_entity).despawn();
         }
     } else {
-        // Create new mesh entity
-        let mesh_handle = meshes.add(mesh);
         let mut entity_cmd = commands.spawn((
-            bevy::mesh::Mesh2d(mesh_handle),
-            MeshMaterial2d(material_handle.clone()),
-            Transform::from_translation(Vec3::new(0.0, 0.0, 0.5)), // Slightly behind main text
-            GpuLineNumbersMesh {
+            GlyphBatchComponent {
+                instances,
+                atlas_texture: atlas.texture.clone(),
+            },
+            Transform::default(),
+            GlobalTransform::default(),
+            GpuLineNumbersBatch {
                 built_at_version: state.content_version,
                 built_at_scroll: state.scroll_offset,
                 built_at_width: viewport.width,
                 built_at_height: viewport.height,
             },
-            Name::new("GpuLineNumbersMesh"),
+            Name::new("GpuLineNumbersBatch"),
             Visibility::Visible,
+            InheritedVisibility::default(),
+            ViewVisibility::default(),
         ));
+        
         if let Some(ref layers) = render_config.render_layers {
             entity_cmd.insert(layers.clone());
         }
