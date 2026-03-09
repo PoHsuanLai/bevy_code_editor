@@ -112,8 +112,10 @@ impl SyntaxResource {
         }
     }
 
-    /// Clone the parse state for async parsing (returns parser, language, tree, edits, deferred_edits)
-    /// Note: Creates new parser/clones tree to avoid blocking main thread access
+    /// Clone the parse state for async parsing.
+    ///
+    /// Edits have already been applied to the tree via `apply_sync_edit()`, so
+    /// the cloned tree is ready for incremental re-parse without further edits.
     #[cfg(feature = "tree-sitter")]
     pub fn clone_parse_state(
         &mut self,
@@ -121,11 +123,8 @@ impl SyntaxResource {
         Option<tree_sitter::Parser>,
         Option<tree_sitter::Language>,
         Option<tree_sitter::Tree>,
-        Vec<tree_sitter::InputEdit>,
-        Vec<crate::syntax::tree_sitter::DeferredEdit>,
     ) {
         if let Some(provider) = &mut self.provider {
-            // Create a new parser for the async task
             let parser = if let Some(ref language) = provider.cached_language {
                 let mut new_parser = tree_sitter::Parser::new();
                 if new_parser.set_language(language).is_ok() {
@@ -137,28 +136,12 @@ impl SyntaxResource {
                 None
             };
 
-            // Clone the tree (tree-sitter trees can be cloned for concurrent access)
+            // Clone the tree — edits already applied synchronously
             let tree = provider.cached_tree.clone();
 
-            // Clone the pending edits
-            let edits = provider.pending_edits.clone();
-
-            // Clone the deferred edits (byte positions only - Points calculated in async task)
-            let deferred_edits = provider.deferred_edits.clone();
-
-            // Clear pending edits since we're processing them
-            provider.pending_edits.clear();
-            provider.deferred_edits.clear();
-
-            (
-                parser,
-                provider.cached_language.clone(),
-                tree,
-                edits,
-                deferred_edits,
-            )
+            (parser, provider.cached_language.clone(), tree)
         } else {
-            (None, None, None, Vec::new(), Vec::new())
+            (None, None, None)
         }
     }
 
@@ -184,17 +167,14 @@ impl SyntaxResource {
         }
     }
 
-    /// Record an edit for incremental parsing (deferred - byte positions only)
-    /// Points will be calculated lazily during async parse to avoid blocking the main thread
+    /// Apply an edit synchronously to the cached tree (tree interpolation).
+    ///
+    /// This updates the tree's byte offsets without re-parsing, keeping it valid
+    /// for highlighting queries while the async re-parse runs in the background.
     #[cfg(feature = "tree-sitter")]
-    pub fn record_edit_deferred(
-        &mut self,
-        start_byte: usize,
-        old_end_byte: usize,
-        new_end_byte: usize,
-    ) {
+    pub fn apply_sync_edit(&mut self, edit: tree_sitter::InputEdit, rope: &ropey::Rope) {
         if let Some(provider) = &mut self.provider {
-            provider.record_edit_deferred(start_byte, old_end_byte, new_end_byte);
+            provider.apply_sync_edit(edit, rope);
         }
     }
 }
@@ -361,13 +341,10 @@ pub(crate) fn update_syntax_tree(
                 syntax.set_parsed_tree(tree, &state.rope);
                 state.last_highlighted_version = parse_task.content_version;
 
-                // CRITICAL: Clear the highlight cache when tree-sitter finishes!
-                // The cache may contain plain text fallbacks from before parsing completed
+                // Clear the highlight cache when tree-sitter finishes
                 highlight_cache.clear();
 
                 // Force a render update to display the new highlights immediately
-                // NOTE: This causes the viewport to be marked dirty, but the stale detection
-                // will only rebuild lines that actually have outdated tree_version
                 state.needs_update = true;
             }
             // Remove the completed task
@@ -379,32 +356,18 @@ pub(crate) fn update_syntax_tree(
 
     // Only start a new parse if content changed and no task is running
     if state.content_version != state.last_highlighted_version && syntax.is_available() {
-        // OPTIMIZATION: Don't clear cache here - let it invalidate naturally by version mismatch
-        // This allows unchanged lines to remain cached during typing
-        // highlight_cache.clear();
-
-        // Clone rope for async task (Rope uses Arc internally so this is cheap)
         let rope = state.rope.clone();
         let content_version = state.content_version;
 
-        // Clone the provider's state for incremental parsing (keeps main state intact)
-        let (parser, language, cached_tree, pending_edits, deferred_edits) =
-            syntax.clone_parse_state();
+        // Clone the provider's state — edits already applied via apply_sync_edit()
+        let (parser, language, cached_tree) = syntax.clone_parse_state();
 
         // Spawn async parse task
         let task_pool = AsyncComputeTaskPool::get();
         let task = task_pool.spawn(async move {
-            parse_tree_async(
-                rope,
-                parser,
-                language,
-                cached_tree,
-                pending_edits,
-                deferred_edits,
-            )
+            parse_tree_async(rope, parser, language, cached_tree)
         });
 
-        // Spawn entity to track the task
         commands.spawn(ParseTask {
             task,
             content_version,
@@ -417,44 +380,16 @@ fn parse_tree_async(
     rope: ropey::Rope,
     mut parser: Option<tree_sitter::Parser>,
     language: Option<tree_sitter::Language>,
-    mut cached_tree: Option<tree_sitter::Tree>,
-    pending_edits: Vec<tree_sitter::InputEdit>,
-    deferred_edits: Vec<crate::syntax::tree_sitter::DeferredEdit>,
+    cached_tree: Option<tree_sitter::Tree>,
 ) -> Option<tree_sitter::Tree> {
-    // Same parsing logic as update_tree, but runs async
-    // use super::syntax_highlighting::byte_to_point; // Use local function
     use crate::syntax::tree_sitter::RopeReader;
 
     let mut reader = RopeReader::new(&rope);
     let mut callback =
         |byte_offset: usize, _position: tree_sitter::Point| -> &[u8] { reader.read(byte_offset) };
 
-    // Try incremental parsing first
-    if let Some(ref mut tree) = cached_tree {
-        // Apply pending edits (already have full position info)
-        for edit in pending_edits {
-            tree.edit(&edit);
-        }
-
-        // Apply deferred edits (calculate Points now on async thread)
-        // OPTIMIZATION: This expensive work happens off the main thread
-        for deferred in deferred_edits {
-            let start_position = byte_to_point(&rope, deferred.start_byte);
-            let old_end_position = byte_to_point(&rope, deferred.old_end_byte);
-            let new_end_position = byte_to_point(&rope, deferred.new_end_byte);
-
-            let edit = tree_sitter::InputEdit {
-                start_byte: deferred.start_byte,
-                old_end_byte: deferred.old_end_byte,
-                new_end_byte: deferred.new_end_byte,
-                start_position,
-                old_end_position,
-                new_end_position,
-            };
-            tree.edit(&edit);
-        }
-
-        // Re-parse incrementally
+    // Incremental parse — edits already applied to tree via apply_sync_edit()
+    if let Some(ref tree) = cached_tree {
         if let Some(ref mut parser) = parser {
             if let Some(new_tree) = parser.parse_with(&mut callback, Some(tree)) {
                 return Some(new_tree);
@@ -525,17 +460,33 @@ fn send_text_edit_events(
 }
 
 #[cfg(feature = "tree-sitter")]
-/// System that listens for TextEditEvent and records edits for incremental parsing
-/// This runs after send_text_edit_events to process the sent events
-/// OPTIMIZATION: Only store byte positions - Points are calculated lazily during async parse
+/// System that applies edits synchronously to the cached tree (tree interpolation).
+///
+/// This runs after send_text_edit_events. By applying `tree.edit()` on the main
+/// thread, the tree stays valid for highlighting queries while the async re-parse
+/// runs in the background — eliminating the color flash on keystroke.
 fn record_edits_for_incremental_parsing(
+    state: Res<CodeEditorState>,
     mut syntax: ResMut<SyntaxResource>,
     mut events: MessageReader<crate::events::TextEditEvent>,
 ) {
     for event in events.read() {
-        // Record the edit with deferred Point calculation
-        // This avoids expensive rope traversals on the main thread
-        syntax.record_edit_deferred(event.start_byte, event.old_end_byte, event.new_end_byte);
+        // Compute Points on main thread — these are sub-μs O(log n) rope lookups
+        let start_position = byte_to_point(&state.rope, event.start_byte);
+        let old_end_position = byte_to_point(&state.rope, event.old_end_byte);
+        let new_end_position = byte_to_point(&state.rope, event.new_end_byte);
+
+        let edit = tree_sitter::InputEdit {
+            start_byte: event.start_byte,
+            old_end_byte: event.old_end_byte,
+            new_end_byte: event.new_end_byte,
+            start_position,
+            old_end_position,
+            new_end_position,
+        };
+
+        // Apply edit to the cached tree immediately (tree interpolation)
+        syntax.apply_sync_edit(edit, &state.rope);
     }
 }
 
@@ -559,19 +510,25 @@ impl Plugin for SyntaxPlugin {
         // Add systems for tree-sitter incremental parsing
         #[cfg(feature = "tree-sitter")]
         {
+            // These must run in ApplyStateSet so the tree is interpolated
+            // BEFORE RenderingSet calls highlight_range()
             app.add_systems(
                 Update,
                 (
                     // First: send events for pending edits
                     send_text_edit_events,
-                    // Second: record events for incremental parsing
+                    // Second: apply edits to tree synchronously (tree interpolation)
                     record_edits_for_incremental_parsing,
                 )
-                    .chain(),
+                    .chain()
+                    .in_set(crate::plugin::ApplyStateSet),
             );
-            
-            // Register update_syntax_tree separately
-            app.add_systems(Update, update_syntax_tree);
+
+            // Async parse task polling — also in ApplyStateSet
+            app.add_systems(
+                Update,
+                update_syntax_tree.in_set(crate::plugin::ApplyStateSet),
+            );
         }
     }
 }

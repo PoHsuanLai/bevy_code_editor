@@ -79,6 +79,8 @@ pub mod sync;
 pub mod systems;
 pub mod theme;
 pub mod ui;
+#[cfg(feature = "egui-overlays")]
+pub mod egui_render;
 
 /// System set for LSP UI synchronization (state -> marker components)
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -132,6 +134,9 @@ pub mod prelude {
         SignatureHelpUI,
     };
     pub use super::{LspUiRenderSet, LspUiSyncSet};
+
+    #[cfg(feature = "egui-overlays")]
+    pub use super::egui_render::LspEguiViewportOffset;
 }
 
 // Re-export commonly used types at module level for backward compatibility

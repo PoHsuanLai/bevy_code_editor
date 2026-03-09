@@ -5,12 +5,7 @@
 
 use bevy::prelude::*;
 use bevy::window::{CursorIcon, SystemCursorIcon};
-use bevy_camera::visibility::RenderLayers;
-use bevy_camera::ClearColorConfig;
 use bevy_code_editor::prelude::*;
-
-/// Render layer for borders (layer 1) - only seen by BorderCamera
-const BORDER_LAYER: RenderLayers = RenderLayers::layer(1);
 
 /// Which edge/corner is being resized
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -42,10 +37,10 @@ impl ResizeEdge {
 /// Tracks the editor panel size and resize state
 #[derive(Resource)]
 struct EditorPanel {
-    /// Center X position of the panel
-    center_x: f32,
-    /// Center Y position of the panel
-    center_y: f32,
+    /// Left edge position in world coords
+    left: f32,
+    /// Top edge position in world coords
+    top: f32,
     /// Width of the editor panel
     width: f32,
     /// Height of the editor panel
@@ -61,8 +56,8 @@ struct EditorPanel {
 impl Default for EditorPanel {
     fn default() -> Self {
         Self {
-            center_x: 0.0,
-            center_y: 0.0,
+            left: -400.0, // Start 400px left of center
+            top: 300.0,   // Start 300px above center
             width: 800.0,
             height: 600.0,
             resize_edge: ResizeEdge::None,
@@ -73,17 +68,17 @@ impl Default for EditorPanel {
 }
 
 impl EditorPanel {
-    fn left(&self) -> f32 {
-        self.center_x - self.width / 2.0
-    }
     fn right(&self) -> f32 {
-        self.center_x + self.width / 2.0
-    }
-    fn top(&self) -> f32 {
-        self.center_y + self.height / 2.0
+        self.left + self.width
     }
     fn bottom(&self) -> f32 {
-        self.center_y - self.height / 2.0
+        self.top - self.height
+    }
+    fn center_x(&self) -> f32 {
+        self.left + self.width / 2.0
+    }
+    fn center_y(&self) -> f32 {
+        self.top - self.height / 2.0
     }
 }
 
@@ -92,7 +87,7 @@ impl EditorPanel {
 struct PanelBorder;
 
 const BORDER_WIDTH: f32 = 4.0;
-const RESIZE_ZONE: f32 = 8.0;
+const RESIZE_ZONE: f32 = 12.0; // Wider zone for easier grabbing
 
 fn main() {
     App::new()
@@ -105,19 +100,20 @@ fn main() {
             ..default()
         }))
         .insert_resource(EditorPanel::default())
+        .add_plugins(CodeEditorPlugin::default())
+        .add_plugins(EditorUiPlugin::default())
         // Disable auto-resize so we can control viewport manually
+        // IMPORTANT: Must be AFTER CodeEditorPlugin to override its default
         .insert_resource(ViewportConfig {
             auto_resize_to_window: false,
         })
-        .add_plugins(CodeEditorPlugin::default())
-        .add_plugins(EditorUiPlugin::default())
         .add_systems(Startup, setup)
         .add_systems(
             Update,
             (
                 handle_resize_input,
-                update_panel_visuals,
                 sync_viewport_to_panel,
+                update_panel_visuals,
                 update_cursor_icon,
             )
                 .chain(),
@@ -125,88 +121,82 @@ fn main() {
         .run();
 }
 
-/// Marker for the border camera (renders borders outside editor viewport)
-#[derive(Component)]
-struct BorderCamera;
+fn setup(
+    mut commands: Commands,
+    mut state: ResMut<CodeEditorState>,
+    mut minimap_settings: ResMut<MinimapSettings>,
+    mut viewport: ResMut<ViewportDimensions>,
+    panel: Res<EditorPanel>,
+) {
+    // Disable minimap for the resizable example (it doesn't fit well in small panels)
+    minimap_settings.enabled = false;
 
-fn setup(mut commands: Commands, mut state: ResMut<CodeEditorState>, panel: Res<EditorPanel>) {
-    // Spawn a separate camera for the borders (renders to full window, order -1 = before editor)
-    // This camera ONLY sees layer 1 (borders), so it won't render editor content
-    commands.spawn((
-        Camera2d,
-        Camera {
-            order: -1, // Render before editor camera
-            clear_color: ClearColorConfig::Custom(Color::srgb(0.1, 0.1, 0.12)),
-            ..default()
-        },
-        BORDER_LAYER, // Only see border layer
-        BorderCamera,
-        Name::new("BorderCamera"),
-    ));
+    // Set initial viewport position (left/top of panel in window coords)
+    // IMPORTANT: These are set ONCE and NEVER updated during resize
+    // This keeps the camera fixed and prevents UI elements from repositioning
+    viewport.offset_x = panel.left;
+    viewport.offset_y = panel.top;
 
     // Spawn 4 border sprites (top, bottom, left, right)
-    // These are on BORDER_LAYER so only BorderCamera sees them
-    // Top border
+    // Camera is positioned at panel center, so borders are relative to camera center (0, 0)
+    // IMPORTANT: Borders must be INSIDE the viewport bounds, as camera viewport clips everything outside
+    // Top border (inside the top edge)
     commands.spawn((
         Sprite {
             color: Color::srgb(0.3, 0.3, 0.35),
-            custom_size: Some(Vec2::new(panel.width + BORDER_WIDTH * 2.0, BORDER_WIDTH)),
+            custom_size: Some(Vec2::new(panel.width, BORDER_WIDTH)),
             ..default()
         },
         Transform::from_translation(Vec3::new(
-            panel.center_x,
-            panel.top() + BORDER_WIDTH / 2.0,
-            10.0,
+            0.0,
+            panel.height / 2.0 - BORDER_WIDTH / 2.0, // Inside the panel
+            10.0, // Positive Z to render in front
         )),
-        BORDER_LAYER,
         PanelBorder,
         Name::new("BorderTop"),
     ));
-    // Bottom border
+    // Bottom border (inside the bottom edge)
     commands.spawn((
         Sprite {
             color: Color::srgb(0.3, 0.3, 0.35),
-            custom_size: Some(Vec2::new(panel.width + BORDER_WIDTH * 2.0, BORDER_WIDTH)),
+            custom_size: Some(Vec2::new(panel.width, BORDER_WIDTH)),
             ..default()
         },
         Transform::from_translation(Vec3::new(
-            panel.center_x,
-            panel.bottom() - BORDER_WIDTH / 2.0,
-            10.0,
+            0.0,
+            -panel.height / 2.0 + BORDER_WIDTH / 2.0, // Inside the panel
+            10.0, // Positive Z to render in front
         )),
-        BORDER_LAYER,
         PanelBorder,
         Name::new("BorderBottom"),
     ));
-    // Left border (extends to meet top/bottom borders)
+    // Left border (inside the left edge)
     commands.spawn((
         Sprite {
             color: Color::srgb(0.3, 0.3, 0.35),
-            custom_size: Some(Vec2::new(BORDER_WIDTH, panel.height + BORDER_WIDTH * 2.0)),
+            custom_size: Some(Vec2::new(BORDER_WIDTH, panel.height)),
             ..default()
         },
         Transform::from_translation(Vec3::new(
-            panel.left() - BORDER_WIDTH / 2.0,
-            panel.center_y,
-            10.0,
+            -panel.width / 2.0 + BORDER_WIDTH / 2.0, // Inside the panel
+            0.0,
+            10.0, // Positive Z to render in front
         )),
-        BORDER_LAYER,
         PanelBorder,
         Name::new("BorderLeft"),
     ));
-    // Right border (extends to meet top/bottom borders)
+    // Right border (inside the right edge)
     commands.spawn((
         Sprite {
             color: Color::srgb(0.3, 0.3, 0.35),
-            custom_size: Some(Vec2::new(BORDER_WIDTH, panel.height + BORDER_WIDTH * 2.0)),
+            custom_size: Some(Vec2::new(BORDER_WIDTH, panel.height)),
             ..default()
         },
         Transform::from_translation(Vec3::new(
-            panel.right() + BORDER_WIDTH / 2.0,
-            panel.center_y,
-            10.0,
+            panel.width / 2.0 - BORDER_WIDTH / 2.0, // Inside the panel
+            0.0,
+            10.0, // Positive Z to render in front
         )),
-        BORDER_LAYER,
         PanelBorder,
         Name::new("BorderRight"),
     ));
@@ -281,16 +271,19 @@ mod utils {
 }
 
 fn detect_resize_edge(panel: &EditorPanel, cursor_x: f32, cursor_y: f32) -> ResizeEdge {
-    let near_left = (cursor_x - panel.left()).abs() < RESIZE_ZONE;
+    // Borders are drawn INSIDE the panel edges by BORDER_WIDTH/2
+    // So the visual border center is at panel.edge - BORDER_WIDTH/2
+    // But for better UX, we detect resize at the actual panel edges with wider zone
+    let near_left = (cursor_x - panel.left).abs() < RESIZE_ZONE;
     let near_right = (cursor_x - panel.right()).abs() < RESIZE_ZONE;
-    let near_top = (cursor_y - panel.top()).abs() < RESIZE_ZONE;
+    let near_top = (cursor_y - panel.top).abs() < RESIZE_ZONE;
     let near_bottom = (cursor_y - panel.bottom()).abs() < RESIZE_ZONE;
 
-    // Must be within extended bounds (panel + resize zone)
+    // Must be within extended bounds (panel + resize zone on outside, panel edge on inside)
     let in_x_range =
-        cursor_x >= panel.left() - RESIZE_ZONE && cursor_x <= panel.right() + RESIZE_ZONE;
+        cursor_x >= panel.left - RESIZE_ZONE && cursor_x <= panel.right() + RESIZE_ZONE;
     let in_y_range =
-        cursor_y >= panel.bottom() - RESIZE_ZONE && cursor_y <= panel.top() + RESIZE_ZONE;
+        cursor_y >= panel.bottom() - RESIZE_ZONE && cursor_y <= panel.top + RESIZE_ZONE;
 
     if !in_x_range || !in_y_range {
         return ResizeEdge::None;
@@ -341,40 +334,39 @@ fn handle_resize_input(
     }
 
     // Update dimensions while resizing
+    // Directly modify the edge positions - opposite edges stay fixed
     if panel.resize_edge != ResizeEdge::None {
         let edge = panel.resize_edge;
 
-        // Calculate new bounds based on which edge is being dragged
-        let mut new_left = panel.left();
-        let mut new_right = panel.right();
-        let mut new_top = panel.top();
-        let mut new_bottom = panel.bottom();
-
         match edge {
             ResizeEdge::Left | ResizeEdge::TopLeft | ResizeEdge::BottomLeft => {
-                new_left = cursor_x.min(new_right - panel.min_width);
+                // Move left edge, right edge stays fixed
+                let new_left = cursor_x.min(panel.right() - panel.min_width);
+                panel.width = panel.right() - new_left;
+                panel.left = new_left;
             }
             ResizeEdge::Right | ResizeEdge::TopRight | ResizeEdge::BottomRight => {
-                new_right = cursor_x.max(new_left + panel.min_width);
+                // Move right edge, left edge stays fixed
+                let new_right = cursor_x.max(panel.left + panel.min_width);
+                panel.width = new_right - panel.left;
             }
             _ => {}
         }
 
         match edge {
             ResizeEdge::Top | ResizeEdge::TopLeft | ResizeEdge::TopRight => {
-                new_top = cursor_y.max(new_bottom + panel.min_height);
+                // Move top edge, bottom stays fixed
+                let new_top = cursor_y.max(panel.bottom() + panel.min_height);
+                panel.height = new_top - panel.bottom();
+                panel.top = new_top;
             }
             ResizeEdge::Bottom | ResizeEdge::BottomLeft | ResizeEdge::BottomRight => {
-                new_bottom = cursor_y.min(new_top - panel.min_height);
+                // Move bottom edge, top stays fixed
+                let new_bottom = cursor_y.min(panel.top - panel.min_height);
+                panel.height = panel.top - new_bottom;
             }
             _ => {}
         }
-
-        // Update panel from new bounds
-        panel.width = new_right - new_left;
-        panel.height = new_top - new_bottom;
-        panel.center_x = (new_left + new_right) / 2.0;
-        panel.center_y = (new_top + new_bottom) / 2.0;
     }
 }
 
@@ -382,37 +374,39 @@ fn update_panel_visuals(
     panel: Res<EditorPanel>,
     mut border_query: Query<(&mut Sprite, &mut Transform, &Name), With<PanelBorder>>,
 ) {
+    // Update borders when panel changes
     if !panel.is_changed() {
         return;
     }
 
+    // Position borders in ABSOLUTE WORLD COORDINATES
+    // This way they stay fixed when only one edge moves
+    // Borders are INSIDE the panel edges
     for (mut sprite, mut transform, name) in border_query.iter_mut() {
         match name.as_str() {
             "BorderTop" => {
-                sprite.custom_size =
-                    Some(Vec2::new(panel.width + BORDER_WIDTH * 2.0, BORDER_WIDTH));
+                sprite.custom_size = Some(Vec2::new(panel.width, BORDER_WIDTH));
+                // Top border in world coords: center X at panel.center_x(), Y at panel.top - BORDER_WIDTH/2
                 transform.translation =
-                    Vec3::new(panel.center_x, panel.top() + BORDER_WIDTH / 2.0, 10.0);
+                    Vec3::new(panel.center_x(), panel.top - BORDER_WIDTH / 2.0, 10.0);
             }
             "BorderBottom" => {
-                sprite.custom_size =
-                    Some(Vec2::new(panel.width + BORDER_WIDTH * 2.0, BORDER_WIDTH));
+                sprite.custom_size = Some(Vec2::new(panel.width, BORDER_WIDTH));
+                // Bottom border in world coords
                 transform.translation =
-                    Vec3::new(panel.center_x, panel.bottom() - BORDER_WIDTH / 2.0, 10.0);
+                    Vec3::new(panel.center_x(), panel.bottom() + BORDER_WIDTH / 2.0, 10.0);
             }
             "BorderLeft" => {
-                // Extend to meet top/bottom borders
-                sprite.custom_size =
-                    Some(Vec2::new(BORDER_WIDTH, panel.height + BORDER_WIDTH * 2.0));
+                sprite.custom_size = Some(Vec2::new(BORDER_WIDTH, panel.height));
+                // Left border in world coords
                 transform.translation =
-                    Vec3::new(panel.left() - BORDER_WIDTH / 2.0, panel.center_y, 10.0);
+                    Vec3::new(panel.left + BORDER_WIDTH / 2.0, panel.center_y(), 10.0);
             }
             "BorderRight" => {
-                // Extend to meet top/bottom borders
-                sprite.custom_size =
-                    Some(Vec2::new(BORDER_WIDTH, panel.height + BORDER_WIDTH * 2.0));
+                sprite.custom_size = Some(Vec2::new(BORDER_WIDTH, panel.height));
+                // Right border in world coords
                 transform.translation =
-                    Vec3::new(panel.right() + BORDER_WIDTH / 2.0, panel.center_y, 10.0);
+                    Vec3::new(panel.right() - BORDER_WIDTH / 2.0, panel.center_y(), 10.0);
             }
             _ => {}
         }
@@ -422,7 +416,6 @@ fn update_panel_visuals(
 fn sync_viewport_to_panel(
     panel: Res<EditorPanel>,
     mut viewport: ResMut<ViewportDimensions>,
-    mut state: ResMut<CodeEditorState>,
 ) {
     if !panel.is_changed() {
         return;
@@ -430,24 +423,19 @@ fn sync_viewport_to_panel(
 
     let new_width = panel.width as u32;
     let new_height = panel.height as u32;
-    let new_offset_x = panel.center_x;
-    let new_offset_y = panel.center_y;
 
-    // Check if anything changed (size OR position)
+    // Check if size changed
     let size_changed = viewport.width != new_width || viewport.height != new_height;
-    let position_changed = (viewport.offset_x - new_offset_x).abs() > 0.1
-        || (viewport.offset_y - new_offset_y).abs() > 0.1;
 
-    if size_changed || position_changed {
+    if size_changed {
+        // Only update viewport SIZE, never position
+        // offset_x/y are set once at startup and never change
+        // This prevents UI elements from repositioning when panel resizes
         viewport.width = new_width;
         viewport.height = new_height;
-        viewport.offset_x = new_offset_x;
-        viewport.offset_y = new_offset_y;
 
-        // Trigger full update for minimap and all UI elements
-        state.needs_scroll_update = true;
-        state.pending_update = true;
-        state.needs_update = true;
+        // Mark viewport as changed so camera viewport updates
+        viewport.set_changed();
     }
 }
 
@@ -478,10 +466,10 @@ fn update_cursor_icon(
             CursorIcon::System(hover_edge.cursor_icon())
         } else {
             // Check if over editor area (inside panel)
-            let over_editor = cursor_x > panel.left()
+            let over_editor = cursor_x > panel.left
                 && cursor_x < panel.right()
                 && cursor_y > panel.bottom()
-                && cursor_y < panel.top();
+                && cursor_y < panel.top;
             if over_editor {
                 CursorIcon::System(SystemCursorIcon::Text)
             } else {

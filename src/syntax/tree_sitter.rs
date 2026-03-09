@@ -81,14 +81,6 @@ impl<'a> RopeReader<'a> {
     }
 }
 
-/// Deferred edit - stores only byte positions, Points calculated lazily
-#[derive(Clone, Copy, Debug)]
-pub struct DeferredEdit {
-    pub start_byte: usize,
-    pub old_end_byte: usize,
-    pub new_end_byte: usize,
-}
-
 /// Tree-sitter-based syntax highlighting provider
 pub struct TreeSitterProvider {
     /// The highlight query
@@ -102,13 +94,6 @@ pub struct TreeSitterProvider {
 
     /// Cached tree-sitter language (for incremental parsing)
     pub(crate) cached_language: Option<Language>,
-
-    /// Pending edits to apply to the tree before re-parsing (with full position info)
-    pub(crate) pending_edits: Vec<tree_sitter::InputEdit>,
-
-    /// Deferred edits - byte positions only, Points calculated during async parse
-    /// OPTIMIZATION: This avoids expensive rope traversals on the main thread
-    pub(crate) deferred_edits: Vec<DeferredEdit>,
 
     /// Reusable query cursor
     query_cursor: QueryCursor,
@@ -125,8 +110,6 @@ impl TreeSitterProvider {
             cached_tree: None,
             cached_parser: None,
             cached_language: None,
-            pending_edits: Vec::new(),
-            deferred_edits: Vec::new(),
             query_cursor: QueryCursor::new(),
             cached_rope: None,
         }
@@ -147,42 +130,17 @@ impl TreeSitterProvider {
         Ok(())
     }
 
-    /// Record an edit with full position information for incremental parsing
-    pub fn record_edit_with_positions(
-        &mut self,
-        start_byte: usize,
-        old_end_byte: usize,
-        new_end_byte: usize,
-        start_position: tree_sitter::Point,
-        old_end_position: tree_sitter::Point,
-        new_end_position: tree_sitter::Point,
-    ) {
-        let edit = tree_sitter::InputEdit {
-            start_byte,
-            old_end_byte,
-            new_end_byte,
-            start_position,
-            old_end_position,
-            new_end_position,
-        };
-
-        self.pending_edits.push(edit);
-    }
-
-    /// Record an edit with deferred Point calculation (OPTIMIZATION)
-    /// Points will be calculated from the rope during async parsing
-    /// This avoids blocking the main thread with expensive rope traversals
-    pub fn record_edit_deferred(
-        &mut self,
-        start_byte: usize,
-        old_end_byte: usize,
-        new_end_byte: usize,
-    ) {
-        self.deferred_edits.push(DeferredEdit {
-            start_byte,
-            old_end_byte,
-            new_end_byte,
-        });
+    /// Apply an edit synchronously to the cached tree and update the cached rope.
+    ///
+    /// This is the "tree interpolation" step (like Zed): `tree.edit()` updates the
+    /// tree's byte offsets in ~0μs without re-parsing. The tree stays structurally
+    /// valid for highlighting queries, producing approximate but visually correct
+    /// colors while the full async re-parse runs in the background.
+    pub fn apply_sync_edit(&mut self, edit: tree_sitter::InputEdit, rope: &Rope) {
+        if let Some(ref mut tree) = self.cached_tree {
+            tree.edit(&edit);
+        }
+        self.cached_rope = Some(rope.clone());
     }
 
     /// Get readonly access to the cached tree
@@ -195,7 +153,6 @@ impl TreeSitterProvider {
     pub fn invalidate_tree(&mut self) {
         self.cached_tree = None;
         self.cached_rope = None;
-        self.pending_edits.clear();
     }
 
     /// Update the parse tree from a rope (zero-copy, like Zed)
@@ -209,14 +166,8 @@ impl TreeSitterProvider {
             reader.read(byte_offset)
         };
 
-        // Try incremental parsing first
+        // Try incremental parsing first — edits were already applied via apply_sync_edit()
         if let Some(ref mut tree) = self.cached_tree {
-            // Apply any pending edits to the tree
-            for edit in self.pending_edits.drain(..) {
-                tree.edit(&edit);
-            }
-
-            // Re-parse incrementally using the edited tree
             if let Some(ref mut parser) = self.cached_parser {
                 if let Some(new_tree) = parser.parse_with(&mut callback, Some(tree)) {
                     *tree = new_tree;
@@ -359,10 +310,14 @@ impl SyntaxProvider for TreeSitterProvider {
             let node_range = node.byte_range();
 
             // Convert node byte range (relative to full document) to slice-relative
-            if node_range.start >= start_byte && node_range.end <= end_byte {
-                let slice_start = node_range.start - start_byte;
-                let slice_end = node_range.end - start_byte;
-                highlights.push((slice_start..slice_end, capture_name));
+            // Clamp to the text slice bounds to handle interpolated tree nodes
+            // that span across the queried range
+            if node_range.end > start_byte && node_range.start < end_byte {
+                let slice_start = node_range.start.saturating_sub(start_byte);
+                let slice_end = (node_range.end - start_byte).min(text_bytes.len());
+                if slice_start < slice_end {
+                    highlights.push((slice_start..slice_end, capture_name));
+                }
             }
         }
 
@@ -441,8 +396,7 @@ impl SyntaxProvider for TreeSitterProvider {
     }
 
     fn notify_edit(&mut self, start_byte: usize, old_end_byte: usize, new_end_byte: usize) {
-        // Note: This simple version doesn't have Point info
-        // The caller should use record_edit_with_positions instead
+        // Apply edit directly to the tree (approximate Points — will be corrected by async parse)
         let edit = tree_sitter::InputEdit {
             start_byte,
             old_end_byte,
@@ -451,8 +405,9 @@ impl SyntaxProvider for TreeSitterProvider {
             old_end_position: tree_sitter::Point::new(0, 0),
             new_end_position: tree_sitter::Point::new(0, 0),
         };
-
-        self.pending_edits.push(edit);
+        if let Some(ref mut tree) = self.cached_tree {
+            tree.edit(&edit);
+        }
     }
 
     fn is_available(&self) -> bool {

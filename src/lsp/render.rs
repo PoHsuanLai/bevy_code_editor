@@ -30,7 +30,7 @@ use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use bevy_camera::visibility::RenderLayers;
 
-use crate::plugin::EditorRenderConfig;
+use crate::plugin::editor_ui_plugin::EditorRenderConfig;
 use crate::settings::FontSettings;
 use crate::types::ViewportDimensions;
 

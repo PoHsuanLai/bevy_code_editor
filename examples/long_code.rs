@@ -8,7 +8,7 @@ use bevy::window::{CursorIcon, SystemCursorIcon};
 use bevy_code_editor::prelude::*;
 
 #[cfg(feature = "tree-sitter")]
-use bevy_code_editor::plugin::SyntaxResource;
+use bevy_code_editor::plugin::syntax_highlighting::SyntaxResource;
 #[cfg(feature = "tree-sitter")]
 use bevy_code_editor::syntax::TreeSitterProvider;
 

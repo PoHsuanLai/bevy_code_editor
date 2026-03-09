@@ -148,8 +148,6 @@ pub(crate) fn update_gpu_text_instanced(
         let segments = if !segments_vec.is_empty() {
             &segments_vec[0]
         } else {
-            // Fallback: one segment for the whole line
-            // Only used if syntax highlighting returns nothing (e.g. error or initial state)
             &vec![]
         };
 

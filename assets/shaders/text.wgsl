@@ -30,6 +30,8 @@ struct GlyphInstance {
     @location(3) size: vec2<f32>,
     // Color (RGBA)
     @location(4) color: vec4<f32>,
+    // Z-index for layering
+    @location(5) z_index: f32,
 }
 
 struct VertexInput {
@@ -52,29 +54,37 @@ fn vertex(
     @location(2) uv_max: vec2<f32>,
     @location(3) size: vec2<f32>,
     @location(4) color: vec4<f32>,
+    @location(5) z_index: f32,
 ) -> FragmentInput {
-    // Generate quad vertices (triangle strip: 0,1,2,3)
-    // 0 -- 1
-    // |    |
-    // 2 -- 3
-    let unit_x = f32(vertex_index & 1u);
-    let unit_y = f32((vertex_index >> 1u) & 1u);
-    let unit_vertex = vec2<f32>(unit_x, unit_y);
+    // Generate quad vertices (triangle list: 0,1,2, 3,4,5)
+    // 2 (0,1) -- 5 (1,1)
+    // |         / |
+    // |       /   |
+    // |     /     |
+    // 0 (0,0) --- 1/4 (1,0)
+    
+    var vertices = array<vec2<f32>, 6>(
+        vec2<f32>(0.0, 0.0), // BL (v0)
+        vec2<f32>(1.0, 0.0), // BR (v1)
+        vec2<f32>(0.0, 1.0), // TL (v2)
+        vec2<f32>(0.0, 1.0), // TL (v3)
+        vec2<f32>(1.0, 0.0), // BR (v4)
+        vec2<f32>(1.0, 1.0)  // TR (v5)
+    );
+    
+    let unit_vertex = vertices[vertex_index];
 
     // Calculate screen position
-    // position is in Bevy world coordinates (center-origin)
-    // globals.scroll_offset is currently applied on the CPU side during layout,
-    // so we don't need to apply it here unless we change the CPU logic.
     let screen_pos = position + unit_vertex * size;
 
-    // Convert to clip space (-1 to 1)
-    // Bevy World (0,0) is center.
-    // Clip (0,0) is center.
-    // Just divide by half-size.
+    // Convert to clip space
     let half_size = globals.viewport_size * 0.5;
     let clip_pos = screen_pos / half_size;
 
-    let final_pos = vec4<f32>(clip_pos.x, clip_pos.y, 0.0, 1.0);
+    // Normalize z_index to clip space (-1 to 1) - higher z_index renders on top
+    // Map z_index range [0, 1000] to clip space [0.0, 1.0] for depth testing
+    let normalized_z = z_index / 1000.0;
+    let final_pos = vec4<f32>(clip_pos.x, clip_pos.y, normalized_z, 1.0);
 
     // Interpolate UV coordinates
     // Flip Y for texture space (0=top, 1=bottom) vs geometry space (0=bottom, 1=top)
@@ -96,11 +106,11 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     // Use the atlas alpha with the instance color
     let alpha = atlas_sample.a * in.color.a;
 
-    // Discard fully transparent pixels for performance
+    // Discard fully transparent pixels
     if alpha < 0.01 {
         discard;
     }
 
-    // Premultiplied alpha output
+    // Premultiplied alpha output (as in instance_render branch)
     return vec4<f32>(in.color.rgb * alpha, alpha);
 }

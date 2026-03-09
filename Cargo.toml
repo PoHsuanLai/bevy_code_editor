@@ -38,6 +38,8 @@ leafwing-input-manager = {version = "0.18", features = ["keyboard"] }
 
 # GPU text rendering - font rasterization (same as Zed uses)
 cosmic-text = "0.12"
+swash = "0.1"  # For accessing Content enum in glyph rasterization
+bytemuck = { version = "1.14", features = ["derive"] }
 
 # Syntax highlighting (optional)
 tree-sitter = { version = "0.24", optional = true }
@@ -46,6 +48,10 @@ futures-lite = "2.5"
 
 # Clipboard support (optional)
 arboard = { version = "3.4"}
+
+# egui overlay rendering for LSP popups (optional)
+bevy_egui = { version = "0.38", optional = true }
+armas = { path = "../armas/crates/armas", default-features = false, features = ["basic"], optional = true }
 
 # LSP support (optional)
 lsp-types = { version = "0.95", optional = true }
@@ -58,6 +64,13 @@ fuzzy-matcher = { version = "0.3", optional = true }
 bevy = { version = "0.17", features = ["bevy_window", "bevy_winit"] }
 tree-sitter-rust = "0.23"
 tree-sitter-c = "0.23"
+
+# egui PoC dependencies
+eframe = { version = "0.30", features = ["wgpu"] }
+egui = "0.30"
+egui-wgpu = "0.30"
+parking_lot = "0.12"
+env_logger = "0.11"
 
 [features]
 default = ["tree-sitter", "scrollbar", "minimap", "folding", "brackets"]
@@ -79,6 +92,9 @@ folding = []
 
 # Bracket matching and highlighting
 brackets = []
+
+# egui/armas overlay rendering for LSP popups (completion, hover, etc.)
+egui-overlays = ["bevy_egui", "armas", "lsp"]
 
 [profile.release]
 debug = true

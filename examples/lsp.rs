@@ -25,21 +25,38 @@ fn main() {
 fn run_with_lsp() {
     use bevy_code_editor::lsp::*;
 
-    App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "LSP Integration Example".to_string(),
-                resolution: (1200, 800).into(),
-                ..default()
-            }),
+    let mut app = App::new();
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
+            title: "LSP Integration Example".to_string(),
+            resolution: (1200, 800).into(),
             ..default()
-        }))
-        .add_plugins(CodeEditorPlugin::default())
-        .add_plugins(EditorUiPlugin::default()) // Add Editor UI plugin
-        .add_plugins(LspPlugin::default())
-        .add_plugins(LspUiPlugin::default()) // Add LSP UI plugin
-        .add_systems(Startup, setup_editor)
-        .add_systems(Update, display_lsp_info)
+        }),
+        ..default()
+    }));
+
+    // EguiPlugin must be added BEFORE editor plugins so contexts are available
+    #[cfg(feature = "egui-overlays")]
+    {
+        app.add_plugins(bevy_egui::EguiPlugin::default());
+    }
+
+    app.add_plugins(CodeEditorPlugin::default())
+        .add_plugins(EditorUiPlugin::default());
+
+    // LspPlugin is already added by CodeEditorPlugin when the lsp feature is enabled.
+    // Just add the UI layer.
+    #[cfg(feature = "egui-overlays")]
+    {
+        app.add_plugins(LspEguiUiPlugin::default());
+    }
+    #[cfg(not(feature = "egui-overlays"))]
+    {
+        app.add_plugins(LspUiPlugin::default());
+    }
+
+    app.add_systems(Startup, setup_editor)
+        .add_systems(Update, (display_lsp_info, auto_request_completion))
         .run();
 }
 
@@ -124,19 +141,36 @@ fn setup_editor(
 
 #[cfg(feature = "lsp")]
 fn display_lsp_info(lsp_client: Res<LspClient>) {
-    // This would display LSP information in a real implementation
-    // For now, it's just a placeholder showing the structure
-
     if lsp_client.is_changed() {
         info!("LSP client state changed");
     }
+}
 
-    // In a real implementation, you would:
-    // 1. Show diagnostics (errors, warnings) from the language server
-    // 2. Provide auto-completion suggestions
-    // 3. Show hover information
-    // 4. Enable go-to-definition
-    // 5. Display code actions (quick fixes)
+/// Auto-trigger completion requests after typing.
+///
+/// The input system doesn't emit RequestCompletionEvent yet, so this bridges
+/// the gap by watching for content changes and firing completion at the cursor.
+#[cfg(feature = "lsp")]
+fn auto_request_completion(
+    state: Res<CodeEditorState>,
+    mut writer: MessageWriter<bevy_code_editor::events::RequestCompletionEvent>,
+) {
+    if !state.is_changed() || !state.pending_update {
+        return;
+    }
+
+    let cursor_pos = state.cursor_pos.min(state.rope.len_chars());
+    if cursor_pos == 0 {
+        return;
+    }
+
+    let line = state.rope.char_to_line(cursor_pos);
+    let line_start = state.rope.line_to_char(line);
+    let character = cursor_pos - line_start;
+
+    writer.write(bevy_code_editor::events::RequestCompletionEvent::new(
+        line, character,
+    ));
 }
 
 #[cfg(not(feature = "lsp"))]

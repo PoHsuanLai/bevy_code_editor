@@ -79,4 +79,10 @@ pub mod prelude {
     // Re-export LSP plugins (feature-gated)
     #[cfg(feature = "lsp")]
     pub use crate::plugin::{LspPlugin, LspUiPlugin};
+
+    // Re-export egui LSP UI plugin (feature-gated)
+    #[cfg(feature = "egui-overlays")]
+    pub use crate::plugin::lsp_egui_ui_plugin::LspEguiUiPlugin;
+    #[cfg(feature = "egui-overlays")]
+    pub use crate::lsp::egui_render::LspEguiViewportOffset;
 }

@@ -6,9 +6,6 @@
 use bevy::prelude::*;
 use bevy_code_editor::prelude::*;
 
-#[cfg(feature = "tree-sitter")]
-use bevy_code_editor::plugin::SyntaxResource;
-
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -30,6 +27,11 @@ fn setup_editor_with_treesitter(
     mut state: ResMut<CodeEditorState>,
     mut syntax: ResMut<SyntaxResource>,
 ) {
+    #[cfg(feature = "instanced-rendering")]
+    info!("Instanced rendering enabled! using optimized single-draw-call rendering.");
+    #[cfg(not(feature = "instanced-rendering"))]
+    info!("Using default per-line mesh rendering. Enable 'instanced-rendering' feature for better performance.");
+
     // Sample Rust code to demonstrate syntax highlighting
     let rust_code = r#"// Rust syntax highlighting with tree-sitter
 use std::collections::HashMap;
