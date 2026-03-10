@@ -12,12 +12,12 @@ use bevy::prelude::*;
 use crate::lsp::event_listeners::{
     listen_apply_completion, listen_completion_requests, listen_dismiss_completion,
     listen_hover_requests, listen_rename_requests, listen_signature_help_requests,
-    listen_text_edit_events,
+    listen_text_edit_events, tick_lsp_debounce_timers,
 };
 use crate::lsp::prelude::*;
 use crate::lsp::state::{
     CodeActionState, CompletionState, DocumentHighlightState, HoverState, InlayHintState,
-    LspSyncState, RenameState, SignatureHelpState,
+    LspDebounceTimers, LspSyncState, RenameState, SignatureHelpState,
 };
 use crate::lsp::sync::{
     sync_code_actions_popup, sync_completion_popup, sync_document_highlights, sync_hover_popup,
@@ -75,6 +75,7 @@ impl Plugin for LspPlugin {
         app.insert_resource(InlayHintState::default());
         app.insert_resource(DocumentHighlightState::default());
         app.insert_resource(RenameState::default());
+        app.insert_resource(LspDebounceTimers::default());
 
         // Register LSP output events (LSP -> user code)
         app.add_message::<NavigateToFileEvent>();
@@ -101,6 +102,7 @@ impl Plugin for LspPlugin {
                 request_inlay_hints,
                 request_document_highlights,
                 cleanup_lsp_timeouts,
+                tick_lsp_debounce_timers,
             ),
         );
 

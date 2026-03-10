@@ -32,6 +32,76 @@ pub struct LspEguiViewportOffset {
     pub screen_offset: Vec2,
 }
 
+/// Calculate cursor screen position (x, y at bottom of cursor line)
+fn cursor_screen_pos(
+    char_index: usize,
+    editor_state: &CodeEditorState,
+    font: &FontSettings,
+    viewport_offset: &LspEguiViewportOffset,
+    viewport: &ViewportDimensions,
+) -> (f32, f32) {
+    let char_index = char_index.min(editor_state.rope.len_chars());
+    let line_index = editor_state.rope.char_to_line(char_index);
+    let line_start = editor_state.rope.line_to_char(line_index);
+    let col_index = char_index - line_start;
+
+    let x = viewport_offset.screen_offset.x
+        + viewport.text_area_left
+        + (col_index as f32 * font.char_width)
+        - editor_state.horizontal_scroll_offset;
+    let y = viewport_offset.screen_offset.y
+        + viewport.text_area_top
+        + ((line_index as f32 - editor_state.scroll_offset / font.line_height) * font.line_height);
+
+    (x, y)
+}
+
+/// Position a popup below (preferred) or above the cursor line, clamped to viewport.
+/// Returns the final (x, y) position.
+fn position_popup(
+    cursor_x: f32,
+    cursor_y: f32,
+    popup_width: f32,
+    popup_height: f32,
+    line_height: f32,
+    viewport_offset: &LspEguiViewportOffset,
+    viewport: &ViewportDimensions,
+    prefer_above: bool,
+) -> egui::Pos2 {
+    let vp_left = viewport_offset.screen_offset.x;
+    let vp_top = viewport_offset.screen_offset.y;
+    let vp_right = vp_left + viewport.width as f32;
+    let vp_bottom = vp_top + viewport.height as f32;
+
+    // Vertical: prefer below cursor (or above if prefer_above)
+    let below_y = cursor_y + line_height;
+    let above_y = cursor_y - popup_height;
+
+    let y = if prefer_above {
+        if above_y >= vp_top {
+            above_y
+        } else {
+            below_y
+        }
+    } else if below_y + popup_height <= vp_bottom {
+        below_y
+    } else if above_y >= vp_top {
+        above_y
+    } else {
+        // Neither fits perfectly — pick whichever has more space
+        if (vp_bottom - below_y) > (cursor_y - vp_top) {
+            below_y
+        } else {
+            above_y.max(vp_top)
+        }
+    };
+
+    // Horizontal: clamp right edge to viewport, but don't go past left edge
+    let x = cursor_x.max(vp_left).min(vp_right - popup_width);
+
+    egui::pos2(x, y)
+}
+
 /// Render the completion popup as an egui overlay using armas styling.
 pub fn render_completion_egui(
     mut contexts: EguiContexts,
@@ -54,19 +124,13 @@ pub fn render_completion_egui(
         }
     };
 
-    // Calculate position relative to cursor
-    let cursor_pos = editor_state.cursor_pos.min(editor_state.rope.len_chars());
-    let line_index = editor_state.rope.char_to_line(cursor_pos);
-    let line_start = editor_state.rope.line_to_char(line_index);
-    let col_index = cursor_pos - line_start;
-
-    let x = viewport_offset.screen_offset.x
-        + viewport.text_area_left
-        + (col_index as f32 * font.char_width);
-    let y = viewport_offset.screen_offset.y
-        + viewport.text_area_top
-        + ((line_index as f32 - editor_state.scroll_offset / font.line_height) * font.line_height)
-        + font.line_height;
+    let (cursor_x, cursor_y) = cursor_screen_pos(
+        editor_state.cursor_pos,
+        &editor_state,
+        &font,
+        &viewport_offset,
+        &viewport,
+    );
 
     let theme = ctx.armas_theme();
     let max_visible = 10;
@@ -89,8 +153,19 @@ pub fn render_completion_egui(
         .max(200.0)
         .min(500.0);
 
+    let pos = position_popup(
+        cursor_x,
+        cursor_y,
+        popup_width,
+        popup_height,
+        font.line_height,
+        &viewport_offset,
+        &viewport,
+        false,
+    );
+
     egui::Area::new(egui::Id::new("lsp_completion"))
-        .fixed_pos(egui::pos2(x, y))
+        .fixed_pos(pos)
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             egui::Frame::NONE
@@ -173,6 +248,7 @@ pub fn render_completion_egui(
 pub fn render_hover_egui(
     mut contexts: EguiContexts,
     hover_state: Res<HoverState>,
+    completion_state: Res<CompletionState>,
     editor_state: Res<CodeEditorState>,
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
@@ -190,25 +266,36 @@ pub fn render_hover_egui(
         }
     };
 
-    let trigger_char_index = hover_state
-        .trigger_char_index
-        .min(editor_state.rope.len_chars());
-    let line_index = editor_state.rope.char_to_line(trigger_char_index);
-    let line_start = editor_state.rope.line_to_char(line_index);
-    let col_index = trigger_char_index - line_start;
-
-    let x = viewport_offset.screen_offset.x
-        + viewport.text_area_left
-        + (col_index as f32 * font.char_width);
-    let y = viewport_offset.screen_offset.y
-        + viewport.text_area_top
-        + ((line_index as f32 - editor_state.scroll_offset / font.line_height) * font.line_height)
-        + font.line_height;
+    let (cursor_x, cursor_y) = cursor_screen_pos(
+        hover_state.trigger_char_index,
+        &editor_state,
+        &font,
+        &viewport_offset,
+        &viewport,
+    );
 
     let theme = ctx.armas_theme();
 
+    // Estimate hover popup size (max 500px wide, ~line_height * line_count tall)
+    let hover_line_count = hover_state.content.lines().count().max(1) as f32;
+    let estimated_height = hover_line_count * font.line_height + 24.0;
+
+    // If completion is visible, prefer showing hover above cursor to avoid overlap
+    let prefer_above = completion_state.visible;
+
+    let pos = position_popup(
+        cursor_x,
+        cursor_y,
+        500.0,
+        estimated_height,
+        font.line_height,
+        &viewport_offset,
+        &viewport,
+        prefer_above,
+    );
+
     egui::Area::new(egui::Id::new("lsp_hover"))
-        .fixed_pos(egui::pos2(x, y))
+        .fixed_pos(pos)
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             egui::Frame::NONE
@@ -252,24 +339,31 @@ pub fn render_signature_help_egui(
         }
     };
 
-    let cursor_pos = editor_state.cursor_pos.min(editor_state.rope.len_chars());
-    let line_index = editor_state.rope.char_to_line(cursor_pos);
-    let line_start = editor_state.rope.line_to_char(line_index);
-    let col_index = cursor_pos - line_start;
-
-    // Position ABOVE the cursor line
-    let x = viewport_offset.screen_offset.x
-        + viewport.text_area_left
-        + (col_index as f32 * font.char_width);
-    let y = viewport_offset.screen_offset.y
-        + viewport.text_area_top
-        + ((line_index as f32 - editor_state.scroll_offset / font.line_height) * font.line_height)
-        - font.line_height * 1.5;
+    let (cursor_x, cursor_y) = cursor_screen_pos(
+        editor_state.cursor_pos,
+        &editor_state,
+        &font,
+        &viewport_offset,
+        &viewport,
+    );
 
     let theme = ctx.armas_theme();
 
+    // Signature help prefers above cursor (like VS Code)
+    let estimated_height = font.line_height + 20.0;
+    let pos = position_popup(
+        cursor_x,
+        cursor_y,
+        400.0,
+        estimated_height,
+        font.line_height,
+        &viewport_offset,
+        &viewport,
+        true,
+    );
+
     egui::Area::new(egui::Id::new("lsp_signature_help"))
-        .fixed_pos(egui::pos2(x, y.max(0.0)))
+        .fixed_pos(pos)
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             egui::Frame::NONE
@@ -318,21 +412,35 @@ pub fn render_code_actions_egui(
         return;
     };
 
-    let cursor_pos = editor_state.cursor_pos.min(editor_state.rope.len_chars());
-    let line_index = editor_state.rope.char_to_line(cursor_pos);
-
-    // Position near the gutter
-    let x = viewport_offset.screen_offset.x + viewport.text_area_left - 20.0;
-    let y = viewport_offset.screen_offset.y
-        + viewport.text_area_top
-        + ((line_index as f32 - editor_state.scroll_offset / font.line_height + 1.0)
-            * font.line_height);
+    let (cursor_x, cursor_y) = cursor_screen_pos(
+        editor_state.cursor_pos,
+        &editor_state,
+        &font,
+        &viewport_offset,
+        &viewport,
+    );
 
     let theme = ctx.armas_theme();
     let item_height = font.line_height.max(22.0);
 
+    // Position near the gutter, below cursor
+    let gutter_x = viewport_offset.screen_offset.x + viewport.text_area_left - 20.0;
+    let action_count = action_state.actions.len().min(10);
+    let popup_height = action_count as f32 * item_height + 12.0;
+
+    let pos = position_popup(
+        gutter_x,
+        cursor_y,
+        300.0,
+        popup_height,
+        font.line_height,
+        &viewport_offset,
+        &viewport,
+        false,
+    );
+
     egui::Area::new(egui::Id::new("lsp_code_actions"))
-        .fixed_pos(egui::pos2(x, y))
+        .fixed_pos(pos)
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             egui::Frame::NONE
@@ -415,15 +523,22 @@ pub fn render_rename_egui(
         return;
     };
 
+    // Convert range start to char index for positioning
     let line = range.start.line as usize;
-    let character = range.start.character as usize;
+    let char_index = if line < editor_state.rope.len_lines() {
+        let line_start = editor_state.rope.line_to_char(line);
+        line_start + range.start.character as usize
+    } else {
+        editor_state.rope.len_chars()
+    };
 
-    let x = viewport_offset.screen_offset.x
-        + viewport.text_area_left
-        + (character as f32 * font.char_width);
-    let y = viewport_offset.screen_offset.y
-        + viewport.text_area_top
-        + ((line as f32 - editor_state.scroll_offset / font.line_height) * font.line_height);
+    let (cursor_x, cursor_y) = cursor_screen_pos(
+        char_index,
+        &editor_state,
+        &font,
+        &viewport_offset,
+        &viewport,
+    );
 
     let theme = ctx.armas_theme();
 
@@ -436,8 +551,21 @@ pub fn render_rename_egui(
         &rename_state.new_name
     };
 
+    // Rename popup is small — just position at cursor, clamped
+    let rename_width = (display_text.len() as f32 * font.char_width + 20.0).max(100.0);
+    let pos = position_popup(
+        cursor_x,
+        cursor_y,
+        rename_width,
+        font.line_height + 10.0,
+        font.line_height,
+        &viewport_offset,
+        &viewport,
+        false,
+    );
+
     egui::Area::new(egui::Id::new("lsp_rename"))
-        .fixed_pos(egui::pos2(x, y))
+        .fixed_pos(pos)
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             egui::Frame::NONE

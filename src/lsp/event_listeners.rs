@@ -9,12 +9,16 @@ use crate::events::{
 use crate::lsp::client::LspClient;
 use crate::lsp::messages::LspMessage;
 use crate::lsp::state::{
-    CompletionState, HoverState, LspSyncState, RenameState, SignatureHelpState,
+    CompletionState, LspDebounceTimers, LspSyncState, PendingLspRequest, RenameState,
+    SignatureHelpState,
 };
 use crate::types::CodeEditorState;
 use bevy::prelude::*;
 
-/// System that listens to TextEditEvent and sends didChange to LSP
+/// System that listens to TextEditEvent and sends incremental didChange to LSP.
+///
+/// Converts byte-level edit ranges to LSP Position (line/character) and sends
+/// only the changed range instead of the full document text.
 pub fn listen_text_edit_events(
     mut events: MessageReader<TextEditEvent>,
     state: Res<CodeEditorState>,
@@ -22,23 +26,48 @@ pub fn listen_text_edit_events(
     mut lsp_sync: ResMut<LspSyncState>,
 ) {
     for event in events.read() {
-        // Only send if we have a document URI
         if let Some(uri) = lsp_sync.document_uri.clone() {
-            // Increment document version
             lsp_sync.document_version += 1;
 
-            // Get the full text content
-            let text = state.rope.to_string();
+            // Convert byte offsets to LSP positions using the CURRENT rope
+            // (which already has the edit applied)
+            let rope = &state.rope;
 
-            // Send didChange notification
+            // start_byte position (same in old and new)
+            let start_pos = byte_to_lsp_position(rope, event.start_byte);
+
+            // old_end_byte: we need the position in the OLD document.
+            // Since the rope is already updated, compute the old end position
+            // from the start position plus the old range length.
+            let old_len = event.old_end_byte - event.start_byte;
+            let new_len = event.new_end_byte - event.start_byte;
+
+            // For the old end position, we can compute it relative to start
+            // using the old document structure. Since we only have the new rope,
+            // use range_length mode which doesn't need old_end_position.
+            let new_text_start = event.start_byte.min(rope.len_bytes());
+            let new_text_end = event.new_end_byte.min(rope.len_bytes());
+
+            // Extract the new text from the rope
+            let new_text = if new_text_start < new_text_end {
+                let start_char = rope.byte_to_char(new_text_start);
+                let end_char = rope.byte_to_char(new_text_end);
+                rope.slice(start_char..end_char).to_string()
+            } else {
+                String::new()
+            };
+
             use lsp_types::TextDocumentContentChangeEvent;
             let msg = LspMessage::DidChange {
                 uri,
                 version: lsp_sync.document_version,
                 changes: vec![TextDocumentContentChangeEvent {
-                    range: None,
-                    range_length: None,
-                    text,
+                    range: Some(lsp_types::Range {
+                        start: start_pos,
+                        end: start_pos, // Will be overridden by range_length
+                    }),
+                    range_length: Some(old_len as u32),
+                    text: new_text,
                 }],
             };
 
@@ -47,27 +76,35 @@ pub fn listen_text_edit_events(
     }
 }
 
-/// System that listens to RequestCompletionEvent
+/// Convert a byte offset to LSP Position (line, character) using the rope
+fn byte_to_lsp_position(rope: &ropey::Rope, byte_offset: usize) -> lsp_types::Position {
+    let byte_offset = byte_offset.min(rope.len_bytes());
+    let char_offset = rope.byte_to_char(byte_offset);
+    let line = rope.char_to_line(char_offset);
+    let line_start_char = rope.line_to_char(line);
+    let character = char_offset - line_start_char;
+    lsp_types::Position {
+        line: line as u32,
+        character: character as u32,
+    }
+}
+
+/// System that listens to RequestCompletionEvent and buffers for debouncing
 pub fn listen_completion_requests(
     mut events: MessageReader<RequestCompletionEvent>,
-    state: Res<CodeEditorState>,
-    lsp_client: Res<LspClient>,
     lsp_sync: Res<LspSyncState>,
+    mut debounce: ResMut<LspDebounceTimers>,
     mut completion_state: ResMut<CompletionState>,
 ) {
     for event in events.read() {
         if let Some(uri) = &lsp_sync.document_uri {
-            // Send completion request
-            use lsp_types::Position;
-            let msg = LspMessage::Completion {
+            // Buffer the request and reset the debounce timer
+            debounce.pending_completion = Some(PendingLspRequest {
                 uri: uri.clone(),
-                position: Position {
-                    line: event.line as u32,
-                    character: event.character as u32,
-                },
-            };
-
-            lsp_client.send(msg);
+                line: event.line as u32,
+                character: event.character as u32,
+            });
+            debounce.completion_timer.reset();
 
             // Mark completion as pending
             completion_state.visible = true;
@@ -75,26 +112,21 @@ pub fn listen_completion_requests(
     }
 }
 
-/// System that listens to RequestHoverEvent
+/// System that listens to RequestHoverEvent and buffers for debouncing
 pub fn listen_hover_requests(
     mut events: MessageReader<RequestHoverEvent>,
     lsp_sync: Res<LspSyncState>,
-    lsp_client: Res<LspClient>,
-    mut hover_state: ResMut<HoverState>,
+    mut debounce: ResMut<LspDebounceTimers>,
 ) {
     for event in events.read() {
         if let Some(uri) = &lsp_sync.document_uri {
-            // Send hover request
-            use lsp_types::Position;
-            let msg = LspMessage::Hover {
+            // Buffer the request and reset the debounce timer
+            debounce.pending_hover = Some(PendingLspRequest {
                 uri: uri.clone(),
-                position: Position {
-                    line: event.line as u32,
-                    character: event.character as u32,
-                },
-            };
-
-            lsp_client.send(msg);
+                line: event.line as u32,
+                character: event.character as u32,
+            });
+            debounce.hover_timer.reset();
         }
     }
 }
@@ -156,6 +188,72 @@ pub fn listen_dismiss_completion(
         completion_state.visible = false;
         completion_state.items.clear();
         completion_state.selected_index = 0;
+    }
+}
+
+/// System that ticks debounce timers and sends LSP requests when they fire
+pub fn tick_lsp_debounce_timers(
+    time: Res<Time>,
+    mut debounce: ResMut<LspDebounceTimers>,
+    lsp_client: Res<LspClient>,
+) {
+    // Tick all active timers
+    if debounce.pending_completion.is_some() {
+        debounce.completion_timer.tick(time.delta());
+        if debounce.completion_timer.just_finished() {
+            if let Some(req) = debounce.pending_completion.take() {
+                lsp_client.send(LspMessage::Completion {
+                    uri: req.uri,
+                    position: lsp_types::Position {
+                        line: req.line,
+                        character: req.character,
+                    },
+                });
+            }
+        }
+    }
+
+    if debounce.pending_hover.is_some() {
+        debounce.hover_timer.tick(time.delta());
+        if debounce.hover_timer.just_finished() {
+            if let Some(req) = debounce.pending_hover.take() {
+                lsp_client.send(LspMessage::Hover {
+                    uri: req.uri,
+                    position: lsp_types::Position {
+                        line: req.line,
+                        character: req.character,
+                    },
+                });
+            }
+        }
+    }
+
+    if debounce.pending_highlight.is_some() {
+        debounce.highlight_timer.tick(time.delta());
+        if debounce.highlight_timer.just_finished() {
+            if let Some(req) = debounce.pending_highlight.take() {
+                lsp_client.send(LspMessage::DocumentHighlight {
+                    uri: req.uri,
+                    position: lsp_types::Position {
+                        line: req.line,
+                        character: req.character,
+                    },
+                });
+            }
+        }
+    }
+
+    if debounce.pending_code_action.is_some() {
+        debounce.code_action_timer.tick(time.delta());
+        if debounce.code_action_timer.just_finished() {
+            if let Some(req) = debounce.pending_code_action.take() {
+                lsp_client.send(LspMessage::CodeAction {
+                    uri: req.uri,
+                    range: req.range,
+                    diagnostics: Vec::new(),
+                });
+            }
+        }
     }
 }
 
