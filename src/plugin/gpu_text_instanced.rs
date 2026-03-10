@@ -72,6 +72,8 @@ pub struct LineGlyphCache {
     versions: Vec<u64>,
     /// Global content version counter for invalidation
     content_version: u64,
+    /// Atlas generation — when atlas clears, all cached UVs become invalid
+    atlas_generation: u64,
 }
 
 impl Default for LineGlyphCache {
@@ -80,6 +82,7 @@ impl Default for LineGlyphCache {
             lines: Vec::new(),
             versions: Vec::new(),
             content_version: 0,
+            atlas_generation: 0,
         }
     }
 }
@@ -246,6 +249,12 @@ pub(crate) fn update_gpu_text_instanced(
     // Manage line cache
     line_cache.ensure_capacity(total_buffer_lines);
 
+    // Invalidate all cached UVs if the atlas was cleared (generation changed)
+    if atlas.generation != line_cache.atlas_generation {
+        line_cache.invalidate_all();
+        line_cache.atlas_generation = atlas.generation;
+    }
+
     // Invalidate dirty lines in cache
     if state.needs_update {
         let new_version = state.content_version;
@@ -298,6 +307,11 @@ pub(crate) fn update_gpu_text_instanced(
         .max(viewport.gutter_width + ui_settings.code_margin_left)
         - state.horizontal_scroll_offset;
 
+    // Time budget for cache-miss glyph building (syntax highlighting)
+    let frame_start = std::time::Instant::now();
+    let budget = std::time::Duration::from_secs_f64(performance.glyph_build_budget_ms / 1000.0);
+    let mut budget_exceeded = false;
+
     // Render visible lines
     for buffer_line in start_buffer_line..total_buffer_lines {
         if fold_state.is_line_hidden(buffer_line) {
@@ -324,6 +338,10 @@ pub(crate) fn update_gpu_text_instanced(
 
         let glyphs = if let Some(cached_glyphs) = cached {
             cached_glyphs
+        } else if budget_exceeded {
+            // Over budget — skip this cache miss, render next frame
+            current_display_row += 1;
+            continue;
         } else {
             // Cache miss — build glyphs for this line
             let rope_line = state.rope.line(buffer_line);
@@ -352,6 +370,11 @@ pub(crate) fn update_gpu_text_instanced(
                 theme.foreground,
                 &mut atlas,
             );
+
+            // Check time budget after each cache-miss build
+            if frame_start.elapsed() > budget {
+                budget_exceeded = true;
+            }
 
             if buffer_line < line_cache.lines.len() {
                 line_cache.lines[buffer_line] = Some(new_glyphs);
@@ -483,6 +506,12 @@ pub(crate) fn update_gpu_text_instanced(
         }
     }
 
-    state.needs_update = false;
+    // If budget was exceeded, request another frame to finish remaining lines
+    if budget_exceeded {
+        state.needs_update = true;
+    } else {
+        state.needs_update = false;
+    }
+    state.needs_scroll_update = false;
     state.last_render_time = time.elapsed_secs_f64() * 1000.0;
 }
