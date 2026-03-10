@@ -376,7 +376,7 @@ pub(crate) fn update_minimap(
         batch.built_at_scroll = state.scroll_offset;
         batch.built_at_width = viewport.width;
         batch.built_at_height = viewport.height;
-        batch_component.instances = instances;
+        batch_component.instances = std::sync::Arc::new(instances);
         batch_component.atlas_texture = atlas.texture.clone();
         transform.translation.z = minimap_settings.text_z_index as f32;
         commands.entity(entity).insert(Visibility::Visible);
@@ -389,7 +389,7 @@ pub(crate) fn update_minimap(
                 built_at_height: viewport.height,
             },
             GlyphBatchComponent {
-                instances,
+                instances: std::sync::Arc::new(instances),
                 atlas_texture: atlas.texture.clone(),
             },
             Transform::from_translation(Vec3::new(0.0, 0.0, minimap_settings.text_z_index as f32)),

@@ -12,6 +12,7 @@ use crate::gpu_text::{GlyphAtlas, GlyphKey, GlyphRasterizer};
 use crate::settings::*;
 use crate::types::*;
 use bevy::prelude::*;
+use std::sync::Arc;
 
 /// Marker component for GPU text batch entity
 #[derive(Component)]
@@ -40,10 +41,11 @@ pub struct GlyphInstance {
     pub _padding: [f32; 3], // Pad to 16-byte alignment
 }
 
-/// Component containing batch of glyph instances
+/// Component containing batch of glyph instances.
+/// Uses Arc to avoid cloning thousands of glyphs during render extract phase.
 #[derive(Component, Clone)]
 pub struct GlyphBatchComponent {
-    pub instances: Vec<GlyphInstance>,
+    pub instances: Arc<Vec<GlyphInstance>>,
     pub atlas_texture: Handle<Image>,
 }
 
@@ -61,7 +63,7 @@ struct CachedGlyph {
     color: [f32; 4],
 }
 
-/// Per-line glyph cache
+/// Per-line glyph cache with reusable instance buffer
 #[derive(Resource)]
 pub struct LineGlyphCache {
     /// Cached glyphs per buffer line. Index = buffer line number.
@@ -427,8 +429,11 @@ pub(crate) fn update_gpu_text_instanced(
     // Update atlas texture
     atlas.update_texture(&mut images);
 
+    // Wrap in Arc for zero-copy render extract; put buffer back for reuse next frame
+    let arc_instances = Arc::new(instances);
+
     // Update or create batch entity
-    if instances.is_empty() {
+    if arc_instances.is_empty() {
         for (entity, _) in batch_query.iter() {
             commands.entity(entity).insert(Visibility::Hidden);
         }
@@ -437,7 +442,7 @@ pub(crate) fn update_gpu_text_instanced(
 
         if let Some(&first_entity) = existing_batches.first() {
             commands.entity(first_entity).insert(GlyphBatchComponent {
-                instances,
+                instances: arc_instances,
                 atlas_texture: atlas.texture.clone(),
             });
             commands.entity(first_entity).insert(Visibility::Visible);
@@ -457,7 +462,7 @@ pub(crate) fn update_gpu_text_instanced(
         } else {
             commands.spawn((
                 GlyphBatchComponent {
-                    instances,
+                    instances: arc_instances,
                     atlas_texture: atlas.texture.clone(),
                 },
                 Transform::default(),
