@@ -252,11 +252,8 @@ fn update_camera_viewport(
     windows: Query<&Window>,
     mut camera_query: Query<(&mut Camera, &mut Transform), With<EditorCamera>>,
 ) {
-    println!("update_camera_viewport called! auto_resize={}, found {} editor cameras", config.auto_resize_to_window, camera_query.iter().count());
-
     // Only set camera viewport when NOT auto-resizing (manual viewport control)
     if config.auto_resize_to_window {
-        println!("Auto-resize is ON, clearing camera viewport");
         // Clear any existing viewport restriction and reset camera position
         for (mut camera, mut transform) in camera_query.iter_mut() {
             if camera.viewport.is_some() {
@@ -270,10 +267,6 @@ fn update_camera_viewport(
     let Ok(window) = windows.single() else {
         return;
     };
-
-    println!("=== UPDATE CAMERA VIEWPORT ===");
-    println!("Window size: {}x{}", window.width(), window.height());
-    println!("Viewport: offset=({}, {}), size={}x{}", viewport.offset_x, viewport.offset_y, viewport.width, viewport.height);
 
     // Convert from center-origin viewport coordinates to top-left origin window coordinates
     // For resizable panels: viewport.offset_x/offset_y store the LEFT and TOP edges (not center!)

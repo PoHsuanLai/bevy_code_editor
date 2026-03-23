@@ -73,7 +73,7 @@ impl LspClient {
     /// Start the language server process
     pub fn start(&mut self, command: &str, args: &[&str]) -> std::io::Result<()> {
         #[cfg(debug_assertions)]
-        eprintln!("[LSP] Starting server: {} {:?}", command, args);
+        debug!("[LSP] Starting server: {} {:?}", command, args);
 
         let mut child = Command::new(command)
             .args(args)
@@ -130,14 +130,14 @@ impl LspClient {
             let json_str = match msg_to_json(&msg, id) {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("[LSP] Failed to serialize message: {:?}", e);
+                    warn!("[LSP] Failed to serialize message: {:?}", e);
                     continue;
                 }
             };
 
             let content = format!("Content-Length: {}\r\n\r\n{}", json_str.len(), json_str);
             if let Err(e) = stdin.write_all(content.as_bytes()) {
-                eprintln!("[LSP] Failed to write to stdin: {:?}", e);
+                warn!("[LSP] Failed to write to stdin: {:?}", e);
                 break;
             }
             let _ = stdin.flush();
@@ -212,7 +212,7 @@ impl LspClient {
         let reader = BufReader::new(stderr);
         for line in reader.lines() {
             if let Ok(line) = line {
-                eprintln!("[LSP stderr] {}", line);
+                warn!("[LSP stderr] {}", line);
             }
         }
     }
@@ -354,7 +354,7 @@ impl LspClient {
                 let timed_out = now.duration_since(req.sent_at) > req.timeout;
                 if timed_out {
                     #[cfg(debug_assertions)]
-                    eprintln!("[LSP] Request {} timed out ({:?})", id, req.request_type);
+                    debug!("[LSP] Request {} timed out ({:?})", id, req.request_type);
                 }
                 !timed_out
             });
@@ -585,7 +585,7 @@ fn parse_lsp_response(
         // Log null results for debugging
         #[cfg(debug_assertions)]
         if let Some(ref rt) = request_type {
-            eprintln!("[LSP] Received null result for request type: {:?}", rt);
+            debug!("[LSP] Received null result for request type: {:?}", rt);
         }
         return None;
     }
@@ -713,12 +713,12 @@ fn parse_lsp_response(
         }
         Some(RequestType::PrepareRename) => {
             #[cfg(debug_assertions)]
-            eprintln!("[LSP] PrepareRename result: {}", result);
+            debug!("[LSP] PrepareRename result: {}", result);
 
             // Can be Range or { range, placeholder }
             if let Ok(range) = serde_json::from_value::<Range>(result.clone()) {
                 #[cfg(debug_assertions)]
-                eprintln!("[LSP] Parsed PrepareRename as Range: {:?}", range);
+                debug!("[LSP] Parsed PrepareRename as Range: {:?}", range);
                 return Some(LspResponse::PrepareRename {
                     range,
                     placeholder: None,
@@ -726,7 +726,7 @@ fn parse_lsp_response(
             }
             if let Ok(prepare) = serde_json::from_value::<PrepareRenameResponse>(result.clone()) {
                 #[cfg(debug_assertions)]
-                eprintln!("[LSP] Parsed PrepareRename as PrepareRenameResponse");
+                debug!("[LSP] Parsed PrepareRename as PrepareRenameResponse");
                 match prepare {
                     PrepareRenameResponse::Range(range) => {
                         return Some(LspResponse::PrepareRename {
@@ -743,13 +743,13 @@ fn parse_lsp_response(
                     PrepareRenameResponse::DefaultBehavior { .. } => {
                         // Server uses default behavior, we need to extract word at position
                         #[cfg(debug_assertions)]
-                        eprintln!("[LSP] PrepareRename DefaultBehavior - not supported yet");
+                        debug!("[LSP] PrepareRename DefaultBehavior - not supported yet");
                         return None;
                     }
                 }
             }
             #[cfg(debug_assertions)]
-            eprintln!("[LSP] Failed to parse PrepareRename result");
+            debug!("[LSP] Failed to parse PrepareRename result");
             None
         }
         Some(RequestType::Rename) => {
@@ -780,7 +780,7 @@ fn parse_notification(json: &Value, method: &str) -> Option<LspResponse> {
         }
         _ => {
             #[cfg(debug_assertions)]
-            eprintln!("[LSP] Unhandled notification: {}", method);
+            debug!("[LSP] Unhandled notification: {}", method);
             None
         }
     }

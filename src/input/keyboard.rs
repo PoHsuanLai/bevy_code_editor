@@ -319,7 +319,7 @@ pub fn handle_keyboard_input(
                                                 .chars()
                                                 .collect();
                                             #[cfg(debug_assertions)]
-                                            eprintln!("[LSP] Checking multi-char trigger '{}' against recent text '{}'", trigger, recent_text);
+                                            debug!("[LSP] Checking multi-char trigger '{}' against recent text '{}'", trigger, recent_text);
                                             if recent_text == *trigger {
                                                 is_trigger = true;
                                                 #[cfg(debug_assertions)]
@@ -337,7 +337,7 @@ pub fn handle_keyboard_input(
                                     // Trigger character detected - open new completion
                                     // Mark completion as not visible to force start_char_index reset
                                     #[cfg(debug_assertions)]
-                                    eprintln!("[LSP] Trigger detected, requesting completion, was_visible={}", completion_state.visible);
+                                    debug!("[LSP] Trigger detected, requesting completion, was_visible={}", completion_state.visible);
                                     completion_state.visible = false;
                                     request_completion(
                                         &state,
@@ -350,7 +350,7 @@ pub fn handle_keyboard_input(
                                     if completion_state.visible {
                                         // Completion already visible - update filter
                                         #[cfg(debug_assertions)]
-                                        eprintln!("[LSP] Completion visible, updating filter for char '{}'", c);
+                                        debug!("[LSP] Completion visible, updating filter for char '{}'", c);
                                         update_completion_filter(&state, &mut completion_state);
                                     } else {
                                         // Not visible yet - check if we should auto-trigger after N chars
@@ -373,7 +373,7 @@ pub fn handle_keyboard_input(
                                 } else if completion_state.visible {
                                     // Non-identifier, non-trigger character while completion is visible - dismiss it
                                     #[cfg(debug_assertions)]
-                                    eprintln!("[LSP] Non-identifier char '{}' while completion visible, dismissing", c);
+                                    debug!("[LSP] Non-identifier char '{}' while completion visible, dismissing", c);
                                     completion_state.visible = false;
                                     completion_state.filter.clear();
                                 }
@@ -420,17 +420,8 @@ pub fn handle_keyboard_input(
         // Handle RenameSymbol specially (LSP feature)
         #[cfg(feature = "lsp")]
         if action == EditorAction::RenameSymbol {
-            eprintln!("[Rename] RenameSymbol action triggered");
-            eprintln!(
-                "[Rename] supports_rename: {}, supports_prepare_rename: {}",
-                lsp_client.capabilities.supports_rename(),
-                lsp_client.capabilities.supports_prepare_rename()
-            );
-            eprintln!("[Rename] document_uri: {:?}", lsp_sync.document_uri);
-
             if lsp_client.capabilities.supports_rename() {
                 if let Some(uri) = &lsp_sync.document_uri {
-                    // Convert cursor position to LSP position
                     let cursor_pos = state.cursor_pos.min(state.rope.len_chars());
                     let line = state.rope.char_to_line(cursor_pos);
                     let line_start = state.rope.line_to_char(line);
@@ -441,17 +432,10 @@ pub fn handle_keyboard_input(
                         character: character as u32,
                     };
 
-                    eprintln!(
-                        "[Rename] Requesting prepare rename at line={}, char={}",
-                        position.line, position.character
-                    );
-
                     // Start prepare rename flow
                     rename_state.start_prepare(position);
                     crate::lsp::systems::request_prepare_rename(&lsp_client, uri, position);
                 }
-            } else {
-                eprintln!("[Rename] Server doesn't support rename");
             }
             return;
         }
