@@ -89,15 +89,6 @@ pub struct ThemeSettings {
     /// Current find match highlight color (the selected one)
     pub find_match_current: Color,
 
-    /// Minimap background color
-    pub minimap_background: Color,
-
-    /// Minimap viewport highlight color
-    pub minimap_viewport_highlight: Color,
-
-    /// Minimap slider color
-    pub minimap_slider: Color,
-
     /// Syntax highlighting colors
     #[cfg(feature = "tree-sitter")]
     pub syntax: crate::settings::SyntaxTheme,
@@ -133,9 +124,6 @@ impl ThemeSettings {
             bracket_match: Color::srgba(0.0, 1.0, 0.5, 0.3),
             find_match: Color::srgba(1.0, 1.0, 0.0, 0.3),
             find_match_current: Color::srgba(1.0, 0.647, 0.0, 0.5),
-            minimap_background: Color::srgba(0.08, 0.08, 0.08, 0.8),
-            minimap_viewport_highlight: Color::srgba(0.3, 0.3, 0.3, 0.3),
-            minimap_slider: Color::srgba(0.4, 0.4, 0.4, 0.5),
 
             #[cfg(feature = "tree-sitter")]
             syntax: crate::settings::SyntaxTheme::default(),
@@ -166,9 +154,6 @@ impl ThemeSettings {
             bracket_match: Color::srgba(0.0, 0.8, 0.4, 0.3),
             find_match: Color::srgba(0.9, 0.9, 0.0, 0.3),
             find_match_current: Color::srgba(1.0, 0.647, 0.0, 0.5),
-            minimap_background: Color::srgba(0.9, 0.9, 0.9, 0.8),
-            minimap_viewport_highlight: Color::srgba(0.7, 0.7, 0.7, 0.3),
-            minimap_slider: Color::srgba(0.6, 0.6, 0.6, 0.5),
 
             #[cfg(feature = "tree-sitter")]
             syntax: crate::settings::SyntaxTheme::default(),

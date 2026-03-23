@@ -41,8 +41,6 @@ use super::{update_bracket_highlight, update_bracket_match};
 #[cfg(feature = "folding")]
 use super::update_fold_indicators;
 
-#[cfg(feature = "minimap")]
-use super::{handle_minimap_mouse, update_minimap, update_minimap_hover};
 
 #[cfg(feature = "scrollbar")]
 use super::scrollbar::update_editor_scrollbar;
@@ -209,26 +207,6 @@ impl Plugin for EditorUiPlugin {
                 .after(update_indent_guides)
                 .in_set(super::RenderingSet),
         );
-
-        // Minimap (feature-gated)
-        #[cfg(feature = "minimap")]
-        {
-            // Minimap input goes in InputSet
-            app.add_systems(
-                Update,
-                (update_minimap_hover, handle_minimap_mouse)
-                    .chain()
-                    .in_set(super::InputSet),
-            );
-
-            // Minimap rendering goes in RenderingSet
-            app.add_systems(
-                Update,
-                update_minimap
-                    .run_if(crate::gpu_text::atlas_ready)
-                    .in_set(super::RenderingSet),
-            );
-        }
 
         // Editor scrollbar config update (feature-gated)
         #[cfg(feature = "scrollbar")]

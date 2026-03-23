@@ -73,7 +73,7 @@ parking_lot = "0.12"
 env_logger = "0.11"
 
 [features]
-default = ["tree-sitter", "scrollbar", "minimap", "folding", "brackets"]
+default = ["tree-sitter", "scrollbar", "folding", "brackets"]
 
 # Syntax highlighting via tree-sitter
 tree-sitter = ["dep:tree-sitter", "streaming-iterator"]
@@ -83,9 +83,6 @@ lsp = ["lsp-types", "tower-lsp", "tokio", "serde_json", "fuzzy-matcher"]
 
 # Built-in scrollbar UI (disable to use your own scrollbar implementation)
 scrollbar = []
-
-# Code minimap view
-minimap = []
 
 # Code folding support
 folding = []
