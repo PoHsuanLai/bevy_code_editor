@@ -17,7 +17,8 @@ use armas::prelude::*;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 
-use super::components::*;
+use super::client::LspClient;
+use super::messages::LspMessage;
 use super::state::*;
 use crate::settings::FontSettings;
 use crate::types::{CodeEditorState, ViewportDimensions};
@@ -362,6 +363,21 @@ pub fn render_signature_help_egui(
         true,
     );
 
+    // Resolve active parameter offsets in the signature label for highlighting
+    let active_param_range: Option<(usize, usize)> = signature
+        .parameters
+        .as_ref()
+        .and_then(|params| params.get(sig_state.active_parameter))
+        .and_then(|param| match &param.label {
+            lsp_types::ParameterLabel::LabelOffsets([start, end]) => {
+                Some((*start as usize, *end as usize))
+            }
+            lsp_types::ParameterLabel::Simple(s) => {
+                // Find the substring in the signature label
+                signature.label.find(s.as_str()).map(|pos| (pos, pos + s.len()))
+            }
+        });
+
     egui::Area::new(egui::Id::new("lsp_signature_help"))
         .fixed_pos(pos)
         .order(egui::Order::Foreground)
@@ -373,11 +389,45 @@ pub fn render_signature_help_egui(
                 .inner_margin(egui::Margin::same(8))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new(&signature.label)
-                                .color(theme.card_foreground())
-                                .size(font.size * 0.9),
-                        );
+                        let label = &signature.label;
+                        let text_size = font.size * 0.9;
+
+                        if let Some((start, end)) = active_param_range {
+                            // Render in three segments: before, active param (bold), after
+                            let before = label.get(..start).unwrap_or(label);
+                            let active = label.get(start..end).unwrap_or("");
+                            let after = label.get(end..).unwrap_or("");
+
+                            if !before.is_empty() {
+                                ui.label(
+                                    egui::RichText::new(before)
+                                        .color(theme.muted_foreground())
+                                        .size(text_size),
+                                );
+                            }
+                            if !active.is_empty() {
+                                ui.label(
+                                    egui::RichText::new(active)
+                                        .color(theme.card_foreground())
+                                        .strong()
+                                        .size(text_size),
+                                );
+                            }
+                            if !after.is_empty() {
+                                ui.label(
+                                    egui::RichText::new(after)
+                                        .color(theme.muted_foreground())
+                                        .size(text_size),
+                                );
+                            }
+                        } else {
+                            // No active parameter — show full label plainly
+                            ui.label(
+                                egui::RichText::new(label)
+                                    .color(theme.card_foreground())
+                                    .size(text_size),
+                            );
+                        }
 
                         if sig_state.signatures.len() > 1 {
                             ui.label(
@@ -412,7 +462,7 @@ pub fn render_code_actions_egui(
         return;
     };
 
-    let (cursor_x, cursor_y) = cursor_screen_pos(
+    let (_, cursor_y) = cursor_screen_pos(
         editor_state.cursor_pos,
         &editor_state,
         &font,
@@ -502,21 +552,24 @@ pub fn render_code_actions_egui(
         });
 }
 
-/// Render the rename input as an egui overlay.
+/// Render the rename input as an interactive egui overlay.
 pub fn render_rename_egui(
     mut contexts: EguiContexts,
-    rename_state: Res<RenameState>,
+    mut rename_state: ResMut<RenameState>,
     editor_state: Res<CodeEditorState>,
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Res<ViewportDimensions>,
+    lsp_client: Res<LspClient>,
+    lsp_sync: Res<LspSyncState>,
 ) {
     if !rename_state.visible {
         return;
     }
 
-    let Some(range) = &rename_state.range else {
-        return;
+    let range = match rename_state.range.clone() {
+        Some(r) => r,
+        None => return,
     };
 
     let Ok(ctx) = contexts.ctx_mut() else {
@@ -541,18 +594,7 @@ pub fn render_rename_egui(
     );
 
     let theme = ctx.armas_theme();
-
-    // We display the current rename text but since RenameState is not mutable here,
-    // we show it as a read-only styled label. The actual editing happens through
-    // the editor's keyboard input system which updates RenameState.
-    let display_text = if rename_state.new_name.is_empty() {
-        &rename_state.original_text
-    } else {
-        &rename_state.new_name
-    };
-
-    // Rename popup is small — just position at cursor, clamped
-    let rename_width = (display_text.len() as f32 * font.char_width + 20.0).max(100.0);
+    let rename_width = (rename_state.new_name.len() as f32 * font.char_width + 40.0).max(150.0);
     let pos = position_popup(
         cursor_x,
         cursor_y,
@@ -564,6 +606,9 @@ pub fn render_rename_egui(
         false,
     );
 
+    let mut submit = false;
+    let mut cancel = false;
+
     egui::Area::new(egui::Id::new("lsp_rename"))
         .fixed_pos(pos)
         .order(egui::Order::Foreground)
@@ -574,11 +619,31 @@ pub fn render_rename_egui(
                 .corner_radius(egui::CornerRadius::same(theme.spacing.corner_radius_small))
                 .inner_margin(egui::Margin::symmetric(6, 3))
                 .show(ui, |ui| {
-                    ui.label(
-                        egui::RichText::new(display_text)
-                            .color(theme.card_foreground())
-                            .size(font.size),
+                    let response = ui.add(
+                        egui::TextEdit::singleline(&mut rename_state.new_name)
+                            .font(egui::FontId::proportional(font.size))
+                            .desired_width(rename_width - 20.0),
                     );
+                    response.request_focus();
+
+                    if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        submit = true;
+                    }
+                    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        cancel = true;
+                    }
                 });
         });
+
+    if cancel {
+        rename_state.reset();
+    } else if submit && rename_state.can_submit() {
+        if let Some(uri) = &lsp_sync.document_uri {
+            lsp_client.send(LspMessage::Rename {
+                uri: uri.clone(),
+                position: range.start,
+                new_name: rename_state.new_name.clone(),
+            });
+        }
+    }
 }

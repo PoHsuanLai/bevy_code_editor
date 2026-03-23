@@ -180,8 +180,8 @@ pub(crate) fn update_bracket_highlight(
         Some(bracket_match) => {
             let char_width = font.char_width;
             let line_height = font.line_height;
-            let viewport_width = viewport.width as f32;
-            let viewport_height = viewport.height as f32;
+            let _viewport_width = viewport.width as f32;
+            let _viewport_height = viewport.height as f32;
             let use_box_style = matches!(brackets.style, BracketHighlightStyle::Background)
                 || matches!(brackets.style, BracketHighlightStyle::Both);
             let border_thickness = 2.0; // Default thickness

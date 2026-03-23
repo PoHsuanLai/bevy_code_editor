@@ -345,7 +345,7 @@ pub fn handle_keyboard_input(
                                         &mut completion_state,
                                         &lsp_sync,
                                     );
-                                } else if (c.is_alphanumeric() || c == '_') {
+                                } else if c.is_alphanumeric() || c == '_' {
                                     // Typing identifier characters
                                     if completion_state.visible {
                                         // Completion already visible - update filter

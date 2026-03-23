@@ -220,14 +220,14 @@ pub(crate) fn update_gpu_text_instanced(
     #[cfg(feature = "folding")] fold_state: Res<FoldState>,
     mut atlas: ResMut<GlyphAtlas>,
     mut images: ResMut<Assets<Image>>,
-    batch_query: Query<(Entity, &GpuTextBatch)>,
+    mut batch_query: Query<(Entity, &GpuTextBatch, &mut GlyphBatchComponent)>,
     mut syntax: ResMut<SyntaxResource>,
     _highlight_cache: ResMut<HighlightCache>,
     mut line_cache: ResMut<LineGlyphCache>,
     time: Res<Time>,
 ) {
     // Check if viewport changed
-    let viewport_changed = if let Some((_, batch)) = batch_query.iter().next() {
+    let viewport_changed = if let Some((_, batch, _)) = batch_query.iter().next() {
         batch.built_at_width != viewport.width || batch.built_at_height != viewport.height
     } else {
         true
@@ -457,11 +457,13 @@ pub(crate) fn update_gpu_text_instanced(
 
     // Update or create batch entity
     if arc_instances.is_empty() {
-        for (entity, _) in batch_query.iter() {
+        for (entity, _, mut batch_comp) in batch_query.iter_mut() {
+            // Clear instances immediately — no deferred commands, takes effect this frame
+            batch_comp.instances = arc_instances.clone();
             commands.entity(entity).insert(Visibility::Hidden);
         }
     } else {
-        let existing_batches: Vec<Entity> = batch_query.iter().map(|(e, _)| e).collect();
+        let existing_batches: Vec<Entity> = batch_query.iter().map(|(e, _, _)| e).collect();
 
         if let Some(&first_entity) = existing_batches.first() {
             commands.entity(first_entity).insert(GlyphBatchComponent {

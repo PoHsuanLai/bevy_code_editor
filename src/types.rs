@@ -8,8 +8,6 @@ use std::time::Instant;
 
 use crate::line_width::LineWidthTracker;
 
-#[cfg(feature = "lsp")]
-use lsp_types::Url;
 
 // ========== Anchor-based Position Tracking ==========
 

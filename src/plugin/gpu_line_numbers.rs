@@ -68,7 +68,6 @@ pub(crate) fn update_gpu_line_numbers(
 
     let line_height = font.line_height;
     let font_size = font.size;
-    let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
 
     // Collect cursor lines for highlighting active line numbers

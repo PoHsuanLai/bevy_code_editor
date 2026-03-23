@@ -28,7 +28,6 @@
 
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
-use bevy_camera::visibility::RenderLayers;
 
 use crate::plugin::editor_ui_plugin::EditorRenderConfig;
 use crate::settings::FontSettings;
@@ -235,7 +234,7 @@ pub fn render_signature_help_popup(
     font: Res<FontSettings>,
     viewport: Res<ViewportDimensions>,
     theme: Res<LspUiTheme>,
-    render_config: Res<EditorRenderConfig>,
+    _render_config: Res<EditorRenderConfig>,
 ) {
     for (_popup_entity, popup) in popup_query.iter() {
         for entity in visual_query.iter() {
@@ -312,7 +311,7 @@ pub fn render_code_actions_popup(
     font: Res<FontSettings>,
     viewport: Res<ViewportDimensions>,
     theme: Res<LspUiTheme>,
-    render_config: Res<EditorRenderConfig>,
+    _render_config: Res<EditorRenderConfig>,
 ) {
     for (_popup_entity, popup) in popup_query.iter() {
         for entity in visual_query.iter() {

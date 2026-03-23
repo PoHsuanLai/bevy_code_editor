@@ -40,7 +40,6 @@ pub fn listen_text_edit_events(
             // Since the rope is already updated, compute the old end position
             // from the start position plus the old range length.
             let old_len = event.old_end_byte - event.start_byte;
-            let new_len = event.new_end_byte - event.start_byte;
 
             // For the old end position, we can compute it relative to start
             // using the old document structure. Since we only have the new rope,
@@ -140,17 +139,16 @@ pub fn listen_rename_requests(
 ) {
     for event in events.read() {
         if let Some(uri) = &lsp_sync.document_uri {
-            // Send prepareRename request
             use lsp_types::Position;
-            let msg = LspMessage::PrepareRename {
-                uri: uri.clone(),
-                position: Position {
-                    line: event.line as u32,
-                    character: event.character as u32,
-                },
+            let position = Position {
+                line: event.line as u32,
+                character: event.character as u32,
             };
-
-            lsp_client.send(msg);
+            rename_state.start_prepare(position);
+            lsp_client.send(LspMessage::PrepareRename {
+                uri: uri.clone(),
+                position,
+            });
         }
     }
 }
@@ -164,7 +162,7 @@ pub fn listen_signature_help_requests(
 ) {
     for event in events.read() {
         if let Some(uri) = &lsp_sync.document_uri {
-            // Send signatureHelp request
+            sig_help_state.reset();
             use lsp_types::Position;
             let msg = LspMessage::SignatureHelp {
                 uri: uri.clone(),

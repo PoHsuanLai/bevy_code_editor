@@ -123,9 +123,10 @@ fn delete_selection_with_history(state: &mut CodeEditorState, record_history: bo
             });
         }
 
-        // Clear selection
+        // Clear selection and sync cursor state
         state.selection_start = None;
         state.selection_end = None;
+        state.sync_cursors_from_primary();
 
         state.needs_update = true;
         state.pending_update = false;
