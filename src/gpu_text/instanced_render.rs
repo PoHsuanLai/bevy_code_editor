@@ -60,6 +60,8 @@ pub struct InstancedTextRenderPlugin;
 
 impl Plugin for InstancedTextRenderPlugin {
     fn build(&self, app: &mut App) {
+        bevy::asset::embedded_asset!(app, "text.wgsl");
+
         app.add_plugins(ExtractComponentPlugin::<GlyphBatchComponent>::default());
 
         // Extract system must run in RenderApp's ExtractSchedule to insert resources in render world
@@ -279,8 +281,10 @@ fn init_instanced_text_pipeline(
         ),
     );
 
+    let shader = bevy::asset::load_embedded_asset!(asset_server.as_ref(), "text.wgsl");
+
     commands.insert_resource(InstancedTextPipeline {
-        shader: asset_server.load("shaders/text.wgsl"), // Updated shader name
+        shader,
         view_bind_group_layout,
         texture_bind_group_layout,
     });

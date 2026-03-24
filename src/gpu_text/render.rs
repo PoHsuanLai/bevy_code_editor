@@ -128,7 +128,7 @@ pub struct TextMaterial {
 
 impl Material2d for TextMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/text_glyph.wgsl".into()
+        TEXT_GLYPH_SHADER_HANDLE.into()
     }
 
     fn alpha_mode(&self) -> AlphaMode2d {
@@ -192,8 +192,18 @@ pub fn create_quad_mesh() -> Mesh {
 /// Plugin for GPU text rendering
 pub struct GpuTextPlugin;
 
+const TEXT_GLYPH_SHADER_HANDLE: Handle<Shader> =
+    bevy::asset::uuid_handle!("9a3f2c1e-b847-4d56-a891-7e3c0f5d2b6a");
+
 impl Plugin for GpuTextPlugin {
     fn build(&self, app: &mut App) {
+        bevy::asset::load_internal_asset!(
+            app,
+            TEXT_GLYPH_SHADER_HANDLE,
+            "text_glyph.wgsl",
+            Shader::from_wgsl
+        );
+
         app.add_plugins(Material2dPlugin::<TextMaterial>::default())
             .init_resource::<TextRenderState>()
             .add_systems(Startup, setup_gpu_text);
