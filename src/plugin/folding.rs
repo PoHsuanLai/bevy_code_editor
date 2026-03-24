@@ -375,8 +375,6 @@ pub(crate) fn update_fold_indicators(
             y_offset,
             viewport_width,
             viewport_height,
-            viewport.offset_x,
-            viewport.offset_y,
             0.0,
         );
 

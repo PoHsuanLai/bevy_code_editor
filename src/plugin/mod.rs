@@ -62,57 +62,21 @@ pub struct EditorInputManager;
 // Helper to convert dynamic coordinate based on scroll alignment
 // Returns camera-relative coordinates (entities positioned at camera origin)
 // The camera moves to follow the viewport, so entities stay fixed in world space
-pub fn to_bevy_coords_dynamic(
-    x: f32,
-    y: f32,
-    viewport_w: f32,
-    viewport_h: f32,
-    offset_x: f32,
-    offset_y: f32,
-) -> Vec3 {
-    // Determine viewport mode
-    let viewport_left = if offset_x == 0.0 && offset_y == 0.0 {
-        -viewport_w / 2.0
-    } else {
-        offset_x
-    };
-    let viewport_top = if offset_x == 0.0 && offset_y == 0.0 {
-        viewport_h / 2.0
-    } else {
-        offset_y
-    };
-
-    let world_x = viewport_left + x;
-    let world_y = viewport_top - y;
+pub fn to_bevy_coords_dynamic(x: f32, y: f32, viewport_w: f32, viewport_h: f32) -> Vec3 {
+    let world_x = -viewport_w / 2.0 + x;
+    let world_y = viewport_h / 2.0 - y;
     Vec3::new(world_x, world_y, 0.0)
 }
 
-// Helper to convert coordinate with scroll alignment (left aligned)
-// Returns camera-relative coordinates (entities positioned at camera origin)
-// The camera moves to follow the viewport, so entities stay fixed in world space
 pub fn to_bevy_coords_left_aligned(
     x: f32,
     y: f32,
     viewport_w: f32,
     viewport_h: f32,
-    offset_x: f32,
-    offset_y: f32,
     scroll_x: f32,
 ) -> Vec3 {
-    // Determine viewport mode
-    let viewport_left = if offset_x == 0.0 && offset_y == 0.0 {
-        -viewport_w / 2.0
-    } else {
-        offset_x
-    };
-    let viewport_top = if offset_x == 0.0 && offset_y == 0.0 {
-        viewport_h / 2.0
-    } else {
-        offset_y
-    };
-
-    let world_x = viewport_left + x - scroll_x;
-    let world_y = viewport_top - y;
+    let world_x = -viewport_w / 2.0 + x - scroll_x;
+    let world_y = viewport_h / 2.0 - y;
     Vec3::new(world_x, world_y, 0.0)
 }
 

@@ -440,9 +440,7 @@ fn setup_editor_ui(
                 viewport_height / 2.0,
                 viewport_width,
                 viewport_height,
-                viewport.offset_x,
-                viewport.offset_y,
-                0.0, // separator doesn't scroll horizontally
+                0.0,
             )),
             Separator,
             Name::new("Separator"),
@@ -463,8 +461,6 @@ fn setup_editor_ui(
             viewport.text_area_top,
             viewport_width,
             viewport_height,
-            viewport.offset_x,
-            viewport.offset_y,
         )),
         Visibility::Hidden,
         EditorCursor { cursor_index: 0 },
@@ -495,9 +491,7 @@ fn update_separator_on_resize(
             viewport_height / 2.0,
             viewport_width,
             viewport_height,
-            viewport.offset_x,
-            viewport.offset_y,
-            0.0, // separator doesn't scroll horizontally
+            0.0,
         );
     }
 }

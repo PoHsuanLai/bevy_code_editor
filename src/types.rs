@@ -1563,13 +1563,8 @@ pub struct ViewportDimensions {
     /// Viewport height in pixels
     pub height: u32,
 
-    /// Horizontal offset for the editor content center (useful for sidebars/panels)
-    /// This is the center X position in world coordinates
-    pub offset_x: f32,
-
-    /// Vertical offset for the editor content center (useful for panels)
-    /// This is the center Y position in world coordinates
-    pub offset_y: f32,
+    /// Top-left position of the editor panel in window/screen pixels (set by host app)
+    pub screen_position: Vec2,
 
     // === Computed Layout (set by UI plugin) ===
     /// Left margin/padding before text starts
@@ -1586,26 +1581,14 @@ pub struct ViewportDimensions {
 }
 
 impl ViewportDimensions {
-    /// Calculate the world coordinate of the viewport's left edge
+    /// World coordinate of the viewport's left edge (camera always centered at origin)
     pub fn world_left(&self) -> f32 {
-        if self.offset_x == 0.0 && self.offset_y == 0.0 {
-            // Auto-resize mode (default): viewport is centered at (0,0)
-            -(self.width as f32) / 2.0
-        } else {
-            // Manual mode: offset_x is the left edge
-            self.offset_x
-        }
+        -(self.width as f32) / 2.0
     }
 
-    /// Calculate the world coordinate of the viewport's top edge
+    /// World coordinate of the viewport's top edge (camera always centered at origin)
     pub fn world_top(&self) -> f32 {
-        if self.offset_x == 0.0 && self.offset_y == 0.0 {
-            // Auto-resize mode (default): viewport is centered at (0,0)
-            self.height as f32 / 2.0
-        } else {
-            // Manual mode: offset_y is the top edge
-            self.offset_y
-        }
+        self.height as f32 / 2.0
     }
 }
 
@@ -1614,8 +1597,7 @@ impl Default for ViewportDimensions {
         Self {
             width: 800,
             height: 600,
-            offset_x: 0.0,
-            offset_y: 0.0,
+            screen_position: Vec2::ZERO,
             // Default layout values (can be overridden by UI plugin)
             text_area_left: 80.0,
             text_area_top: 10.0,

@@ -96,24 +96,10 @@ pub fn handle_mouse_input(
 
     // Calculate char position if mouse is over the editor
     let char_pos = if let Some(cursor_pos_screen) = cursor_pos_screen {
-        // cursor_position() returns window coordinates: (0,0) at top-left, Y increases downward
         let viewport_width = viewport.width as f32;
         let viewport_height = viewport.height as f32;
-
-        // Get window dimensions to calculate viewport bounds in window coordinates
-        let window = window_query.iter().next();
-        let (window_width, window_height) = window
-            .map(|w| (w.width(), w.height()))
-            .unwrap_or((viewport_width, viewport_height));
-
-        // Calculate viewport bounds in window coordinates
-        // viewport.offset_x/offset_y are the center of the viewport in world coords
-        // World coords: center of window is (0,0), X+ is right, Y+ is up
-        // Window coords: top-left is (0,0), X+ is right, Y+ is down
-        let viewport_left =
-            (window_width / 2.0 + viewport.offset_x - viewport_width / 2.0).max(0.0);
-        let viewport_top =
-            (window_height / 2.0 - viewport.offset_y - viewport_height / 2.0).max(0.0);
+        let viewport_left = viewport.screen_position.x;
+        let viewport_top = viewport.screen_position.y;
         let viewport_right = viewport_left + viewport_width;
         let viewport_bottom = viewport_top + viewport_height;
 
@@ -124,7 +110,6 @@ pub fn handle_mouse_input(
             && cursor_pos_screen.y <= viewport_bottom;
 
         if mouse_in_editor_area {
-            // Convert to viewport-local coordinates (0,0 at top-left of viewport)
             let viewport_local_pos = Vec2::new(
                 cursor_pos_screen.x - viewport_left,
                 cursor_pos_screen.y - viewport_top,
@@ -215,17 +200,8 @@ pub fn handle_mouse_input(
             let viewport_height = viewport.height as f32;
             let line_height = font.line_height;
 
-            // Get window dimensions to calculate viewport bounds
-            let window = window_query.iter().next();
-            let (window_width, window_height) = window
-                .map(|w| (w.width(), w.height()))
-                .unwrap_or((viewport_width, viewport_height));
-
-            // Calculate viewport bounds in window coordinates
-            let viewport_left =
-                (window_width / 2.0 + viewport.offset_x - viewport_width / 2.0).max(0.0);
-            let viewport_top =
-                (window_height / 2.0 - viewport.offset_y - viewport_height / 2.0).max(0.0);
+            let viewport_left = viewport.screen_position.x;
+            let viewport_top = viewport.screen_position.y;
 
             let local_x = cursor_pos_screen.x - viewport_left;
             let local_y = cursor_pos_screen.y - viewport_top;
@@ -353,22 +329,11 @@ pub fn handle_mouse_input(
                 // Update last screen position
                 drag_state.last_screen_pos = Some(cursor_pos_screen);
 
-                // Convert window coordinates to viewport-local coordinates
                 let viewport_width = viewport.width as f32;
                 let viewport_height = viewport.height as f32;
-                let window = window_query.iter().next();
-                let (window_width, window_height) = window
-                    .map(|w| (w.width(), w.height()))
-                    .unwrap_or((viewport_width, viewport_height));
-
-                let viewport_left =
-                    (window_width / 2.0 + viewport.offset_x - viewport_width / 2.0).max(0.0);
-                let viewport_top =
-                    (window_height / 2.0 - viewport.offset_y - viewport_height / 2.0).max(0.0);
-
                 let viewport_local_pos = Vec2::new(
-                    cursor_pos_screen.x - viewport_left,
-                    cursor_pos_screen.y - viewport_top,
+                    cursor_pos_screen.x - viewport.screen_position.x,
+                    cursor_pos_screen.y - viewport.screen_position.y,
                 );
 
                 // Use the scroll offset from drag start to prevent auto-scroll from affecting selection
