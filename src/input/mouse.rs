@@ -209,10 +209,11 @@ pub fn handle_mouse_input(
     // Handle mouse button press
     if mouse_button.just_pressed(MouseButton::Left) {
         // Check for fold indicator click (in the fold gutter area)
+        #[cfg(feature = "folding")]
         if let Some(cursor_pos_screen) = cursor_pos_screen {
-            let line_height = font.line_height;
             let viewport_width = viewport.width as f32;
             let viewport_height = viewport.height as f32;
+            let line_height = font.line_height;
 
             // Get window dimensions to calculate viewport bounds
             let window = window_query.iter().next();
@@ -226,13 +227,11 @@ pub fn handle_mouse_input(
             let viewport_top =
                 (window_height / 2.0 - viewport.offset_y - viewport_height / 2.0).max(0.0);
 
-            // Convert to viewport-local coordinates
             let local_x = cursor_pos_screen.x - viewport_left;
             let local_y = cursor_pos_screen.y - viewport_top;
 
             // Fold gutter is a narrow area just before the separator (where fold indicators are)
             // Fold indicators are positioned at: separator_x - 12.0
-            #[cfg(feature = "folding")]
             {
                 let gutter_start = viewport.separator_x - 18.0;
                 let gutter_end = viewport.separator_x + 5.0;

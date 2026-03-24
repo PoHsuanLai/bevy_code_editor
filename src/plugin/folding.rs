@@ -1,4 +1,5 @@
 //! Code folding
+#![allow(dead_code)]
 
 use super::editor_ui_plugin::EditorRenderConfig;
 use super::to_bevy_coords_left_aligned;
@@ -273,9 +274,9 @@ pub(crate) fn detect_foldable_regions(
 pub struct FoldingPlugin;
 
 impl Plugin for FoldingPlugin {
-    fn build(&self, app: &mut App) {
+    fn build(&self, _app: &mut App) {
         #[cfg(feature = "folding")]
-        app.add_systems(
+        _app.add_systems(
             Update,
             (
                 detect_foldable_regions.in_set(super::ApplyStateSet),

@@ -1,4 +1,5 @@
 //! Bracket matching and find highlights
+#![allow(dead_code)]
 
 use super::editor_ui_plugin::EditorRenderConfig;
 use crate::settings::*;
@@ -8,9 +9,9 @@ use bevy::prelude::*;
 pub struct BracketPlugin;
 
 impl Plugin for BracketPlugin {
-    fn build(&self, app: &mut App) {
+    fn build(&self, _app: &mut App) {
         #[cfg(feature = "brackets")]
-        app.add_systems(
+        _app.add_systems(
             Update,
             (
                 update_bracket_match.in_set(super::ApplyStateSet),

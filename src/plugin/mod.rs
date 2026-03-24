@@ -47,7 +47,9 @@ pub(crate) use self::cursor::{
 pub(crate) use self::ui_elements::{
     update_indent_guides, update_selection_highlight,
 };
+#[cfg(feature = "brackets")]
 pub(crate) use self::brackets::{update_bracket_highlight, update_bracket_match};
+#[cfg(feature = "folding")]
 pub(crate) use self::folding::update_fold_indicators;
 pub(crate) use self::gpu_line_numbers::update_gpu_line_numbers;
 pub(crate) use self::gpu_text_instanced::update_gpu_text_instanced;
