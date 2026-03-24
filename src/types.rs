@@ -1925,13 +1925,12 @@ impl CodeEditorState {
         }
 
         let new_line_count = self.rope.len_lines();
-        // Only mark current line as dirty - tree-sitter will handle the rest
-        self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-
-        // If newline was inserted, invalidate all lines from the insertion point
-        // to prevent stale entity mappings (line indices shift after newline insert)
         if c == '\n' {
-            self.invalidate_lines_from = Some(line_idx);
+            // Newline shifts all subsequent line indices — full invalidation needed
+            self.dirty_lines = None;
+        } else {
+            // Single char on same line: only the current line is dirty
+            self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
         }
 
         self.previous_line_count = new_line_count;
@@ -1988,12 +1987,11 @@ impl CodeEditorState {
             }
 
             let new_line_count = self.rope.len_lines();
-            self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-
-            // If newline was deleted, invalidate all lines from the deletion point
-            // to prevent stale entity mappings (line indices shift after newline delete)
             if deleted_char == '\n' {
-                self.invalidate_lines_from = Some(line_idx);
+                // Newline deletion shifts all subsequent line indices — full invalidation needed
+                self.dirty_lines = None;
+            } else {
+                self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
             }
 
             self.previous_line_count = new_line_count;
@@ -2050,12 +2048,11 @@ impl CodeEditorState {
             }
 
             let new_line_count = self.rope.len_lines();
-            self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-
-            // If newline was deleted, invalidate all lines from the deletion point
-            // to prevent stale entity mappings (line indices shift after newline delete)
             if deleted_char == '\n' {
-                self.invalidate_lines_from = Some(line_idx);
+                // Newline deletion shifts all subsequent line indices — full invalidation needed
+                self.dirty_lines = None;
+            } else {
+                self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
             }
 
             self.previous_line_count = new_line_count;

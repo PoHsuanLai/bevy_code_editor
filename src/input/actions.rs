@@ -155,7 +155,8 @@ pub fn apply_completion(state: &mut CodeEditorState, completion_state: &mut lsp:
             // Record edit for incremental parsing (remove + insert = replace)
             state.record_edit(start_byte, end_byte, new_end_byte);
 
-            state.rope.remove(start_byte..end_byte);
+            // rope.remove takes char indices, not bytes
+            state.rope.remove(start..end);
             state.rope.insert(start, &insert_text);
 
             state.cursor_pos = start + insert_text.chars().count();
