@@ -195,6 +195,8 @@ fn prepare_instance_buffers(
 
     for (entity, batch) in &query {
         if batch.instances.is_empty() {
+            // Remove stale InstanceBuffer so the draw command skips this entity
+            commands.entity(entity).remove::<InstanceBuffer>();
             continue;
         }
 

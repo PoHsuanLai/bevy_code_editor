@@ -86,7 +86,7 @@ pub fn process_lsp_messages(
             LspResponse::Initialized { capabilities: _ } => {
                 lsp_client.initialized = true;
                 #[cfg(debug_assertions)]
-                eprintln!("[LSP] Server initialized");
+                debug!("[LSP] Server initialized");
             }
 
             LspResponse::Diagnostics {
@@ -126,7 +126,7 @@ pub fn process_lsp_messages(
 
             LspResponse::Hover { content, range } => {
                 #[cfg(debug_assertions)]
-                eprintln!("[LSP] Hover: {} chars", content.len());
+                debug!("[LSP] Hover: {} chars", content.len());
 
                 if !content.is_empty() {
                     if let Some(pending_pos) = hover_state.pending_char_index {
@@ -146,7 +146,7 @@ pub fn process_lsp_messages(
                 }
 
                 #[cfg(debug_assertions)]
-                eprintln!("[LSP] Definition: {} location(s)", locations.len());
+                debug!("[LSP] Definition: {} location(s)", locations.len());
 
                 if locations.len() > 1 {
                     multi_location_events.write(MultipleLocationsEvent {
@@ -181,7 +181,7 @@ pub fn process_lsp_messages(
 
             LspResponse::References { locations } => {
                 #[cfg(debug_assertions)]
-                eprintln!("[LSP] References: {} location(s)", locations.len());
+                debug!("[LSP] References: {} location(s)", locations.len());
 
                 if !locations.is_empty() {
                     multi_location_events.write(MultipleLocationsEvent {
@@ -193,7 +193,7 @@ pub fn process_lsp_messages(
 
             LspResponse::Format { edits } => {
                 #[cfg(debug_assertions)]
-                eprintln!("[LSP] Format: {} edit(s)", edits.len());
+                debug!("[LSP] Format: {} edit(s)", edits.len());
                 apply_text_edits(&mut editor_state, edits);
             }
 
@@ -203,7 +203,7 @@ pub fn process_lsp_messages(
                 active_parameter,
             } => {
                 #[cfg(debug_assertions)]
-                eprintln!("[LSP] SignatureHelp: {} signature(s)", signatures.len());
+                debug!("[LSP] SignatureHelp: {} signature(s)", signatures.len());
 
                 sig_state.signatures = signatures;
                 sig_state.active_signature = active_signature.unwrap_or(0) as usize;
@@ -213,7 +213,7 @@ pub fn process_lsp_messages(
 
             LspResponse::CodeActions { actions } => {
                 #[cfg(debug_assertions)]
-                eprintln!("[LSP] CodeActions: {} action(s)", actions.len());
+                debug!("[LSP] CodeActions: {} action(s)", actions.len());
 
                 action_state.actions = actions;
                 action_state.visible = !action_state.actions.is_empty();
@@ -222,7 +222,7 @@ pub fn process_lsp_messages(
 
             LspResponse::InlayHints { hints } => {
                 #[cfg(debug_assertions)]
-                eprintln!("[LSP] InlayHints: {} hint(s)", hints.len());
+                debug!("[LSP] InlayHints: {} hint(s)", hints.len());
 
                 hint_state.hints = hints;
                 hint_state.needs_refresh = false;
@@ -251,7 +251,7 @@ pub fn process_lsp_messages(
 
             LspResponse::Rename { edit } => {
                 #[cfg(debug_assertions)]
-                eprintln!("[LSP] Rename: workspace edit received");
+                debug!("[LSP] Rename: workspace edit received");
 
                 // Apply edits to current document if present
                 if let Some(changes) = &edit.changes {
@@ -354,7 +354,7 @@ pub fn sync_lsp_document(
             });
 
             #[cfg(debug_assertions)]
-            eprintln!("[LSP] Debounced sync sent, version={}", version);
+            debug!("[LSP] Debounced sync sent, version={}", version);
         }
 
         sync_state.dirty = false;
@@ -453,7 +453,7 @@ pub fn execute_code_action(lsp_client: &LspClient, action: &CodeActionOrCommand)
             if let Some(edit) = &action.edit {
                 // TODO: Apply workspace edit
                 #[cfg(debug_assertions)]
-                eprintln!("[LSP] Code action has workspace edit: {:?}", edit);
+                debug!("[LSP] Code action has workspace edit: {:?}", edit);
             }
 
             // If action has command, execute it
@@ -528,25 +528,14 @@ pub fn request_document_highlights(
 
 /// Helper to request prepare rename
 pub fn request_prepare_rename(lsp_client: &LspClient, uri: &Url, position: Position) {
-    eprintln!(
-        "[LSP] request_prepare_rename called, supports_prepare: {}, supports_rename: {}",
-        lsp_client.capabilities.supports_prepare_rename(),
-        lsp_client.capabilities.supports_rename()
-    );
-
     if lsp_client.capabilities.supports_prepare_rename() {
-        eprintln!("[LSP] Sending PrepareRename request");
         lsp_client.send(LspMessage::PrepareRename {
             uri: uri.clone(),
             position,
         });
-    } else if lsp_client.capabilities.supports_rename() {
-        // Server doesn't support prepare, go straight to rename dialog
-        eprintln!("[LSP] Server doesn't support prepare rename, but supports rename");
-        // The caller should handle this case
-    } else {
-        eprintln!("[LSP] Server doesn't support rename at all");
     }
+    // If server supports rename but not prepare, the caller handles the dialog directly.
+    // If server doesn't support rename at all, start_prepare was already called — reset it.
 }
 
 /// Helper to execute rename

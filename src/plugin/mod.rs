@@ -13,7 +13,6 @@ pub mod lsp_plugin;
 pub mod lsp_ui_plugin;
 #[cfg(feature = "egui-overlays")]
 pub mod lsp_egui_ui_plugin;
-pub mod minimap;
 pub mod scrollbar;
 pub mod syntax_highlighting;
 pub mod ui_elements;
@@ -28,14 +27,12 @@ pub use self::editor_ui_plugin::EditorUiPlugin as EditorUiPluginType;
 pub use self::brackets::BracketPlugin as BracketPluginType;
 pub use self::cursor::CursorPlugin as CursorPluginType;
 pub use self::folding::FoldingPlugin as FoldingPluginType;
-pub use self::minimap::MinimapPlugin as MinimapPluginType;
 pub use self::scrollbar::ScrollbarPlugin as ScrollbarPluginType;
-pub use self::scrollbar::Scrollbar; 
+pub use self::scrollbar::Scrollbar;
 // Fix visibility for lib.rs re-exports
 pub use self::brackets::BracketPlugin;
 pub use self::cursor::CursorPlugin;
 pub use self::folding::FoldingPlugin;
-pub use self::minimap::MinimapPlugin;
 pub use self::editor_ui_plugin::EditorUiPlugin;
 pub use self::scrollbar::ScrollbarPlugin;
 
@@ -52,9 +49,9 @@ pub(crate) use self::ui_elements::{
 };
 pub(crate) use self::brackets::{update_bracket_highlight, update_bracket_match};
 pub(crate) use self::folding::update_fold_indicators;
-pub(crate) use self::minimap::{handle_minimap_mouse, update_minimap, update_minimap_hover};
 pub(crate) use self::gpu_line_numbers::update_gpu_line_numbers;
 pub(crate) use self::gpu_text_instanced::update_gpu_text_instanced;
+pub use self::gpu_text_instanced::LineGlyphCache;
 
 /// Marker component for the entity that handles editor input (InputManager)
 #[derive(Component)]
@@ -154,8 +151,7 @@ impl Plugin for CodeEditorPlugin {
         // Initialize feature-specific resources
         app.insert_resource(BracketMatchState::default());
         app.insert_resource(GotoLineState::default());
-        app.insert_resource(MinimapHoverState::default());
-        app.insert_resource(MinimapDragState::default());
+        app.insert_resource(LineGlyphCache::default());
 
         #[cfg(feature = "folding")]
         app.insert_resource(FoldState::default());
@@ -223,7 +219,6 @@ impl Plugin for CodeEditorPlugin {
             FoldingPlugin,
             BracketPlugin,
             ScrollbarPlugin,
-            MinimapPlugin,
         ));
 
         #[cfg(feature = "lsp")]

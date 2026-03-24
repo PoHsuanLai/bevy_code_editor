@@ -11,6 +11,10 @@ pub struct PerformanceSettings {
 
     /// Enable GPU-accelerated text rendering
     pub gpu_text: bool,
+
+    /// Max milliseconds per frame for glyph building (cache misses).
+    /// Prevents frame stalls when many lines need syntax highlighting at once.
+    pub glyph_build_budget_ms: f64,
 }
 
 impl Default for PerformanceSettings {
@@ -18,6 +22,7 @@ impl Default for PerformanceSettings {
         Self {
             viewport_buffer_lines: 10,
             gpu_text: true,
+            glyph_build_budget_ms: 8.0,
         }
     }
 }

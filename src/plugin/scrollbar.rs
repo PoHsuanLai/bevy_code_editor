@@ -180,10 +180,6 @@ fn handle_scrollbar_mouse(
             {
                 // Start dragging
                 if let Ok((entity, _scrollbar)) = scrollbar_query.get(thumb.parent) {
-                    eprintln!(
-                        "[Scrollbar] DRAG STARTED at cursor_y={}, scroll_offset={}",
-                        cursor_y, state.scroll_offset
-                    );
                     drag_state.is_dragging = true;
                     drag_state.dragging_entity = Some(entity);
                     drag_state.drag_start_y = cursor_y;
@@ -239,10 +235,6 @@ fn handle_scrollbar_mouse(
     // Handle mouse release
     if mouse_button.just_released(MouseButton::Left) {
         if drag_state.is_dragging {
-            eprintln!(
-                "[Scrollbar] DRAG ENDED at scroll_offset={}, target={}",
-                state.scroll_offset, state.target_scroll_offset
-            );
             // Ensure target matches actual to prevent smooth scroll animation after release
             state.target_scroll_offset = state.scroll_offset;
         }

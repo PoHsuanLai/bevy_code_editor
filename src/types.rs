@@ -8,8 +8,6 @@ use std::time::Instant;
 
 use crate::line_width::LineWidthTracker;
 
-#[cfg(feature = "lsp")]
-use lsp_types::Url;
 
 // ========== Anchor-based Position Tracking ==========
 
@@ -1927,13 +1925,12 @@ impl CodeEditorState {
         }
 
         let new_line_count = self.rope.len_lines();
-        // Only mark current line as dirty - tree-sitter will handle the rest
-        self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-
-        // If newline was inserted, invalidate all lines from the insertion point
-        // to prevent stale entity mappings (line indices shift after newline insert)
         if c == '\n' {
-            self.invalidate_lines_from = Some(line_idx);
+            // Newline shifts all subsequent line indices — full invalidation needed
+            self.dirty_lines = None;
+        } else {
+            // Single char on same line: only the current line is dirty
+            self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
         }
 
         self.previous_line_count = new_line_count;
@@ -1990,12 +1987,11 @@ impl CodeEditorState {
             }
 
             let new_line_count = self.rope.len_lines();
-            self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-
-            // If newline was deleted, invalidate all lines from the deletion point
-            // to prevent stale entity mappings (line indices shift after newline delete)
             if deleted_char == '\n' {
-                self.invalidate_lines_from = Some(line_idx);
+                // Newline deletion shifts all subsequent line indices — full invalidation needed
+                self.dirty_lines = None;
+            } else {
+                self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
             }
 
             self.previous_line_count = new_line_count;
@@ -2052,12 +2048,11 @@ impl CodeEditorState {
             }
 
             let new_line_count = self.rope.len_lines();
-            self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-
-            // If newline was deleted, invalidate all lines from the deletion point
-            // to prevent stale entity mappings (line indices shift after newline delete)
             if deleted_char == '\n' {
-                self.invalidate_lines_from = Some(line_idx);
+                // Newline deletion shifts all subsequent line indices — full invalidation needed
+                self.dirty_lines = None;
+            } else {
+                self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
             }
 
             self.previous_line_count = new_line_count;
@@ -2668,75 +2663,6 @@ pub struct IndentGuide {
     pub level: usize,
     /// The line index this guide is on
     pub line_index: usize,
-}
-
-/// Component marker for the minimap background
-#[derive(Component)]
-pub struct MinimapBackground;
-
-/// Component marker for the minimap viewport slider (appears on hover)
-#[derive(Component)]
-pub struct MinimapSlider;
-
-/// Component marker for the minimap viewport highlight (subtle, always visible)
-#[derive(Component)]
-pub struct MinimapViewportHighlight;
-
-/// Component marker for the minimap scrollbar
-#[derive(Component)]
-pub struct MinimapScrollbar;
-
-/// Component marker for minimap line entities
-#[derive(Component)]
-pub struct MinimapLine {
-    /// The line index this represents
-    pub line_index: usize,
-}
-
-/// Component marker for minimap search match highlights
-#[derive(Component)]
-pub struct MinimapFindHighlight {
-    /// The line index this highlight represents
-    pub line_index: usize,
-}
-
-/// Component marker for GPU minimap mesh entity
-#[derive(Component)]
-pub struct GpuMinimapMesh {
-    /// The content version when this mesh was built
-    pub built_at_version: u64,
-    /// The scroll offset when this mesh was built
-    pub built_at_scroll: f32,
-    /// The viewport width when this mesh was built
-    pub built_at_width: u32,
-    /// The viewport height when this mesh was built
-    pub built_at_height: u32,
-    /// The viewport offset_x when this mesh was built
-    pub built_at_offset_x: f32,
-}
-
-/// Component marker for the minimap camera
-#[derive(Component)]
-pub struct MinimapCamera;
-
-/// Resource to track minimap hover state
-#[derive(Resource, Default)]
-pub struct MinimapHoverState {
-    /// Whether the mouse is currently hovering over the minimap
-    pub is_hovered: bool,
-}
-
-/// Resource to track minimap drag state for click-to-scroll and drag-to-scroll
-#[derive(Resource, Default)]
-pub struct MinimapDragState {
-    /// Whether we're currently dragging the minimap slider
-    pub is_dragging: bool,
-    /// Whether we're dragging the viewport highlight (vs clicking elsewhere on minimap)
-    pub is_dragging_highlight: bool,
-    /// Initial mouse Y position when drag started (for highlight dragging)
-    pub drag_start_y: f32,
-    /// Initial scroll offset when drag started (for highlight dragging)
-    pub drag_start_scroll: f32,
 }
 
 /// Resource to track key repeat state for editor actions

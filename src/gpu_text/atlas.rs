@@ -81,6 +81,11 @@ pub struct GlyphAtlas {
     configured_font_id: Option<cosmic_text::fontdb::ID>,
     /// Cache for cosmic_text cache keys (for instanced rendering)
     cache: HashMap<cosmic_text::CacheKey, GlyphInfo>,
+    /// Generation counter — incremented on atlas clear for cache invalidation
+    pub generation: u64,
+    /// Dirty row range for partial texture upload (min_y..max_y in pixels)
+    dirty_min_y: u32,
+    dirty_max_y: u32,
 }
 
 impl GlyphAtlas {
@@ -135,6 +140,9 @@ impl GlyphAtlas {
             swash_cache,
             configured_font_id,
             cache: HashMap::new(),
+            generation: 0,
+            dirty_min_y: ATLAS_SIZE,
+            dirty_max_y: 0,
         }
     }
 
@@ -241,8 +249,15 @@ impl GlyphAtlas {
         // Try cosmic_text rasterization first, fall back to provided rasterizer
         let glyph = self.rasterize_with_cosmic(key).or_else(rasterize)?;
 
-        // Find space in the atlas
-        let (x, y) = self.allocate(glyph.width, glyph.height)?;
+        // Find space in the atlas, with generation-based recovery on full
+        let (x, y) = match self.allocate(glyph.width, glyph.height) {
+            Some(pos) => pos,
+            None => {
+                warn!("Glyph atlas full, clearing and retrying (generation {})", self.generation);
+                self.clear();
+                self.allocate(glyph.width, glyph.height)?
+            }
+        };
 
         // Copy glyph pixels to atlas
         self.copy_glyph_to_atlas(x, y, &glyph);
@@ -416,11 +431,15 @@ impl GlyphAtlas {
         None
     }
 
-    /// Copy glyph pixels to the atlas
+    /// Copy glyph pixels to the atlas, tracking dirty rect for partial upload
     fn copy_glyph_to_atlas(&mut self, x: u32, y: u32, glyph: &RasterizedGlyph) {
         if glyph.width == 0 || glyph.height == 0 {
             return;
         }
+
+        // Track dirty rect
+        self.dirty_min_y = self.dirty_min_y.min(y);
+        self.dirty_max_y = self.dirty_max_y.max(y + glyph.height);
 
         for gy in 0..glyph.height {
             for gx in 0..glyph.width {
@@ -431,7 +450,6 @@ impl GlyphAtlas {
 
                 if dst_idx + 3 < self.pixels.len() && src_idx < glyph.pixels.len() {
                     let alpha = glyph.pixels[src_idx];
-                    // Store as white with alpha (for colored text)
                     self.pixels[dst_idx] = 255; // R
                     self.pixels[dst_idx + 1] = 255; // G
                     self.pixels[dst_idx + 2] = 255; // B
@@ -441,31 +459,54 @@ impl GlyphAtlas {
         }
     }
 
-    /// Update the GPU texture with any changes
+    /// Update the GPU texture with only the dirty rows (partial upload)
     pub fn update_texture(&mut self, images: &mut Assets<Image>) {
-        if !self.dirty {
+        if !self.dirty || self.dirty_min_y >= self.dirty_max_y {
+            self.dirty = false;
             return;
         }
 
-        // Replace the entire image to trigger re-upload to GPU
-        let new_image = Image::new(
-            Extent3d {
-                width: ATLAS_SIZE,
-                height: ATLAS_SIZE,
-                depth_or_array_layers: 1,
-            },
-            TextureDimension::D2,
-            self.pixels.clone(),
-            TextureFormat::Rgba8UnormSrgb,
-            RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-        );
+        let min_y = self.dirty_min_y.min(ATLAS_SIZE);
+        let max_y = self.dirty_max_y.min(ATLAS_SIZE);
 
-        let _ = images.insert(&self.texture, new_image);
+        if let Some(image) = images.get_mut(&self.texture) {
+            if let Some(ref mut data) = image.data {
+                // Partial copy: only update dirty rows
+                let row_bytes = (ATLAS_SIZE * 4) as usize;
+                let start_byte = min_y as usize * row_bytes;
+                let end_byte = max_y as usize * row_bytes;
 
+                if end_byte <= data.len() && end_byte <= self.pixels.len() {
+                    data[start_byte..end_byte]
+                        .copy_from_slice(&self.pixels[start_byte..end_byte]);
+                } else {
+                    // Fallback: full copy
+                    data.copy_from_slice(&self.pixels);
+                }
+            }
+        } else {
+            // No existing image — create fresh (first frame)
+            let new_image = Image::new(
+                Extent3d {
+                    width: ATLAS_SIZE,
+                    height: ATLAS_SIZE,
+                    depth_or_array_layers: 1,
+                },
+                TextureDimension::D2,
+                self.pixels.clone(),
+                TextureFormat::Rgba8UnormSrgb,
+                RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+            );
+            let _ = images.insert(&self.texture, new_image);
+        }
+
+        // Reset dirty rect
         self.dirty = false;
+        self.dirty_min_y = ATLAS_SIZE;
+        self.dirty_max_y = 0;
     }
 
-    /// Clear the atlas (e.g., when font changes)
+    /// Clear the atlas (e.g., when font changes or atlas is full)
     pub fn clear(&mut self) {
         self.glyphs.clear();
         self.rows.clear();
@@ -473,6 +514,9 @@ impl GlyphAtlas {
         self.pixels.fill(0);
         self.dirty = true;
         self.cache.clear();
+        self.generation += 1;
+        self.dirty_min_y = 0;
+        self.dirty_max_y = ATLAS_SIZE;
     }
 
     /// Check if a glyph is cached
@@ -591,7 +635,9 @@ mod instanced_extensions {
                 }
             }
 
-            // Mark atlas as dirty to trigger texture update
+            // Track dirty rect and mark as dirty
+            self.dirty_min_y = self.dirty_min_y.min(y);
+            self.dirty_max_y = self.dirty_max_y.max(y + height);
             self.dirty = true;
         }
 
@@ -688,8 +734,13 @@ mod instanced_extensions {
                 }
             }
 
-            // Pack into atlas
-            if let Some((x, y)) = self.pack(width as u32, height as u32) {
+            // Pack into atlas, with generation-based recovery on full
+            let pack_result = self.pack(width as u32, height as u32).or_else(|| {
+                warn!("Glyph atlas full in get_or_rasterize_glyph, clearing (generation {})", self.generation);
+                self.clear();
+                self.pack(width as u32, height as u32)
+            });
+            if let Some((x, y)) = pack_result {
                 self.write_glyph_data(x, y, width as u32, height as u32, &rgba_data);
 
                 let glyph_info = GlyphInfo {

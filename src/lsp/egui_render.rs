@@ -17,7 +17,8 @@ use armas::prelude::*;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 
-use super::components::*;
+use super::client::LspClient;
+use super::messages::LspMessage;
 use super::state::*;
 use crate::settings::FontSettings;
 use crate::types::{CodeEditorState, ViewportDimensions};
@@ -30,6 +31,76 @@ use crate::types::{CodeEditorState, ViewportDimensions};
 pub struct LspEguiViewportOffset {
     /// Top-left corner of the editor panel in screen pixels
     pub screen_offset: Vec2,
+}
+
+/// Calculate cursor screen position (x, y at bottom of cursor line)
+fn cursor_screen_pos(
+    char_index: usize,
+    editor_state: &CodeEditorState,
+    font: &FontSettings,
+    viewport_offset: &LspEguiViewportOffset,
+    viewport: &ViewportDimensions,
+) -> (f32, f32) {
+    let char_index = char_index.min(editor_state.rope.len_chars());
+    let line_index = editor_state.rope.char_to_line(char_index);
+    let line_start = editor_state.rope.line_to_char(line_index);
+    let col_index = char_index - line_start;
+
+    let x = viewport_offset.screen_offset.x
+        + viewport.text_area_left
+        + (col_index as f32 * font.char_width)
+        - editor_state.horizontal_scroll_offset;
+    let y = viewport_offset.screen_offset.y
+        + viewport.text_area_top
+        + ((line_index as f32 - editor_state.scroll_offset / font.line_height) * font.line_height);
+
+    (x, y)
+}
+
+/// Position a popup below (preferred) or above the cursor line, clamped to viewport.
+/// Returns the final (x, y) position.
+fn position_popup(
+    cursor_x: f32,
+    cursor_y: f32,
+    popup_width: f32,
+    popup_height: f32,
+    line_height: f32,
+    viewport_offset: &LspEguiViewportOffset,
+    viewport: &ViewportDimensions,
+    prefer_above: bool,
+) -> egui::Pos2 {
+    let vp_left = viewport_offset.screen_offset.x;
+    let vp_top = viewport_offset.screen_offset.y;
+    let vp_right = vp_left + viewport.width as f32;
+    let vp_bottom = vp_top + viewport.height as f32;
+
+    // Vertical: prefer below cursor (or above if prefer_above)
+    let below_y = cursor_y + line_height;
+    let above_y = cursor_y - popup_height;
+
+    let y = if prefer_above {
+        if above_y >= vp_top {
+            above_y
+        } else {
+            below_y
+        }
+    } else if below_y + popup_height <= vp_bottom {
+        below_y
+    } else if above_y >= vp_top {
+        above_y
+    } else {
+        // Neither fits perfectly — pick whichever has more space
+        if (vp_bottom - below_y) > (cursor_y - vp_top) {
+            below_y
+        } else {
+            above_y.max(vp_top)
+        }
+    };
+
+    // Horizontal: clamp right edge to viewport, but don't go past left edge
+    let x = cursor_x.max(vp_left).min(vp_right - popup_width);
+
+    egui::pos2(x, y)
 }
 
 /// Render the completion popup as an egui overlay using armas styling.
@@ -54,19 +125,13 @@ pub fn render_completion_egui(
         }
     };
 
-    // Calculate position relative to cursor
-    let cursor_pos = editor_state.cursor_pos.min(editor_state.rope.len_chars());
-    let line_index = editor_state.rope.char_to_line(cursor_pos);
-    let line_start = editor_state.rope.line_to_char(line_index);
-    let col_index = cursor_pos - line_start;
-
-    let x = viewport_offset.screen_offset.x
-        + viewport.text_area_left
-        + (col_index as f32 * font.char_width);
-    let y = viewport_offset.screen_offset.y
-        + viewport.text_area_top
-        + ((line_index as f32 - editor_state.scroll_offset / font.line_height) * font.line_height)
-        + font.line_height;
+    let (cursor_x, cursor_y) = cursor_screen_pos(
+        editor_state.cursor_pos,
+        &editor_state,
+        &font,
+        &viewport_offset,
+        &viewport,
+    );
 
     let theme = ctx.armas_theme();
     let max_visible = 10;
@@ -89,8 +154,19 @@ pub fn render_completion_egui(
         .max(200.0)
         .min(500.0);
 
+    let pos = position_popup(
+        cursor_x,
+        cursor_y,
+        popup_width,
+        popup_height,
+        font.line_height,
+        &viewport_offset,
+        &viewport,
+        false,
+    );
+
     egui::Area::new(egui::Id::new("lsp_completion"))
-        .fixed_pos(egui::pos2(x, y))
+        .fixed_pos(pos)
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             egui::Frame::NONE
@@ -173,6 +249,7 @@ pub fn render_completion_egui(
 pub fn render_hover_egui(
     mut contexts: EguiContexts,
     hover_state: Res<HoverState>,
+    completion_state: Res<CompletionState>,
     editor_state: Res<CodeEditorState>,
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
@@ -190,25 +267,36 @@ pub fn render_hover_egui(
         }
     };
 
-    let trigger_char_index = hover_state
-        .trigger_char_index
-        .min(editor_state.rope.len_chars());
-    let line_index = editor_state.rope.char_to_line(trigger_char_index);
-    let line_start = editor_state.rope.line_to_char(line_index);
-    let col_index = trigger_char_index - line_start;
-
-    let x = viewport_offset.screen_offset.x
-        + viewport.text_area_left
-        + (col_index as f32 * font.char_width);
-    let y = viewport_offset.screen_offset.y
-        + viewport.text_area_top
-        + ((line_index as f32 - editor_state.scroll_offset / font.line_height) * font.line_height)
-        + font.line_height;
+    let (cursor_x, cursor_y) = cursor_screen_pos(
+        hover_state.trigger_char_index,
+        &editor_state,
+        &font,
+        &viewport_offset,
+        &viewport,
+    );
 
     let theme = ctx.armas_theme();
 
+    // Estimate hover popup size (max 500px wide, ~line_height * line_count tall)
+    let hover_line_count = hover_state.content.lines().count().max(1) as f32;
+    let estimated_height = hover_line_count * font.line_height + 24.0;
+
+    // If completion is visible, prefer showing hover above cursor to avoid overlap
+    let prefer_above = completion_state.visible;
+
+    let pos = position_popup(
+        cursor_x,
+        cursor_y,
+        500.0,
+        estimated_height,
+        font.line_height,
+        &viewport_offset,
+        &viewport,
+        prefer_above,
+    );
+
     egui::Area::new(egui::Id::new("lsp_hover"))
-        .fixed_pos(egui::pos2(x, y))
+        .fixed_pos(pos)
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             egui::Frame::NONE
@@ -252,24 +340,46 @@ pub fn render_signature_help_egui(
         }
     };
 
-    let cursor_pos = editor_state.cursor_pos.min(editor_state.rope.len_chars());
-    let line_index = editor_state.rope.char_to_line(cursor_pos);
-    let line_start = editor_state.rope.line_to_char(line_index);
-    let col_index = cursor_pos - line_start;
-
-    // Position ABOVE the cursor line
-    let x = viewport_offset.screen_offset.x
-        + viewport.text_area_left
-        + (col_index as f32 * font.char_width);
-    let y = viewport_offset.screen_offset.y
-        + viewport.text_area_top
-        + ((line_index as f32 - editor_state.scroll_offset / font.line_height) * font.line_height)
-        - font.line_height * 1.5;
+    let (cursor_x, cursor_y) = cursor_screen_pos(
+        editor_state.cursor_pos,
+        &editor_state,
+        &font,
+        &viewport_offset,
+        &viewport,
+    );
 
     let theme = ctx.armas_theme();
 
+    // Signature help prefers above cursor (like VS Code)
+    let estimated_height = font.line_height + 20.0;
+    let pos = position_popup(
+        cursor_x,
+        cursor_y,
+        400.0,
+        estimated_height,
+        font.line_height,
+        &viewport_offset,
+        &viewport,
+        true,
+    );
+
+    // Resolve active parameter offsets in the signature label for highlighting
+    let active_param_range: Option<(usize, usize)> = signature
+        .parameters
+        .as_ref()
+        .and_then(|params| params.get(sig_state.active_parameter))
+        .and_then(|param| match &param.label {
+            lsp_types::ParameterLabel::LabelOffsets([start, end]) => {
+                Some((*start as usize, *end as usize))
+            }
+            lsp_types::ParameterLabel::Simple(s) => {
+                // Find the substring in the signature label
+                signature.label.find(s.as_str()).map(|pos| (pos, pos + s.len()))
+            }
+        });
+
     egui::Area::new(egui::Id::new("lsp_signature_help"))
-        .fixed_pos(egui::pos2(x, y.max(0.0)))
+        .fixed_pos(pos)
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             egui::Frame::NONE
@@ -279,11 +389,45 @@ pub fn render_signature_help_egui(
                 .inner_margin(egui::Margin::same(8))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new(&signature.label)
-                                .color(theme.card_foreground())
-                                .size(font.size * 0.9),
-                        );
+                        let label = &signature.label;
+                        let text_size = font.size * 0.9;
+
+                        if let Some((start, end)) = active_param_range {
+                            // Render in three segments: before, active param (bold), after
+                            let before = label.get(..start).unwrap_or(label);
+                            let active = label.get(start..end).unwrap_or("");
+                            let after = label.get(end..).unwrap_or("");
+
+                            if !before.is_empty() {
+                                ui.label(
+                                    egui::RichText::new(before)
+                                        .color(theme.muted_foreground())
+                                        .size(text_size),
+                                );
+                            }
+                            if !active.is_empty() {
+                                ui.label(
+                                    egui::RichText::new(active)
+                                        .color(theme.card_foreground())
+                                        .strong()
+                                        .size(text_size),
+                                );
+                            }
+                            if !after.is_empty() {
+                                ui.label(
+                                    egui::RichText::new(after)
+                                        .color(theme.muted_foreground())
+                                        .size(text_size),
+                                );
+                            }
+                        } else {
+                            // No active parameter — show full label plainly
+                            ui.label(
+                                egui::RichText::new(label)
+                                    .color(theme.card_foreground())
+                                    .size(text_size),
+                            );
+                        }
 
                         if sig_state.signatures.len() > 1 {
                             ui.label(
@@ -318,21 +462,35 @@ pub fn render_code_actions_egui(
         return;
     };
 
-    let cursor_pos = editor_state.cursor_pos.min(editor_state.rope.len_chars());
-    let line_index = editor_state.rope.char_to_line(cursor_pos);
-
-    // Position near the gutter
-    let x = viewport_offset.screen_offset.x + viewport.text_area_left - 20.0;
-    let y = viewport_offset.screen_offset.y
-        + viewport.text_area_top
-        + ((line_index as f32 - editor_state.scroll_offset / font.line_height + 1.0)
-            * font.line_height);
+    let (_, cursor_y) = cursor_screen_pos(
+        editor_state.cursor_pos,
+        &editor_state,
+        &font,
+        &viewport_offset,
+        &viewport,
+    );
 
     let theme = ctx.armas_theme();
     let item_height = font.line_height.max(22.0);
 
+    // Position near the gutter, below cursor
+    let gutter_x = viewport_offset.screen_offset.x + viewport.text_area_left - 20.0;
+    let action_count = action_state.actions.len().min(10);
+    let popup_height = action_count as f32 * item_height + 12.0;
+
+    let pos = position_popup(
+        gutter_x,
+        cursor_y,
+        300.0,
+        popup_height,
+        font.line_height,
+        &viewport_offset,
+        &viewport,
+        false,
+    );
+
     egui::Area::new(egui::Id::new("lsp_code_actions"))
-        .fixed_pos(egui::pos2(x, y))
+        .fixed_pos(pos)
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             egui::Frame::NONE
@@ -394,50 +552,65 @@ pub fn render_code_actions_egui(
         });
 }
 
-/// Render the rename input as an egui overlay.
+/// Render the rename input as an interactive egui overlay.
 pub fn render_rename_egui(
     mut contexts: EguiContexts,
-    rename_state: Res<RenameState>,
+    mut rename_state: ResMut<RenameState>,
     editor_state: Res<CodeEditorState>,
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Res<ViewportDimensions>,
+    lsp_client: Res<LspClient>,
+    lsp_sync: Res<LspSyncState>,
 ) {
     if !rename_state.visible {
         return;
     }
 
-    let Some(range) = &rename_state.range else {
-        return;
+    let range = match rename_state.range.clone() {
+        Some(r) => r,
+        None => return,
     };
 
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
     };
 
+    // Convert range start to char index for positioning
     let line = range.start.line as usize;
-    let character = range.start.character as usize;
-
-    let x = viewport_offset.screen_offset.x
-        + viewport.text_area_left
-        + (character as f32 * font.char_width);
-    let y = viewport_offset.screen_offset.y
-        + viewport.text_area_top
-        + ((line as f32 - editor_state.scroll_offset / font.line_height) * font.line_height);
-
-    let theme = ctx.armas_theme();
-
-    // We display the current rename text but since RenameState is not mutable here,
-    // we show it as a read-only styled label. The actual editing happens through
-    // the editor's keyboard input system which updates RenameState.
-    let display_text = if rename_state.new_name.is_empty() {
-        &rename_state.original_text
+    let char_index = if line < editor_state.rope.len_lines() {
+        let line_start = editor_state.rope.line_to_char(line);
+        line_start + range.start.character as usize
     } else {
-        &rename_state.new_name
+        editor_state.rope.len_chars()
     };
 
+    let (cursor_x, cursor_y) = cursor_screen_pos(
+        char_index,
+        &editor_state,
+        &font,
+        &viewport_offset,
+        &viewport,
+    );
+
+    let theme = ctx.armas_theme();
+    let rename_width = (rename_state.new_name.len() as f32 * font.char_width + 40.0).max(150.0);
+    let pos = position_popup(
+        cursor_x,
+        cursor_y,
+        rename_width,
+        font.line_height + 10.0,
+        font.line_height,
+        &viewport_offset,
+        &viewport,
+        false,
+    );
+
+    let mut submit = false;
+    let mut cancel = false;
+
     egui::Area::new(egui::Id::new("lsp_rename"))
-        .fixed_pos(egui::pos2(x, y))
+        .fixed_pos(pos)
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             egui::Frame::NONE
@@ -446,11 +619,31 @@ pub fn render_rename_egui(
                 .corner_radius(egui::CornerRadius::same(theme.spacing.corner_radius_small))
                 .inner_margin(egui::Margin::symmetric(6, 3))
                 .show(ui, |ui| {
-                    ui.label(
-                        egui::RichText::new(display_text)
-                            .color(theme.card_foreground())
-                            .size(font.size),
+                    let response = ui.add(
+                        egui::TextEdit::singleline(&mut rename_state.new_name)
+                            .font(egui::FontId::proportional(font.size))
+                            .desired_width(rename_width - 20.0),
                     );
+                    response.request_focus();
+
+                    if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        submit = true;
+                    }
+                    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        cancel = true;
+                    }
                 });
         });
+
+    if cancel {
+        rename_state.reset();
+    } else if submit && rename_state.can_submit() {
+        if let Some(uri) = &lsp_sync.document_uri {
+            lsp_client.send(LspMessage::Rename {
+                uri: uri.clone(),
+                position: range.start,
+                new_name: rename_state.new_name.clone(),
+            });
+        }
+    }
 }

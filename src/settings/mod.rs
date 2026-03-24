@@ -5,7 +5,6 @@
 
 mod core;
 mod cursor;
-mod minimap;
 mod performance;
 mod scrolling;
 mod search;
@@ -21,7 +20,6 @@ mod lsp;
 
 pub use core::*;
 pub use cursor::*;
-pub use minimap::*;
 pub use performance::*;
 pub use scrolling::*;
 pub use search::*;
@@ -54,7 +52,6 @@ pub struct EditorSettingsBuilder {
     ui: UiSettings,
     indentation: IndentationSettings,
     brackets: BracketSettings,
-    minimap: MinimapSettings,
     cursor: CursorSettings,
     cursor_line: CursorLineSettings,
     scrolling: ScrollingSettings,
@@ -78,7 +75,6 @@ impl Default for EditorSettingsBuilder {
             ui: UiSettings::default(),
             indentation: IndentationSettings::default(),
             brackets: BracketSettings::default(),
-            minimap: MinimapSettings::default(),
             cursor: CursorSettings::default(),
             cursor_line: CursorLineSettings::default(),
             scrolling: ScrollingSettings::default(),
@@ -147,11 +143,6 @@ impl EditorSettingsBuilder {
         self
     }
 
-    pub fn minimap(mut self, minimap: MinimapSettings) -> Self {
-        self.minimap = minimap;
-        self
-    }
-
     pub fn cursor(mut self, cursor: CursorSettings) -> Self {
         self.cursor = cursor;
         self
@@ -212,7 +203,6 @@ impl EditorSettingsBuilder {
             ui: self.ui,
             indentation: self.indentation,
             brackets: self.brackets,
-            minimap: self.minimap,
             cursor: self.cursor,
             cursor_line: self.cursor_line,
             scrolling: self.scrolling,
@@ -239,7 +229,6 @@ pub struct SettingsBundle {
     pub ui: UiSettings,
     pub indentation: IndentationSettings,
     pub brackets: BracketSettings,
-    pub minimap: MinimapSettings,
     pub cursor: CursorSettings,
     pub cursor_line: CursorLineSettings,
     pub scrolling: ScrollingSettings,
@@ -263,7 +252,6 @@ impl SettingsBundle {
         app.insert_resource(self.ui);
         app.insert_resource(self.indentation);
         app.insert_resource(self.brackets);
-        app.insert_resource(self.minimap);
         app.insert_resource(self.cursor);
         app.insert_resource(self.cursor_line);
         app.insert_resource(self.scrolling);

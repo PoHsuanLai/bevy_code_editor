@@ -289,7 +289,6 @@ pub(crate) fn update_indent_guides(
     let line_height = font.line_height;
     let char_width = font.char_width;
     let indent_size = indentation.indent_size;
-    let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
 
     // Calculate visible display row range
@@ -451,9 +450,20 @@ pub(crate) fn animate_smooth_scroll(
     mut state: ResMut<CodeEditorState>,
     time: Res<Time>,
     scrolling: Res<ScrollingSettings>,
+    font: Res<crate::settings::FontSettings>,
+    viewport: Res<crate::types::ViewportDimensions>,
     #[cfg(feature = "scrollbar")]
     scrollbar_drag: Res<super::scrollbar::ScrollbarDragState>,
 ) {
+    // Always clamp target_scroll_offset to valid range based on current content.
+    // This ensures that deleting content snaps the scroll target immediately,
+    // rather than waiting for auto_scroll_to_cursor (which only runs on cursor move).
+    let line_count = state.rope.len_lines();
+    let content_height = line_count as f32 * font.line_height;
+    let viewport_height = viewport.height as f32;
+    let max_scroll = -(content_height - viewport_height + viewport.text_area_top).max(0.0);
+    state.target_scroll_offset = state.target_scroll_offset.clamp(max_scroll, 0.0);
+
     // When dragging scrollbar or smooth scrolling disabled, apply target immediately
     #[cfg(feature = "scrollbar")]
     let is_dragging = scrollbar_drag.is_dragging;

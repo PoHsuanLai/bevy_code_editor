@@ -403,6 +403,60 @@ impl InlayHintState {
     }
 }
 
+/// Per-feature LSP debounce timers (Zed-style tiered debouncing)
+///
+/// Instead of sending LSP requests immediately on every event, we buffer
+/// the latest request params and only send after a feature-specific delay.
+/// Signature help is NOT debounced (trigger chars are intentional).
+#[derive(Resource)]
+pub struct LspDebounceTimers {
+    /// Completion: 50ms after last keystroke
+    pub completion_timer: Timer,
+    pub pending_completion: Option<PendingLspRequest>,
+
+    /// Hover: 150ms after cursor stops
+    pub hover_timer: Timer,
+    pub pending_hover: Option<PendingLspRequest>,
+
+    /// Code actions: 250ms after cursor stops
+    pub code_action_timer: Timer,
+    pub pending_code_action: Option<PendingCodeActionRequest>,
+
+    /// Document highlights: 100ms after cursor stops
+    pub highlight_timer: Timer,
+    pub pending_highlight: Option<PendingLspRequest>,
+}
+
+/// A pending LSP request (position-based)
+#[derive(Clone, Debug)]
+pub struct PendingLspRequest {
+    pub uri: Url,
+    pub line: u32,
+    pub character: u32,
+}
+
+/// A pending code action request (range-based)
+#[derive(Clone, Debug)]
+pub struct PendingCodeActionRequest {
+    pub uri: Url,
+    pub range: Range,
+}
+
+impl Default for LspDebounceTimers {
+    fn default() -> Self {
+        Self {
+            completion_timer: Timer::from_seconds(0.05, TimerMode::Once),
+            pending_completion: None,
+            hover_timer: Timer::from_seconds(0.15, TimerMode::Once),
+            pending_hover: None,
+            code_action_timer: Timer::from_seconds(0.25, TimerMode::Once),
+            pending_code_action: None,
+            highlight_timer: Timer::from_seconds(0.1, TimerMode::Once),
+            pending_highlight: None,
+        }
+    }
+}
+
 /// State for LSP document synchronization
 #[derive(Resource)]
 pub struct LspSyncState {

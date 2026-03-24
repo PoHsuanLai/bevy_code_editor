@@ -2,12 +2,17 @@
 //!
 //! This module provides a high-performance instanced rendering approach
 //! where all visible glyphs are rendered in a single draw call.
+//!
+//! Per-line glyph caching: each line's glyphs are cached with relative X positions
+//! and colors. Only dirty lines get re-shaped. Scroll-only changes reuse all cached
+//! glyphs and only recompute Y positions.
 
 use super::{HighlightCache, SyntaxResource};
 use crate::gpu_text::{GlyphAtlas, GlyphKey, GlyphRasterizer};
 use crate::settings::*;
 use crate::types::*;
 use bevy::prelude::*;
+use std::sync::Arc;
 
 /// Marker component for GPU text batch entity
 #[derive(Component)]
@@ -36,11 +41,168 @@ pub struct GlyphInstance {
     pub _padding: [f32; 3], // Pad to 16-byte alignment
 }
 
-/// Component containing batch of glyph instances
+/// Component containing batch of glyph instances.
+/// Uses Arc to avoid cloning thousands of glyphs during render extract phase.
 #[derive(Component, Clone)]
 pub struct GlyphBatchComponent {
-    pub instances: Vec<GlyphInstance>,
+    pub instances: Arc<Vec<GlyphInstance>>,
     pub atlas_texture: Handle<Image>,
+}
+
+/// A cached glyph for a single character, storing position relative to line start
+#[derive(Clone, Copy, Debug)]
+struct CachedGlyph {
+    /// X offset relative to line_start_x (before horizontal scroll)
+    rel_x: f32,
+    /// Y offset from baseline (info.offset)
+    offset_x: f32,
+    offset_y: f32,
+    uv_min: Vec2,
+    uv_max: Vec2,
+    size: Vec2,
+    color: [f32; 4],
+}
+
+/// Per-line glyph cache with reusable instance buffer
+#[derive(Resource)]
+pub struct LineGlyphCache {
+    /// Cached glyphs per buffer line. Index = buffer line number.
+    lines: Vec<Option<Vec<CachedGlyph>>>,
+    /// Content version when each line was last cached
+    versions: Vec<u64>,
+    /// Global content version counter for invalidation
+    content_version: u64,
+    /// Atlas generation — when atlas clears, all cached UVs become invalid
+    atlas_generation: u64,
+}
+
+impl Default for LineGlyphCache {
+    fn default() -> Self {
+        Self {
+            lines: Vec::new(),
+            versions: Vec::new(),
+            content_version: 0,
+            atlas_generation: 0,
+        }
+    }
+}
+
+impl LineGlyphCache {
+    fn ensure_capacity(&mut self, line_count: usize) {
+        if self.lines.len() < line_count {
+            self.lines.resize(line_count, None);
+            self.versions.resize(line_count, 0);
+        } else if self.lines.len() > line_count + 1000 {
+            // Shrink if way too large
+            self.lines.truncate(line_count);
+            self.versions.truncate(line_count);
+        }
+    }
+
+    fn invalidate_range(&mut self, range: std::ops::Range<usize>) {
+        for i in range {
+            if i < self.lines.len() {
+                self.lines[i] = None;
+            }
+        }
+    }
+
+    fn invalidate_all(&mut self) {
+        for line in &mut self.lines {
+            *line = None;
+        }
+    }
+}
+
+/// Build cached glyphs for a single line (relative positions, no Y baked in)
+fn build_line_glyphs(
+    line_text: &str,
+    segments: &[LineSegment],
+    char_width: f32,
+    font_size: f32,
+    default_color: Color,
+    atlas: &mut GlyphAtlas,
+) -> Vec<CachedGlyph> {
+    let mut glyphs = Vec::new();
+    let mut current_x_offset: f32 = 0.0;
+
+    if segments.is_empty() {
+        let color_linear = default_color.to_linear();
+        let color_arr = [
+            color_linear.red,
+            color_linear.green,
+            color_linear.blue,
+            color_linear.alpha,
+        ];
+
+        for ch in line_text.chars() {
+            if ch == '\n' || ch == '\r' {
+                continue;
+            }
+            if ch == '\t' {
+                current_x_offset += char_width * 4.0;
+                continue;
+            }
+
+            let key = GlyphKey::new(ch, font_size);
+            if let Some(info) =
+                atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, font_size))
+            {
+                glyphs.push(CachedGlyph {
+                    rel_x: current_x_offset,
+                    offset_x: info.offset.x,
+                    offset_y: info.offset.y,
+                    uv_min: info.uv_min,
+                    uv_max: info.uv_max,
+                    size: info.size,
+                    color: color_arr,
+                });
+                current_x_offset += char_width;
+            } else {
+                current_x_offset += char_width;
+            }
+        }
+    } else {
+        for segment in segments {
+            let color_linear = segment.color.to_linear();
+            let color_arr = [
+                color_linear.red,
+                color_linear.green,
+                color_linear.blue,
+                color_linear.alpha,
+            ];
+
+            for ch in segment.text.chars() {
+                if ch == '\n' || ch == '\r' {
+                    continue;
+                }
+                if ch == '\t' {
+                    current_x_offset += char_width * 4.0;
+                    continue;
+                }
+
+                let key = GlyphKey::new(ch, font_size);
+                if let Some(info) =
+                    atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, font_size))
+                {
+                    glyphs.push(CachedGlyph {
+                        rel_x: current_x_offset,
+                        offset_x: info.offset.x,
+                        offset_y: info.offset.y,
+                        uv_min: info.uv_min,
+                        uv_max: info.uv_max,
+                        size: info.size,
+                        color: color_arr,
+                    });
+                    current_x_offset += char_width;
+                } else {
+                    current_x_offset += char_width;
+                }
+            }
+        }
+    }
+
+    glyphs
 }
 
 /// System to update instanced GPU text display
@@ -58,13 +220,14 @@ pub(crate) fn update_gpu_text_instanced(
     #[cfg(feature = "folding")] fold_state: Res<FoldState>,
     mut atlas: ResMut<GlyphAtlas>,
     mut images: ResMut<Assets<Image>>,
-    batch_query: Query<(Entity, &GpuTextBatch)>,
+    mut batch_query: Query<(Entity, &GpuTextBatch, &mut GlyphBatchComponent)>,
     mut syntax: ResMut<SyntaxResource>,
     _highlight_cache: ResMut<HighlightCache>,
+    mut line_cache: ResMut<LineGlyphCache>,
     time: Res<Time>,
 ) {
     // Check if viewport changed
-    let viewport_changed = if let Some((_, batch)) = batch_query.iter().next() {
+    let viewport_changed = if let Some((_, batch, _)) = batch_query.iter().next() {
         batch.built_at_width != viewport.width || batch.built_at_height != viewport.height
     } else {
         true
@@ -80,9 +243,33 @@ pub(crate) fn update_gpu_text_instanced(
 
     let font_size = font.size;
     let line_height = font.line_height;
-    // Use the measured char_width for grid alignment
     let char_width = font.char_width;
     let total_buffer_lines = state.line_count();
+
+    // Manage line cache
+    line_cache.ensure_capacity(total_buffer_lines);
+
+    // Invalidate all cached UVs if the atlas was cleared (generation changed)
+    if atlas.generation != line_cache.atlas_generation {
+        line_cache.invalidate_all();
+        line_cache.atlas_generation = atlas.generation;
+    }
+
+    // Invalidate dirty lines in cache
+    if state.needs_update {
+        let new_version = state.content_version;
+        if new_version != line_cache.content_version {
+            if let Some(ref dirty) = state.dirty_lines {
+                // Only invalidate the dirty range
+                let end = dirty.end.min(total_buffer_lines);
+                line_cache.invalidate_range(dirty.start..end);
+            } else {
+                // Full invalidation (paste, undo, language change, etc.)
+                line_cache.invalidate_all();
+            }
+            line_cache.content_version = new_version;
+        }
+    }
 
     // Calculate visible range
     let buffer = line_height * performance.viewport_buffer_lines as f32;
@@ -114,6 +301,17 @@ pub(crate) fn update_gpu_text_instanced(
         (start, start)
     };
 
+    // Base X position
+    let line_start_x = viewport
+        .text_area_left
+        .max(viewport.gutter_width + ui_settings.code_margin_left)
+        - state.horizontal_scroll_offset;
+
+    // Time budget for cache-miss glyph building (syntax highlighting)
+    let frame_start = std::time::Instant::now();
+    let budget = std::time::Duration::from_secs_f64(performance.glyph_build_budget_ms / 1000.0);
+    let mut budget_exceeded = false;
+
     // Render visible lines
     for buffer_line in start_buffer_line..total_buffer_lines {
         if fold_state.is_line_hidden(buffer_line) {
@@ -124,136 +322,128 @@ pub(crate) fn update_gpu_text_instanced(
             break;
         }
 
-        // Calculate base Y position (use viewport.text_area_top to match line numbers)
+        // Calculate base Y position
         let baseline_offset = font_size * 0.32;
         let base_y = viewport.text_area_top
             + state.scroll_offset
             + (current_display_row as f32 * line_height)
             + baseline_offset;
 
-        // Get line text from rope
-        let rope_line = state.rope.line(buffer_line);
-        let line_string = rope_line.to_string();
-
-        // Get syntax highlighting segments
-        let segments_vec = syntax.highlight_range(
-            &line_string,
-            buffer_line,
-            buffer_line + 1,
-            state.rope.line_to_byte(buffer_line),
-            &syntax_settings.theme,
-            theme.foreground,
-        );
-
-        let segments = if !segments_vec.is_empty() {
-            &segments_vec[0]
+        // Get or build cached glyphs for this line
+        let cached = if buffer_line < line_cache.lines.len() {
+            &line_cache.lines[buffer_line]
         } else {
-            &vec![]
+            &None
         };
 
-        // Base X position (starting point for this line)
-        let line_start_x = viewport
-            .text_area_left
-            .max(viewport.gutter_width + ui_settings.code_margin_left)
-            - state.horizontal_scroll_offset;
+        let glyphs = if let Some(cached_glyphs) = cached {
+            cached_glyphs
+        } else if budget_exceeded {
+            // Over budget — skip this cache miss, render next frame
+            current_display_row += 1;
+            continue;
+        } else {
+            // Cache miss — build glyphs for this line
+            let rope_line = state.rope.line(buffer_line);
+            let line_string = rope_line.to_string();
 
-        // Current X offset relative to line start (accumulated by char width)
-        let mut current_x_offset = 0.0;
+            let segments_vec = syntax.highlight_range(
+                &line_string,
+                buffer_line,
+                buffer_line + 1,
+                state.rope.line_to_byte(buffer_line),
+                &syntax_settings.theme,
+                theme.foreground,
+            );
 
-        // Process segments
-        if segments.is_empty() {
-            // Plain text fallback
-            let color_linear = theme.foreground.to_linear();
-            let color_arr = [
-                color_linear.red,
-                color_linear.green,
-                color_linear.blue,
-                color_linear.alpha,
-            ];
+            let segments = if !segments_vec.is_empty() {
+                &segments_vec[0]
+            } else {
+                &vec![]
+            };
 
-            for ch in line_string.chars() {
-                if ch == '\n' || ch == '\r' {
-                    continue;
-                }
-                if ch == '\t' {
-                    current_x_offset += char_width * 4.0;
-                    continue;
-                }
+            let new_glyphs = build_line_glyphs(
+                &line_string,
+                segments,
+                char_width,
+                font_size,
+                theme.foreground,
+                &mut atlas,
+            );
 
-                let key = GlyphKey::new(ch, font_size);
-                if let Some(info) =
-                    atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, font_size))
-                {
-                    // Strict Grid Positioning: use current_x_offset instead of info.advance
-                    let screen_x = line_start_x + current_x_offset + info.offset.x;
-                    let screen_y = base_y - info.offset.y;
+            // Check time budget after each cache-miss build
+            if frame_start.elapsed() > budget {
+                budget_exceeded = true;
+            }
 
-                    let world_x = viewport.world_left() + screen_x;
-                    let world_y = viewport.world_top() - screen_y - info.size.y;
-
+            if buffer_line < line_cache.lines.len() {
+                line_cache.lines[buffer_line] = Some(new_glyphs);
+                line_cache.lines[buffer_line].as_ref().unwrap()
+            } else {
+                // Shouldn't happen after ensure_capacity, but safety fallback
+                // Just emit directly without caching
+                let rope_line = state.rope.line(buffer_line);
+                let line_string = rope_line.to_string();
+                let segments_vec = syntax.highlight_range(
+                    &line_string,
+                    buffer_line,
+                    buffer_line + 1,
+                    state.rope.line_to_byte(buffer_line),
+                    &syntax_settings.theme,
+                    theme.foreground,
+                );
+                let segments = if !segments_vec.is_empty() {
+                    &segments_vec[0]
+                } else {
+                    &vec![]
+                };
+                // Build directly into instances and continue
+                let fallback = build_line_glyphs(
+                    &line_string,
+                    segments,
+                    char_width,
+                    font_size,
+                    theme.foreground,
+                    &mut atlas,
+                );
+                for g in &fallback {
+                    let screen_x = line_start_x + g.rel_x + g.offset_x;
+                    let screen_y = base_y - g.offset_y;
                     instances.push(GlyphInstance {
-                        position: Vec2::new(world_x, world_y),
-                        uv_min: info.uv_min,
-                        uv_max: info.uv_max,
-                        size: info.size,
-                        color: color_arr,
-                        z_index: 0.0, // Main editor text
+                        position: Vec2::new(
+                            viewport.world_left() + screen_x,
+                            viewport.world_top() - screen_y - g.size.y,
+                        ),
+                        uv_min: g.uv_min,
+                        uv_max: g.uv_max,
+                        size: g.size,
+                        color: g.color,
+                        z_index: 0.0,
                         _padding: [0.0; 3],
                     });
-
-                    // Advance by fixed char_width, NOT info.advance
-                    current_x_offset += char_width;
-                } else {
-                    current_x_offset += char_width;
                 }
+                current_display_row += 1;
+                continue;
             }
-        } else {
-            // Syntax highlighted segments
-            for segment in segments {
-                let color_linear = segment.color.to_linear();
-                let color_arr = [
-                    color_linear.red,
-                    color_linear.green,
-                    color_linear.blue,
-                    color_linear.alpha,
-                ];
+        };
 
-                for ch in segment.text.chars() {
-                    if ch == '\n' || ch == '\r' {
-                        continue;
-                    }
-                    if ch == '\t' {
-                        current_x_offset += char_width * 4.0;
-                        continue;
-                    }
+        // Emit instances from cached glyphs with current position
+        for g in glyphs {
+            let screen_x = line_start_x + g.rel_x + g.offset_x;
+            let screen_y = base_y - g.offset_y;
 
-                    let key = GlyphKey::new(ch, font_size);
-                    if let Some(info) =
-                        atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, font_size))
-                    {
-                        // Strict Grid Positioning
-                        let screen_x = line_start_x + current_x_offset + info.offset.x;
-                        let screen_y = base_y - info.offset.y;
-
-                        let world_x = viewport.world_left() + screen_x;
-                        let world_y = viewport.world_top() - screen_y - info.size.y;
-
-                        instances.push(GlyphInstance {
-                            position: Vec2::new(world_x, world_y),
-                            uv_min: info.uv_min,
-                            uv_max: info.uv_max,
-                            size: info.size,
-                            color: color_arr,
-                            z_index: 0.0, // Main editor text
-                            _padding: [0.0; 3],
-                        });
-
-                        current_x_offset += char_width;
-                    } else {
-                        current_x_offset += char_width;
-                    }
-                }
-            }
+            instances.push(GlyphInstance {
+                position: Vec2::new(
+                    viewport.world_left() + screen_x,
+                    viewport.world_top() - screen_y - g.size.y,
+                ),
+                uv_min: g.uv_min,
+                uv_max: g.uv_max,
+                size: g.size,
+                color: g.color,
+                z_index: 0.0,
+                _padding: [0.0; 3],
+            });
         }
 
         current_display_row += 1;
@@ -262,17 +452,22 @@ pub(crate) fn update_gpu_text_instanced(
     // Update atlas texture
     atlas.update_texture(&mut images);
 
+    // Wrap in Arc for zero-copy render extract; put buffer back for reuse next frame
+    let arc_instances = Arc::new(instances);
+
     // Update or create batch entity
-    if instances.is_empty() {
-        for (entity, _) in batch_query.iter() {
+    if arc_instances.is_empty() {
+        for (entity, _, mut batch_comp) in batch_query.iter_mut() {
+            // Clear instances immediately — no deferred commands, takes effect this frame
+            batch_comp.instances = arc_instances.clone();
             commands.entity(entity).insert(Visibility::Hidden);
         }
     } else {
-        let existing_batches: Vec<Entity> = batch_query.iter().map(|(e, _)| e).collect();
+        let existing_batches: Vec<Entity> = batch_query.iter().map(|(e, _, _)| e).collect();
 
         if let Some(&first_entity) = existing_batches.first() {
             commands.entity(first_entity).insert(GlyphBatchComponent {
-                instances,
+                instances: arc_instances,
                 atlas_texture: atlas.texture.clone(),
             });
             commands.entity(first_entity).insert(Visibility::Visible);
@@ -292,7 +487,7 @@ pub(crate) fn update_gpu_text_instanced(
         } else {
             commands.spawn((
                 GlyphBatchComponent {
-                    instances,
+                    instances: arc_instances,
                     atlas_texture: atlas.texture.clone(),
                 },
                 Transform::default(),
@@ -313,6 +508,12 @@ pub(crate) fn update_gpu_text_instanced(
         }
     }
 
-    state.needs_update = false;
+    // If budget was exceeded, request another frame to finish remaining lines
+    if budget_exceeded {
+        state.needs_update = true;
+    } else {
+        state.needs_update = false;
+    }
+    state.needs_scroll_update = false;
     state.last_render_time = time.elapsed_secs_f64() * 1000.0;
 }

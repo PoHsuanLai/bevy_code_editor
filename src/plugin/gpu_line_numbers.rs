@@ -8,6 +8,7 @@ use crate::settings::*;
 use crate::types::*;
 use crate::plugin::gpu_text_instanced::{GlyphBatchComponent, GlyphInstance};
 use bevy::prelude::*;
+use std::sync::Arc;
 
 /// Marker component for the GPU line numbers batch entity
 #[derive(Component)]
@@ -67,7 +68,6 @@ pub(crate) fn update_gpu_line_numbers(
 
     let line_height = font.line_height;
     let font_size = font.size;
-    let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
 
     // Collect cursor lines for highlighting active line numbers
@@ -219,6 +219,7 @@ pub(crate) fn update_gpu_line_numbers(
     }
 
     // Update or create batch entity
+    let instances = Arc::new(instances);
     if let Some((entity, _)) = batch_query.iter().next() {
         commands.entity(entity)
             .insert(GlyphBatchComponent {
