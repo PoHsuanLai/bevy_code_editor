@@ -139,6 +139,22 @@ impl TreeSitterProvider {
     pub fn apply_sync_edit(&mut self, edit: tree_sitter::InputEdit, rope: &Rope) {
         if let Some(ref mut tree) = self.cached_tree {
             tree.edit(&edit);
+
+            // For small documents, re-parse synchronously so highlights are
+            // immediately correct (no flash to plain text). Tree-sitter
+            // incremental parse after tree.edit() is typically <1ms.
+            if let Some(ref mut parser) = self.cached_parser {
+                let rope_clone = rope.clone();
+                if let Some(new_tree) = parser.parse_with(
+                    &mut |byte_offset, _| {
+                        let (chunk, start_byte, _, _) = rope_clone.chunk_at_byte(byte_offset);
+                        &chunk.as_bytes()[(byte_offset - start_byte)..]
+                    },
+                    Some(tree),
+                ) {
+                    *tree = new_tree;
+                }
+            }
         }
         self.cached_rope = Some(rope.clone());
     }
