@@ -3,6 +3,8 @@
 //! Provides a reusable scrollbar component that can be added to any entity
 
 use super::editor_ui_plugin::EditorRenderConfig;
+use crate::text_view::{TextViewState, TextViewViewport};
+use crate::types::CodeEditor;
 use bevy::prelude::*;
 
 /// Scrollbar plugin - manages scrollbar rendering and interaction
@@ -134,13 +136,15 @@ fn handle_scrollbar_mouse(
     windows: Query<&Window>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut drag_state: ResMut<ScrollbarDragState>,
-    mut state: ResMut<crate::types::CodeEditorState>,
+    mut editor_query: Query<(&mut crate::types::CodeEditorState, &mut TextViewState, &TextViewViewport), With<CodeEditor>>,
     scrollbar_query: Query<(Entity, &Scrollbar)>,
     _track_query: Query<(&ScrollbarTrack, &Transform, &Sprite)>,
     thumb_query: Query<(&ScrollbarThumb, &Transform, &Sprite)>,
     font: Res<crate::settings::FontSettings>,
-    viewport: Res<crate::types::ViewportDimensions>,
 ) {
+    let Ok((mut state, mut tv, viewport)) = editor_query.single_mut() else {
+        return;
+    };
     let Ok(window) = windows.single() else {
         return;
     };
@@ -180,10 +184,14 @@ fn handle_scrollbar_mouse(
             {
                 // Start dragging
                 if let Ok((entity, _scrollbar)) = scrollbar_query.get(thumb.parent) {
+                    eprintln!(
+                        "[Scrollbar] DRAG STARTED at cursor_y={}, scroll_offset={}",
+                        cursor_y, tv.scroll_offset
+                    );
                     drag_state.is_dragging = true;
                     drag_state.dragging_entity = Some(entity);
                     drag_state.drag_start_y = cursor_y;
-                    drag_state.drag_start_scroll = state.scroll_offset;
+                    drag_state.drag_start_scroll = tv.scroll_offset;
                     break;
                 }
             }
@@ -206,7 +214,7 @@ fn handle_scrollbar_mouse(
                 if scrollable_range > 0.0 {
                     // Calculate total scrollable content
                     let line_height = font.line_height;
-                    let total_lines = state.line_count();
+                    let total_lines = tv.line_count();
                     let total_content_height = total_lines as f32 * line_height;
                     let viewport_height = viewport.height as f32;
                     // Account for text_area_top margin (matches mouse wheel calculation)
@@ -219,9 +227,9 @@ fn handle_scrollbar_mouse(
 
                     // For scrollbar dragging, update both target AND actual scroll immediately
                     // This ensures the scrollbar thumb stays in sync with the drag position
-                    state.target_scroll_offset = new_scroll_offset;
-                    state.scroll_offset = new_scroll_offset;
-                    state.needs_scroll_update = true;
+                    tv.target_scroll_offset = new_scroll_offset;
+                    tv.scroll_offset = new_scroll_offset;
+                    tv.needs_scroll_update = true;
 
                     // IMPORTANT: Update last_cursor_pos to prevent auto_scroll_to_cursor from
                     // snapping back after drag release. We keep the cursor at the same position
@@ -235,8 +243,12 @@ fn handle_scrollbar_mouse(
     // Handle mouse release
     if mouse_button.just_released(MouseButton::Left) {
         if drag_state.is_dragging {
+            eprintln!(
+                "[Scrollbar] DRAG ENDED at scroll_offset={}, target={}",
+                tv.scroll_offset, tv.target_scroll_offset
+            );
             // Ensure target matches actual to prevent smooth scroll animation after release
-            state.target_scroll_offset = state.scroll_offset;
+            tv.target_scroll_offset = tv.scroll_offset;
         }
         drag_state.is_dragging = false;
         drag_state.dragging_entity = None;
@@ -267,20 +279,22 @@ fn update_scrollbars(
         ),
         Without<ScrollbarTrack>,
     >,
-    state: Res<crate::types::CodeEditorState>,
+    editor_query: Query<(&crate::types::CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<crate::settings::FontSettings>,
-    viewport: Res<crate::types::ViewportDimensions>,
     drag_state: Res<ScrollbarDragState>,
     render_config: Res<EditorRenderConfig>,
     mut last_scroll: Local<f32>,
 ) {
+    let Ok((_state, tv, viewport)) = editor_query.single() else {
+        return;
+    };
     // Only update if scroll offset changed (but always update during drag for smooth thumb movement)
-    let scroll_changed = (*last_scroll - state.scroll_offset).abs() >= 0.01;
+    let scroll_changed = (*last_scroll - tv.scroll_offset).abs() >= 0.01;
     if !scroll_changed && !drag_state.is_dragging {
         return;
     }
     if scroll_changed {
-        *last_scroll = state.scroll_offset;
+        *last_scroll = tv.scroll_offset;
     }
 
     for (scrollbar_entity, scrollbar) in scrollbar_query.iter() {
@@ -301,14 +315,14 @@ fn update_scrollbars(
 
         // Calculate scroll progress from editor state
         let line_height = font.line_height;
-        let total_lines = state.line_count();
+        let total_lines = tv.line_count();
         let total_content_height = total_lines as f32 * line_height;
         let viewport_height = viewport.height as f32;
         // Account for text_area_top margin (matches drag and mouse wheel calculation)
         let max_scroll = (total_content_height - viewport_height + viewport.text_area_top).max(0.0);
 
         let scroll_progress = if max_scroll > 0.0 {
-            (-state.scroll_offset / max_scroll).clamp(0.0, 1.0)
+            (-tv.scroll_offset / max_scroll).clamp(0.0, 1.0)
         } else {
             0.0
         };
@@ -403,12 +417,14 @@ pub struct EditorScrollbar;
 /// Update the editor scrollbar based on editor state
 pub fn update_editor_scrollbar(
     mut commands: Commands,
-    state: Res<crate::types::CodeEditorState>,
+    editor_query: Query<(&crate::types::CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<crate::settings::FontSettings>,
-    viewport: Res<crate::types::ViewportDimensions>,
     scrollbar_settings: Res<crate::settings::ScrollbarSettings>,
     mut scrollbar_query: Query<&mut Scrollbar, With<EditorScrollbar>>,
 ) {
+    let Ok((_state, tv, viewport)) = editor_query.single() else {
+        return;
+    };
     if !scrollbar_settings.enabled {
         // Hide scrollbar if disabled
         for mut scrollbar in scrollbar_query.iter_mut() {
@@ -420,7 +436,7 @@ pub fn update_editor_scrollbar(
     let viewport_height = viewport.height as f32;
     let viewport_width = viewport.width as f32;
     let line_height = font.line_height;
-    let total_lines = state.line_count();
+    let total_lines = tv.line_count();
     let total_content_height = total_lines as f32 * line_height;
 
     // Scrollbar position (always at right edge)

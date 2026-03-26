@@ -5,6 +5,7 @@
 use super::editor_ui_plugin::EditorRenderConfig;
 use crate::gpu_text::{GlyphAtlas, GlyphKey, GlyphRasterizer};
 use crate::settings::*;
+use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::*;
 use crate::text_view::render::{GlyphBatchComponent, GlyphInstance};
 use bevy::prelude::*;
@@ -25,12 +26,11 @@ pub struct GpuLineNumbersBatch {
 /// GPU-accelerated line numbers rendering system
 pub(crate) fn update_gpu_line_numbers(
     mut commands: Commands,
-    state: Res<CodeEditorState>,
+    editor_query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     theme: Res<ThemeSettings>,
     ui: Res<UiSettings>,
     performance: Res<PerformanceSettings>,
-    viewport: Res<ViewportDimensions>,
     #[cfg(feature = "folding")]
     fold_state: Res<FoldState>,
     mut atlas: ResMut<GlyphAtlas>,
@@ -38,6 +38,9 @@ pub(crate) fn update_gpu_line_numbers(
     mut images: ResMut<Assets<Image>>,
     batch_query: Query<(Entity, &GpuLineNumbersBatch)>,
 ) {
+    let Ok((state, tv, viewport)) = editor_query.single() else {
+        return;
+    };
     // Hide if line numbers are disabled
     if !ui.show_line_numbers {
         for (entity, _) in batch_query.iter() {
@@ -52,14 +55,14 @@ pub(crate) fn update_gpu_line_numbers(
     #[cfg(not(feature = "folding"))]
     let fold_changed = false;
 
-    if !state.needs_update && !state.needs_scroll_update && !state.is_changed() && !fold_changed {
+    if !tv.needs_update && !tv.needs_scroll_update && !fold_changed {
         // Check if existing batch is still valid
         if let Some((entity, batch)) = batch_query.iter().next() {
-            let scroll_changed = (batch.built_at_scroll - state.scroll_offset).abs() > 0.01;
+            let scroll_changed = (batch.built_at_scroll - tv.scroll_offset).abs() > 0.01;
             let viewport_changed = batch.built_at_width != viewport.width
                 || batch.built_at_height != viewport.height;
 
-            if !scroll_changed && !viewport_changed && batch.built_at_version == state.content_version {
+            if !scroll_changed && !viewport_changed && batch.built_at_version == tv.content_version {
                 commands.entity(entity).insert(Visibility::Visible);
                 return;
             }
@@ -68,6 +71,7 @@ pub(crate) fn update_gpu_line_numbers(
 
     let line_height = font.line_height;
     let font_size = font.size;
+    let _viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
 
     // Collect cursor lines for highlighting active line numbers
@@ -75,14 +79,14 @@ pub(crate) fn update_gpu_line_numbers(
         .cursors
         .iter()
         .map(|c| {
-            let pos = c.position.min(state.rope.len_chars());
-            state.rope.char_to_line(pos)
+            let pos = c.position.min(tv.rope.len_chars());
+            tv.rope.char_to_line(pos)
         })
         .collect();
 
     // Calculate visible line range
     let buffer_lines = performance.viewport_buffer_lines as f32;
-    let viewport_top = -state.scroll_offset - line_height * buffer_lines;
+    let viewport_top = -tv.scroll_offset - line_height * buffer_lines;
     let viewport_bottom = viewport_top + viewport_height + line_height * buffer_lines * 2.0;
 
     let first_visible_display_row = ((viewport_top - viewport.text_area_top) / line_height)
@@ -91,7 +95,7 @@ pub(crate) fn update_gpu_line_numbers(
     let last_visible_display_row =
         ((viewport_bottom - viewport.text_area_top) / line_height).ceil() as usize;
 
-    let total_buffer_lines = state.line_count();
+    let total_buffer_lines = tv.line_count();
     #[cfg(feature = "folding")]
     let has_folding = !fold_state.regions.is_empty();
     #[cfg(not(feature = "folding"))]
@@ -143,7 +147,7 @@ pub(crate) fn update_gpu_line_numbers(
         // Calculate base Y position with baseline offset to match main text
         let baseline_offset = font_size * 0.32;
         let base_y = viewport.text_area_top
-            + state.scroll_offset
+            + tv.scroll_offset
             + (current_display_row as f32 * line_height)
             + baseline_offset;
 
@@ -227,8 +231,8 @@ pub(crate) fn update_gpu_line_numbers(
                 atlas_texture: atlas.texture.clone(),
             })
             .insert(GpuLineNumbersBatch {
-                built_at_version: state.content_version,
-                built_at_scroll: state.scroll_offset,
+                built_at_version: tv.content_version,
+                built_at_scroll: tv.scroll_offset,
                 built_at_width: viewport.width,
                 built_at_height: viewport.height,
             })
@@ -247,8 +251,8 @@ pub(crate) fn update_gpu_line_numbers(
             Transform::default(),
             GlobalTransform::default(),
             GpuLineNumbersBatch {
-                built_at_version: state.content_version,
-                built_at_scroll: state.scroll_offset,
+                built_at_version: tv.content_version,
+                built_at_scroll: tv.scroll_offset,
                 built_at_width: viewport.width,
                 built_at_height: viewport.height,
             },

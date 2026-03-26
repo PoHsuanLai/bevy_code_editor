@@ -221,27 +221,38 @@ fn spawn_input_manager(mut commands: Commands) {
 }
 
 /// Force initial render by promoting pending_update to needs_update
-fn force_initial_render(mut state: ResMut<CodeEditorState>) {
-    if state.pending_update {
-        state.needs_update = true;
-        state.pending_update = false;
+fn force_initial_render(
+    mut editor_query: Query<(&mut CodeEditorState, &mut crate::text_view::TextViewState), With<CodeEditor>>,
+) {
+    let Ok((mut _state, mut tv)) = editor_query.single_mut() else {
+        return;
+    };
+    if tv.pending_update {
+        tv.needs_update = true;
+        tv.pending_update = false;
     }
 }
 
 /// Debouncing system: Only promote pending_update to needs_update if enough time has passed
 /// This prevents excessive re-renders during rapid typing
-fn debounce_updates(mut state: ResMut<CodeEditorState>, time: Res<Time>) {
-    if !state.pending_update {
+fn debounce_updates(
+    mut editor_query: Query<(&mut CodeEditorState, &mut crate::text_view::TextViewState), With<CodeEditor>>,
+    time: Res<Time>,
+) {
+    let Ok((mut _state, mut tv)) = editor_query.single_mut() else {
+        return;
+    };
+    if !tv.pending_update {
         return;
     }
 
     let current_time = time.elapsed_secs_f64() * 1000.0;
-    let elapsed = current_time - state.last_render_time;
+    let elapsed = current_time - tv.last_render_time;
 
     if elapsed >= DEBOUNCE_INTERVAL_MS {
-        state.needs_update = true;
-        state.pending_update = false;
-        state.last_render_time = current_time;
+        tv.needs_update = true;
+        tv.pending_update = false;
+        tv.last_render_time = current_time;
     }
 }
 

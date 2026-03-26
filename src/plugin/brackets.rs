@@ -3,6 +3,7 @@
 
 use super::editor_ui_plugin::EditorRenderConfig;
 use crate::settings::*;
+use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::*;
 use bevy::prelude::*;
 
@@ -136,14 +137,13 @@ pub(crate) fn find_opening_bracket(
 
 /// Update bracket match state based on cursor position
 pub(crate) fn update_bracket_match(
-    state: Res<CodeEditorState>,
+    editor_query: Query<(&CodeEditorState, &TextViewState), With<CodeEditor>>,
     brackets: Res<BracketSettings>,
     mut bracket_state: ResMut<BracketMatchState>,
 ) {
-    // Only update when cursor moves or text changes
-    if !state.is_changed() {
+    let Ok((state, tv)) = editor_query.single() else {
         return;
-    }
+    };
 
     // Check if bracket matching is enabled
     if !brackets.enabled {
@@ -151,18 +151,17 @@ pub(crate) fn update_bracket_match(
         return;
     }
 
-    let cursor_pos = state.cursor_pos.min(state.rope.len_chars());
-    bracket_state.current_match = find_matching_bracket(&state.rope, cursor_pos, &brackets.pairs);
+    let cursor_pos = state.cursor_pos.min(tv.rope.len_chars());
+    bracket_state.current_match = find_matching_bracket(&tv.rope, cursor_pos, &brackets.pairs);
 }
 
 /// Render bracket match highlights
 pub(crate) fn update_bracket_highlight(
     mut commands: Commands,
-    state: Res<CodeEditorState>,
+    editor_query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     theme: Res<ThemeSettings>,
     brackets: Res<BracketSettings>,
-    viewport: Res<ViewportDimensions>,
     bracket_state: Res<BracketMatchState>,
     #[cfg(feature = "folding")]
     fold_state: Res<FoldState>,
@@ -175,6 +174,9 @@ pub(crate) fn update_bracket_highlight(
         &mut Visibility,
     )>,
 ) {
+    let Ok((_state, tv, viewport)) = editor_query.single() else {
+        return;
+    };
     let mut highlights: Vec<_> = highlight_query.iter_mut().collect();
 
     match &bracket_state.current_match {
@@ -196,7 +198,7 @@ pub(crate) fn update_bracket_highlight(
             let mut entity_index = 0;
 
             for (bracket_idx, &bracket_pos) in positions.iter().enumerate() {
-                let line_idx = state.rope.char_to_line(bracket_pos);
+                let line_idx = tv.rope.char_to_line(bracket_pos);
 
                 // Skip if line is hidden due to folding
                 #[cfg(feature = "folding")]
@@ -204,7 +206,7 @@ pub(crate) fn update_bracket_highlight(
                     continue;
                 }
 
-                let line_start = state.rope.line_to_char(line_idx);
+                let line_start = tv.rope.line_to_char(line_idx);
                 let col_idx = bracket_pos - line_start;
 
                 // Calculate display row accounting for folded lines
@@ -215,13 +217,13 @@ pub(crate) fn update_bracket_highlight(
 
                 let x_offset = viewport.text_area_left + (col_idx as f32 * char_width);
                 let y_offset = viewport.text_area_top
-                    + state.scroll_offset
+                    + tv.scroll_offset
                     + (display_row as f32 * line_height);
 
                 // Calculate base position (center of the bracket character cell)
                 // Camera viewport handles panel positioning, so no offset_x here
                 let base_x = viewport.world_left() + x_offset + char_width / 2.0
-                    - state.horizontal_scroll_offset;
+                    - tv.horizontal_scroll_offset;
                 let base_y = viewport.world_top() - y_offset;
 
                 if use_box_style {

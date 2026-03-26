@@ -4,7 +4,8 @@
 //! Also provides caching and debouncing for efficient highlighting during scrolling.
 
 use crate::syntax::{SyntaxProvider, TreeSitterProvider};
-use crate::types::{CodeEditorState, LineSegment};
+use crate::text_view::TextViewState;
+use crate::types::{CodeEditor, CodeEditorState, LineSegment};
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task};
 use std::collections::VecDeque;
@@ -324,11 +325,15 @@ pub struct ParseTask {
 #[cfg(feature = "tree-sitter")]
 pub(crate) fn update_syntax_tree(
     mut commands: Commands,
-    mut state: ResMut<CodeEditorState>,
+    mut editor_query: Query<(&mut CodeEditorState, &mut TextViewState), With<CodeEditor>>,
     mut syntax: ResMut<SyntaxResource>,
     mut highlight_cache: ResMut<HighlightCache>,
     mut parse_task_query: Query<(Entity, &mut ParseTask)>,
 ) {
+    let Ok((mut state, mut tv)) = editor_query.single_mut() else {
+        return;
+    };
+
     // Check if there's a completed parse task
     if let Some((entity, mut parse_task)) = parse_task_query.iter_mut().next() {
         // Poll the task without blocking
@@ -338,19 +343,14 @@ pub(crate) fn update_syntax_tree(
             if let Some(tree) = tree {
                 // Update the syntax provider with the completed tree and current rope
                 // This increments syntax.tree_version, which will trigger a re-render automatically
-                syntax.set_parsed_tree(tree, &state.rope);
+                syntax.set_parsed_tree(tree, &tv.rope);
                 state.last_highlighted_version = parse_task.content_version;
 
                 // Clear the highlight cache when tree-sitter finishes
                 highlight_cache.clear();
 
-                // Bump content_version so the line glyph cache is fully invalidated
-                // (otherwise cached uncolored glyphs from the pre-parse render persist).
-                // Set last_highlighted_version to match so we don't re-trigger a parse.
-                state.content_version += 1;
-                state.last_highlighted_version = state.content_version;
-                state.dirty_lines = None; // Full invalidation, not partial
-                state.needs_update = true;
+                // Force a render update to display the new highlights immediately
+                tv.needs_update = true;
             }
             // Remove the completed task
             commands.entity(entity).despawn();
@@ -360,9 +360,9 @@ pub(crate) fn update_syntax_tree(
     }
 
     // Only start a new parse if content changed and no task is running
-    if state.content_version != state.last_highlighted_version && syntax.is_available() {
-        let rope = state.rope.clone();
-        let content_version = state.content_version;
+    if tv.content_version != state.last_highlighted_version && syntax.is_available() {
+        let rope = tv.rope.clone();
+        let content_version = tv.content_version;
 
         // Clone the provider's state — edits already applied via apply_sync_edit()
         let (parser, language, cached_tree) = syntax.clone_parse_state();
@@ -451,15 +451,18 @@ pub(crate) fn byte_to_point(rope: &ropey::Rope, byte_offset: usize) -> tree_sitt
 /// System that sends TextEditEvent when pending_tree_sitter_edit is set
 /// This runs before record_edits_for_incremental_parsing to ensure edits are recorded
 fn send_text_edit_events(
-    mut state: ResMut<CodeEditorState>,
+    mut editor_query: Query<(&mut CodeEditorState, &TextViewState), With<CodeEditor>>,
     mut writer: MessageWriter<crate::events::TextEditEvent>,
 ) {
+    let Ok((mut state, tv)) = editor_query.single_mut() else {
+        return;
+    };
     if let Some((start_byte, old_end_byte, new_end_byte)) = state.pending_tree_sitter_edit.take() {
         writer.write(crate::events::TextEditEvent::new(
             start_byte,
             old_end_byte,
             new_end_byte,
-            state.content_version,
+            tv.content_version,
         ));
     }
 }
@@ -471,15 +474,18 @@ fn send_text_edit_events(
 /// thread, the tree stays valid for highlighting queries while the async re-parse
 /// runs in the background — eliminating the color flash on keystroke.
 fn record_edits_for_incremental_parsing(
-    state: Res<CodeEditorState>,
+    editor_query: Query<(&CodeEditorState, &TextViewState), With<CodeEditor>>,
     mut syntax: ResMut<SyntaxResource>,
     mut events: MessageReader<crate::events::TextEditEvent>,
 ) {
+    let Ok((_state, tv)) = editor_query.single() else {
+        return;
+    };
     for event in events.read() {
         // Compute Points on main thread — these are sub-μs O(log n) rope lookups
-        let start_position = byte_to_point(&state.rope, event.start_byte);
-        let old_end_position = byte_to_point(&state.rope, event.old_end_byte);
-        let new_end_position = byte_to_point(&state.rope, event.new_end_byte);
+        let start_position = byte_to_point(&tv.rope, event.start_byte);
+        let old_end_position = byte_to_point(&tv.rope, event.old_end_byte);
+        let new_end_position = byte_to_point(&tv.rope, event.new_end_byte);
 
         let edit = tree_sitter::InputEdit {
             start_byte: event.start_byte,
@@ -491,7 +497,7 @@ fn record_edits_for_incremental_parsing(
         };
 
         // Apply edit to the cached tree immediately (tree interpolation)
-        syntax.apply_sync_edit(edit, &state.rope);
+        syntax.apply_sync_edit(edit, &tv.rope);
     }
 }
 

@@ -4,20 +4,25 @@
 use super::editor_ui_plugin::EditorRenderConfig;
 use super::to_bevy_coords_left_aligned;
 use crate::settings::{FontSettings, ThemeSettings, UiSettings};
+use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::*;
 use bevy::prelude::*;
 
 pub(crate) fn detect_foldable_regions(
-    state: Res<CodeEditorState>,
+    editor_query: Query<(&CodeEditorState, &TextViewState), With<CodeEditor>>,
     mut fold_state: ResMut<FoldState>,
     syntax: Res<super::SyntaxResource>,
 ) {
+    let Ok((_state, tv)) = editor_query.single() else {
+        return;
+    };
+
     // Only update when content changes
-    if fold_state.content_version == state.content_version as usize {
+    if fold_state.content_version == tv.content_version as usize {
         return;
     }
 
-    fold_state.content_version = state.content_version as usize;
+    fold_state.content_version = tv.content_version as usize;
 
     // Get the tree-sitter tree from syntax resource
     #[cfg(feature = "tree-sitter")]
@@ -32,11 +37,11 @@ pub(crate) fn detect_foldable_regions(
     let mut regions: Vec<FoldRegion> = Vec::new();
     let root = tree.root_node();
     // OPTIMIZATION: Use rope chunks instead of full to_string() conversion
-    let chunk_text: String = state.rope.chunks().collect();
+    let chunk_text: String = tv.rope.chunks().collect();
     let text_bytes = chunk_text.as_bytes();
 
     // Walk the tree and find foldable nodes
-    collect_foldable_regions(&root, text_bytes, &state.rope, &mut regions, false);
+    collect_foldable_regions(&root, text_bytes, &tv.rope, &mut regions, false);
 
     // Preserve fold state for existing regions
     let old_regions = std::mem::take(&mut fold_state.regions);
@@ -199,22 +204,26 @@ pub(crate) fn node_to_fold_region(
 /// Fallback for when tree-sitter is not enabled
 #[cfg(not(feature = "tree-sitter"))]
 pub(crate) fn detect_foldable_regions(
-    state: Res<CodeEditorState>,
+    editor_query: Query<(&CodeEditorState, &TextViewState), With<CodeEditor>>,
     mut fold_state: ResMut<FoldState>,
 ) {
+    let Ok((_state, tv)) = editor_query.single() else {
+        return;
+    };
+
     // Only update when content changes
-    if fold_state.content_version == state.content_version as usize {
+    if fold_state.content_version == tv.content_version as usize {
         return;
     }
 
-    fold_state.content_version = state.content_version as usize;
+    fold_state.content_version = tv.content_version as usize;
 
     // Simple brace-matching based folding as fallback
     let mut regions: Vec<FoldRegion> = Vec::new();
     let mut brace_stack: Vec<(usize, usize)> = Vec::new(); // (line, indent_level)
 
-    for line_idx in 0..state.rope.len_lines() {
-        let line = state.rope.line(line_idx);
+    for line_idx in 0..tv.rope.len_lines() {
+        let line = tv.rope.line(line_idx);
         let line_str: String = line.chars().collect();
 
         // Calculate indent level
@@ -290,11 +299,10 @@ impl Plugin for FoldingPlugin {
 
 pub(crate) fn update_fold_indicators(
     mut commands: Commands,
-    state: Res<CodeEditorState>,
+    editor_query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     theme: Res<ThemeSettings>,
     ui: Res<UiSettings>,
-    viewport: Res<ViewportDimensions>,
     fold_state: Res<FoldState>,
     render_config: Res<EditorRenderConfig>,
     mut indicator_query: Query<(
@@ -305,6 +313,9 @@ pub(crate) fn update_fold_indicators(
         &mut Visibility,
     )>,
 ) {
+    let Ok((_state, tv, viewport)) = editor_query.single() else {
+        return;
+    };
     // Hide all if folding is disabled
     if !fold_state.enabled || !ui.show_line_numbers {
         for (_, _, _, _, mut visibility) in indicator_query.iter_mut() {
@@ -319,9 +330,9 @@ pub(crate) fn update_fold_indicators(
     let viewport_height = viewport.height as f32;
 
     // Calculate visible line range
-    let visible_start_line = ((-state.scroll_offset) / line_height).floor() as usize;
+    let visible_start_line = ((-tv.scroll_offset) / line_height).floor() as usize;
     let visible_lines = ((viewport_height / line_height).ceil() as usize) + 2;
-    let visible_end_line = (visible_start_line + visible_lines).min(state.rope.len_lines());
+    let visible_end_line = (visible_start_line + visible_lines).min(tv.rope.len_lines());
 
     // Collect fold regions that start within visible range
     let visible_regions: Vec<_> = fold_state
@@ -368,7 +379,7 @@ pub(crate) fn update_fold_indicators(
         // In VSCode style, this is a narrow gutter just before the separator
         let x_offset = viewport.separator_x - 12.0; // Just before the separator
         let y_offset =
-            viewport.text_area_top + state.scroll_offset + (display_line as f32 * line_height);
+            viewport.text_area_top + tv.scroll_offset + (display_line as f32 * line_height);
 
         let translation = to_bevy_coords_left_aligned(
             x_offset,
