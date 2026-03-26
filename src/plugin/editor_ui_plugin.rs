@@ -215,8 +215,8 @@ impl Plugin for EditorUiPlugin {
             Update,
             update_editor_scrollbar
                 .run_if(
-                    resource_changed::<CodeEditorState>
-                        .or(|query: Query<(), Changed<TextViewViewport>>| !query.is_empty())
+                    (|query: Query<(), (With<CodeEditor>, Changed<CodeEditorState>)>| !query.is_empty())
+                        .or(viewport_changed)
                         .or(resource_changed::<ScrollbarSettings>),
                 )
                 .in_set(super::ApplyStateSet),

@@ -1617,7 +1617,7 @@ pub struct CodeEditor;
 ///
 /// Text buffer, scroll, and rendering state live in the sibling `TextViewState` component.
 /// During the migration period, this type derives both Resource and Component.
-#[derive(Resource, Component)]
+#[derive(Component)]
 pub struct CodeEditorState {
     /// Text buffer (efficient rope data structure)
     pub rope: Rope,

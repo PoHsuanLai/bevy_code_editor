@@ -25,7 +25,6 @@ pub type GpuTextBatch = TextViewBatch;
 /// the generic `render_text_view()`.
 pub(crate) fn update_gpu_text_instanced(
     mut commands: Commands,
-    mut state: ResMut<CodeEditorState>,
     mut tv_query: Query<(&mut TextViewState, &TextViewViewport), With<CodeEditor>>,
     (font, theme, syntax_settings, ui_settings, performance): (
         Res<FontSettings>,
@@ -34,7 +33,6 @@ pub(crate) fn update_gpu_text_instanced(
         Res<UiSettings>,
         Res<PerformanceSettings>,
     ),
-    _viewport: Res<ViewportDimensions>,
     #[cfg(feature = "folding")] fold_state: Res<FoldState>,
     mut atlas: ResMut<GlyphAtlas>,
     mut images: ResMut<Assets<Image>>,
@@ -211,7 +209,4 @@ pub(crate) fn update_gpu_text_instanced(
     tv_state.needs_update = false;
     tv_state.needs_scroll_update = false;
     tv_state.last_render_time = time.elapsed_secs_f64() * 1000.0;
-    // Also sync back to the Resource (until full migration)
-    state.needs_update = false;
-    state.last_render_time = tv_state.last_render_time;
 }
