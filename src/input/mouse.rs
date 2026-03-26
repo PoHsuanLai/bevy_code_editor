@@ -1,4 +1,5 @@
 use crate::settings::*;
+use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::*;
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
@@ -27,7 +28,7 @@ fn screen_to_char_pos(
     screen_pos: Vec2,
     state: &CodeEditorState,
     font: &FontSettings,
-    viewport: &ViewportDimensions,
+    viewport: &TextViewViewport,
     _viewport_width: f32,
     _viewport_height: f32,
     #[cfg(feature = "folding")] fold_state: &FoldState,
@@ -74,12 +75,11 @@ fn screen_to_char_pos(
 
 /// System to handle mouse input
 pub fn handle_mouse_input(
-    mut state: ResMut<CodeEditorState>,
+    mut editor_query: Query<(&mut CodeEditorState, &mut TextViewState, &TextViewViewport), With<CodeEditor>>,
     mut drag_state: ResMut<MouseDragState>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     font: Res<FontSettings>,
-    viewport: Res<ViewportDimensions>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     #[cfg(feature = "folding")] mut fold_state: ResMut<FoldState>,
     #[cfg(feature = "lsp")] time: Res<Time>,
@@ -88,6 +88,8 @@ pub fn handle_mouse_input(
     #[cfg(feature = "lsp")] mut hover_state: ResMut<crate::lsp::HoverState>,
     #[cfg(feature = "lsp")] hover_settings: Res<crate::settings::LspSettings>,
 ) {
+    let Ok((mut state, mut tv, viewport)) = editor_query.single_mut() else { return; };
+
     // Get cursor position
     let cursor_pos_screen = window_query
         .iter()
@@ -158,9 +160,9 @@ pub fn handle_mouse_input(
                 if let Some(timer) = &mut hover_state.timer {
                     timer.tick(time.delta());
                     if timer.just_finished() && !hover_state.request_sent {
-                        let line_index = state.rope.char_to_line(current_char_pos);
-                        let line_start = state.rope.line_to_char(line_index);
-                        let line_len = state.rope.line(line_index).len_chars();
+                        let line_index = tv.rope.char_to_line(current_char_pos);
+                        let line_start = tv.rope.line_to_char(line_index);
+                        let line_len = tv.rope.line(line_index).len_chars();
                         // Clamp column to actual line length (excluding newline)
                         let char_in_line_index =
                             (current_char_pos - line_start).min(line_len.saturating_sub(1));
@@ -215,7 +217,7 @@ pub fn handle_mouse_input(
                 // Check if click is in the fold gutter area (horizontally) using viewport-local coords
                 if local_x >= gutter_start && local_x < gutter_end {
                     // Calculate which display row was clicked
-                    let relative_y = local_y - viewport.text_area_top + state.scroll_offset;
+                    let relative_y = local_y - viewport.text_area_top + tv.scroll_offset;
                     let display_row = (relative_y / line_height).max(0.0) as usize;
 
                     // Convert display row to buffer line
@@ -224,7 +226,7 @@ pub fn handle_mouse_input(
                     // Check if there's a foldable region starting at this line
                     if fold_state.is_foldable_line(buffer_line) {
                         fold_state.toggle_fold_at_line(buffer_line);
-                        state.pending_update = true;
+                        tv.pending_update = true;
                         state.is_focused = true;
 
                         // Hide hover on click
@@ -249,8 +251,8 @@ pub fn handle_mouse_input(
                 {
                     use lsp_types::Position;
 
-                    let line_index = state.rope.char_to_line(char_pos);
-                    let char_in_line_index = char_pos - state.rope.line_to_char(line_index);
+                    let line_index = tv.rope.char_to_line(char_pos);
+                    let char_in_line_index = char_pos - tv.rope.line_to_char(line_index);
 
                     let lsp_position = Position {
                         line: line_index as u32,
@@ -284,7 +286,7 @@ pub fn handle_mouse_input(
             // Start drag - capture scroll offset and screen position to prevent auto-scroll from affecting selection
             drag_state.is_dragging = true;
             drag_state.drag_start_pos = Some(char_pos);
-            drag_state.drag_start_scroll_offset = state.scroll_offset;
+            drag_state.drag_start_scroll_offset = tv.scroll_offset;
             drag_state.last_screen_pos = cursor_pos_screen;
 
             // Clear secondary cursors on regular click
@@ -297,7 +299,7 @@ pub fn handle_mouse_input(
             state.selection_start = None;
             state.selection_end = None;
             state.sync_cursors_from_primary();
-            state.pending_update = true;
+            tv.pending_update = true;
 
             // Hide hover on click
             #[cfg(feature = "lsp")]
@@ -354,7 +356,7 @@ pub fn handle_mouse_input(
                     state.cursor_pos = current_pos;
                     state.selection_start = Some(start_pos);
                     state.selection_end = Some(current_pos);
-                    state.pending_update = true;
+                    tv.pending_update = true;
                 }
             }
         }
@@ -363,13 +365,14 @@ pub fn handle_mouse_input(
 
 /// System to handle mouse wheel scrolling
 pub fn handle_mouse_wheel(
-    mut state: ResMut<CodeEditorState>,
+    mut editor_query: Query<(&mut CodeEditorState, &mut TextViewState, &TextViewViewport), With<CodeEditor>>,
     mut mouse_wheel_events: MessageReader<MouseWheel>,
     _keyboard: Res<ButtonInput<KeyCode>>,
     font: Res<FontSettings>,
     scrolling: Res<ScrollingSettings>,
-    viewport: Res<ViewportDimensions>,
 ) {
+    let Ok((_state, mut tv, viewport)) = editor_query.single_mut() else { return; };
+
     for event in mouse_wheel_events.read() {
         let mut scrolled = false;
         let use_smooth = scrolling.smooth;
@@ -381,31 +384,31 @@ pub fn handle_mouse_wheel(
             // Calculate available width for text (excluding line numbers margin and code margin)
             let available_text_width = viewport_width - viewport.text_area_left;
 
-            if state.max_content_width > available_text_width {
+            if tv.max_content_width > available_text_width {
                 // Positive x = scroll right (content moves left, horizontal_scroll_offset increases)
                 // Negative x = scroll left (content moves right, horizontal_scroll_offset decreases)
                 let scroll_delta = event.x * font.char_width * scrolling.speed;
 
                 if use_smooth {
                     // Update target for smooth scrolling
-                    state.target_horizontal_scroll_offset += scroll_delta;
+                    tv.target_horizontal_scroll_offset += scroll_delta;
                 } else {
                     // Direct update
-                    state.horizontal_scroll_offset += scroll_delta;
+                    tv.horizontal_scroll_offset += scroll_delta;
                 }
 
                 // Clamp horizontal scroll:
                 // Minimum is 0 (can't scroll left past column 0)
                 let max_horizontal_scroll =
-                    (state.max_content_width - available_text_width).max(0.0);
+                    (tv.max_content_width - available_text_width).max(0.0);
 
                 if use_smooth {
-                    state.target_horizontal_scroll_offset = state
+                    tv.target_horizontal_scroll_offset = tv
                         .target_horizontal_scroll_offset
                         .max(0.0)
                         .min(max_horizontal_scroll);
                 } else {
-                    state.horizontal_scroll_offset = state
+                    tv.horizontal_scroll_offset = tv
                         .horizontal_scroll_offset
                         .max(0.0)
                         .min(max_horizontal_scroll);
@@ -422,20 +425,20 @@ pub fn handle_mouse_wheel(
             let scroll_delta = event.y * font.line_height * scrolling.speed;
 
             // Calculate scroll bounds
-            let line_count = state.rope.len_lines();
+            let line_count = tv.rope.len_lines();
             let content_height = line_count as f32 * font.line_height;
             let viewport_height = viewport.height as f32;
             let max_scroll = -(content_height - viewport_height + viewport.text_area_top);
 
             if use_smooth {
                 // Update target for smooth scrolling
-                state.target_scroll_offset += scroll_delta;
-                state.target_scroll_offset =
-                    state.target_scroll_offset.min(0.0).max(max_scroll.min(0.0));
+                tv.target_scroll_offset += scroll_delta;
+                tv.target_scroll_offset =
+                    tv.target_scroll_offset.min(0.0).max(max_scroll.min(0.0));
             } else {
                 // Direct update
-                state.scroll_offset += scroll_delta;
-                state.scroll_offset = state.scroll_offset.min(0.0).max(max_scroll.min(0.0));
+                tv.scroll_offset += scroll_delta;
+                tv.scroll_offset = tv.scroll_offset.min(0.0).max(max_scroll.min(0.0));
             }
 
             scrolled = true;
@@ -445,9 +448,9 @@ pub fn handle_mouse_wheel(
             // Horizontal scrolling requires full update (text content changes due to culling)
             // Vertical scrolling only needs transform updates
             if event.x.abs() > 0.0 {
-                state.needs_update = true;
+                tv.needs_update = true;
             } else {
-                state.needs_scroll_update = true;
+                tv.needs_scroll_update = true;
             }
         }
     }

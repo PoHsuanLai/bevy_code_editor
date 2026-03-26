@@ -11,6 +11,7 @@ use crate::plugin::EditorInputManager;
 #[cfg(feature = "lsp")]
 use crate::settings::LspSettings;
 use crate::settings::{BracketSettings, CursorSettings, IndentationSettings};
+use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::*;
 use bevy::input::keyboard::KeyboardInput;
 use bevy::prelude::*;
@@ -68,7 +69,7 @@ const ALL_ACTIONS: [EditorAction; 45] = [
 
 /// System to handle keyboard input using leafwing-input-manager
 pub fn handle_keyboard_input(
-    mut state: ResMut<CodeEditorState>,
+    mut editor_query: Query<(&mut CodeEditorState, &mut TextViewState, &TextViewViewport), With<CodeEditor>>,
     mut char_events: MessageReader<KeyboardInput>,
     action_query: Query<&ActionState<EditorAction>, With<EditorInputManager>>,
     cursor: Res<CursorSettings>,
@@ -87,6 +88,8 @@ pub fn handle_keyboard_input(
     #[cfg(feature = "lsp")] mut rename_state: ResMut<crate::lsp::state::RenameState>,
     #[cfg(feature = "lsp")] mut lsp_sync: ResMut<crate::lsp::LspSyncState>,
 ) {
+    let Ok((mut state, mut tv, _viewport)) = editor_query.single_mut() else { return; };
+
     // Only process input if editor is focused
     if !state.is_focused {
         return;
@@ -236,7 +239,7 @@ pub fn handle_keyboard_input(
                             {
                                 // Just move cursor past the existing quote
                                 state.move_cursor(1);
-                                state.pending_update = true;
+                                tv.pending_update = true;
                                 continue;
                             }
 
@@ -247,7 +250,7 @@ pub fn handle_keyboard_input(
                                 if is_closing_bracket && should_skip_auto_close(&state, c) {
                                     // Just move cursor past the existing bracket
                                     state.move_cursor(1);
-                                    state.pending_update = true;
+                                    tv.pending_update = true;
                                     continue;
                                 }
                             }
@@ -270,7 +273,7 @@ pub fn handle_keyboard_input(
                                         // For single quotes, check if previous char is alphanumeric
                                         let cursor = state.cursor_pos;
                                         if cursor >= 2 {
-                                            let prev_char = state.rope.char(cursor - 2);
+                                            let prev_char = tv.rope.char(cursor - 2);
                                             !prev_char.is_alphanumeric()
                                         } else {
                                             true
@@ -313,7 +316,7 @@ pub fn handle_keyboard_input(
                                         // Check if we just completed typing this trigger
                                         if cursor_pos >= trigger.len() {
                                             let start = cursor_pos - trigger.len();
-                                            let recent_text: String = state
+                                            let recent_text: String = tv
                                                 .rope
                                                 .slice(start..cursor_pos)
                                                 .chars()
@@ -355,7 +358,7 @@ pub fn handle_keyboard_input(
                                     } else {
                                         // Not visible yet - check if we should auto-trigger after N chars
                                         let word_start =
-                                            find_word_start(&state.rope, state.cursor_pos);
+                                            find_word_start(&tv.rope, state.cursor_pos);
                                         let word_len = state.cursor_pos - word_start;
 
                                         // Trigger after min_word_length characters (configurable, like VSCode's 3)
@@ -406,7 +409,7 @@ pub fn handle_keyboard_input(
     if let Some(action) = action_to_execute {
         // Handle Save action - emit event for host app
         if action == EditorAction::Save {
-            let content: String = state.rope.chars().collect();
+            let content: String = tv.rope.chars().collect();
             save_events.write(crate::types::SaveRequested { content });
             return;
         }
@@ -422,9 +425,10 @@ pub fn handle_keyboard_input(
         if action == EditorAction::RenameSymbol {
             if lsp_client.capabilities.supports_rename() {
                 if let Some(uri) = &lsp_sync.document_uri {
-                    let cursor_pos = state.cursor_pos.min(state.rope.len_chars());
-                    let line = state.rope.char_to_line(cursor_pos);
-                    let line_start = state.rope.line_to_char(line);
+                    // Convert cursor position to LSP position
+                    let cursor_pos = state.cursor_pos.min(tv.rope.len_chars());
+                    let line = tv.rope.char_to_line(cursor_pos);
+                    let line_start = tv.rope.line_to_char(line);
                     let character = cursor_pos - line_start;
 
                     let position = lsp_types::Position {
