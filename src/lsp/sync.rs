@@ -8,7 +8,8 @@
 use bevy::prelude::*;
 
 use crate::settings::*;
-use crate::types::{CodeEditorState, ViewportDimensions};
+use crate::text_view::{TextViewState, TextViewViewport};
+use crate::types::{CodeEditor, CodeEditorState};
 
 use super::components::*;
 use super::messages::CodeActionOrCommand;
@@ -18,13 +19,13 @@ use super::state::*;
 pub fn sync_completion_popup(
     mut commands: Commands,
     completion_state: Res<CompletionState>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     lsp: Res<LspSettings>,
-    viewport: Res<ViewportDimensions>,
     existing: Query<Entity, With<CompletionPopupData>>,
 ) {
+    let Ok((editor_state, tv, vp)) = query.single() else { return };
     let filtered_items = completion_state.filtered_items();
 
     // If not visible or no items, despawn existing
@@ -36,9 +37,9 @@ pub fn sync_completion_popup(
     }
 
     // Calculate position
-    let cursor_pos = editor_state.cursor_pos.min(editor_state.rope.len_chars());
-    let line_index = editor_state.rope.char_to_line(cursor_pos);
-    let line_start = editor_state.rope.line_to_char(line_index);
+    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let line_index = tv.rope.char_to_line(cursor_pos);
+    let line_start = tv.rope.line_to_char(line_index);
     let col_index = cursor_pos - line_start;
 
     let char_width = font.char_width;
@@ -46,7 +47,7 @@ pub fn sync_completion_popup(
 
     let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
     let y_offset =
-        ui.margin_top + editor_state.scroll_offset + ((line_index + 1) as f32 * line_height);
+        ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
 
     // Calculate dynamic width
     let max_char_count = filtered_items
@@ -75,7 +76,7 @@ pub fn sync_completion_popup(
         .collect();
 
     let popup_data = CompletionPopupData {
-        position: Vec2::new(x_offset + viewport.offset_x, y_offset),
+        position: Vec2::new(x_offset + vp.offset_x, y_offset),
         items,
         selected_index: completion_state.selected_index,
         scroll_offset: completion_state.scroll_offset,
@@ -101,12 +102,13 @@ pub fn sync_completion_popup(
 pub fn sync_hover_popup(
     mut commands: Commands,
     hover_state: Res<HoverState>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(&TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
-    viewport: Res<ViewportDimensions>,
     existing: Query<Entity, With<HoverPopupData>>,
 ) {
+    let Ok((tv, vp)) = query.single() else { return };
+
     if !hover_state.visible || hover_state.content.is_empty() {
         for entity in existing.iter() {
             commands.entity(entity).despawn();
@@ -116,9 +118,9 @@ pub fn sync_hover_popup(
 
     let trigger_char_index = hover_state
         .trigger_char_index
-        .min(editor_state.rope.len_chars());
-    let line_index = editor_state.rope.char_to_line(trigger_char_index);
-    let line_start = editor_state.rope.line_to_char(line_index);
+        .min(tv.rope.len_chars());
+    let line_index = tv.rope.char_to_line(trigger_char_index);
+    let line_start = tv.rope.line_to_char(line_index);
     let col_index = trigger_char_index - line_start;
 
     let char_width = font.char_width;
@@ -126,7 +128,7 @@ pub fn sync_hover_popup(
 
     let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
     let y_offset =
-        ui.margin_top + editor_state.scroll_offset + ((line_index + 1) as f32 * line_height);
+        ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
 
     let font_size = font.size * 0.9;
     let padding = 10.0;
@@ -146,7 +148,7 @@ pub fn sync_hover_popup(
     let box_height = (line_count as f32 * font_size * 1.2) + padding * 2.0;
 
     let popup_data = HoverPopupData {
-        position: Vec2::new(x_offset + viewport.offset_x, y_offset),
+        position: Vec2::new(x_offset + vp.offset_x, y_offset),
         content: hover_state.content.clone(),
         width: box_width,
         height: box_height,
@@ -167,12 +169,13 @@ pub fn sync_hover_popup(
 pub fn sync_signature_help_popup(
     mut commands: Commands,
     sig_state: Res<SignatureHelpState>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
-    viewport: Res<ViewportDimensions>,
     existing: Query<Entity, With<SignatureHelpPopupData>>,
 ) {
+    let Ok((editor_state, tv, vp)) = query.single() else { return };
+
     if !sig_state.visible || sig_state.signatures.is_empty() {
         for entity in existing.iter() {
             commands.entity(entity).despawn();
@@ -187,16 +190,16 @@ pub fn sync_signature_help_popup(
         return;
     };
 
-    let cursor_pos = editor_state.cursor_pos.min(editor_state.rope.len_chars());
-    let line_index = editor_state.rope.char_to_line(cursor_pos);
-    let line_start = editor_state.rope.line_to_char(line_index);
+    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let line_index = tv.rope.char_to_line(cursor_pos);
+    let line_start = tv.rope.line_to_char(line_index);
     let col_index = cursor_pos - line_start;
 
     let char_width = font.char_width;
     let line_height = font.line_height;
 
     let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
-    let y_offset = ui.margin_top + editor_state.scroll_offset + (line_index as f32 * line_height)
+    let y_offset = ui.margin_top + tv.scroll_offset + (line_index as f32 * line_height)
         - line_height;
 
     let font_size = font.size * 0.9;
@@ -228,7 +231,7 @@ pub fn sync_signature_help_popup(
         .unwrap_or_default();
 
     let popup_data = SignatureHelpPopupData {
-        position: Vec2::new(x_offset + viewport.offset_x, y_offset),
+        position: Vec2::new(x_offset + vp.offset_x, y_offset),
         label: sig_label.clone(),
         active_parameter: sig_state.active_parameter,
         parameter_ranges,
@@ -253,12 +256,13 @@ pub fn sync_signature_help_popup(
 pub fn sync_code_actions_popup(
     mut commands: Commands,
     action_state: Res<CodeActionState>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
-    viewport: Res<ViewportDimensions>,
     existing: Query<Entity, With<CodeActionsPopupData>>,
 ) {
+    let Ok((editor_state, tv, vp)) = query.single() else { return };
+
     if !action_state.visible || action_state.actions.is_empty() {
         for entity in existing.iter() {
             commands.entity(entity).despawn();
@@ -266,15 +270,15 @@ pub fn sync_code_actions_popup(
         return;
     }
 
-    let cursor_pos = editor_state.cursor_pos.min(editor_state.rope.len_chars());
-    let line_index = editor_state.rope.char_to_line(cursor_pos);
+    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let line_index = tv.rope.char_to_line(cursor_pos);
 
     let line_height = font.line_height;
     let char_width = font.char_width;
 
     let x_offset = ui.code_margin_left - 20.0;
     let y_offset =
-        ui.margin_top + editor_state.scroll_offset + ((line_index + 1) as f32 * line_height);
+        ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
 
     let max_label_len = action_state
         .actions
@@ -322,7 +326,7 @@ pub fn sync_code_actions_popup(
         .collect();
 
     let popup_data = CodeActionsPopupData {
-        position: Vec2::new(x_offset + viewport.offset_x, y_offset),
+        position: Vec2::new(x_offset + vp.offset_x, y_offset),
         actions,
         selected_index: action_state.selected_index,
         width: box_width,
@@ -344,12 +348,13 @@ pub fn sync_code_actions_popup(
 pub fn sync_rename_input(
     mut commands: Commands,
     rename_state: Res<RenameState>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(&TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
-    viewport: Res<ViewportDimensions>,
     existing: Query<Entity, With<RenameInputData>>,
 ) {
+    let Ok((tv, vp)) = query.single() else { return };
+
     if !rename_state.visible {
         for entity in existing.iter() {
             commands.entity(entity).despawn();
@@ -372,7 +377,7 @@ pub fn sync_rename_input(
 
     let x_offset = ui.code_margin_left + (character as f32 * char_width);
     let y_offset = ui.margin_top
-        + editor_state.scroll_offset
+        + tv.scroll_offset
         + (line as f32 * line_height)
         + (line_height / 2.0);
 
@@ -391,7 +396,7 @@ pub fn sync_rename_input(
     let box_height = line_height + padding_y * 2.0;
 
     let popup_data = RenameInputData {
-        position: Vec2::new(x_offset + viewport.offset_x, y_offset),
+        position: Vec2::new(x_offset + vp.offset_x, y_offset),
         text: display_text.to_string(),
         original_text: rename_state.original_text.clone(),
         cursor_position: display_text.chars().count(),
@@ -414,14 +419,15 @@ pub fn sync_rename_input(
 pub fn sync_inlay_hints(
     mut commands: Commands,
     hint_state: Res<InlayHintState>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
-    viewport: Res<ViewportDimensions>,
     existing: Query<Entity, With<InlayHintData>>,
 ) {
+    let Ok((tv, vp)) = query.single() else { return };
+
     // Only update if something changed
-    if !hint_state.is_changed() && !editor_state.is_changed() && !viewport.is_changed() {
+    if !hint_state.is_changed() && !tv.is_changed() && !vp.is_changed() {
         return;
     }
 
@@ -434,8 +440,8 @@ pub fn sync_inlay_hints(
         return;
     }
 
-    let visible_start_line = (editor_state.scroll_offset / font.line_height) as u32;
-    let visible_lines = (viewport.height as f32 / font.line_height) as u32 + 2;
+    let visible_start_line = (tv.scroll_offset / font.line_height) as u32;
+    let visible_lines = (vp.height as f32 / font.line_height) as u32 + 2;
     let visible_end_line = visible_start_line + visible_lines;
 
     let char_width = font.char_width;
@@ -460,7 +466,7 @@ pub fn sync_inlay_hints(
 
         let x_offset = ui.code_margin_left + (character as f32 * char_width);
         let y_offset = ui.margin_top
-            + editor_state.scroll_offset
+            + tv.scroll_offset
             + (line as f32 * line_height)
             + (line_height / 2.0);
 
@@ -472,7 +478,7 @@ pub fn sync_inlay_hints(
 
         commands.spawn((
             InlayHintData {
-                position: Vec2::new(x_offset + viewport.offset_x, y_offset),
+                position: Vec2::new(x_offset + vp.offset_x, y_offset),
                 label: label_text,
                 kind,
                 line,
@@ -488,13 +494,14 @@ pub fn sync_inlay_hints(
 pub fn sync_document_highlights(
     mut commands: Commands,
     highlight_state: Res<DocumentHighlightState>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
-    viewport: Res<ViewportDimensions>,
     existing: Query<Entity, With<DocumentHighlightData>>,
 ) {
-    if !highlight_state.is_changed() && !editor_state.is_changed() && !viewport.is_changed() {
+    let Ok((tv, vp)) = query.single() else { return };
+
+    if !highlight_state.is_changed() && !tv.is_changed() && !vp.is_changed() {
         return;
     }
 
@@ -506,11 +513,11 @@ pub fn sync_document_highlights(
         return;
     }
 
-    let viewport_height = viewport.height as f32;
+    let viewport_height = vp.height as f32;
     let char_width = font.char_width;
     let line_height = font.line_height;
 
-    let visible_start_line = (editor_state.scroll_offset / line_height) as u32;
+    let visible_start_line = (tv.scroll_offset / line_height) as u32;
     let visible_lines = (viewport_height / line_height) as u32 + 2;
     let visible_end_line = visible_start_line + visible_lines;
 
@@ -536,13 +543,13 @@ pub fn sync_document_highlights(
 
             let x_offset = ui.code_margin_left + (start_char as f32 * char_width);
             let y_offset = ui.margin_top
-                + editor_state.scroll_offset
+                + tv.scroll_offset
                 + (line as f32 * line_height)
                 + (line_height / 2.0);
 
             commands.spawn((
                 DocumentHighlightData {
-                    position: Vec2::new(x_offset + viewport.offset_x + width / 2.0, y_offset),
+                    position: Vec2::new(x_offset + vp.offset_x + width / 2.0, y_offset),
                     width,
                     height: line_height,
                     is_write,
@@ -569,13 +576,13 @@ pub fn sync_document_highlights(
                 let width = (end_char - start_char).min(200) as f32 * char_width;
                 let x_offset = ui.code_margin_left + (start_char as f32 * char_width);
                 let y_offset = ui.margin_top
-                    + editor_state.scroll_offset
+                    + tv.scroll_offset
                     + (line as f32 * line_height)
                     + (line_height / 2.0);
 
                 commands.spawn((
                     DocumentHighlightData {
-                        position: Vec2::new(x_offset + viewport.offset_x + width / 2.0, y_offset),
+                        position: Vec2::new(x_offset + vp.offset_x + width / 2.0, y_offset),
                         width,
                         height: line_height,
                         is_write,

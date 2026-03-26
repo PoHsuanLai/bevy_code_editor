@@ -4,7 +4,8 @@ use bevy::prelude::*;
 use bevy::sprite::Anchor;
 
 use crate::settings::*;
-use crate::types::{CodeEditorState, ViewportDimensions};
+use crate::text_view::{TextViewState, TextViewViewport};
+use crate::types::{CodeEditor, CodeEditorState};
 
 use super::state::{
     CodeActionState, CompletionState, DocumentHighlightState, HoverState, InlayHintState,
@@ -48,13 +49,13 @@ pub struct RenameUI;
 pub fn update_completion_ui(
     mut commands: Commands,
     completion_state: Res<CompletionState>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     lsp: Res<LspSettings>,
-    viewport: Res<ViewportDimensions>,
     ui_query: Query<Entity, With<CompletionUI>>,
 ) {
+    let Ok((editor_state, tv, vp)) = query.single() else { return };
     let filtered_items = completion_state.filtered_items();
 
     // If not visible or no filtered items, clear and return
@@ -74,9 +75,9 @@ pub fn update_completion_ui(
     }
 
     // Calculate position
-    let cursor_pos = editor_state.cursor_pos.min(editor_state.rope.len_chars());
-    let line_index = editor_state.rope.char_to_line(cursor_pos);
-    let line_start = editor_state.rope.line_to_char(line_index);
+    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let line_index = tv.rope.char_to_line(cursor_pos);
+    let line_start = tv.rope.line_to_char(line_index);
     let col_index = cursor_pos - line_start;
 
     let char_width = font.char_width;
@@ -84,10 +85,10 @@ pub fn update_completion_ui(
 
     let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
     let y_offset =
-        ui.margin_top + editor_state.scroll_offset + ((line_index + 1) as f32 * line_height);
+        ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
 
-    let viewport_width = viewport.width as f32;
-    let viewport_height = viewport.height as f32;
+    let viewport_width = vp.width as f32;
+    let viewport_height = vp.height as f32;
 
     // Calculate dynamic width
     let max_char_count = filtered_items
@@ -110,7 +111,7 @@ pub fn update_completion_ui(
     let box_height = (visible_count as f32 * line_height) + 10.0;
 
     let pos = Vec3::new(
-        -viewport_width / 2.0 + x_offset + viewport.offset_x + box_width / 2.0,
+        -viewport_width / 2.0 + x_offset + vp.offset_x + box_width / 2.0,
         viewport_height / 2.0 - y_offset - box_height / 2.0,
         100.0,
     );
@@ -208,12 +209,13 @@ pub fn update_completion_ui(
 pub fn update_hover_ui(
     mut commands: Commands,
     hover_state: Res<HoverState>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(&CodeEditorState, Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
-    viewport: Res<ViewportDimensions>,
     ui_query: Query<Entity, With<HoverUI>>,
 ) {
+    let Ok((_editor_state, tv, vp)) = query.single() else { return };
+
     if !hover_state.visible || hover_state.content.is_empty() {
         for entity in ui_query.iter() {
             commands.entity(entity).despawn();
@@ -222,8 +224,8 @@ pub fn update_hover_ui(
     }
 
     if !hover_state.is_changed()
-        && !editor_state.is_changed()
-        && !viewport.is_changed()
+        && !tv.is_changed()
+        && !vp.is_changed()
         && !font.is_changed()
         && !ui.is_changed()
     {
@@ -236,9 +238,9 @@ pub fn update_hover_ui(
 
     let trigger_char_index = hover_state
         .trigger_char_index
-        .min(editor_state.rope.len_chars());
-    let line_index = editor_state.rope.char_to_line(trigger_char_index);
-    let line_start = editor_state.rope.line_to_char(line_index);
+        .min(tv.rope.len_chars());
+    let line_index = tv.rope.char_to_line(trigger_char_index);
+    let line_start = tv.rope.line_to_char(line_index);
     let col_index = trigger_char_index - line_start;
 
     let char_width = font.char_width;
@@ -246,10 +248,10 @@ pub fn update_hover_ui(
 
     let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
     let y_offset =
-        ui.margin_top + editor_state.scroll_offset + ((line_index + 1) as f32 * line_height);
+        ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
 
-    let viewport_width = viewport.width as f32;
-    let viewport_height = viewport.height as f32;
+    let viewport_width = vp.width as f32;
+    let viewport_height = vp.height as f32;
 
     let font_size = font.size * 0.9;
     let padding = 10.0;
@@ -269,7 +271,7 @@ pub fn update_hover_ui(
     let box_height = (line_count as f32 * font_size * 1.2) + padding * 2.0;
 
     let pos = Vec3::new(
-        -viewport_width / 2.0 + x_offset + viewport.offset_x + box_width / 2.0,
+        -viewport_width / 2.0 + x_offset + vp.offset_x + box_width / 2.0,
         viewport_height / 2.0 - y_offset - box_height / 2.0,
         100.0,
     );
@@ -307,12 +309,13 @@ pub fn update_hover_ui(
 pub fn update_signature_help_ui(
     mut commands: Commands,
     sig_state: Res<SignatureHelpState>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(&CodeEditorState, Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
-    viewport: Res<ViewportDimensions>,
     ui_query: Query<Entity, With<SignatureHelpUI>>,
 ) {
+    let Ok((editor_state, tv, vp)) = query.single() else { return };
+
     if !sig_state.visible || sig_state.signatures.is_empty() {
         for entity in ui_query.iter() {
             commands.entity(entity).despawn();
@@ -321,8 +324,8 @@ pub fn update_signature_help_ui(
     }
 
     if !sig_state.is_changed()
-        && !editor_state.is_changed()
-        && !viewport.is_changed()
+        && !tv.is_changed()
+        && !vp.is_changed()
         && !font.is_changed()
         && !ui.is_changed()
     {
@@ -338,9 +341,9 @@ pub fn update_signature_help_ui(
     };
 
     // Position above cursor
-    let cursor_pos = editor_state.cursor_pos.min(editor_state.rope.len_chars());
-    let line_index = editor_state.rope.char_to_line(cursor_pos);
-    let line_start = editor_state.rope.line_to_char(line_index);
+    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let line_index = tv.rope.char_to_line(cursor_pos);
+    let line_start = tv.rope.line_to_char(line_index);
     let col_index = cursor_pos - line_start;
 
     let char_width = font.char_width;
@@ -348,11 +351,11 @@ pub fn update_signature_help_ui(
 
     let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
     // Position ABOVE the current line
-    let y_offset = ui.margin_top + editor_state.scroll_offset + (line_index as f32 * line_height)
+    let y_offset = ui.margin_top + tv.scroll_offset + (line_index as f32 * line_height)
         - line_height;
 
-    let viewport_width = viewport.width as f32;
-    let viewport_height = viewport.height as f32;
+    let viewport_width = vp.width as f32;
+    let viewport_height = vp.height as f32;
 
     let font_size = font.size * 0.9;
     let padding = 8.0;
@@ -365,7 +368,7 @@ pub fn update_signature_help_ui(
     let box_height = font_size * 1.4 + padding * 2.0;
 
     let pos = Vec3::new(
-        -viewport_width / 2.0 + x_offset + viewport.offset_x + box_width / 2.0,
+        -viewport_width / 2.0 + x_offset + vp.offset_x + box_width / 2.0,
         viewport_height / 2.0 - y_offset - box_height / 2.0,
         100.0,
     );
@@ -422,12 +425,13 @@ pub fn update_signature_help_ui(
 pub fn update_code_action_ui(
     mut commands: Commands,
     action_state: Res<CodeActionState>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(&CodeEditorState, Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
-    viewport: Res<ViewportDimensions>,
     ui_query: Query<Entity, With<CodeActionUI>>,
 ) {
+    let Ok((editor_state, tv, vp)) = query.single() else { return };
+
     if !action_state.visible || action_state.actions.is_empty() {
         for entity in ui_query.iter() {
             commands.entity(entity).despawn();
@@ -436,8 +440,8 @@ pub fn update_code_action_ui(
     }
 
     if !action_state.is_changed()
-        && !editor_state.is_changed()
-        && !viewport.is_changed()
+        && !tv.is_changed()
+        && !vp.is_changed()
         && !font.is_changed()
         && !ui.is_changed()
     {
@@ -448,8 +452,8 @@ pub fn update_code_action_ui(
         commands.entity(entity).despawn();
     }
 
-    let cursor_pos = editor_state.cursor_pos.min(editor_state.rope.len_chars());
-    let line_index = editor_state.rope.char_to_line(cursor_pos);
+    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let line_index = tv.rope.char_to_line(cursor_pos);
 
     let line_height = font.line_height;
     let char_width = font.char_width;
@@ -457,10 +461,10 @@ pub fn update_code_action_ui(
     // Position at line start (gutter area)
     let x_offset = ui.code_margin_left - 20.0;
     let y_offset =
-        ui.margin_top + editor_state.scroll_offset + ((line_index + 1) as f32 * line_height);
+        ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
 
-    let viewport_width = viewport.width as f32;
-    let viewport_height = viewport.height as f32;
+    let viewport_width = vp.width as f32;
+    let viewport_height = vp.height as f32;
 
     // Calculate box dimensions
     let max_label_len = action_state
@@ -480,7 +484,7 @@ pub fn update_code_action_ui(
     let box_height = (visible_count as f32 * line_height) + 10.0;
 
     let pos = Vec3::new(
-        -viewport_width / 2.0 + x_offset + viewport.offset_x + box_width / 2.0,
+        -viewport_width / 2.0 + x_offset + vp.offset_x + box_width / 2.0,
         viewport_height / 2.0 - y_offset - box_height / 2.0,
         100.0,
     );
@@ -545,14 +549,15 @@ pub fn update_code_action_ui(
 pub fn update_inlay_hints_ui(
     mut commands: Commands,
     hint_state: Res<InlayHintState>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
-    viewport: Res<ViewportDimensions>,
     hint_query: Query<Entity, With<InlayHintText>>,
 ) {
+    let Ok((tv, vp)) = query.single() else { return };
+
     // Clear existing hints if state changed
-    if hint_state.is_changed() || editor_state.is_changed() || viewport.is_changed() {
+    if hint_state.is_changed() || tv.is_changed() || vp.is_changed() {
         for entity in hint_query.iter() {
             commands.entity(entity).despawn();
         }
@@ -563,12 +568,12 @@ pub fn update_inlay_hints_ui(
     }
 
     // Only render hints in visible viewport
-    let visible_start_line = (editor_state.scroll_offset / font.line_height) as u32;
-    let visible_lines = (viewport.height as f32 / font.line_height) as u32 + 2;
+    let visible_start_line = (tv.scroll_offset / font.line_height) as u32;
+    let visible_lines = (vp.height as f32 / font.line_height) as u32 + 2;
     let visible_end_line = visible_start_line + visible_lines;
 
-    let viewport_width = viewport.width as f32;
-    let viewport_height = viewport.height as f32;
+    let viewport_width = vp.width as f32;
+    let viewport_height = vp.height as f32;
     let char_width = font.char_width;
     let line_height = font.line_height;
 
@@ -593,12 +598,12 @@ pub fn update_inlay_hints_ui(
 
         let x_offset = ui.code_margin_left + (character as f32 * char_width);
         let y_offset = ui.margin_top
-            + editor_state.scroll_offset
+            + tv.scroll_offset
             + (line as f32 * line_height)
             + (line_height / 2.0);
 
         let pos = Vec3::new(
-            -viewport_width / 2.0 + x_offset + viewport.offset_x,
+            -viewport_width / 2.0 + x_offset + vp.offset_x,
             viewport_height / 2.0 - y_offset,
             50.0, // Below cursor but above text
         );
@@ -630,14 +635,15 @@ pub fn update_inlay_hints_ui(
 pub fn update_document_highlights_ui(
     mut commands: Commands,
     highlight_state: Res<DocumentHighlightState>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
-    viewport: Res<ViewportDimensions>,
     highlight_query: Query<Entity, With<DocumentHighlightMarker>>,
 ) {
+    let Ok((tv, vp)) = query.single() else { return };
+
     // Clear existing highlights if state changed
-    if highlight_state.is_changed() || editor_state.is_changed() || viewport.is_changed() {
+    if highlight_state.is_changed() || tv.is_changed() || vp.is_changed() {
         for entity in highlight_query.iter() {
             commands.entity(entity).despawn();
         }
@@ -647,13 +653,13 @@ pub fn update_document_highlights_ui(
         return;
     }
 
-    let viewport_width = viewport.width as f32;
-    let viewport_height = viewport.height as f32;
+    let viewport_width = vp.width as f32;
+    let viewport_height = vp.height as f32;
     let char_width = font.char_width;
     let line_height = font.line_height;
 
     // Calculate visible line range
-    let visible_start_line = (editor_state.scroll_offset / line_height) as u32;
+    let visible_start_line = (tv.scroll_offset / line_height) as u32;
     let visible_lines = (viewport_height / line_height) as u32 + 2;
     let visible_end_line = visible_start_line + visible_lines;
 
@@ -685,12 +691,12 @@ pub fn update_document_highlights_ui(
 
             let x_offset = ui.code_margin_left + (start_char as f32 * char_width);
             let y_offset = ui.margin_top
-                + editor_state.scroll_offset
+                + tv.scroll_offset
                 + (line as f32 * line_height)
                 + (line_height / 2.0);
 
             let pos = Vec3::new(
-                -viewport_width / 2.0 + x_offset + viewport.offset_x + width / 2.0,
+                -viewport_width / 2.0 + x_offset + vp.offset_x + width / 2.0,
                 viewport_height / 2.0 - y_offset,
                 5.0, // Behind text but visible
             );
@@ -723,12 +729,12 @@ pub fn update_document_highlights_ui(
                 let width = (end_char - start_char).min(200) as f32 * char_width;
                 let x_offset = ui.code_margin_left + (start_char as f32 * char_width);
                 let y_offset = ui.margin_top
-                    + editor_state.scroll_offset
+                    + tv.scroll_offset
                     + (line as f32 * line_height)
                     + (line_height / 2.0);
 
                 let pos = Vec3::new(
-                    -viewport_width / 2.0 + x_offset + viewport.offset_x + width / 2.0,
+                    -viewport_width / 2.0 + x_offset + vp.offset_x + width / 2.0,
                     viewport_height / 2.0 - y_offset,
                     5.0,
                 );
@@ -752,12 +758,13 @@ pub fn update_document_highlights_ui(
 pub fn update_rename_ui(
     mut commands: Commands,
     rename_state: Res<RenameState>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
-    viewport: Res<ViewportDimensions>,
     ui_query: Query<Entity, With<RenameUI>>,
 ) {
+    let Ok((tv, vp)) = query.single() else { return };
+
     if !rename_state.visible {
         for entity in ui_query.iter() {
             commands.entity(entity).despawn();
@@ -766,8 +773,8 @@ pub fn update_rename_ui(
     }
 
     if !rename_state.is_changed()
-        && !editor_state.is_changed()
-        && !viewport.is_changed()
+        && !tv.is_changed()
+        && !vp.is_changed()
         && !font.is_changed()
         && !ui.is_changed()
     {
@@ -791,12 +798,12 @@ pub fn update_rename_ui(
     // Position the input box directly at the symbol location
     let x_offset = ui.code_margin_left + (character as f32 * char_width);
     let y_offset = ui.margin_top
-        + editor_state.scroll_offset
+        + tv.scroll_offset
         + (line as f32 * line_height)
         + (line_height / 2.0);
 
-    let viewport_width = viewport.width as f32;
-    let viewport_height = viewport.height as f32;
+    let viewport_width = vp.width as f32;
+    let viewport_height = vp.height as f32;
 
     let font_size = font.size;
     let padding_x = 4.0;
@@ -816,7 +823,7 @@ pub fn update_rename_ui(
     let box_height = line_height + padding_y * 2.0;
 
     let pos = Vec3::new(
-        -viewport_width / 2.0 + x_offset + viewport.offset_x,
+        -viewport_width / 2.0 + x_offset + vp.offset_x,
         viewport_height / 2.0 - y_offset,
         150.0, // Above everything
     );

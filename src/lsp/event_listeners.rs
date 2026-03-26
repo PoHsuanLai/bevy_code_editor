@@ -12,7 +12,8 @@ use crate::lsp::state::{
     CompletionState, LspDebounceTimers, LspSyncState, PendingLspRequest, RenameState,
     SignatureHelpState,
 };
-use crate::types::CodeEditorState;
+use crate::text_view::TextViewState;
+use crate::types::{CodeEditor, CodeEditorState};
 use bevy::prelude::*;
 
 /// System that listens to TextEditEvent and sends incremental didChange to LSP.
@@ -21,40 +22,17 @@ use bevy::prelude::*;
 /// only the changed range instead of the full document text.
 pub fn listen_text_edit_events(
     mut events: MessageReader<TextEditEvent>,
-    state: Res<CodeEditorState>,
+    query: Query<&TextViewState, With<CodeEditor>>,
     lsp_client: Res<LspClient>,
     mut lsp_sync: ResMut<LspSyncState>,
 ) {
+    let Ok(tv) = query.single() else { return };
     for event in events.read() {
         if let Some(uri) = lsp_sync.document_uri.clone() {
             lsp_sync.document_version += 1;
 
-            // Convert byte offsets to LSP positions using the CURRENT rope
-            // (which already has the edit applied)
-            let rope = &state.rope;
-
-            // start_byte position (same in old and new)
-            let start_pos = byte_to_lsp_position(rope, event.start_byte);
-
-            // old_end_byte: we need the position in the OLD document.
-            // Since the rope is already updated, compute the old end position
-            // from the start position plus the old range length.
-            let old_len = event.old_end_byte - event.start_byte;
-
-            // For the old end position, we can compute it relative to start
-            // using the old document structure. Since we only have the new rope,
-            // use range_length mode which doesn't need old_end_position.
-            let new_text_start = event.start_byte.min(rope.len_bytes());
-            let new_text_end = event.new_end_byte.min(rope.len_bytes());
-
-            // Extract the new text from the rope
-            let new_text = if new_text_start < new_text_end {
-                let start_char = rope.byte_to_char(new_text_start);
-                let end_char = rope.byte_to_char(new_text_end);
-                rope.slice(start_char..end_char).to_string()
-            } else {
-                String::new()
-            };
+            // Get the full text content
+            let text = tv.rope.to_string();
 
             use lsp_types::TextDocumentContentChangeEvent;
             let msg = LspMessage::DidChange {
@@ -91,6 +69,7 @@ fn byte_to_lsp_position(rope: &ropey::Rope, byte_offset: usize) -> lsp_types::Po
 /// System that listens to RequestCompletionEvent and buffers for debouncing
 pub fn listen_completion_requests(
     mut events: MessageReader<RequestCompletionEvent>,
+    lsp_client: Res<LspClient>,
     lsp_sync: Res<LspSyncState>,
     mut debounce: ResMut<LspDebounceTimers>,
     mut completion_state: ResMut<CompletionState>,
@@ -258,20 +237,21 @@ pub fn tick_lsp_debounce_timers(
 /// System that listens to ApplyCompletionEvent
 pub fn listen_apply_completion(
     mut events: MessageReader<ApplyCompletionEvent>,
-    mut state: ResMut<CodeEditorState>,
+    mut query: Query<(&mut CodeEditorState, &mut TextViewState), With<CodeEditor>>,
     mut completion_state: ResMut<CompletionState>,
 ) {
+    let Ok((mut editor, mut tv)) = query.single_mut() else { return };
     for event in events.read() {
         if event.item_index < completion_state.items.len() {
             let item = &completion_state.items[event.item_index];
 
             // Calculate current position from cursor_pos
-            let cursor_pos = state.cursor_pos.min(state.rope.len_chars());
-            let line = state.rope.char_to_line(cursor_pos);
-            let line_start = state.rope.line_to_char(line);
+            let cursor_pos = editor.cursor_pos.min(tv.rope.len_chars());
+            let line = tv.rope.char_to_line(cursor_pos);
+            let line_start = tv.rope.line_to_char(line);
             let cursor_char = cursor_pos - line_start;
 
-            let line_text = state.rope.line(line).to_string();
+            let line_text = tv.rope.line(line).to_string();
 
             let word_start = line_text[..cursor_char]
                 .rfind(|c: char| !c.is_alphanumeric() && c != '_')
@@ -282,19 +262,19 @@ pub fn listen_apply_completion(
             if word_start < cursor_char {
                 let start_pos = line_start + word_start;
                 let end_pos = line_start + cursor_char;
-                state.rope.remove(start_pos..end_pos);
-                state.cursor_pos = start_pos + word_start;
+                tv.rope.remove(start_pos..end_pos);
+                editor.cursor_pos = start_pos + word_start;
             }
 
             // Insert the completion text
             let insert_text = item.insert_text.as_ref().unwrap_or(&item.label);
-            let cursor_pos = state.cursor_pos;
-            state.rope.insert(cursor_pos, insert_text);
-            state.cursor_pos += insert_text.len();
+            let cursor_pos = editor.cursor_pos;
+            tv.rope.insert(cursor_pos, insert_text);
+            editor.cursor_pos += insert_text.len();
 
             // Mark as needing update
-            state.pending_update = true;
-            state.content_version += 1;
+            tv.pending_update = true;
+            tv.content_version += 1;
 
             // Dismiss completion
             completion_state.visible = false;

@@ -4,7 +4,8 @@ use bevy::prelude::*;
 use lsp_types::*;
 
 use crate::settings::*;
-use crate::types::CodeEditorState;
+use crate::text_view::{TextViewState, TextViewViewport};
+use crate::types::{CodeEditor, CodeEditorState};
 
 use super::client::LspClient;
 use super::messages::{CodeActionOrCommand, LspMessage, LspResponse};
@@ -72,12 +73,13 @@ pub fn process_lsp_messages(
     mut hint_state: ResMut<InlayHintState>,
     mut highlight_state: ResMut<DocumentHighlightState>,
     mut rename_state: ResMut<RenameState>,
-    mut editor_state: ResMut<CodeEditorState>,
+    mut editor_query: Query<(&mut CodeEditorState, &mut TextViewState), With<CodeEditor>>,
     lsp_sync: Res<LspSyncState>,
     mut navigate_events: MessageWriter<NavigateToFileEvent>,
     mut multi_location_events: MessageWriter<MultipleLocationsEvent>,
     mut workspace_edit_events: MessageWriter<WorkspaceEditEvent>,
 ) {
+    let Ok((mut editor_state, mut tv)) = editor_query.single_mut() else { return };
     // Clean up timed out requests periodically
     lsp_client.cleanup_timeouts();
 
@@ -163,12 +165,12 @@ pub fn process_lsp_messages(
                     let line_num = location.range.start.line as usize;
                     let char_in_line = location.range.start.character as usize;
 
-                    if line_num < editor_state.rope.len_lines() {
-                        let line_start_char = editor_state.rope.line_to_char(line_num);
+                    if line_num < tv.rope.len_lines() {
+                        let line_start_char = tv.rope.line_to_char(line_num);
                         let target_char_pos = line_start_char + char_in_line;
                         editor_state.cursor_pos =
-                            target_char_pos.min(editor_state.rope.len_chars());
-                        editor_state.needs_update = true;
+                            target_char_pos.min(tv.rope.len_chars());
+                        tv.needs_update = true;
                     }
                 } else {
                     navigate_events.write(NavigateToFileEvent {
@@ -327,12 +329,14 @@ fn apply_text_edits(editor_state: &mut CodeEditorState, edits: Vec<TextEdit>) {
 pub fn sync_lsp_document(
     time: Res<Time>,
     mut sync_state: ResMut<LspSyncState>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<&TextViewState, With<CodeEditor>>,
     lsp_client: Res<LspClient>,
 ) {
     if !sync_state.dirty {
         return;
     }
+
+    let Ok(tv) = query.single() else { return };
 
     sync_state.timer.tick(time.delta());
 
@@ -344,7 +348,7 @@ pub fn sync_lsp_document(
             let change = TextDocumentContentChangeEvent {
                 range: None,
                 range_length: None,
-                text: editor_state.rope.chunks().collect(),
+                text: tv.rope.chunks().collect(),
             };
 
             lsp_client.send(LspMessage::DidChange {
@@ -365,17 +369,18 @@ pub fn sync_lsp_document(
 /// System to request inlay hints for visible range
 pub fn request_inlay_hints(
     lsp_client: Res<LspClient>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
     lsp_sync: Res<LspSyncState>,
     mut hint_state: ResMut<InlayHintState>,
     font: Res<FontSettings>,
-    viewport: Res<crate::types::ViewportDimensions>,
 ) {
     if !lsp_client.is_ready() || !lsp_client.capabilities.supports_inlay_hints() {
         return;
     }
 
-    if !hint_state.needs_refresh && !editor_state.is_changed() && !viewport.is_changed() {
+    let Ok((tv, vp)) = query.single() else { return };
+
+    if !hint_state.needs_refresh && !tv.is_changed() && !vp.is_changed() {
         return;
     }
 
@@ -384,10 +389,10 @@ pub fn request_inlay_hints(
     };
 
     // Calculate visible range with some buffer
-    let visible_start_line = (editor_state.scroll_offset / font.line_height) as u32;
-    let visible_lines = (viewport.height as f32 / font.line_height) as u32 + 10;
+    let visible_start_line = (tv.scroll_offset / font.line_height) as u32;
+    let visible_lines = (vp.height as f32 / font.line_height) as u32 + 10;
     let visible_end_line =
-        (visible_start_line + visible_lines).min(editor_state.rope.len_lines() as u32);
+        (visible_start_line + visible_lines).min(tv.rope.len_lines() as u32);
 
     let range = Range {
         start: Position {
@@ -477,13 +482,15 @@ pub fn execute_code_action(lsp_client: &LspClient, action: &CodeActionOrCommand)
 pub fn request_document_highlights(
     time: Res<Time>,
     lsp_client: Res<LspClient>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(&CodeEditorState, &TextViewState), With<CodeEditor>>,
     lsp_sync: Res<LspSyncState>,
     mut highlight_state: ResMut<DocumentHighlightState>,
 ) {
     if !lsp_client.is_ready() || !lsp_client.capabilities.supports_document_highlight() {
         return;
     }
+
+    let Ok((editor_state, tv)) = query.single() else { return };
 
     let Some(uri) = &lsp_sync.document_uri else {
         return;
@@ -512,9 +519,9 @@ pub fn request_document_highlights(
     highlight_state.cursor_position = editor_state.cursor_pos;
 
     // Convert cursor position to LSP position
-    let cursor_pos = editor_state.cursor_pos.min(editor_state.rope.len_chars());
-    let line = editor_state.rope.char_to_line(cursor_pos);
-    let line_start = editor_state.rope.line_to_char(line);
+    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let line = tv.rope.char_to_line(cursor_pos);
+    let line_start = tv.rope.line_to_char(line);
     let character = cursor_pos - line_start;
 
     lsp_client.send(LspMessage::DocumentHighlight {

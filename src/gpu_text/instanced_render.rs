@@ -26,7 +26,8 @@ use bevy::{
     },
 };
 
-use crate::types::{CodeEditorState, ViewportDimensions};
+use crate::text_view::{TextViewState, TextViewViewport};
+use crate::types::CodeEditor;
 
 use crate::text_view::render::{GlyphBatchComponent, GlyphInstance};
 
@@ -36,23 +37,15 @@ use bevy::render::Extract;
 
 fn extract_text_globals(
     mut commands: Commands,
-    state: Extract<Option<Res<CodeEditorState>>>,
-    viewport: Extract<Option<Res<ViewportDimensions>>>,
+    query: Extract<Query<(&TextViewState, &TextViewViewport), With<CodeEditor>>>,
 ) {
-    // Only extract if both resources exist
-    if let (Some(state), Some(viewport)) = (state.as_ref(), viewport.as_ref()) {
-        commands.insert_resource(ExtractedTextGlobals {
-            scroll_offset: Vec2::new(state.horizontal_scroll_offset, state.scroll_offset),
-            viewport_size: Vec2::new(viewport.width as f32, viewport.height as f32),
-        });
-    } else {
-        // Debug: log why extraction failed
-        static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-        if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-            bevy::log::warn!("GPU Text: extract_text_globals - state exists: {}, viewport exists: {}",
-                state.is_some(), viewport.is_some());
-        }
-    }
+    let Ok((state, viewport)) = query.single() else {
+        return;
+    };
+    commands.insert_resource(ExtractedTextGlobals {
+        scroll_offset: Vec2::new(state.horizontal_scroll_offset, state.scroll_offset),
+        viewport_size: Vec2::new(viewport.width as f32, viewport.height as f32),
+    });
 }
 
 /// Plugin for instanced glyph rendering

@@ -21,7 +21,8 @@ use super::client::LspClient;
 use super::messages::LspMessage;
 use super::state::*;
 use crate::settings::FontSettings;
-use crate::types::{CodeEditorState, ViewportDimensions};
+use crate::text_view::{TextViewState, TextViewViewport};
+use crate::types::{CodeEditor, CodeEditorState};
 
 /// Screen-space offset for positioning egui overlays relative to the editor panel.
 ///
@@ -107,11 +108,11 @@ fn position_popup(
 pub fn render_completion_egui(
     mut contexts: EguiContexts,
     completion_state: Res<CompletionState>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Res<ViewportDimensions>,
 ) {
+    let Ok((editor_state, tv, vp)) = query.single() else { return };
     let filtered_items = completion_state.filtered_items();
     if !completion_state.visible || filtered_items.is_empty() {
         return;
@@ -125,13 +126,19 @@ pub fn render_completion_egui(
         }
     };
 
-    let (cursor_x, cursor_y) = cursor_screen_pos(
-        editor_state.cursor_pos,
-        &editor_state,
-        &font,
-        &viewport_offset,
-        &viewport,
-    );
+    // Calculate position relative to cursor
+    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let line_index = tv.rope.char_to_line(cursor_pos);
+    let line_start = tv.rope.line_to_char(line_index);
+    let col_index = cursor_pos - line_start;
+
+    let x = viewport_offset.screen_offset.x
+        + vp.text_area_left
+        + (col_index as f32 * font.char_width);
+    let y = viewport_offset.screen_offset.y
+        + vp.text_area_top
+        + ((line_index as f32 - tv.scroll_offset / font.line_height) * font.line_height)
+        + font.line_height;
 
     let theme = ctx.armas_theme();
     let max_visible = 10;
@@ -249,12 +256,12 @@ pub fn render_completion_egui(
 pub fn render_hover_egui(
     mut contexts: EguiContexts,
     hover_state: Res<HoverState>,
-    completion_state: Res<CompletionState>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(&TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Res<ViewportDimensions>,
 ) {
+    let Ok((tv, vp)) = query.single() else { return };
+
     if !hover_state.visible || hover_state.content.is_empty() {
         return;
     }
@@ -267,13 +274,20 @@ pub fn render_hover_egui(
         }
     };
 
-    let (cursor_x, cursor_y) = cursor_screen_pos(
-        hover_state.trigger_char_index,
-        &editor_state,
-        &font,
-        &viewport_offset,
-        &viewport,
-    );
+    let trigger_char_index = hover_state
+        .trigger_char_index
+        .min(tv.rope.len_chars());
+    let line_index = tv.rope.char_to_line(trigger_char_index);
+    let line_start = tv.rope.line_to_char(line_index);
+    let col_index = trigger_char_index - line_start;
+
+    let x = viewport_offset.screen_offset.x
+        + vp.text_area_left
+        + (col_index as f32 * font.char_width);
+    let y = viewport_offset.screen_offset.y
+        + vp.text_area_top
+        + ((line_index as f32 - tv.scroll_offset / font.line_height) * font.line_height)
+        + font.line_height;
 
     let theme = ctx.armas_theme();
 
@@ -319,11 +333,12 @@ pub fn render_hover_egui(
 pub fn render_signature_help_egui(
     mut contexts: EguiContexts,
     sig_state: Res<SignatureHelpState>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Res<ViewportDimensions>,
 ) {
+    let Ok((editor_state, tv, vp)) = query.single() else { return };
+
     if !sig_state.visible || sig_state.signatures.is_empty() {
         return;
     }
@@ -340,13 +355,19 @@ pub fn render_signature_help_egui(
         }
     };
 
-    let (cursor_x, cursor_y) = cursor_screen_pos(
-        editor_state.cursor_pos,
-        &editor_state,
-        &font,
-        &viewport_offset,
-        &viewport,
-    );
+    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let line_index = tv.rope.char_to_line(cursor_pos);
+    let line_start = tv.rope.line_to_char(line_index);
+    let col_index = cursor_pos - line_start;
+
+    // Position ABOVE the cursor line
+    let x = viewport_offset.screen_offset.x
+        + vp.text_area_left
+        + (col_index as f32 * font.char_width);
+    let y = viewport_offset.screen_offset.y
+        + vp.text_area_top
+        + ((line_index as f32 - tv.scroll_offset / font.line_height) * font.line_height)
+        - font.line_height * 1.5;
 
     let theme = ctx.armas_theme();
 
@@ -449,11 +470,12 @@ pub fn render_signature_help_egui(
 pub fn render_code_actions_egui(
     mut contexts: EguiContexts,
     action_state: Res<CodeActionState>,
-    editor_state: Res<CodeEditorState>,
+    query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Res<ViewportDimensions>,
 ) {
+    let Ok((editor_state, tv, vp)) = query.single() else { return };
+
     if !action_state.visible || action_state.actions.is_empty() {
         return;
     }
@@ -462,13 +484,15 @@ pub fn render_code_actions_egui(
         return;
     };
 
-    let (_, cursor_y) = cursor_screen_pos(
-        editor_state.cursor_pos,
-        &editor_state,
-        &font,
-        &viewport_offset,
-        &viewport,
-    );
+    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let line_index = tv.rope.char_to_line(cursor_pos);
+
+    // Position near the gutter
+    let x = viewport_offset.screen_offset.x + vp.text_area_left - 20.0;
+    let y = viewport_offset.screen_offset.y
+        + vp.text_area_top
+        + ((line_index as f32 - tv.scroll_offset / font.line_height + 1.0)
+            * font.line_height);
 
     let theme = ctx.armas_theme();
     let item_height = font.line_height.max(22.0);
@@ -555,14 +579,13 @@ pub fn render_code_actions_egui(
 /// Render the rename input as an interactive egui overlay.
 pub fn render_rename_egui(
     mut contexts: EguiContexts,
-    mut rename_state: ResMut<RenameState>,
-    editor_state: Res<CodeEditorState>,
+    rename_state: Res<RenameState>,
+    query: Query<(&TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Res<ViewportDimensions>,
-    lsp_client: Res<LspClient>,
-    lsp_sync: Res<LspSyncState>,
 ) {
+    let Ok((tv, vp)) = query.single() else { return };
+
     if !rename_state.visible {
         return;
     }
@@ -578,9 +601,22 @@ pub fn render_rename_egui(
 
     // Convert range start to char index for positioning
     let line = range.start.line as usize;
-    let char_index = if line < editor_state.rope.len_lines() {
-        let line_start = editor_state.rope.line_to_char(line);
-        line_start + range.start.character as usize
+    let character = range.start.character as usize;
+
+    let x = viewport_offset.screen_offset.x
+        + vp.text_area_left
+        + (character as f32 * font.char_width);
+    let y = viewport_offset.screen_offset.y
+        + vp.text_area_top
+        + ((line as f32 - tv.scroll_offset / font.line_height) * font.line_height);
+
+    let theme = ctx.armas_theme();
+
+    // We display the current rename text but since RenameState is not mutable here,
+    // we show it as a read-only styled label. The actual editing happens through
+    // the editor's keyboard input system which updates RenameState.
+    let display_text = if rename_state.new_name.is_empty() {
+        &rename_state.original_text
     } else {
         editor_state.rope.len_chars()
     };
