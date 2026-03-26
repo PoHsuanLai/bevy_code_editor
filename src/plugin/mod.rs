@@ -142,11 +142,21 @@ impl Plugin for CodeEditorPlugin {
             crate::input::EditorAction,
         >::default());
 
-        // Spawn the input manager entity with default keybindings
-        app.add_systems(Startup, spawn_input_manager);
+        // Spawn the input manager entity and editor entity with default keybindings
+        app.add_systems(Startup, (spawn_input_manager, spawn_editor_entity));
 
         // Force initial render after setup
         app.add_systems(PostStartup, force_initial_render);
+
+        // Add sync systems to keep Resource and entity Component in agreement during migration
+        app.add_systems(
+            First,
+            sync_resource_to_entity,
+        );
+        app.add_systems(
+            Last,
+            sync_entity_to_resource,
+        );
 
         // Register editor events (for file operations)
         // These events are emitted by keybindings and should be handled by the host application
@@ -233,4 +243,104 @@ fn debounce_updates(mut state: ResMut<CodeEditorState>, time: Res<Time>) {
         state.pending_update = false;
         state.last_render_time = current_time;
     }
+}
+
+/// Spawn the editor entity with TextViewState + TextViewViewport components
+fn spawn_editor_entity(mut commands: Commands) {
+    commands.spawn((
+        CodeEditor,
+        crate::text_view::TextViewState::default(),
+        crate::text_view::TextViewViewport::default(),
+        Name::new("CodeEditor"),
+    ));
+}
+
+/// Sync Resource → Entity: copy TextViewState-overlapping fields from the Resource to the entity component.
+/// Runs at the start of each frame so the entity reflects any host-app changes to the Resource.
+fn sync_resource_to_entity(
+    state: Res<CodeEditorState>,
+    viewport_res: Res<ViewportDimensions>,
+    mut query: Query<
+        (&mut crate::text_view::TextViewState, &mut crate::text_view::TextViewViewport),
+        With<CodeEditor>,
+    >,
+) {
+    let Ok((mut tv, mut vp)) = query.single_mut() else {
+        return;
+    };
+
+    // Sync text buffer & scroll
+    if state.is_changed() {
+        tv.rope = state.rope.clone();
+        tv.scroll_offset = state.scroll_offset;
+        tv.target_scroll_offset = state.target_scroll_offset;
+        tv.horizontal_scroll_offset = state.horizontal_scroll_offset;
+        tv.target_horizontal_scroll_offset = state.target_horizontal_scroll_offset;
+        tv.needs_update = state.needs_update;
+        tv.needs_scroll_update = state.needs_scroll_update;
+        tv.pending_update = state.pending_update;
+        tv.last_render_time = state.last_render_time;
+        tv.content_version = state.content_version;
+        tv.dirty_lines = state.dirty_lines.clone();
+        tv.previous_line_count = state.previous_line_count;
+        tv.max_content_width = state.max_content_width;
+        tv.max_content_width_version = state.max_content_width_version;
+        tv.max_width_line = state.max_width_line;
+        tv.line_width_tracker = state.line_width_tracker.clone();
+    }
+
+    // Sync viewport
+    if viewport_res.is_changed() {
+        vp.width = viewport_res.width;
+        vp.height = viewport_res.height;
+        vp.offset_x = viewport_res.offset_x;
+        vp.offset_y = viewport_res.offset_y;
+        vp.text_area_left = viewport_res.text_area_left;
+        vp.text_area_top = viewport_res.text_area_top;
+        vp.gutter_width = viewport_res.gutter_width;
+        vp.separator_x = viewport_res.separator_x;
+    }
+}
+
+/// Sync Entity → Resource: copy back any changes made by entity-based systems to the Resource.
+/// Runs at the end of each frame so Resource-based systems see the latest state.
+fn sync_entity_to_resource(
+    mut state: ResMut<CodeEditorState>,
+    mut viewport_res: ResMut<ViewportDimensions>,
+    query: Query<
+        (&crate::text_view::TextViewState, &crate::text_view::TextViewViewport),
+        With<CodeEditor>,
+    >,
+) {
+    let Ok((tv, vp)) = query.single() else {
+        return;
+    };
+
+    // Sync back text buffer & scroll
+    state.rope = tv.rope.clone();
+    state.scroll_offset = tv.scroll_offset;
+    state.target_scroll_offset = tv.target_scroll_offset;
+    state.horizontal_scroll_offset = tv.horizontal_scroll_offset;
+    state.target_horizontal_scroll_offset = tv.target_horizontal_scroll_offset;
+    state.needs_update = tv.needs_update;
+    state.needs_scroll_update = tv.needs_scroll_update;
+    state.pending_update = tv.pending_update;
+    state.last_render_time = tv.last_render_time;
+    state.content_version = tv.content_version;
+    state.dirty_lines = tv.dirty_lines.clone();
+    state.previous_line_count = tv.previous_line_count;
+    state.max_content_width = tv.max_content_width;
+    state.max_content_width_version = tv.max_content_width_version;
+    state.max_width_line = tv.max_width_line;
+    state.line_width_tracker = tv.line_width_tracker.clone();
+
+    // Sync back viewport
+    viewport_res.width = vp.width;
+    viewport_res.height = vp.height;
+    viewport_res.offset_x = vp.offset_x;
+    viewport_res.offset_y = vp.offset_y;
+    viewport_res.text_area_left = vp.text_area_left;
+    viewport_res.text_area_top = vp.text_area_top;
+    viewport_res.gutter_width = vp.gutter_width;
+    viewport_res.separator_x = vp.separator_x;
 }

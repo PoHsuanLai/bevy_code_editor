@@ -7,6 +7,7 @@
 use super::SyntaxResource;
 use crate::gpu_text::GlyphAtlas;
 use crate::settings::*;
+use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::*;
 use bevy::prelude::*;
 use std::sync::Arc;
@@ -19,13 +20,13 @@ pub type GpuTextBatch = TextViewBatch;
 
 /// System to update instanced GPU text display for the editor.
 ///
-/// This is the editor-specific wrapper that:
-/// 1. Populates styled lines from syntax highlighting
-/// 2. Delegates to `text_view::render::render_text_view()`
-/// 3. Manages the batch entity
+/// Reads the TextViewState component directly from the editor entity,
+/// populates styled lines from syntax highlighting, and delegates to
+/// the generic `render_text_view()`.
 pub(crate) fn update_gpu_text_instanced(
     mut commands: Commands,
     mut state: ResMut<CodeEditorState>,
+    mut tv_query: Query<(&mut TextViewState, &TextViewViewport), With<CodeEditor>>,
     (font, theme, syntax_settings, ui_settings, performance): (
         Res<FontSettings>,
         Res<ThemeSettings>,
@@ -33,7 +34,7 @@ pub(crate) fn update_gpu_text_instanced(
         Res<UiSettings>,
         Res<PerformanceSettings>,
     ),
-    viewport: Res<ViewportDimensions>,
+    _viewport: Res<ViewportDimensions>,
     #[cfg(feature = "folding")] fold_state: Res<FoldState>,
     mut atlas: ResMut<GlyphAtlas>,
     mut images: ResMut<Assets<Image>>,
@@ -41,69 +42,38 @@ pub(crate) fn update_gpu_text_instanced(
     mut syntax: ResMut<SyntaxResource>,
     time: Res<Time>,
 ) {
+    // Try to get the entity's TextViewState; fall back to Resource viewport if entity not ready
+    let Ok((mut tv_state, tv_viewport)) = tv_query.single_mut() else {
+        return;
+    };
+
     // Check if viewport changed
-    let viewport_changed = if let Some((_, batch, _)) = batch_query.iter().next() {
-        batch.built_at_width != viewport.width || batch.built_at_height != viewport.height
+    let viewport_changed = if let Some((_, batch)) = batch_query.iter().next() {
+        batch.built_at_width != tv_viewport.width || batch.built_at_height != tv_viewport.height
     } else {
         true
     };
 
-    if !state.needs_update && !state.needs_scroll_update && !viewport_changed {
+    // Use the entity's TextViewState for update checks
+    if !tv_state.needs_update && !tv_state.needs_scroll_update && !viewport_changed {
         return;
     }
 
     #[cfg(not(feature = "folding"))]
     let fold_state = FoldState::default();
 
-    // Build a temporary TextViewState-like view for the generic renderer.
-    // We construct a TextViewViewport from ViewportDimensions.
-    let tv_viewport = crate::text_view::TextViewViewport {
-        width: viewport.width,
-        height: viewport.height,
-        offset_x: viewport.offset_x,
-        offset_y: viewport.offset_y,
-        text_area_left: viewport.text_area_left,
-        text_area_top: viewport.text_area_top,
-        gutter_width: viewport.gutter_width,
-        separator_x: viewport.separator_x,
-    };
-
-    // Populate styled lines from syntax highlighting for visible range
     let line_height = font.line_height;
     let buffer_lines = line_height * performance.viewport_buffer_lines as f32;
-    let scroll_dist = state.scroll_offset.abs();
-    let start_pixels = scroll_dist - viewport.text_area_top - buffer_lines;
+    let scroll_dist = tv_state.scroll_offset.abs();
+    let start_pixels = scroll_dist - tv_viewport.text_area_top - buffer_lines;
     let first_visible = (start_pixels / line_height).floor().max(0.0) as usize;
     let visible_count =
-        ((viewport.height as f32 + buffer_lines * 2.0) / line_height).ceil() as usize;
+        ((tv_viewport.height as f32 + buffer_lines * 2.0) / line_height).ceil() as usize;
     let last_visible = first_visible + visible_count;
 
-    let total_lines = state.line_count();
+    let total_lines = tv_state.line_count();
 
-    // Build a temporary TextViewState for the generic renderer
-    let mut tv_state = crate::text_view::TextViewState {
-        rope: state.rope.clone(),
-        scroll_offset: state.scroll_offset,
-        target_scroll_offset: state.target_scroll_offset,
-        horizontal_scroll_offset: state.horizontal_scroll_offset,
-        target_horizontal_scroll_offset: state.target_horizontal_scroll_offset,
-        needs_update: state.needs_update,
-        needs_scroll_update: state.needs_scroll_update,
-        pending_update: state.pending_update,
-        last_render_time: state.last_render_time,
-        content_version: state.content_version,
-        dirty_lines: state.dirty_lines.clone(),
-        previous_line_count: state.previous_line_count,
-        max_content_width: state.max_content_width,
-        max_content_width_version: state.max_content_width_version,
-        max_width_line: state.max_width_line,
-        line_width_tracker: state.line_width_tracker.clone(),
-        styled_lines: Vec::new(),
-        styled_lines_version: 0,
-    };
-
-    // Populate styled lines from syntax for visible range
-    // (accounting for folding to find actual buffer lines)
+    // Populate styled lines from syntax highlighting for visible range
     let has_folding = !fold_state.regions.is_empty();
     let start_buffer_line = if has_folding {
         let mut display_row = 0;
@@ -147,14 +117,14 @@ pub(crate) fn update_gpu_text_instanced(
             break;
         }
 
-        let rope_line = state.rope.line(buffer_line);
+        let rope_line = tv_state.rope.line(buffer_line);
         let line_string = rope_line.to_string();
 
         let segments_vec = syntax.highlight_range(
             &line_string,
             buffer_line,
             buffer_line + 1,
-            state.rope.line_to_byte(buffer_line),
+            tv_state.rope.line_to_byte(buffer_line),
             &syntax_settings.theme,
             theme.foreground,
         );
@@ -167,14 +137,14 @@ pub(crate) fn update_gpu_text_instanced(
     }
 
     // Calculate content start X
-    let content_start_x = viewport
+    let content_start_x = tv_viewport
         .text_area_left
-        .max(viewport.gutter_width + ui_settings.code_margin_left);
+        .max(tv_viewport.gutter_width + ui_settings.code_margin_left);
 
     // Delegate to generic renderer
     let instances = crate::text_view::render::render_text_view(
         &tv_state,
-        &tv_viewport,
+        tv_viewport,
         Some(&fold_state),
         &font,
         &performance,
@@ -185,10 +155,6 @@ pub(crate) fn update_gpu_text_instanced(
 
     // Update atlas texture
     atlas.update_texture(&mut images);
-
-    // Calculate visible range for batch metadata
-    let first_visible_display_row = first_visible;
-    let last_visible_display_row = last_visible;
 
     // Update or create batch entity
     if arc_instances.is_empty() {
@@ -207,12 +173,12 @@ pub(crate) fn update_gpu_text_instanced(
             });
             commands.entity(first_entity).insert(Visibility::Visible);
             commands.entity(first_entity).insert(TextViewBatch {
-                built_at_scroll: state.scroll_offset,
-                built_at_horizontal_scroll: state.horizontal_scroll_offset,
-                first_line: first_visible_display_row,
-                last_line: last_visible_display_row,
-                built_at_width: viewport.width,
-                built_at_height: viewport.height,
+                built_at_scroll: tv_state.scroll_offset,
+                built_at_horizontal_scroll: tv_state.horizontal_scroll_offset,
+                first_line: first_visible,
+                last_line: last_visible,
+                built_at_width: tv_viewport.width,
+                built_at_height: tv_viewport.height,
             });
 
             for &entity in &existing_batches[1..] {
@@ -227,12 +193,12 @@ pub(crate) fn update_gpu_text_instanced(
                 Transform::default(),
                 GlobalTransform::default(),
                 TextViewBatch {
-                    built_at_scroll: state.scroll_offset,
-                    built_at_horizontal_scroll: state.horizontal_scroll_offset,
-                    first_line: first_visible_display_row,
-                    last_line: last_visible_display_row,
-                    built_at_width: viewport.width,
-                    built_at_height: viewport.height,
+                    built_at_scroll: tv_state.scroll_offset,
+                    built_at_horizontal_scroll: tv_state.horizontal_scroll_offset,
+                    first_line: first_visible,
+                    last_line: last_visible,
+                    built_at_width: tv_viewport.width,
+                    built_at_height: tv_viewport.height,
                 },
                 Name::new("GpuTextBatch"),
                 Visibility::Visible,
@@ -242,12 +208,10 @@ pub(crate) fn update_gpu_text_instanced(
         }
     }
 
-    // If budget was exceeded, request another frame to finish remaining lines
-    if budget_exceeded {
-        state.needs_update = true;
-    } else {
-        state.needs_update = false;
-    }
-    state.needs_scroll_update = false;
-    state.last_render_time = time.elapsed_secs_f64() * 1000.0;
+    tv_state.needs_update = false;
+    tv_state.needs_scroll_update = false;
+    tv_state.last_render_time = time.elapsed_secs_f64() * 1000.0;
+    // Also sync back to the Resource (until full migration)
+    state.needs_update = false;
+    state.last_render_time = tv_state.last_render_time;
 }

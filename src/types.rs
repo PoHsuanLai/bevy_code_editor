@@ -1607,8 +1607,17 @@ impl Default for ViewportDimensions {
     }
 }
 
-/// Main editor state resource
-#[derive(Resource)]
+/// Marker component for the code editor entity.
+///
+/// The editor entity has `CodeEditor` + `CodeEditorState` + `TextViewState` + `TextViewViewport`.
+#[derive(Component, Default)]
+pub struct CodeEditor;
+
+/// Main editor state — cursor, selection, history, and other editor-specific concerns.
+///
+/// Text buffer, scroll, and rendering state live in the sibling `TextViewState` component.
+/// During the migration period, this type derives both Resource and Component.
+#[derive(Resource, Component)]
 pub struct CodeEditorState {
     /// Text buffer (efficient rope data structure)
     pub rope: Rope,
