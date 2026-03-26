@@ -29,12 +29,16 @@ fn main() {
         }))
         .add_plugins(CodeEditorPlugin::default())
         .add_plugins(EditorUiPlugin::default())
-        .add_systems(Startup, setup_editor)
+        .add_systems(PostStartup, setup_editor)
         .add_systems(Update, update_cursor_icon)
         .run();
 }
 
-fn setup_editor(mut state: ResMut<CodeEditorState>) {
+fn setup_editor(mut editor_query: Query<&mut CodeEditorState, With<CodeEditor>>) {
+    let Ok(mut state) = editor_query.single_mut() else {
+        return;
+    };
+
     // Always focused in basic editor (no UI competing for input)
     state.is_focused = true;
 
@@ -92,11 +96,14 @@ if __name__ == "__main__":
 }
 
 fn update_cursor_icon(
-    state: Res<CodeEditorState>,
+    editor_query: Query<(&CodeEditorState, &TextViewViewport), With<CodeEditor>>,
     mut commands: Commands,
     windows: Query<(Entity, &Window), With<Window>>,
-    viewport: Res<ViewportDimensions>,
 ) {
+    let Ok((state, viewport)) = editor_query.single() else {
+        return;
+    };
+
     if let Ok((window_entity, window)) = windows.single() {
         let Some(cursor_pos) = window.cursor_position() else {
             return;

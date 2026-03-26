@@ -55,18 +55,22 @@ fn run_with_lsp() {
         app.add_plugins(LspUiPlugin::default());
     }
 
-    app.add_systems(Startup, setup_editor)
+    app.add_systems(PostStartup, setup_editor)
         .add_systems(Update, (display_lsp_info, auto_request_completion))
         .run();
 }
 
 #[cfg(feature = "lsp")]
 fn setup_editor(
-    mut state: ResMut<CodeEditorState>,
+    mut editor_query: Query<&mut CodeEditorState, With<CodeEditor>>,
     mut lsp_client: ResMut<bevy_code_editor::lsp::LspClient>,
     mut lsp_sync: ResMut<bevy_code_editor::lsp::LspSyncState>,
     #[cfg(feature = "tree-sitter")] mut syntax: ResMut<bevy_code_editor::plugin::SyntaxResource>,
 ) {
+    let Ok(mut state) = editor_query.single_mut() else {
+        return;
+    };
+
     // Read the source code of this example file
     let current_dir = std::env::current_dir().expect("Failed to get current directory");
     let example_file_path = current_dir.join("examples/lsp.rs");
@@ -152,20 +156,24 @@ fn display_lsp_info(lsp_client: Res<LspClient>) {
 /// the gap by watching for content changes and firing completion at the cursor.
 #[cfg(feature = "lsp")]
 fn auto_request_completion(
-    state: Res<CodeEditorState>,
+    editor_query: Query<(&CodeEditorState, &TextViewState), With<CodeEditor>>,
     mut writer: MessageWriter<bevy_code_editor::events::RequestCompletionEvent>,
 ) {
-    if !state.is_changed() || !state.pending_update {
+    let Ok((state, tv)) = editor_query.single() else {
+        return;
+    };
+
+    if !tv.pending_update {
         return;
     }
 
-    let cursor_pos = state.cursor_pos.min(state.rope.len_chars());
+    let cursor_pos = state.cursor_pos.min(tv.rope.len_chars());
     if cursor_pos == 0 {
         return;
     }
 
-    let line = state.rope.char_to_line(cursor_pos);
-    let line_start = state.rope.line_to_char(line);
+    let line = tv.rope.char_to_line(cursor_pos);
+    let line_start = tv.rope.line_to_char(line);
     let character = cursor_pos - line_start;
 
     writer.write(bevy_code_editor::events::RequestCompletionEvent::new(
@@ -185,12 +193,16 @@ fn run_without_lsp() {
             ..default()
         }))
         .add_plugins(CodeEditorPlugin::default())
-        .add_systems(Startup, show_lsp_message)
+        .add_systems(PostStartup, show_lsp_message)
         .run();
 }
 
 #[cfg(not(feature = "lsp"))]
-fn show_lsp_message(mut state: ResMut<CodeEditorState>) {
+fn show_lsp_message(mut editor_query: Query<&mut CodeEditorState, With<CodeEditor>>) {
+    let Ok(mut state) = editor_query.single_mut() else {
+        return;
+    };
+
     let message = r#"LSP feature is not enabled!
 
 To run this example with LSP support, use:

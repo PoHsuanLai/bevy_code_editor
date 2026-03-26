@@ -31,7 +31,8 @@ use bevy::sprite::Anchor;
 
 use crate::plugin::editor_ui_plugin::EditorRenderConfig;
 use crate::settings::FontSettings;
-use crate::types::ViewportDimensions;
+use crate::text_view::TextViewViewport;
+use crate::types::CodeEditor;
 
 use super::components::*;
 use super::theme::LspUiTheme;
@@ -46,10 +47,13 @@ pub fn render_completion_popup(
     popup_query: Query<(Entity, &CompletionPopupData), Changed<CompletionPopupData>>,
     visual_query: Query<Entity, With<CompletionUI>>,
     font: Res<FontSettings>,
-    viewport: Res<ViewportDimensions>,
+    viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
     theme: Res<LspUiTheme>,
     render_config: Res<EditorRenderConfig>,
 ) {
+    let Ok(viewport) = viewport_query.single() else {
+        return;
+    };
     for (_popup_entity, popup) in popup_query.iter() {
         // Clear old visuals
         for entity in visual_query.iter() {
@@ -172,10 +176,13 @@ pub fn render_hover_popup(
     popup_query: Query<(Entity, &HoverPopupData), Changed<HoverPopupData>>,
     visual_query: Query<Entity, With<HoverUI>>,
     font: Res<FontSettings>,
-    viewport: Res<ViewportDimensions>,
+    viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
     theme: Res<LspUiTheme>,
     render_config: Res<EditorRenderConfig>,
 ) {
+    let Ok(viewport) = viewport_query.single() else {
+        return;
+    };
     for (_popup_entity, popup) in popup_query.iter() {
         for entity in visual_query.iter() {
             commands.entity(entity).despawn();
@@ -232,10 +239,13 @@ pub fn render_signature_help_popup(
     popup_query: Query<(Entity, &SignatureHelpPopupData), Changed<SignatureHelpPopupData>>,
     visual_query: Query<Entity, With<SignatureHelpUI>>,
     font: Res<FontSettings>,
-    viewport: Res<ViewportDimensions>,
+    viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
     theme: Res<LspUiTheme>,
     _render_config: Res<EditorRenderConfig>,
 ) {
+    let Ok(viewport) = viewport_query.single() else {
+        return;
+    };
     for (_popup_entity, popup) in popup_query.iter() {
         for entity in visual_query.iter() {
             commands.entity(entity).despawn();
@@ -309,10 +319,13 @@ pub fn render_code_actions_popup(
     popup_query: Query<(Entity, &CodeActionsPopupData), Changed<CodeActionsPopupData>>,
     visual_query: Query<Entity, With<CodeActionUI>>,
     font: Res<FontSettings>,
-    viewport: Res<ViewportDimensions>,
+    viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
     theme: Res<LspUiTheme>,
     _render_config: Res<EditorRenderConfig>,
 ) {
+    let Ok(viewport) = viewport_query.single() else {
+        return;
+    };
     for (_popup_entity, popup) in popup_query.iter() {
         for entity in visual_query.iter() {
             commands.entity(entity).despawn();
@@ -385,10 +398,13 @@ pub fn render_rename_input(
     popup_query: Query<(Entity, &RenameInputData), Changed<RenameInputData>>,
     visual_query: Query<Entity, With<RenameUI>>,
     font: Res<FontSettings>,
-    viewport: Res<ViewportDimensions>,
+    viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
     theme: Res<LspUiTheme>,
     render_config: Res<EditorRenderConfig>,
 ) {
+    let Ok(viewport) = viewport_query.single() else {
+        return;
+    };
     for (_popup_entity, popup) in popup_query.iter() {
         for entity in visual_query.iter() {
             commands.entity(entity).despawn();
@@ -476,10 +492,13 @@ pub fn render_inlay_hints(
     mut commands: Commands,
     hint_query: Query<(Entity, &InlayHintData), Added<InlayHintData>>,
     font: Res<FontSettings>,
-    viewport: Res<ViewportDimensions>,
+    viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
     theme: Res<LspUiTheme>,
     render_config: Res<EditorRenderConfig>,
 ) {
+    let Ok(viewport) = viewport_query.single() else {
+        return;
+    };
     let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
 
@@ -524,10 +543,13 @@ pub fn render_inlay_hints(
 pub fn render_document_highlights(
     mut commands: Commands,
     highlight_query: Query<(Entity, &DocumentHighlightData), Added<DocumentHighlightData>>,
-    viewport: Res<ViewportDimensions>,
+    viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
     theme: Res<LspUiTheme>,
     render_config: Res<EditorRenderConfig>,
 ) {
+    let Ok(viewport) = viewport_query.single() else {
+        return;
+    };
     let viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
 

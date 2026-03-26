@@ -18,15 +18,19 @@ fn main() {
         }))
         .add_plugins(CodeEditorPlugin::default())
         .add_plugins(EditorUiPlugin::default())
-        .add_systems(Startup, setup_editor_with_treesitter)
+        .add_systems(PostStartup, setup_editor_with_treesitter)
         .run();
 }
 
 #[cfg(feature = "tree-sitter")]
 fn setup_editor_with_treesitter(
-    mut state: ResMut<CodeEditorState>,
+    mut editor_query: Query<(&mut CodeEditorState, &mut TextViewState), With<CodeEditor>>,
     mut syntax: ResMut<SyntaxResource>,
 ) {
+    let Ok((mut state, mut tv)) = editor_query.single_mut() else {
+        return;
+    };
+
     #[cfg(feature = "instanced-rendering")]
     info!("Instanced rendering enabled! using optimized single-draw-call rendering.");
     #[cfg(not(feature = "instanced-rendering"))]
@@ -114,11 +118,17 @@ fn main() {
         syntax.set_provider(provider);
     }
 
-    state.needs_update = true;
+    tv.needs_update = true;
 }
 
 #[cfg(not(feature = "tree-sitter"))]
-fn setup_editor_with_treesitter(mut state: ResMut<CodeEditorState>) {
+fn setup_editor_with_treesitter(
+    mut editor_query: Query<&mut CodeEditorState, With<CodeEditor>>,
+) {
+    let Ok(mut state) = editor_query.single_mut() else {
+        return;
+    };
+
     let message = r#"Tree-sitter feature is not enabled!
 
 To run this example with syntax highlighting, use:

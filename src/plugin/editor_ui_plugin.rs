@@ -18,8 +18,9 @@ use bevy::prelude::*;
 use bevy_camera::visibility::RenderLayers;
 
 use crate::settings::*;
+use crate::text_view::TextViewViewport;
 use crate::types::{
-    CodeEditorState, EditorCursor, Separator, ViewportConfig, ViewportDimensions,
+    CodeEditor, CodeEditorState, EditorCursor, Separator, ViewportConfig,
 };
 use bevy_camera::Viewport;
 
@@ -149,7 +150,7 @@ impl Plugin for EditorUiPlugin {
         // Update separator position when viewport changes
         app.add_systems(
             Update,
-            update_separator_on_resize.run_if(resource_changed::<ViewportDimensions>),
+            update_separator_on_resize.run_if(viewport_changed),
         );
 
         // Update layout when UI settings change
@@ -215,7 +216,7 @@ impl Plugin for EditorUiPlugin {
             update_editor_scrollbar
                 .run_if(
                     resource_changed::<CodeEditorState>
-                        .or(resource_changed::<ViewportDimensions>)
+                        .or(|query: Query<(), Changed<TextViewViewport>>| !query.is_empty())
                         .or(resource_changed::<ScrollbarSettings>),
                 )
                 .in_set(super::ApplyStateSet),
@@ -238,7 +239,7 @@ impl Plugin for EditorUiPlugin {
         app.add_systems(
             Update,
             update_camera_viewport
-                .run_if(resource_changed::<ViewportDimensions>)
+                .run_if(|query: Query<(), Changed<TextViewViewport>>| !query.is_empty())
                 .in_set(super::ApplyStateSet),
         );
     }
@@ -248,10 +249,15 @@ impl Plugin for EditorUiPlugin {
 /// This is essential when auto_resize_to_window is false (e.g., resizable panel mode)
 fn update_camera_viewport(
     config: Res<ViewportConfig>,
-    viewport: Res<ViewportDimensions>,
+    viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
     windows: Query<&Window>,
     mut camera_query: Query<(&mut Camera, &mut Transform), With<EditorCamera>>,
 ) {
+    let Ok(viewport) = viewport_query.single() else {
+        return;
+    };
+    println!("update_camera_viewport called! auto_resize={}, found {} editor cameras", config.auto_resize_to_window, camera_query.iter().count());
+
     // Only set camera viewport when NOT auto-resizing (manual viewport control)
     if config.auto_resize_to_window {
         // Clear any existing viewport restriction and reset camera position
@@ -311,10 +317,13 @@ fn update_camera_viewport(
 
 /// Compute ViewportDimensions layout fields based on UI settings
 fn compute_viewport_layout(
-    mut viewport: ResMut<ViewportDimensions>,
+    mut viewport_query: Query<&mut TextViewViewport, With<CodeEditor>>,
     ui: Res<UiSettings>,
     font: Res<FontSettings>,
 ) {
+    let Ok(mut viewport) = viewport_query.single_mut() else {
+        return;
+    };
     // Compute gutter width based on line number display
     viewport.gutter_width = if ui.show_line_numbers {
         ui.gutter_padding_left + ui.gutter_padding_right
@@ -344,10 +353,13 @@ fn apply_render_layers(entity: &mut EntityCommands, config: &EditorRenderConfig)
 /// Setup camera for standalone editor mode (only if not using render layers)
 /// Initialize viewport dimensions from the actual window size
 fn init_viewport_from_window(
-    mut viewport: ResMut<ViewportDimensions>,
+    mut viewport_query: Query<&mut TextViewViewport, With<CodeEditor>>,
     config: Res<ViewportConfig>,
     windows: Query<&Window>,
 ) {
+    let Ok(mut viewport) = viewport_query.single_mut() else {
+        return;
+    };
     // Only auto-initialize if auto_resize_to_window is true
     if !config.auto_resize_to_window {
         return;
@@ -362,9 +374,12 @@ fn init_viewport_from_window(
 /// Detect viewport resize and update dimensions
 fn detect_viewport_resize(
     config: Res<ViewportConfig>,
-    mut viewport: ResMut<ViewportDimensions>,
+    mut viewport_query: Query<&mut TextViewViewport, With<CodeEditor>>,
     windows: Query<&Window>,
 ) {
+    let Ok(mut viewport) = viewport_query.single_mut() else {
+        return;
+    };
     // Only auto-resize when enabled
     if !config.auto_resize_to_window {
         return;
@@ -414,9 +429,12 @@ fn setup_editor_ui(
     theme: Res<ThemeSettings>,
     cursor_settings: Res<CursorSettings>,
     ui: Res<UiSettings>,
-    viewport: Res<ViewportDimensions>,
+    viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
     render_config: Res<EditorRenderConfig>,
 ) {
+    let Ok(viewport) = viewport_query.single() else {
+        return;
+    };
     // Load font
     let font_handle: Handle<Font> = asset_server.load(&font.family);
     font.handle = Some(font_handle.clone());
@@ -469,14 +487,19 @@ fn setup_editor_ui(
     apply_render_layers(&mut cursor, &render_config);
 }
 
+/// Run condition: returns true when the TextViewViewport component has changed
+fn viewport_changed(query: Query<(), Changed<TextViewViewport>>) -> bool {
+    !query.is_empty()
+}
+
 /// Update separator SIZE and POSITION when viewport changes
 fn update_separator_on_resize(
-    viewport: Res<ViewportDimensions>,
+    viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
     mut separator_query: Query<(&mut Sprite, &mut Transform), With<Separator>>,
 ) {
-    if !viewport.is_changed() {
+    let Ok(viewport) = viewport_query.single() else {
         return;
-    }
+    };
 
     for (mut sprite, mut transform) in separator_query.iter_mut() {
         let viewport_height = viewport.height as f32;

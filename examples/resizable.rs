@@ -107,7 +107,7 @@ fn main() {
         .insert_resource(ViewportConfig {
             auto_resize_to_window: false,
         })
-        .add_systems(Startup, setup)
+        .add_systems(PostStartup, setup)
         .add_systems(
             Update,
             (
@@ -123,11 +123,14 @@ fn main() {
 
 fn setup(
     mut commands: Commands,
-    mut state: ResMut<CodeEditorState>,
+    mut editor_query: Query<(&mut CodeEditorState, &mut TextViewViewport), With<CodeEditor>>,
     mut minimap_settings: ResMut<MinimapSettings>,
-    mut viewport: ResMut<ViewportDimensions>,
     panel: Res<EditorPanel>,
 ) {
+    let Ok((mut state, mut viewport)) = editor_query.single_mut() else {
+        return;
+    };
+
     // Disable minimap for the resizable example (it doesn't fit well in small panels)
     minimap_settings.enabled = false;
 
@@ -415,11 +418,15 @@ fn update_panel_visuals(
 
 fn sync_viewport_to_panel(
     panel: Res<EditorPanel>,
-    mut viewport: ResMut<ViewportDimensions>,
+    mut viewport_query: Query<&mut TextViewViewport, With<CodeEditor>>,
 ) {
     if !panel.is_changed() {
         return;
     }
+
+    let Ok(mut viewport) = viewport_query.single_mut() else {
+        return;
+    };
 
     let new_width = panel.width as u32;
     let new_height = panel.height as u32;
@@ -433,9 +440,6 @@ fn sync_viewport_to_panel(
         // This prevents UI elements from repositioning when panel resizes
         viewport.width = new_width;
         viewport.height = new_height;
-
-        // Mark viewport as changed so camera viewport updates
-        viewport.set_changed();
     }
 }
 

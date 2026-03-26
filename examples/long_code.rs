@@ -24,13 +24,20 @@ fn main() {
         }))
         .add_plugins(CodeEditorPlugin::default())
         .add_plugins(EditorUiPlugin::default())
-        .add_systems(Startup, setup_editor)
+        .add_systems(PostStartup, setup_editor)
         .add_systems(Update, update_cursor_icon)
         .run();
 }
 
 #[cfg(feature = "tree-sitter")]
-fn setup_editor(mut state: ResMut<CodeEditorState>, mut syntax: ResMut<SyntaxResource>) {
+fn setup_editor(
+    mut editor_query: Query<(&mut CodeEditorState, &mut TextViewState), With<CodeEditor>>,
+    mut syntax: ResMut<SyntaxResource>,
+) {
+    let Ok((mut state, mut tv)) = editor_query.single_mut() else {
+        return;
+    };
+
     // Always focused in basic editor (no UI competing for input)
     state.is_focused = true;
 
@@ -71,11 +78,17 @@ fn setup_editor(mut state: ResMut<CodeEditorState>, mut syntax: ResMut<SyntaxRes
     // Set the provider in the syntax resource
     syntax.set_provider(provider);
 
-    state.needs_update = true;
+    tv.needs_update = true;
 }
 
 #[cfg(not(feature = "tree-sitter"))]
-fn setup_editor(mut state: ResMut<CodeEditorState>) {
+fn setup_editor(
+    mut editor_query: Query<&mut CodeEditorState, With<CodeEditor>>,
+) {
+    let Ok(mut state) = editor_query.single_mut() else {
+        return;
+    };
+
     // Always focused in basic editor (no UI competing for input)
     state.is_focused = true;
 
@@ -106,11 +119,14 @@ fn setup_editor(mut state: ResMut<CodeEditorState>) {
 }
 
 fn update_cursor_icon(
-    state: Res<CodeEditorState>,
+    editor_query: Query<(&CodeEditorState, &TextViewViewport), With<CodeEditor>>,
     mut commands: Commands,
     windows: Query<(Entity, &Window), With<Window>>,
-    viewport: Res<ViewportDimensions>,
 ) {
+    let Ok((state, viewport)) = editor_query.single() else {
+        return;
+    };
+
     if let Ok((window_entity, window)) = windows.single() {
         let Some(cursor_pos) = window.cursor_position() else {
             return;
