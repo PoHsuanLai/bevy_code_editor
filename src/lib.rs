@@ -47,6 +47,7 @@ pub mod line_width;
 pub mod plugin;
 pub mod settings;
 pub mod syntax;
+pub mod text_view;
 pub mod types;
 
 #[cfg(feature = "lsp")]
@@ -65,6 +66,10 @@ pub mod prelude {
     #[cfg(feature = "scrollbar")]
     pub use crate::plugin::{Scrollbar, ScrollbarPlugin};
     pub use crate::settings::*;
+    pub use crate::text_view::{
+        TextView, TextViewBatchEntity, TextViewPlugin, TextViewRenderSet,
+        TextViewState, TextViewViewport, GlyphBatchComponent, GlyphInstance, TextViewBatch,
+    };
     pub use crate::types::*;
 
     // Selective re-exports from display_map to avoid name conflicts with types.rs

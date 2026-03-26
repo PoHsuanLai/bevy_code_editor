@@ -28,7 +28,7 @@ use bevy::{
 
 use crate::types::{CodeEditorState, ViewportDimensions};
 
-use crate::plugin::gpu_text_instanced::{GlyphBatchComponent, GlyphInstance};
+use crate::text_view::render::{GlyphBatchComponent, GlyphInstance};
 
 use bevy::render::Extract;
 

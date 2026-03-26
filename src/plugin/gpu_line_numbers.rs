@@ -6,7 +6,7 @@ use super::editor_ui_plugin::EditorRenderConfig;
 use crate::gpu_text::{GlyphAtlas, GlyphKey, GlyphRasterizer};
 use crate::settings::*;
 use crate::types::*;
-use crate::plugin::gpu_text_instanced::{GlyphBatchComponent, GlyphInstance};
+use crate::text_view::render::{GlyphBatchComponent, GlyphInstance};
 use bevy::prelude::*;
 use std::sync::Arc;
 
