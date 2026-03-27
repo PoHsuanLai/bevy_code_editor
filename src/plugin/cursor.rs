@@ -54,7 +54,7 @@ pub(crate) fn track_cursor_movement(
 
 pub(crate) fn update_cursor(
     mut commands: Commands,
-    editor_query: Query<(&CodeEditorState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    editor_query: Query<(&CodeEditorState, &EditorDisplayState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     cursor_settings: Res<CursorSettings>,
     theme: Res<ThemeSettings>,
@@ -65,7 +65,7 @@ pub(crate) fn update_cursor(
     render_config: Res<EditorRenderConfig>,
     mut cursor_query: Query<(Entity, &EditorCursor, &mut Transform, &mut Visibility)>,
 ) {
-    let Ok((editor, cursor, tv, vp)) = editor_query.single() else {
+    let Ok((_editor, display, cursor, tv, vp)) = editor_query.single() else {
         return;
     };
 
@@ -75,7 +75,7 @@ pub(crate) fn update_cursor(
     let cursor_count = cursor.cursors.len();
 
     // Check if we're using soft line wrapping
-    let use_wrapping = wrapping.enabled && editor.display_map.wrap_width > 0;
+    let use_wrapping = wrapping.enabled && display.display_map.wrap_width > 0;
 
     // Collect existing cursor entities by their index
     let mut cursor_entities: std::collections::HashMap<usize, Entity> =
@@ -93,7 +93,7 @@ pub(crate) fn update_cursor(
 
         // Calculate display row and column based on wrapping and folding
         let (display_row, display_col) = if use_wrapping {
-            editor.display_map.buffer_to_display(line_index, col_index)
+            display.display_map.buffer_to_display(line_index, col_index)
         } else {
             // Account for folded lines
             #[cfg(feature = "folding")]
@@ -105,7 +105,7 @@ pub(crate) fn update_cursor(
 
         // For wrapped continuation rows, add indent offset
         let extra_indent = if use_wrapping && wrapping.indent_wrapped_lines {
-            if editor.display_map.is_continuation(display_row) {
+            if display.display_map.is_continuation(display_row) {
                 indentation.indent_size as f32 * char_width
             } else {
                 0.0
@@ -218,7 +218,7 @@ pub(crate) fn animate_cursor(
 }
 pub(crate) fn update_cursor_line_highlight(
     mut commands: Commands,
-    editor_query: Query<(&CodeEditorState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    editor_query: Query<(&CodeEditorState, &EditorDisplayState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     cursor_line: Res<CursorLineSettings>,
     theme: Res<ThemeSettings>,
@@ -272,13 +272,13 @@ pub(crate) fn update_cursor_line_highlight(
         }
     };
 
-    let Ok((editor, cursor, tv, vp)) = editor_query.single() else {
+    let Ok((_editor, display, cursor, tv, vp)) = editor_query.single() else {
         return;
     };
 
     let line_height = font.line_height;
     let char_width = font.char_width;
-    let use_wrapping = wrapping.enabled && editor.display_map.wrap_width > 0;
+    let use_wrapping = wrapping.enabled && display.display_map.wrap_width > 0;
 
     // Border settings from configuration
     let border_thickness = cursor_line.border_thickness;
@@ -319,7 +319,7 @@ pub(crate) fn update_cursor_line_highlight(
 
         // Calculate display row
         let display_row = if use_wrapping {
-            editor.display_map.buffer_to_display(line_index, 0).0
+            display.display_map.buffer_to_display(line_index, 0).0
         } else {
             #[cfg(feature = "folding")]
             {

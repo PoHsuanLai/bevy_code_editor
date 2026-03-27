@@ -5,7 +5,7 @@
 
 use crate::syntax::{SyntaxProvider, TreeSitterProvider};
 use crate::text_view::TextViewState;
-use crate::types::{CodeEditor, CodeEditorState, LineSegment};
+use crate::types::{CodeEditor, CodeEditorState, SyntaxCacheState, LineSegment};
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task};
 use std::collections::VecDeque;
@@ -325,12 +325,12 @@ pub struct ParseTask {
 #[cfg(feature = "tree-sitter")]
 pub(crate) fn update_syntax_tree(
     mut commands: Commands,
-    mut editor_query: Query<(&mut CodeEditorState, &mut TextViewState), With<CodeEditor>>,
+    mut editor_query: Query<(&mut CodeEditorState, &mut SyntaxCacheState, &mut TextViewState), With<CodeEditor>>,
     mut syntax: ResMut<SyntaxResource>,
     mut highlight_cache: ResMut<HighlightCache>,
     mut parse_task_query: Query<(Entity, &mut ParseTask)>,
 ) {
-    let Ok((mut state, mut tv)) = editor_query.single_mut() else {
+    let Ok((_state, mut syntax_cache, mut tv)) = editor_query.single_mut() else {
         return;
     };
 
@@ -344,7 +344,7 @@ pub(crate) fn update_syntax_tree(
                 // Update the syntax provider with the completed tree and current rope
                 // This increments syntax.tree_version, which will trigger a re-render automatically
                 syntax.set_parsed_tree(tree, &tv.rope);
-                state.last_highlighted_version = parse_task.content_version;
+                syntax_cache.last_highlighted_version = parse_task.content_version;
 
                 // Clear the highlight cache when tree-sitter finishes
                 highlight_cache.clear();
@@ -360,7 +360,7 @@ pub(crate) fn update_syntax_tree(
     }
 
     // Only start a new parse if content changed and no task is running
-    if tv.content_version != state.last_highlighted_version && syntax.is_available() {
+    if tv.content_version != syntax_cache.last_highlighted_version && syntax.is_available() {
         let rope = tv.rope.clone();
         let content_version = tv.content_version;
 
@@ -451,13 +451,13 @@ pub(crate) fn byte_to_point(rope: &ropey::Rope, byte_offset: usize) -> tree_sitt
 /// System that sends TextEditEvent when pending_tree_sitter_edit is set
 /// This runs before record_edits_for_incremental_parsing to ensure edits are recorded
 fn send_text_edit_events(
-    mut editor_query: Query<(&mut CodeEditorState, &TextViewState), With<CodeEditor>>,
+    mut editor_query: Query<(&mut CodeEditorState, &mut SyntaxCacheState, &TextViewState), With<CodeEditor>>,
     mut writer: MessageWriter<crate::events::TextEditEvent>,
 ) {
-    let Ok((mut state, tv)) = editor_query.single_mut() else {
+    let Ok((_state, mut syntax_cache, tv)) = editor_query.single_mut() else {
         return;
     };
-    if let Some((start_byte, old_end_byte, new_end_byte)) = state.pending_tree_sitter_edit.take() {
+    if let Some((start_byte, old_end_byte, new_end_byte)) = syntax_cache.pending_tree_sitter_edit.take() {
         writer.write(crate::events::TextEditEvent::new(
             start_byte,
             old_end_byte,
@@ -474,11 +474,11 @@ fn send_text_edit_events(
 /// thread, the tree stays valid for highlighting queries while the async re-parse
 /// runs in the background — eliminating the color flash on keystroke.
 fn record_edits_for_incremental_parsing(
-    editor_query: Query<(&CodeEditorState, &TextViewState), With<CodeEditor>>,
+    editor_query: Query<(&CodeEditorState, &SyntaxCacheState, &TextViewState), With<CodeEditor>>,
     mut syntax: ResMut<SyntaxResource>,
     mut events: MessageReader<crate::events::TextEditEvent>,
 ) {
-    let Ok((_state, tv)) = editor_query.single() else {
+    let Ok((_state, _syntax_cache, tv)) = editor_query.single() else {
         return;
     };
     for event in events.read() {

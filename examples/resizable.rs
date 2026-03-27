@@ -123,11 +123,11 @@ fn main() {
 
 fn setup(
     mut commands: Commands,
-    mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState, &mut TextViewViewport), With<CodeEditor>>,
+    mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState, &mut TextViewViewport, &mut EditHistoryState, &mut SelectionState, &mut SyntaxCacheState), With<CodeEditor>>,
     mut minimap_settings: ResMut<MinimapSettings>,
     panel: Res<EditorPanel>,
 ) {
-    let Ok((mut state, mut cursor, mut tv, mut viewport)) = editor_query.single_mut() else {
+    let Ok((mut state, mut cursor, mut tv, mut viewport, mut hist, mut sel, mut syntax_cache)) = editor_query.single_mut() else {
         return;
     };
 
@@ -206,7 +206,7 @@ fn setup(
 
     // Set initial content
     state.is_focused = true;
-    state.set_text(&mut cursor, &mut tv,
+    hist.set_text(&mut sel, &mut syntax_cache, &mut cursor, &mut tv,
         r#"// Resizable Editor Demo
 //
 // Drag any edge or corner to resize the editor!

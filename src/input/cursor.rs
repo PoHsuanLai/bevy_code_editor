@@ -5,10 +5,10 @@ use crate::types::*;
 use ropey::Rope;
 
 /// Initialize selection if not already started
-pub fn init_selection(state: &mut CodeEditorState, cursor: &CursorState) {
-    if state.selection_start.is_none() {
-        state.selection_start = Some(cursor.cursor_pos);
-        state.selection_end = Some(cursor.cursor_pos);
+pub fn init_selection(sel: &mut SelectionState, cursor: &CursorState) {
+    if sel.selection_start.is_none() {
+        sel.selection_start = Some(cursor.cursor_pos);
+        sel.selection_end = Some(cursor.cursor_pos);
     }
 }
 
@@ -183,7 +183,7 @@ pub fn move_cursor_word_right(cursor: &mut CursorState, rope: &Rope) {
 }
 
 /// Delete from cursor to previous word boundary
-pub fn delete_word_backward(state: &mut CodeEditorState, cursor: &mut CursorState, tv: &mut TextViewState) {
+pub fn delete_word_backward(state: &mut CodeEditorState, sel: &mut SelectionState, hist: &mut EditHistoryState, cursor: &mut CursorState, tv: &mut TextViewState) {
     let cursor_before = cursor.cursor_pos;
     let word_start = find_word_boundary_left(&tv.rope, cursor.cursor_pos);
 
@@ -209,7 +209,7 @@ pub fn delete_word_backward(state: &mut CodeEditorState, cursor: &mut CursorStat
         cursor.cursor_pos = word_start;
 
         // Record for undo
-        state.history.record(EditOperation {
+        hist.history.record(EditOperation {
             removed_text: deleted_text,
             inserted_text: String::new(),
             position: word_start,
@@ -230,7 +230,7 @@ pub fn delete_word_backward(state: &mut CodeEditorState, cursor: &mut CursorStat
 }
 
 /// Delete from cursor to next word boundary
-pub fn delete_word_forward(state: &mut CodeEditorState, cursor: &mut CursorState, tv: &mut TextViewState) {
+pub fn delete_word_forward(state: &mut CodeEditorState, _sel: &mut SelectionState, hist: &mut EditHistoryState, cursor: &mut CursorState, tv: &mut TextViewState) {
     let cursor_before = cursor.cursor_pos;
     let word_end = find_word_boundary_right(&tv.rope, cursor.cursor_pos);
 
@@ -251,7 +251,7 @@ pub fn delete_word_forward(state: &mut CodeEditorState, cursor: &mut CursorState
         // Cursor stays at the same position
 
         // Record for undo
-        state.history.record(EditOperation {
+        hist.history.record(EditOperation {
             removed_text: deleted_text,
             inserted_text: String::new(),
             position: cursor_before,

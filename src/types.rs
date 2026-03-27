@@ -1646,110 +1646,130 @@ impl Default for CursorState {
     }
 }
 
-/// Main editor state — cursor, selection, history, and other editor-specific concerns.
+/// Main editor state — focus tracking and marker.
 ///
-/// Text buffer, scroll, and rendering state live in the sibling `TextViewState` component.
-/// During the migration period, this type derives both Resource and Component.
+/// Most fields have been extracted into focused components:
+/// - `SelectionState` — selection_start, selection_end, selections
+/// - `EditHistoryState` — history, anchors
+/// - `SyntaxCacheState` — tokens, lines, last_highlighted_version, last_lines_version, tree-sitter state
+/// - `EditorDisplayState` — display_map, entity_pool, line_number_pool, invalidate_lines_from
+/// - `CursorState` — cursor_pos, cursors, etc.
+/// - `TextViewState` — rope, scroll, rendering state
 #[derive(Component)]
 pub struct CodeEditorState {
-    // NOTE: The following fields have been moved to TextViewState (sibling component on the same entity):
-    //   rope, scroll_offset, target_scroll_offset, horizontal_scroll_offset,
-    //   target_horizontal_scroll_offset, needs_update, needs_scroll_update, pending_update,
-    //   last_render_time, content_version, dirty_lines, previous_line_count,
-    //   max_content_width, max_content_width_version, max_width_line, line_width_tracker
-    // NOTE: The following fields have been moved to CursorState (sibling component on the same entity):
-    //   cursor_pos, last_cursor_pos, cursor_moved_time, last_cursor_pos_for_blink, cursors
-
-    /// Selection start (None = no selection) - primary cursor for backward compatibility
-    pub selection_start: Option<usize>,
-
-    /// Selection end - primary cursor for backward compatibility
-    pub selection_end: Option<usize>,
-
     /// Is editor focused
     pub is_focused: bool,
-
-    /// Cached highlighted tokens
-    pub tokens: Vec<HighlightedToken>,
-
-    /// Cached processed lines for rendering (optimization)
-    pub lines: Vec<Vec<LineSegment>>,
-
-    /// Pool of reusable text entities (PERFORMANCE)
-    pub entity_pool: Vec<Entity>,
-
-    /// Pool of reusable line number entities (PERFORMANCE)
-    pub line_number_pool: Vec<Entity>,
-
-    /// When line count changes (insert/delete newline), this stores the line index
-    /// from which all subsequent line entities should be invalidated.
-    /// This prevents stale entity mappings after line insertions/deletions.
-    pub invalidate_lines_from: Option<usize>,
-
-    /// Last content version when highlighting was run
-    pub last_highlighted_version: u64,
-
-    /// Last content version when line segments were built (PERFORMANCE)
-    pub last_lines_version: u64,
-
-    /// Last syntax tree version that was rendered (PERFORMANCE)
-    #[cfg(feature = "tree-sitter")]
-    pub last_rendered_tree_version: u64,
-
-    /// Edit history for undo/redo
-    pub history: EditHistory,
-
-    /// Anchor set for edit-resilient position tracking
-    /// Use this for positions that need to survive text edits (bookmarks, diagnostics, etc.)
-    pub anchors: AnchorSet,
-
-    /// Selection collection for managing multiple selections with edit-awareness
-    /// This is the modern replacement for the legacy `cursors` field, providing:
-    /// - Automatic sorting and merging of overlapping selections
-    /// - Edit-resilient positions via anchors
-    /// - Unified interface for single and multi-cursor operations
-    pub selections: SelectionCollection,
-
-    /// Display map for soft line wrapping
-    /// Maps buffer lines to display rows when wrapping is enabled
-    pub display_map: DisplayMap,
-
-    /// Pending text edit for tree-sitter incremental parsing
-    /// Stores byte positions of the most recent edit to be sent as an event
-    /// Format: (start_byte, old_end_byte, new_end_byte)
-    #[cfg(feature = "tree-sitter")]
-    pub pending_tree_sitter_edit: Option<(usize, usize, usize)>,
 }
 
 impl Default for CodeEditorState {
     fn default() -> Self {
         Self {
+            is_focused: false,
+        }
+    }
+}
+
+/// Selection state component — tracks selection positions and the SelectionCollection.
+#[derive(Component)]
+pub struct SelectionState {
+    /// Selection start (None = no selection) - primary cursor for backward compatibility
+    pub selection_start: Option<usize>,
+    /// Selection end - primary cursor for backward compatibility
+    pub selection_end: Option<usize>,
+    /// Selection collection for managing multiple selections with edit-awareness
+    pub selections: SelectionCollection,
+}
+
+impl Default for SelectionState {
+    fn default() -> Self {
+        Self {
             selection_start: None,
             selection_end: None,
-            is_focused: false,
+            selections: SelectionCollection::new(),
+        }
+    }
+}
+
+/// Edit history and anchor state component.
+#[derive(Component)]
+pub struct EditHistoryState {
+    /// Edit history for undo/redo
+    pub history: EditHistory,
+    /// Anchor set for edit-resilient position tracking
+    pub anchors: AnchorSet,
+}
+
+impl Default for EditHistoryState {
+    fn default() -> Self {
+        Self {
+            history: EditHistory::default(),
+            anchors: AnchorSet::new(),
+        }
+    }
+}
+
+/// Syntax highlighting cache state component.
+#[derive(Component)]
+pub struct SyntaxCacheState {
+    /// Cached highlighted tokens
+    pub tokens: Vec<HighlightedToken>,
+    /// Cached processed lines for rendering (optimization)
+    pub lines: Vec<Vec<LineSegment>>,
+    /// Last content version when highlighting was run
+    pub last_highlighted_version: u64,
+    /// Last content version when line segments were built (PERFORMANCE)
+    pub last_lines_version: u64,
+    /// Last syntax tree version that was rendered (PERFORMANCE)
+    #[cfg(feature = "tree-sitter")]
+    pub last_rendered_tree_version: u64,
+    /// Pending text edit for tree-sitter incremental parsing
+    /// Format: (start_byte, old_end_byte, new_end_byte)
+    #[cfg(feature = "tree-sitter")]
+    pub pending_tree_sitter_edit: Option<(usize, usize, usize)>,
+}
+
+impl Default for SyntaxCacheState {
+    fn default() -> Self {
+        Self {
             tokens: Vec::new(),
             lines: Vec::new(),
-            entity_pool: Vec::new(),
-            line_number_pool: Vec::new(),
-            invalidate_lines_from: None,
             last_highlighted_version: u64::MAX, // Force initial highlighting
             last_lines_version: 0,
             #[cfg(feature = "tree-sitter")]
             last_rendered_tree_version: 0,
-            history: EditHistory::default(),
-            anchors: AnchorSet::new(),
-            selections: SelectionCollection::new(),
-            display_map: DisplayMap::default(),
             #[cfg(feature = "tree-sitter")]
             pending_tree_sitter_edit: None,
         }
     }
 }
 
+/// Editor display state component — entity pools, display map, line invalidation.
+#[derive(Component)]
+pub struct EditorDisplayState {
+    /// Display map for soft line wrapping
+    pub display_map: DisplayMap,
+    /// Pool of reusable text entities (PERFORMANCE)
+    pub entity_pool: Vec<Entity>,
+    /// Pool of reusable line number entities (PERFORMANCE)
+    pub line_number_pool: Vec<Entity>,
+    /// When line count changes, stores the line index from which all subsequent
+    /// line entities should be invalidated.
+    pub invalidate_lines_from: Option<usize>,
+}
+
+impl Default for EditorDisplayState {
+    fn default() -> Self {
+        Self {
+            display_map: DisplayMap::default(),
+            entity_pool: Vec::new(),
+            line_number_pool: Vec::new(),
+            invalidate_lines_from: None,
+        }
+    }
+}
+
 impl CodeEditorState {
-    /// Create new editor state (editor-specific defaults only).
-    ///
-    /// Text content should be set on the sibling `TextViewState` component, not here.
+    /// Create new editor state.
     pub fn new() -> Self {
         Self::default()
     }
@@ -1764,347 +1784,8 @@ impl CodeEditorState {
         rope.len_lines()
     }
 
-    /// Insert character at cursor position (with undo recording)
-    pub fn insert_char(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, c: char) {
-        self.insert_char_with_history(cursor, tv, c, true);
-    }
-
-    /// Insert character at cursor position with optional history recording
-    pub fn insert_char_with_history(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, c: char, record_history: bool) {
-        let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
-        let line_idx = tv.rope.char_to_line(cursor_pos);
-        let cursor_before = cursor_pos;
-
-        // Record byte positions for tree-sitter incremental parsing
-        #[cfg(feature = "tree-sitter")]
-        let start_byte = tv.rope.char_to_byte(cursor_pos);
-        #[cfg(feature = "tree-sitter")]
-        let char_byte_len = c.len_utf8();
-
-        // Record anchor edit (character-based, not byte-based)
-        // Note: We only record edits to anchors, not selections, because selections
-        // are synced from cursor_pos which is updated directly by text operations
-        self.anchors.record_edit(TextEdit::insert(cursor_pos, 1));
-
-        tv.rope.insert_char(cursor_pos, c);
-        cursor.cursor_pos += 1;
-        self.sync_cursors_from_primary(cursor);
-        // Mark for update with debouncing (avoids rebuilding mesh on every keystroke)
-        tv.pending_update = true;
-        tv.content_version += 1;
-
-        // Record edit for tree-sitter incremental parsing
-        #[cfg(feature = "tree-sitter")]
-        {
-            self.pending_tree_sitter_edit = Some((
-                start_byte,
-                start_byte,                 // old_end = start for insertion
-                start_byte + char_byte_len, // new_end = start + inserted bytes
-            ));
-        }
-
-        // Record for undo
-        if record_history {
-            let kind = if c == '\n' {
-                EditKind::Newline
-            } else {
-                EditKind::Insert
-            };
-            self.history.record(EditOperation {
-                removed_text: String::new(),
-                inserted_text: c.to_string(),
-                position: cursor_before,
-                cursor_before,
-                cursor_after: cursor.cursor_pos,
-                kind,
-            });
-        }
-
-        let new_line_count = tv.rope.len_lines();
-        // Only mark current line as dirty - tree-sitter will handle the rest
-        tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-
-        // If newline was inserted, invalidate all lines from the insertion point
-        // to prevent stale entity mappings (line indices shift after newline insert)
-        if c == '\n' {
-            // Newline shifts all subsequent line indices — full invalidation needed
-            self.dirty_lines = None;
-        } else {
-            // Single char on same line: only the current line is dirty
-            self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-        }
-
-        tv.previous_line_count = new_line_count;
-    }
-
-    /// Delete character before cursor (with undo recording)
-    pub fn delete_backward(&mut self, cursor: &mut CursorState, tv: &mut TextViewState) {
-        self.delete_backward_with_history(cursor, tv, true);
-    }
-
-    /// Delete character before cursor with optional history recording
-    pub fn delete_backward_with_history(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, record_history: bool) {
-        if cursor.cursor_pos > 0 && cursor.cursor_pos <= tv.rope.len_chars() {
-            let cursor_before = cursor.cursor_pos;
-            let line_idx = tv.rope.char_to_line(cursor.cursor_pos - 1);
-
-            // Get the character being deleted
-            let deleted_char = tv.rope.char(cursor.cursor_pos - 1);
-
-            let char_idx = tv.rope.char_to_byte(cursor.cursor_pos - 1);
-            let byte_idx_end = tv.rope.char_to_byte(cursor.cursor_pos);
-
-            // Record anchor edit (character-based)
-            self.anchors
-                .record_edit(TextEdit::delete(cursor.cursor_pos - 1, cursor.cursor_pos));
-
-            tv.rope.remove(char_idx..byte_idx_end);
-            cursor.cursor_pos -= 1;
-            self.sync_cursors_from_primary(cursor);
-            // Mark for update with debouncing
-            tv.pending_update = true;
-            tv.content_version += 1;
-
-            // Record edit for tree-sitter incremental parsing
-            #[cfg(feature = "tree-sitter")]
-            {
-                self.pending_tree_sitter_edit = Some((
-                    char_idx,     // start_byte
-                    byte_idx_end, // old_end = end of deleted character
-                    char_idx,     // new_end = start (nothing inserted)
-                ));
-            }
-
-            // Record for undo
-            if record_history {
-                self.history.record(EditOperation {
-                    removed_text: deleted_char.to_string(),
-                    inserted_text: String::new(),
-                    position: cursor.cursor_pos,
-                    cursor_before,
-                    cursor_after: cursor.cursor_pos,
-                    kind: EditKind::DeleteBackward,
-                });
-            }
-
-            let new_line_count = tv.rope.len_lines();
-            tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-
-            // If newline was deleted, invalidate all lines from the deletion point
-            // to prevent stale entity mappings (line indices shift after newline delete)
-            if deleted_char == '\n' {
-                // Newline deletion shifts all subsequent line indices — full invalidation needed
-                self.dirty_lines = None;
-            } else {
-                self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-            }
-
-            tv.previous_line_count = new_line_count;
-        }
-    }
-
-    /// Delete character after cursor (with undo recording)
-    pub fn delete_forward(&mut self, cursor: &mut CursorState, tv: &mut TextViewState) {
-        self.delete_forward_with_history(cursor, tv, true);
-    }
-
-    /// Delete character after cursor with optional history recording
-    pub fn delete_forward_with_history(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, record_history: bool) {
-        if cursor.cursor_pos < tv.rope.len_chars() {
-            let cursor_before = cursor.cursor_pos;
-            let line_idx = tv.rope.char_to_line(cursor.cursor_pos);
-
-            // Get the character being deleted
-            let deleted_char = tv.rope.char(cursor.cursor_pos);
-
-            let char_idx = tv.rope.char_to_byte(cursor.cursor_pos);
-            let byte_idx_end = tv.rope.char_to_byte(cursor.cursor_pos + 1);
-
-            // Record anchor edit (character-based)
-            self.anchors
-                .record_edit(TextEdit::delete(cursor.cursor_pos, cursor.cursor_pos + 1));
-
-            tv.rope.remove(char_idx..byte_idx_end);
-            self.sync_cursors_from_primary(cursor);
-            // Mark for update with debouncing
-            tv.pending_update = true;
-            tv.content_version += 1;
-
-            // Record edit for tree-sitter incremental parsing
-            #[cfg(feature = "tree-sitter")]
-            {
-                self.pending_tree_sitter_edit = Some((
-                    char_idx,     // start_byte
-                    byte_idx_end, // old_end = end of deleted character
-                    char_idx,     // new_end = start (nothing inserted)
-                ));
-            }
-
-            // Record for undo
-            if record_history {
-                self.history.record(EditOperation {
-                    removed_text: deleted_char.to_string(),
-                    inserted_text: String::new(),
-                    position: cursor.cursor_pos,
-                    cursor_before,
-                    cursor_after: cursor.cursor_pos,
-                    kind: EditKind::DeleteForward,
-                });
-            }
-
-            let new_line_count = tv.rope.len_lines();
-            tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-
-            // If newline was deleted, invalidate all lines from the deletion point
-            // to prevent stale entity mappings (line indices shift after newline delete)
-            if deleted_char == '\n' {
-                // Newline deletion shifts all subsequent line indices — full invalidation needed
-                self.dirty_lines = None;
-            } else {
-                self.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-            }
-
-            tv.previous_line_count = new_line_count;
-        }
-    }
-
-    /// Insert text at a specific position (used for undo/redo)
-    pub fn insert_text_at(&mut self, tv: &mut TextViewState, pos: usize, text: &str) {
-        let pos = pos.min(tv.rope.len_chars());
-        let text_char_len = text.chars().count();
-        let line_idx = tv.rope.char_to_line(pos);
-
-        // Record byte positions for tree-sitter incremental parsing
-        #[cfg(feature = "tree-sitter")]
-        let start_byte = tv.rope.char_to_byte(pos);
-        #[cfg(feature = "tree-sitter")]
-        let text_byte_len = text.len();
-
-        // Record anchor edit (character-based)
-        self.anchors
-            .record_edit(TextEdit::insert(pos, text_char_len));
-
-        tv.rope.insert(pos, text);
-        tv.pending_update = true;
-        tv.content_version += 1;
-        tv.dirty_lines = None; // Full rehighlight
-
-        // If text contains newlines, invalidate all lines from the insertion point
-        if text.contains('\n') {
-            self.invalidate_lines_from = Some(line_idx);
-        }
-
-        tv.previous_line_count = tv.rope.len_lines();
-
-        // Record edit for tree-sitter incremental parsing
-        #[cfg(feature = "tree-sitter")]
-        {
-            self.pending_tree_sitter_edit = Some((
-                start_byte,
-                start_byte,                 // old_end = start for insertion
-                start_byte + text_byte_len, // new_end = start + inserted bytes
-            ));
-        }
-    }
-
-    /// Remove text range (used for undo/redo)
-    pub fn remove_range(&mut self, tv: &mut TextViewState, start: usize, end: usize) {
-        let start = start.min(tv.rope.len_chars());
-        let end = end.min(tv.rope.len_chars());
-        if start < end {
-            let line_idx = tv.rope.char_to_line(start);
-            let start_byte = tv.rope.char_to_byte(start);
-            let end_byte = tv.rope.char_to_byte(end);
-
-            // Check if the removed range contains newlines
-            let removed_text: String = tv.rope.slice(start..end).chars().collect();
-            let has_newlines = removed_text.contains('\n');
-
-            // Record anchor edit (character-based)
-            self.anchors.record_edit(TextEdit::delete(start, end));
-
-            tv.rope.remove(start_byte..end_byte);
-            tv.pending_update = true;
-            tv.content_version += 1;
-            tv.dirty_lines = None; // Full rehighlight
-
-            // If removed text contains newlines, invalidate all lines from the deletion point
-            if has_newlines {
-                self.invalidate_lines_from = Some(line_idx);
-            }
-
-            tv.previous_line_count = tv.rope.len_lines();
-
-            // Record edit for tree-sitter incremental parsing
-            #[cfg(feature = "tree-sitter")]
-            {
-                self.pending_tree_sitter_edit = Some((
-                    start_byte, // start_byte
-                    end_byte,   // old_end = end of deleted range
-                    start_byte, // new_end = start (nothing inserted)
-                ));
-            }
-        }
-    }
-
-    /// Perform undo operation
-    pub fn undo(&mut self, cursor: &mut CursorState, tv: &mut TextViewState) -> bool {
-        if let Some(transaction) = self.history.pop_undo() {
-            // Apply operations in reverse order
-            for op in transaction.operations.iter().rev() {
-                // Undo: remove inserted text, insert removed text
-                if !op.inserted_text.is_empty() {
-                    let end_pos = op.position + op.inserted_text.chars().count();
-                    self.remove_range(tv, op.position, end_pos);
-                }
-                if !op.removed_text.is_empty() {
-                    self.insert_text_at(tv, op.position, &op.removed_text);
-                }
-            }
-
-            // Restore cursor to before the first operation
-            if let Some(first_op) = transaction.operations.first() {
-                cursor.cursor_pos = first_op.cursor_before;
-            }
-
-            // Push to redo stack
-            self.history.push_redo(transaction);
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Perform redo operation
-    pub fn redo(&mut self, cursor: &mut CursorState, tv: &mut TextViewState) -> bool {
-        if let Some(transaction) = self.history.pop_redo() {
-            // Apply operations in forward order
-            for op in transaction.operations.iter() {
-                // Redo: remove removed text (it was re-inserted by undo), insert inserted text
-                if !op.removed_text.is_empty() {
-                    let end_pos = op.position + op.removed_text.chars().count();
-                    self.remove_range(tv, op.position, end_pos);
-                }
-                if !op.inserted_text.is_empty() {
-                    self.insert_text_at(tv, op.position, &op.inserted_text);
-                }
-            }
-
-            // Restore cursor to after the last operation
-            if let Some(last_op) = transaction.operations.last() {
-                cursor.cursor_pos = last_op.cursor_after;
-            }
-
-            // Push to undo stack
-            self.history.push_undo(transaction);
-            true
-        } else {
-            false
-        }
-    }
-
     /// Move cursor by delta
-    pub fn move_cursor(&mut self, cursor: &mut CursorState, rope: &Rope, delta: isize) {
+    pub fn move_cursor(&self, cursor: &mut CursorState, rope: &Rope, delta: isize) {
         if delta < 0 {
             let amount = (-delta) as usize;
             cursor.cursor_pos = cursor.cursor_pos.saturating_sub(amount);
@@ -2114,250 +1795,10 @@ impl CodeEditorState {
         }
     }
 
-    /// Set text content
-    pub fn set_text(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, text: &str) {
-        // Record byte length before replacement
-        #[cfg(feature = "tree-sitter")]
-        let old_byte_len = tv.rope.len_bytes();
-        #[cfg(feature = "tree-sitter")]
-        let new_byte_len = text.len();
-
-        tv.rope = Rope::from_str(text);
-        cursor.cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
-        tv.pending_update = true;
-        tv.content_version += 1;
-        tv.dirty_lines = None;
-        tv.previous_line_count = tv.rope.len_lines();
-        // Clear anchors and reset selections when text is replaced entirely
-        self.anchors.clear();
-        self.selections = SelectionCollection::with_cursor(cursor.cursor_pos);
-        // Rebuild line width tracker for O(log n) max width queries
-        tv.line_width_tracker.rebuild(&tv.rope);
-        // Invalidate cached max content width
-        tv.max_content_width_version = 0;
-
-        // Record edit for tree-sitter incremental parsing (full document replacement)
-        #[cfg(feature = "tree-sitter")]
-        {
-            self.pending_tree_sitter_edit = Some((
-                0,            // start_byte = beginning of document
-                old_byte_len, // old_end = old document length
-                new_byte_len, // new_end = new document length
-            ));
-        }
-    }
-
-    // ========== Anchor methods ==========
-
-    /// Create an anchor at the given position with left bias
-    /// Returns the anchor (caller should store it if they need to track the position)
-    pub fn create_anchor(&mut self, rope: &Rope, offset: usize, bias: AnchorBias) -> Anchor {
-        let offset = offset.min(rope.len_chars());
-        self.anchors.anchor_at(offset, bias)
-    }
-
-    /// Create an anchor at the given position with left bias (cursor-like behavior)
-    pub fn anchor_at(&mut self, rope: &Rope, offset: usize) -> Anchor {
-        self.create_anchor(rope, offset, AnchorBias::Left)
-    }
-
-    /// Resolve an anchor's current position (applies pending edits)
-    pub fn resolve_anchor(&self, rope: &Rope, anchor: &Anchor) -> usize {
-        self.anchors.resolve(anchor).min(rope.len_chars())
-    }
-
-    /// Apply pending anchor edits (call this periodically or before reading anchors)
-    pub fn apply_anchor_edits(&mut self) {
-        self.anchors.apply_pending_edits();
-    }
-
-    /// Remove an anchor by its ID
-    pub fn remove_anchor(&mut self, id: u64) -> Option<Anchor> {
-        self.anchors.remove(id)
-    }
-
-    // ========== SelectionCollection methods ==========
-
-    /// Apply pending edits to the selection collection
-    /// Call this periodically or before reading selection positions
-    pub fn apply_selection_edits(&mut self) {
-        self.selections.apply_pending_edits();
-    }
-
-    /// Sync the legacy cursor fields from the SelectionCollection
-    /// Call this after modifying selections to keep legacy code working
-    pub fn sync_from_selections(&mut self, cursor: &mut CursorState) {
-        let primary = self.selections.primary();
-        cursor.cursor_pos = primary.head_offset();
-        if primary.has_selection() {
-            self.selection_start = Some(primary.anchor_offset());
-            self.selection_end = Some(primary.head_offset());
-        } else {
-            self.selection_start = None;
-            self.selection_end = None;
-        }
-        // Also sync the legacy cursors Vec
-        cursor.cursors = self.selections.to_cursors();
-    }
-
-    /// Sync the SelectionCollection from legacy cursor fields
-    /// Call this when legacy code has modified cursor_pos/selection_start/selection_end
-    pub fn sync_to_selections(&mut self, cursor: &CursorState) {
-        if let Some(anchor) = self.selection_start {
-            self.selections.set_selection(cursor.cursor_pos, anchor);
-        } else {
-            self.selections.set_cursor(cursor.cursor_pos);
-        }
-    }
-
-    /// Get the primary selection from the collection
-    pub fn primary_selection(&self) -> &Selection {
-        self.selections.primary()
-    }
-
-    /// Get all selection ranges as (start, end) tuples
-    pub fn selection_ranges(&self) -> Vec<(usize, usize)> {
-        self.selections.ranges()
-    }
-
-    /// Check if there are multiple selections
-    pub fn has_multiple_selections(&self) -> bool {
-        self.selections.is_multiple()
-    }
-
-    /// Add a new selection at the given position (cursor only)
-    pub fn add_selection(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, offset: usize) {
-        let offset = offset.min(tv.rope.len_chars());
-        self.selections.add_cursor(offset);
-        self.sync_from_selections(cursor);
-        tv.pending_update = true;
-    }
-
-    /// Add a new selection with a range
-    pub fn add_selection_range(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, head: usize, anchor: usize) {
-        let head = head.min(tv.rope.len_chars());
-        let anchor = anchor.min(tv.rope.len_chars());
-        self.selections.add_selection_range(head, anchor);
-        self.sync_from_selections(cursor);
-        tv.pending_update = true;
-    }
-
-    /// Clear all secondary selections, keeping only the primary
-    pub fn clear_secondary_selections_sel(&mut self, cursor: &mut CursorState, tv: &mut TextViewState) {
-        self.selections.clear_secondary();
-        self.sync_from_selections(cursor);
-        tv.pending_update = true;
-    }
-
-    /// Move the primary selection to a new position
-    pub fn set_primary_selection(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, head: usize, extend: bool) {
-        let head = head.min(tv.rope.len_chars());
-        self.selections.move_primary(head, extend);
-        self.sync_from_selections(cursor);
-        tv.pending_update = true;
-    }
-
-    // ========== Multi-cursor methods ==========
-
-    /// Sync the primary cursor (cursor_pos/selection_start/selection_end) with cursors[0]
-    pub fn sync_primary_cursor(&mut self, cursor: &mut CursorState) {
-        if let Some(primary) = cursor.cursors.first() {
-            cursor.cursor_pos = primary.position;
-            self.selection_start = primary.anchor;
-            self.selection_end = if primary.anchor.is_some() {
-                Some(primary.position)
-            } else {
-                None
-            };
-        }
-    }
-
-    /// Sync cursors[0] from the primary cursor fields
-    pub fn sync_cursors_from_primary(&mut self, cursor: &mut CursorState) {
-        if cursor.cursors.is_empty() {
-            cursor.cursors.push(Cursor::new(cursor.cursor_pos));
-        }
-        cursor.cursors[0].position = cursor.cursor_pos;
-        cursor.cursors[0].anchor = self.selection_start;
-    }
-
-    /// Add a new cursor at the given position
-    pub fn add_cursor(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, position: usize) {
-        let position = position.min(tv.rope.len_chars());
-        // Don't add duplicate cursor at same position
-        if !cursor.cursors.iter().any(|c| c.position == position) {
-            cursor.cursors.push(Cursor::new(position));
-            self.sort_and_merge_cursors(cursor);
-            tv.pending_update = true;
-        }
-    }
-
-    /// Add a new cursor with selection
-    pub fn add_cursor_with_selection(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, position: usize, anchor: usize) {
-        let position = position.min(tv.rope.len_chars());
-        let anchor = anchor.min(tv.rope.len_chars());
-        cursor.cursors.push(Cursor::with_selection(position, anchor));
-        self.sort_and_merge_cursors(cursor);
-        tv.pending_update = true;
-    }
-
-    /// Remove all cursors except the primary one
-    pub fn clear_secondary_cursors(&mut self, cursor: &mut CursorState, tv: &mut TextViewState) {
-        if !cursor.cursors.is_empty() {
-            cursor.cursors.truncate(1);
-        }
-        self.sync_primary_cursor(cursor);
-        tv.pending_update = true;
-    }
-
-    /// Check if we have multiple cursors
-    pub fn has_multiple_cursors(&self, cursor: &CursorState) -> bool {
-        cursor.cursors.len() > 1
-    }
-
-    /// Get the number of cursors
-    pub fn cursor_count(&self, cursor: &CursorState) -> usize {
-        cursor.cursors.len()
-    }
-
-    /// Sort cursors by position and merge overlapping selections
-    pub fn sort_and_merge_cursors(&mut self, cursor: &mut CursorState) {
-        if cursor.cursors.len() <= 1 {
-            return;
-        }
-
-        // Sort by position
-        cursor.cursors.sort_by_key(|c| c.position);
-
-        // Merge overlapping selections
-        let mut merged: Vec<Cursor> = Vec::with_capacity(cursor.cursors.len());
-        for c in cursor.cursors.drain(..) {
-            if let Some(last) = merged.last_mut() {
-                let last_end = last.selection_end();
-                let cursor_start = c.selection_start();
-
-                // If selections overlap or are adjacent, merge them
-                if cursor_start <= last_end {
-                    // Extend the last cursor's selection to include this one
-                    let new_end = c.selection_end().max(last_end);
-                    if last.anchor.is_some() || c.anchor.is_some() {
-                        let new_start = last.selection_start().min(cursor_start);
-                        last.anchor = Some(new_start);
-                        last.position = new_end;
-                    } else {
-                        last.position = new_end;
-                    }
-                } else {
-                    merged.push(c);
-                }
-            } else {
-                merged.push(c);
-            }
-        }
-        cursor.cursors = merged;
-
-        // Update primary cursor from the first cursor
-        self.sync_primary_cursor(cursor);
+    /// Record a text edit for incremental parsing (sends TextEditEvent)
+    /// No-op stub kept for backwards compatibility.
+    pub fn record_edit(&self, _start_byte: usize, _old_end_byte: usize, _new_end_byte: usize) {
+        // No-op: Event sending happens in plugin layer by detecting content_version changes
     }
 
     /// Find word boundaries around a position and return (start, end)
@@ -2447,7 +1888,7 @@ impl CodeEditorState {
     }
 
     /// Add cursor at next occurrence of current selection/word (Ctrl+D behavior)
-    pub fn add_cursor_at_next_occurrence(&mut self, cursor: &mut CursorState, tv: &mut TextViewState) -> bool {
+    pub fn add_cursor_at_next_occurrence(&self, sel: &mut SelectionState, cursor: &mut CursorState, tv: &mut TextViewState) -> bool {
         // Get the text to search for
         let search_text = if let Some(primary) = cursor.cursors.first() {
             if primary.has_selection() {
@@ -2458,7 +1899,7 @@ impl CodeEditorState {
                 if let Some((start, end)) = self.word_at_position(&tv.rope, primary.position) {
                     // Select the word at the primary cursor
                     cursor.cursors[0] = Cursor::with_selection(end, start);
-                    self.sync_primary_cursor(cursor);
+                    sel.sync_primary_cursor(cursor);
                     tv.pending_update = true;
                     return true;
                 }
@@ -2489,25 +1930,520 @@ impl CodeEditorState {
             });
 
             if !already_covered {
-                self.add_cursor_with_selection(cursor, tv, end, start);
+                sel.add_cursor_with_selection(cursor, tv, end, start);
                 return true;
             }
         }
 
         false
     }
+}
 
-    /// Record a text edit for incremental parsing (sends TextEditEvent)
-    ///
-    /// This method is a compatibility stub for code that previously called tree-sitter's
-    /// record_edit(). The actual event sending happens at the plugin layer.
-    ///
-    /// NOTE: This is kept as a no-op stub because CodeEditorState is a Resource, not a System,
-    /// so it cannot send Bevy events. The actual TextEditEvent is sent by watching
-    /// `content_version` changes in the plugin systems.
-    pub fn record_edit(&mut self, _start_byte: usize, _old_end_byte: usize, _new_end_byte: usize) {
-        // No-op: Event sending happens in plugin layer by detecting content_version changes
-        // This method exists only for backwards compatibility with existing code
+impl SelectionState {
+    // ========== Multi-cursor methods ==========
+
+    /// Sync the primary cursor (cursor_pos/selection_start/selection_end) with cursors[0]
+    pub fn sync_primary_cursor(&mut self, cursor: &mut CursorState) {
+        if let Some(primary) = cursor.cursors.first() {
+            cursor.cursor_pos = primary.position;
+            self.selection_start = primary.anchor;
+            self.selection_end = if primary.anchor.is_some() {
+                Some(primary.position)
+            } else {
+                None
+            };
+        }
+    }
+
+    /// Sync cursors[0] from the primary cursor fields
+    pub fn sync_cursors_from_primary(&mut self, cursor: &mut CursorState) {
+        if cursor.cursors.is_empty() {
+            cursor.cursors.push(Cursor::new(cursor.cursor_pos));
+        }
+        cursor.cursors[0].position = cursor.cursor_pos;
+        cursor.cursors[0].anchor = self.selection_start;
+    }
+
+    /// Add a new cursor at the given position
+    pub fn add_cursor(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, position: usize) {
+        let position = position.min(tv.rope.len_chars());
+        // Don't add duplicate cursor at same position
+        if !cursor.cursors.iter().any(|c| c.position == position) {
+            cursor.cursors.push(Cursor::new(position));
+            self.sort_and_merge_cursors(cursor);
+            tv.pending_update = true;
+        }
+    }
+
+    /// Add a new cursor with selection
+    pub fn add_cursor_with_selection(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, position: usize, anchor: usize) {
+        let position = position.min(tv.rope.len_chars());
+        let anchor = anchor.min(tv.rope.len_chars());
+        cursor.cursors.push(Cursor::with_selection(position, anchor));
+        self.sort_and_merge_cursors(cursor);
+        tv.pending_update = true;
+    }
+
+    /// Remove all cursors except the primary one
+    pub fn clear_secondary_cursors(&mut self, cursor: &mut CursorState, tv: &mut TextViewState) {
+        if !cursor.cursors.is_empty() {
+            cursor.cursors.truncate(1);
+        }
+        self.sync_primary_cursor(cursor);
+        tv.pending_update = true;
+    }
+
+    /// Check if we have multiple cursors
+    pub fn has_multiple_cursors(&self, cursor: &CursorState) -> bool {
+        cursor.cursors.len() > 1
+    }
+
+    /// Get the number of cursors
+    pub fn cursor_count(&self, cursor: &CursorState) -> usize {
+        cursor.cursors.len()
+    }
+
+    /// Sort cursors by position and merge overlapping selections
+    pub fn sort_and_merge_cursors(&mut self, cursor: &mut CursorState) {
+        if cursor.cursors.len() <= 1 {
+            return;
+        }
+
+        // Sort by position
+        cursor.cursors.sort_by_key(|c| c.position);
+
+        // Merge overlapping selections
+        let mut merged: Vec<Cursor> = Vec::with_capacity(cursor.cursors.len());
+        for c in cursor.cursors.drain(..) {
+            if let Some(last) = merged.last_mut() {
+                let last_end = last.selection_end();
+                let cursor_start = c.selection_start();
+
+                // If selections overlap or are adjacent, merge them
+                if cursor_start <= last_end {
+                    let new_end = c.selection_end().max(last_end);
+                    if last.anchor.is_some() || c.anchor.is_some() {
+                        let new_start = last.selection_start().min(cursor_start);
+                        last.anchor = Some(new_start);
+                        last.position = new_end;
+                    } else {
+                        last.position = new_end;
+                    }
+                } else {
+                    merged.push(c);
+                }
+            } else {
+                merged.push(c);
+            }
+        }
+        cursor.cursors = merged;
+
+        // Update primary cursor from the first cursor
+        self.sync_primary_cursor(cursor);
+    }
+
+    // ========== SelectionCollection methods ==========
+
+    /// Apply pending edits to the selection collection
+    pub fn apply_selection_edits(&mut self) {
+        self.selections.apply_pending_edits();
+    }
+
+    /// Sync the legacy cursor fields from the SelectionCollection
+    pub fn sync_from_selections(&mut self, cursor: &mut CursorState) {
+        let primary = self.selections.primary();
+        cursor.cursor_pos = primary.head_offset();
+        if primary.has_selection() {
+            self.selection_start = Some(primary.anchor_offset());
+            self.selection_end = Some(primary.head_offset());
+        } else {
+            self.selection_start = None;
+            self.selection_end = None;
+        }
+        cursor.cursors = self.selections.to_cursors();
+    }
+
+    /// Sync the SelectionCollection from legacy cursor fields
+    pub fn sync_to_selections(&mut self, cursor: &CursorState) {
+        if let Some(anchor) = self.selection_start {
+            self.selections.set_selection(cursor.cursor_pos, anchor);
+        } else {
+            self.selections.set_cursor(cursor.cursor_pos);
+        }
+    }
+
+    /// Get the primary selection from the collection
+    pub fn primary_selection(&self) -> &Selection {
+        self.selections.primary()
+    }
+
+    /// Get all selection ranges as (start, end) tuples
+    pub fn selection_ranges(&self) -> Vec<(usize, usize)> {
+        self.selections.ranges()
+    }
+
+    /// Check if there are multiple selections
+    pub fn has_multiple_selections(&self) -> bool {
+        self.selections.is_multiple()
+    }
+
+    /// Add a new selection at the given position (cursor only)
+    pub fn add_selection(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, offset: usize) {
+        let offset = offset.min(tv.rope.len_chars());
+        self.selections.add_cursor(offset);
+        self.sync_from_selections(cursor);
+        tv.pending_update = true;
+    }
+
+    /// Add a new selection with a range
+    pub fn add_selection_range(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, head: usize, anchor: usize) {
+        let head = head.min(tv.rope.len_chars());
+        let anchor = anchor.min(tv.rope.len_chars());
+        self.selections.add_selection_range(head, anchor);
+        self.sync_from_selections(cursor);
+        tv.pending_update = true;
+    }
+
+    /// Clear all secondary selections, keeping only the primary
+    pub fn clear_secondary_selections_sel(&mut self, cursor: &mut CursorState, tv: &mut TextViewState) {
+        self.selections.clear_secondary();
+        self.sync_from_selections(cursor);
+        tv.pending_update = true;
+    }
+
+    /// Move the primary selection to a new position
+    pub fn set_primary_selection(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, head: usize, extend: bool) {
+        let head = head.min(tv.rope.len_chars());
+        self.selections.move_primary(head, extend);
+        self.sync_from_selections(cursor);
+        tv.pending_update = true;
+    }
+}
+
+impl EditHistoryState {
+    /// Insert character at cursor position (with undo recording)
+    pub fn insert_char(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState, c: char) {
+        self.insert_char_with_history(sel, syntax, display, cursor, tv, c, true);
+    }
+
+    /// Insert character at cursor position with optional history recording
+    pub fn insert_char_with_history(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState, c: char, record_history: bool) {
+        let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
+        let line_idx = tv.rope.char_to_line(cursor_pos);
+        let cursor_before = cursor_pos;
+
+        #[cfg(feature = "tree-sitter")]
+        let start_byte = tv.rope.char_to_byte(cursor_pos);
+        #[cfg(feature = "tree-sitter")]
+        let char_byte_len = c.len_utf8();
+
+        self.anchors.record_edit(TextEdit::insert(cursor_pos, 1));
+
+        tv.rope.insert_char(cursor_pos, c);
+        cursor.cursor_pos += 1;
+        sel.sync_cursors_from_primary(cursor);
+        tv.pending_update = true;
+        tv.content_version += 1;
+
+        #[cfg(feature = "tree-sitter")]
+        {
+            syntax.pending_tree_sitter_edit = Some((
+                start_byte,
+                start_byte,
+                start_byte + char_byte_len,
+            ));
+        }
+
+        if record_history {
+            let kind = if c == '\n' {
+                EditKind::Newline
+            } else {
+                EditKind::Insert
+            };
+            self.history.record(EditOperation {
+                removed_text: String::new(),
+                inserted_text: c.to_string(),
+                position: cursor_before,
+                cursor_before,
+                cursor_after: cursor.cursor_pos,
+                kind,
+            });
+        }
+
+        let new_line_count = tv.rope.len_lines();
+        tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
+
+        if c == '\n' {
+            display.invalidate_lines_from = Some(line_idx);
+        }
+
+        tv.previous_line_count = new_line_count;
+    }
+
+    /// Delete character before cursor (with undo recording)
+    pub fn delete_backward(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState) {
+        self.delete_backward_with_history(sel, syntax, display, cursor, tv, true);
+    }
+
+    /// Delete character before cursor with optional history recording
+    pub fn delete_backward_with_history(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState, record_history: bool) {
+        if cursor.cursor_pos > 0 && cursor.cursor_pos <= tv.rope.len_chars() {
+            let cursor_before = cursor.cursor_pos;
+            let line_idx = tv.rope.char_to_line(cursor.cursor_pos - 1);
+            let deleted_char = tv.rope.char(cursor.cursor_pos - 1);
+            let char_idx = tv.rope.char_to_byte(cursor.cursor_pos - 1);
+            let byte_idx_end = tv.rope.char_to_byte(cursor.cursor_pos);
+
+            self.anchors
+                .record_edit(TextEdit::delete(cursor.cursor_pos - 1, cursor.cursor_pos));
+
+            tv.rope.remove(char_idx..byte_idx_end);
+            cursor.cursor_pos -= 1;
+            sel.sync_cursors_from_primary(cursor);
+            tv.pending_update = true;
+            tv.content_version += 1;
+
+            #[cfg(feature = "tree-sitter")]
+            {
+                syntax.pending_tree_sitter_edit = Some((char_idx, byte_idx_end, char_idx));
+            }
+
+            if record_history {
+                self.history.record(EditOperation {
+                    removed_text: deleted_char.to_string(),
+                    inserted_text: String::new(),
+                    position: cursor.cursor_pos,
+                    cursor_before,
+                    cursor_after: cursor.cursor_pos,
+                    kind: EditKind::DeleteBackward,
+                });
+            }
+
+            let new_line_count = tv.rope.len_lines();
+            tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
+
+            if deleted_char == '\n' {
+                display.invalidate_lines_from = Some(line_idx);
+            }
+
+            tv.previous_line_count = new_line_count;
+        }
+    }
+
+    /// Delete character after cursor (with undo recording)
+    pub fn delete_forward(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState) {
+        self.delete_forward_with_history(sel, syntax, display, cursor, tv, true);
+    }
+
+    /// Delete character after cursor with optional history recording
+    pub fn delete_forward_with_history(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState, record_history: bool) {
+        if cursor.cursor_pos < tv.rope.len_chars() {
+            let cursor_before = cursor.cursor_pos;
+            let line_idx = tv.rope.char_to_line(cursor.cursor_pos);
+            let deleted_char = tv.rope.char(cursor.cursor_pos);
+            let char_idx = tv.rope.char_to_byte(cursor.cursor_pos);
+            let byte_idx_end = tv.rope.char_to_byte(cursor.cursor_pos + 1);
+
+            self.anchors
+                .record_edit(TextEdit::delete(cursor.cursor_pos, cursor.cursor_pos + 1));
+
+            tv.rope.remove(char_idx..byte_idx_end);
+            sel.sync_cursors_from_primary(cursor);
+            tv.pending_update = true;
+            tv.content_version += 1;
+
+            #[cfg(feature = "tree-sitter")]
+            {
+                syntax.pending_tree_sitter_edit = Some((char_idx, byte_idx_end, char_idx));
+            }
+
+            if record_history {
+                self.history.record(EditOperation {
+                    removed_text: deleted_char.to_string(),
+                    inserted_text: String::new(),
+                    position: cursor.cursor_pos,
+                    cursor_before,
+                    cursor_after: cursor.cursor_pos,
+                    kind: EditKind::DeleteForward,
+                });
+            }
+
+            let new_line_count = tv.rope.len_lines();
+            tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
+
+            if deleted_char == '\n' {
+                display.invalidate_lines_from = Some(line_idx);
+            }
+
+            tv.previous_line_count = new_line_count;
+        }
+    }
+
+    /// Insert text at a specific position (used for undo/redo)
+    pub fn insert_text_at(&mut self, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, tv: &mut TextViewState, pos: usize, text: &str) {
+        let pos = pos.min(tv.rope.len_chars());
+        let text_char_len = text.chars().count();
+        let line_idx = tv.rope.char_to_line(pos);
+
+        #[cfg(feature = "tree-sitter")]
+        let start_byte = tv.rope.char_to_byte(pos);
+        #[cfg(feature = "tree-sitter")]
+        let text_byte_len = text.len();
+
+        self.anchors
+            .record_edit(TextEdit::insert(pos, text_char_len));
+
+        tv.rope.insert(pos, text);
+        tv.pending_update = true;
+        tv.content_version += 1;
+        tv.dirty_lines = None;
+
+        if text.contains('\n') {
+            display.invalidate_lines_from = Some(line_idx);
+        }
+
+        tv.previous_line_count = tv.rope.len_lines();
+
+        #[cfg(feature = "tree-sitter")]
+        {
+            syntax.pending_tree_sitter_edit = Some((
+                start_byte,
+                start_byte,
+                start_byte + text_byte_len,
+            ));
+        }
+    }
+
+    /// Remove text range (used for undo/redo)
+    pub fn remove_range(&mut self, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, tv: &mut TextViewState, start: usize, end: usize) {
+        let start = start.min(tv.rope.len_chars());
+        let end = end.min(tv.rope.len_chars());
+        if start < end {
+            let line_idx = tv.rope.char_to_line(start);
+            let start_byte = tv.rope.char_to_byte(start);
+            let end_byte = tv.rope.char_to_byte(end);
+
+            let removed_text: String = tv.rope.slice(start..end).chars().collect();
+            let has_newlines = removed_text.contains('\n');
+
+            self.anchors.record_edit(TextEdit::delete(start, end));
+
+            tv.rope.remove(start_byte..end_byte);
+            tv.pending_update = true;
+            tv.content_version += 1;
+            tv.dirty_lines = None;
+
+            if has_newlines {
+                display.invalidate_lines_from = Some(line_idx);
+            }
+
+            tv.previous_line_count = tv.rope.len_lines();
+
+            #[cfg(feature = "tree-sitter")]
+            {
+                syntax.pending_tree_sitter_edit = Some((start_byte, end_byte, start_byte));
+            }
+        }
+    }
+
+    /// Perform undo operation
+    pub fn undo(&mut self, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState) -> bool {
+        if let Some(transaction) = self.history.pop_undo() {
+            for op in transaction.operations.iter().rev() {
+                if !op.inserted_text.is_empty() {
+                    let end_pos = op.position + op.inserted_text.chars().count();
+                    self.remove_range(syntax, display, tv, op.position, end_pos);
+                }
+                if !op.removed_text.is_empty() {
+                    self.insert_text_at(syntax, display, tv, op.position, &op.removed_text);
+                }
+            }
+
+            if let Some(first_op) = transaction.operations.first() {
+                cursor.cursor_pos = first_op.cursor_before;
+            }
+
+            self.history.push_redo(transaction);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Perform redo operation
+    pub fn redo(&mut self, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState) -> bool {
+        if let Some(transaction) = self.history.pop_redo() {
+            for op in transaction.operations.iter() {
+                if !op.removed_text.is_empty() {
+                    let end_pos = op.position + op.removed_text.chars().count();
+                    self.remove_range(syntax, display, tv, op.position, end_pos);
+                }
+                if !op.inserted_text.is_empty() {
+                    self.insert_text_at(syntax, display, tv, op.position, &op.inserted_text);
+                }
+            }
+
+            if let Some(last_op) = transaction.operations.last() {
+                cursor.cursor_pos = last_op.cursor_after;
+            }
+
+            self.history.push_undo(transaction);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Set text content
+    pub fn set_text(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, cursor: &mut CursorState, tv: &mut TextViewState, text: &str) {
+        #[cfg(feature = "tree-sitter")]
+        let old_byte_len = tv.rope.len_bytes();
+        #[cfg(feature = "tree-sitter")]
+        let new_byte_len = text.len();
+
+        tv.rope = Rope::from_str(text);
+        cursor.cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
+        tv.pending_update = true;
+        tv.content_version += 1;
+        tv.dirty_lines = None;
+        tv.previous_line_count = tv.rope.len_lines();
+        self.anchors.clear();
+        sel.selections = SelectionCollection::with_cursor(cursor.cursor_pos);
+        tv.line_width_tracker.rebuild(&tv.rope);
+        tv.max_content_width_version = 0;
+
+        #[cfg(feature = "tree-sitter")]
+        {
+            syntax.pending_tree_sitter_edit = Some((0, old_byte_len, new_byte_len));
+        }
+    }
+
+    // ========== Anchor methods ==========
+
+    /// Create an anchor at the given position with left bias
+    pub fn create_anchor(&mut self, rope: &Rope, offset: usize, bias: AnchorBias) -> Anchor {
+        let offset = offset.min(rope.len_chars());
+        self.anchors.anchor_at(offset, bias)
+    }
+
+    /// Create an anchor at the given position with left bias (cursor-like behavior)
+    pub fn anchor_at(&mut self, rope: &Rope, offset: usize) -> Anchor {
+        self.create_anchor(rope, offset, AnchorBias::Left)
+    }
+
+    /// Resolve an anchor's current position (applies pending edits)
+    pub fn resolve_anchor(&self, rope: &Rope, anchor: &Anchor) -> usize {
+        self.anchors.resolve(anchor).min(rope.len_chars())
+    }
+
+    /// Apply pending anchor edits
+    pub fn apply_anchor_edits(&mut self) {
+        self.anchors.apply_pending_edits();
+    }
+
+    /// Remove an anchor by its ID
+    pub fn remove_anchor(&mut self, id: u64) -> Option<Anchor> {
+        self.anchors.remove(id)
     }
 }
 
@@ -2625,7 +2561,7 @@ impl GotoLineState {
 
     /// Execute goto line: moves cursor to the specified line
     /// Returns true if the navigation was successful
-    pub fn goto(&self, state: &mut CodeEditorState, cursor: &mut CursorState, tv: &mut TextViewState) -> bool {
+    pub fn goto(&self, sel: &mut SelectionState, cursor: &mut CursorState, tv: &mut TextViewState) -> bool {
         if let Some(line_num) = self.parse_line_number() {
             let total_lines = tv.rope.len_lines();
             // Clamp line number to valid range (1-indexed input, convert to 0-indexed)
@@ -2636,8 +2572,8 @@ impl GotoLineState {
             // Move cursor to the start of the target line
             let char_pos = tv.rope.line_to_char(target_line);
             cursor.cursor_pos = char_pos;
-            state.selection_start = None;
-            state.selection_end = None;
+            sel.selection_start = None;
+            sel.selection_end = None;
             tv.pending_update = true;
 
             return true;

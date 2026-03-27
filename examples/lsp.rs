@@ -62,12 +62,12 @@ fn run_with_lsp() {
 
 #[cfg(feature = "lsp")]
 fn setup_editor(
-    mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState), With<CodeEditor>>,
+    mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState, &mut EditHistoryState, &mut SelectionState, &mut SyntaxCacheState), With<CodeEditor>>,
     mut lsp_client: ResMut<bevy_code_editor::lsp::LspClient>,
     mut lsp_sync: ResMut<bevy_code_editor::lsp::LspSyncState>,
     #[cfg(feature = "tree-sitter")] mut syntax: ResMut<bevy_code_editor::plugin::SyntaxResource>,
 ) {
-    let Ok((mut state, mut cursor, mut tv)) = editor_query.single_mut() else {
+    let Ok((mut state, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) = editor_query.single_mut() else {
         return;
     };
 
@@ -77,7 +77,7 @@ fn setup_editor(
     let rust_code =
         std::fs::read_to_string(&example_file_path).expect("Failed to read example file");
 
-    state.set_text(&mut cursor, &mut tv, &rust_code);
+    hist.set_text(&mut sel, &mut syntax_cache, &mut cursor, &mut tv, &rust_code);
 
     // Define Rust language configuration
     let rust_lang = Language {
@@ -198,8 +198,8 @@ fn run_without_lsp() {
 }
 
 #[cfg(not(feature = "lsp"))]
-fn show_lsp_message(mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState), With<CodeEditor>>) {
-    let Ok((mut state, mut cursor, mut tv)) = editor_query.single_mut() else {
+fn show_lsp_message(mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState, &mut EditHistoryState, &mut SelectionState, &mut SyntaxCacheState), With<CodeEditor>>) {
+    let Ok((mut state, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) = editor_query.single_mut() else {
         return;
     };
 
@@ -234,5 +234,5 @@ Example LSP setup for Rust:
 For a complete LSP implementation, see the bevy_code_editor documentation.
 "#;
 
-    state.set_text(&mut cursor, &mut tv, message);
+    hist.set_text(&mut sel, &mut syntax_cache, &mut cursor, &mut tv, message);
 }

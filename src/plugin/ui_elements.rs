@@ -9,7 +9,7 @@ use bevy::prelude::*;
 /// Update selection highlight rectangles for all cursors
 pub(crate) fn update_selection_highlight(
     mut commands: Commands,
-    editor_query: Query<(&TextViewState, &TextViewViewport, &CodeEditorState, &CursorState), With<CodeEditor>>,
+    editor_query: Query<(&TextViewState, &TextViewViewport, &CodeEditorState, &SelectionState, &EditorDisplayState, &CursorState), With<CodeEditor>>,
     font: Res<FontSettings>,
     theme: Res<ThemeSettings>,
     wrapping: Res<WrappingSettings>,
@@ -25,7 +25,7 @@ pub(crate) fn update_selection_highlight(
         &mut SelectionHighlight,
     )>,
 ) {
-    let Ok((tv, vp, editor, cursor)) = editor_query.single() else {
+    let Ok((tv, vp, _editor, sel, display, cursor)) = editor_query.single() else {
         return;
     };
 
@@ -38,7 +38,7 @@ pub(crate) fn update_selection_highlight(
     let line_height = font.line_height;
 
     // Check if we're using soft line wrapping
-    let use_wrapping = wrapping.enabled && editor.display_map.wrap_width > 0;
+    let use_wrapping = wrapping.enabled && display.display_map.wrap_width > 0;
 
     // Collect all selection ranges from all cursors
     // (cursor_idx, display_row, start_col, end_col, is_continuation)
@@ -78,7 +78,7 @@ pub(crate) fn update_selection_highlight(
                 if sel_start_in_line < sel_end_in_line {
                     if use_wrapping {
                         // For wrapped mode, split selection across display rows
-                        for (row_idx, row) in editor.display_map.rows.iter().enumerate() {
+                        for (row_idx, row) in display.display_map.rows.iter().enumerate() {
                             if row.buffer_line != line_idx {
                                 continue;
                             }
@@ -119,8 +119,8 @@ pub(crate) fn update_selection_highlight(
     }
 
     // Also handle backward-compatible selection_start/selection_end if cursors is empty/mismatched
-    if cursor.cursors.is_empty() || (cursor.cursors.len() == 1 && editor.selection_start.is_some()) {
-        if let (Some(sel_start), Some(sel_end)) = (editor.selection_start, editor.selection_end) {
+    if cursor.cursors.is_empty() || (cursor.cursors.len() == 1 && sel.selection_start.is_some()) {
+        if let (Some(sel_start), Some(sel_end)) = (sel.selection_start, sel.selection_end) {
             let (start, end) = if sel_start <= sel_end {
                 (sel_start, sel_end)
             } else {
@@ -155,7 +155,7 @@ pub(crate) fn update_selection_highlight(
 
                     if sel_start_in_line < sel_end_in_line {
                         if use_wrapping {
-                            for (row_idx, row) in editor.display_map.rows.iter().enumerate() {
+                            for (row_idx, row) in display.display_map.rows.iter().enumerate() {
                                 if row.buffer_line != line_idx {
                                     continue;
                                 }

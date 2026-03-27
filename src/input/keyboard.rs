@@ -69,7 +69,7 @@ const ALL_ACTIONS: [EditorAction; 45] = [
 
 /// System to handle keyboard input using leafwing-input-manager
 pub fn handle_keyboard_input(
-    mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState, &TextViewViewport), With<CodeEditor>>,
+    mut editor_query: Query<(&mut CodeEditorState, &mut SelectionState, &mut EditHistoryState, &mut SyntaxCacheState, &mut EditorDisplayState, &mut CursorState, &mut TextViewState, &TextViewViewport), With<CodeEditor>>,
     mut char_events: MessageReader<KeyboardInput>,
     action_query: Query<&ActionState<EditorAction>, With<EditorInputManager>>,
     cursor_settings: Res<CursorSettings>,
@@ -88,7 +88,7 @@ pub fn handle_keyboard_input(
     #[cfg(feature = "lsp")] mut rename_state: ResMut<crate::lsp::state::RenameState>,
     #[cfg(feature = "lsp")] mut lsp_sync: ResMut<crate::lsp::LspSyncState>,
 ) {
-    let Ok((mut state, mut cursor, mut tv, _viewport)) = editor_query.single_mut() else { return; };
+    let Ok((mut state, mut sel, mut hist, mut syntax, mut display, mut cursor, mut tv, _viewport)) = editor_query.single_mut() else { return; };
 
     // Only process input if editor is focused
     if !state.is_focused {
@@ -255,7 +255,7 @@ pub fn handle_keyboard_input(
                                 }
                             }
 
-                            insert_char(&mut state, &mut cursor, &mut tv, c);
+                            insert_char(&mut state, &mut sel, &mut hist, &mut syntax, &mut display, &mut cursor, &mut tv, c);
 
                             // Auto-close brackets
                             if brackets.auto_close {
@@ -387,7 +387,7 @@ pub fn handle_keyboard_input(
                     }
                     // Bevy sends Space as a separate variant, not Character(" ")
                     bevy::input::keyboard::Key::Space => {
-                        insert_char(&mut state, &mut cursor, &mut tv, ' ');
+                        insert_char(&mut state, &mut sel, &mut hist, &mut syntax, &mut display, &mut cursor, &mut tv, ' ');
                         // Notify LSP of text change
                         #[cfg(feature = "lsp")]
                         send_did_change(&tv.rope, &lsp_client, &mut lsp_sync);
@@ -448,49 +448,29 @@ pub fn handle_keyboard_input(
 
         #[cfg(all(not(feature = "lsp"), feature = "folding"))]
         execute_action(
-            &mut state,
-            &mut cursor,
-            &mut tv,
-            action,
-            &indentation,
-            &mut goto_line_state,
-            &mut fold_state,
+            &mut state, &mut sel, &mut hist, &mut syntax, &mut display,
+            &mut cursor, &mut tv, action, &indentation,
+            &mut goto_line_state, &mut fold_state,
         );
         #[cfg(all(not(feature = "lsp"), not(feature = "folding")))]
         execute_action(
-            &mut state,
-            &mut cursor,
-            &mut tv,
-            action,
-            &indentation,
+            &mut state, &mut sel, &mut hist, &mut syntax, &mut display,
+            &mut cursor, &mut tv, action, &indentation,
             &mut goto_line_state,
         );
         #[cfg(all(feature = "lsp", feature = "folding"))]
         execute_action(
-            &mut state,
-            &mut cursor,
-            &mut tv,
-            action,
-            &indentation,
-            &lsp,
-            &mut goto_line_state,
-            &mut fold_state,
-            &lsp_client,
-            &mut completion_state,
-            &mut lsp_sync,
+            &mut state, &mut sel, &mut hist, &mut syntax, &mut display,
+            &mut cursor, &mut tv, action, &indentation, &lsp,
+            &mut goto_line_state, &mut fold_state,
+            &lsp_client, &mut completion_state, &mut lsp_sync,
         );
         #[cfg(all(feature = "lsp", not(feature = "folding")))]
         execute_action(
-            &mut state,
-            &mut cursor,
-            &mut tv,
-            action,
-            &indentation,
-            &lsp,
+            &mut state, &mut sel, &mut hist, &mut syntax, &mut display,
+            &mut cursor, &mut tv, action, &indentation, &lsp,
             &mut goto_line_state,
-            &lsp_client,
-            &mut completion_state,
-            &mut lsp_sync,
+            &lsp_client, &mut completion_state, &mut lsp_sync,
         );
     }
 }

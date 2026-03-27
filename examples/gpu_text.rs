@@ -25,8 +25,8 @@ fn main() {
         .run();
 }
 
-fn setup_editor(mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState), With<CodeEditor>>) {
-    let Ok((mut state, mut cursor, mut tv)) = editor_query.single_mut() else {
+fn setup_editor(mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState, &mut EditHistoryState, &mut SelectionState, &mut SyntaxCacheState), With<CodeEditor>>) {
+    let Ok((mut state, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) = editor_query.single_mut() else {
         return;
     };
 
@@ -63,7 +63,7 @@ fn setup_editor(mut editor_query: Query<(&mut CodeEditorState, &mut CursorState,
         }
     };
 
-    state.set_text(&mut cursor, &mut tv, &content);
+    hist.set_text(&mut sel, &mut syntax_cache, &mut cursor, &mut tv, &content);
 }
 
 fn update_cursor_icon(

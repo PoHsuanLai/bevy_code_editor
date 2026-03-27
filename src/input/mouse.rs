@@ -77,7 +77,7 @@ fn screen_to_char_pos(
 
 /// System to handle mouse input
 pub fn handle_mouse_input(
-    mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState, &TextViewViewport), With<CodeEditor>>,
+    mut editor_query: Query<(&mut CodeEditorState, &mut SelectionState, &mut CursorState, &mut TextViewState, &TextViewViewport), With<CodeEditor>>,
     mut drag_state: ResMut<MouseDragState>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
@@ -90,7 +90,7 @@ pub fn handle_mouse_input(
     #[cfg(feature = "lsp")] mut hover_state: ResMut<crate::lsp::HoverState>,
     #[cfg(feature = "lsp")] hover_settings: Res<crate::settings::LspSettings>,
 ) {
-    let Ok((mut state, mut cursor, mut tv, viewport)) = editor_query.single_mut() else { return; };
+    let Ok((mut state, mut sel, mut cursor, mut tv, viewport)) = editor_query.single_mut() else { return; };
 
     // Get cursor position
     let cursor_pos_screen = window_query
@@ -278,8 +278,8 @@ pub fn handle_mouse_input(
 
             if alt_pressed {
                 // Add cursor at clicked position
-                state.sync_cursors_from_primary(&mut cursor);
-                state.add_cursor(&mut cursor, &mut tv, char_pos);
+                sel.sync_cursors_from_primary(&mut cursor);
+                sel.add_cursor(&mut cursor, &mut tv, char_pos);
                 // Hide hover on click
                 #[cfg(feature = "lsp")]
                 reset_hover_state(&mut hover_state);
@@ -293,15 +293,15 @@ pub fn handle_mouse_input(
             drag_state.last_screen_pos = cursor_pos_screen;
 
             // Clear secondary cursors on regular click
-            if state.has_multiple_cursors(&cursor) {
-                state.clear_secondary_cursors(&mut cursor, &mut tv);
+            if sel.has_multiple_cursors(&cursor) {
+                sel.clear_secondary_cursors(&mut cursor, &mut tv);
             }
 
             // Update cursor and clear selection
             cursor.cursor_pos = char_pos;
-            state.selection_start = None;
-            state.selection_end = None;
-            state.sync_cursors_from_primary(&mut cursor);
+            sel.selection_start = None;
+            sel.selection_end = None;
+            sel.sync_cursors_from_primary(&mut cursor);
             tv.pending_update = true;
 
             // Hide hover on click
@@ -358,8 +358,8 @@ pub fn handle_mouse_input(
                 // Only update if position changed
                 if current_pos != cursor.cursor_pos {
                     cursor.cursor_pos = current_pos;
-                    state.selection_start = Some(start_pos);
-                    state.selection_end = Some(current_pos);
+                    sel.selection_start = Some(start_pos);
+                    sel.selection_end = Some(current_pos);
                     tv.pending_update = true;
                 }
             }
@@ -369,13 +369,13 @@ pub fn handle_mouse_input(
 
 /// System to handle mouse wheel scrolling
 pub fn handle_mouse_wheel(
-    mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState, &TextViewViewport), With<CodeEditor>>,
+    mut editor_query: Query<(&mut CodeEditorState, &mut SelectionState, &mut CursorState, &mut TextViewState, &TextViewViewport), With<CodeEditor>>,
     mut mouse_wheel_events: MessageReader<MouseWheel>,
     _keyboard: Res<ButtonInput<KeyCode>>,
     font: Res<FontSettings>,
     scrolling: Res<ScrollingSettings>,
 ) {
-    let Ok((_state, _cursor, mut tv, viewport)) = editor_query.single_mut() else { return; };
+    let Ok((_state, _sel, _cursor, mut tv, viewport)) = editor_query.single_mut() else { return; };
 
     for event in mouse_wheel_events.read() {
         let mut scrolled = false;
