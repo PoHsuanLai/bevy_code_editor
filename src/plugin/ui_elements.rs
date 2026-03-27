@@ -461,8 +461,8 @@ pub(crate) fn animate_smooth_scroll(
     mut editor_query: Query<&mut TextViewState, With<CodeEditor>>,
     time: Res<Time>,
     scrolling: Res<ScrollingSettings>,
-    font: Res<crate::settings::FontSettings>,
-    viewport: Res<crate::types::ViewportDimensions>,
+    _font: Res<crate::settings::FontSettings>,
+    _viewport: Res<crate::types::ViewportDimensions>,
     #[cfg(feature = "scrollbar")]
     scrollbar_drag: Res<super::scrollbar::ScrollbarDragState>,
 ) {

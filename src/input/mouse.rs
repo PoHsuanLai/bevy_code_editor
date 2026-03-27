@@ -197,8 +197,8 @@ pub fn handle_mouse_input(
         // Check for fold indicator click (in the fold gutter area)
         #[cfg(feature = "folding")]
         if let Some(cursor_pos_screen) = cursor_pos_screen {
-            let viewport_width = viewport.width as f32;
-            let viewport_height = viewport.height as f32;
+            let _viewport_width = viewport.width as f32;
+            let _viewport_height = viewport.height as f32;
             let line_height = font.line_height;
 
             let viewport_left = viewport.screen_position.x;
@@ -330,8 +330,8 @@ pub fn handle_mouse_input(
                 // Update last screen position
                 drag_state.last_screen_pos = Some(cursor_pos_screen);
 
-                let viewport_width = viewport.width as f32;
-                let viewport_height = viewport.height as f32;
+                let _viewport_width = viewport.width as f32;
+                let _viewport_height = viewport.height as f32;
                 let viewport_local_pos = Vec2::new(
                     cursor_pos_screen.x - viewport.screen_position.x,
                     cursor_pos_screen.y - viewport.screen_position.y,

@@ -12,10 +12,8 @@ pub struct TextViewViewport {
     /// Viewport height in pixels
     pub height: u32,
 
-    /// Horizontal offset for content center (useful for sidebars/panels)
-    pub offset_x: f32,
-    /// Vertical offset for content center (useful for panels)
-    pub offset_y: f32,
+    /// Top-left position of the editor panel in window/screen pixels (set by host app)
+    pub screen_position: bevy::math::Vec2,
 
     // === Computed Layout ===
     /// Left margin/padding before text starts
@@ -33,8 +31,7 @@ impl Default for TextViewViewport {
         Self {
             width: 800,
             height: 600,
-            offset_x: 0.0,
-            offset_y: 0.0,
+            screen_position: bevy::math::Vec2::ZERO,
             text_area_left: 0.0,
             text_area_top: 8.0,
             gutter_width: 0.0,
@@ -46,19 +43,19 @@ impl Default for TextViewViewport {
 impl TextViewViewport {
     /// Calculate the world coordinate of the viewport's left edge
     pub fn world_left(&self) -> f32 {
-        if self.offset_x == 0.0 && self.offset_y == 0.0 {
+        if self.screen_position == bevy::math::Vec2::ZERO {
             -(self.width as f32) / 2.0
         } else {
-            self.offset_x
+            self.screen_position.x
         }
     }
 
     /// Calculate the world coordinate of the viewport's top edge
     pub fn world_top(&self) -> f32 {
-        if self.offset_x == 0.0 && self.offset_y == 0.0 {
+        if self.screen_position == bevy::math::Vec2::ZERO {
             self.height as f32 / 2.0
         } else {
-            self.offset_y
+            self.screen_position.y
         }
     }
 }

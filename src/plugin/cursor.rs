@@ -115,8 +115,6 @@ pub(crate) fn update_cursor(
             y_offset,
             vp.width as f32,
             vp.height as f32,
-            vp.offset_x,
-            vp.offset_y,
             h_scroll,
         );
 

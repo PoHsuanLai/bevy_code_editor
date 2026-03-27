@@ -76,7 +76,7 @@ pub fn sync_completion_popup(
         .collect();
 
     let popup_data = CompletionPopupData {
-        position: Vec2::new(x_offset + vp.offset_x, y_offset),
+        position: Vec2::new(x_offset + vp.screen_position.x, y_offset),
         items,
         selected_index: completion_state.selected_index,
         scroll_offset: completion_state.scroll_offset,
@@ -148,7 +148,7 @@ pub fn sync_hover_popup(
     let box_height = (line_count as f32 * font_size * 1.2) + padding * 2.0;
 
     let popup_data = HoverPopupData {
-        position: Vec2::new(x_offset + vp.offset_x, y_offset),
+        position: Vec2::new(x_offset + vp.screen_position.x, y_offset),
         content: hover_state.content.clone(),
         width: box_width,
         height: box_height,
@@ -231,7 +231,7 @@ pub fn sync_signature_help_popup(
         .unwrap_or_default();
 
     let popup_data = SignatureHelpPopupData {
-        position: Vec2::new(x_offset + vp.offset_x, y_offset),
+        position: Vec2::new(x_offset + vp.screen_position.x, y_offset),
         label: sig_label.clone(),
         active_parameter: sig_state.active_parameter,
         parameter_ranges,
@@ -326,7 +326,7 @@ pub fn sync_code_actions_popup(
         .collect();
 
     let popup_data = CodeActionsPopupData {
-        position: Vec2::new(x_offset + vp.offset_x, y_offset),
+        position: Vec2::new(x_offset + vp.screen_position.x, y_offset),
         actions,
         selected_index: action_state.selected_index,
         width: box_width,
@@ -396,7 +396,7 @@ pub fn sync_rename_input(
     let box_height = line_height + padding_y * 2.0;
 
     let popup_data = RenameInputData {
-        position: Vec2::new(x_offset + vp.offset_x, y_offset),
+        position: Vec2::new(x_offset + vp.screen_position.x, y_offset),
         text: display_text.to_string(),
         original_text: rename_state.original_text.clone(),
         cursor_position: display_text.chars().count(),
@@ -478,7 +478,7 @@ pub fn sync_inlay_hints(
 
         commands.spawn((
             InlayHintData {
-                position: Vec2::new(x_offset + vp.offset_x, y_offset),
+                position: Vec2::new(x_offset + vp.screen_position.x, y_offset),
                 label: label_text,
                 kind,
                 line,
@@ -549,7 +549,7 @@ pub fn sync_document_highlights(
 
             commands.spawn((
                 DocumentHighlightData {
-                    position: Vec2::new(x_offset + vp.offset_x + width / 2.0, y_offset),
+                    position: Vec2::new(x_offset + vp.screen_position.x + width / 2.0, y_offset),
                     width,
                     height: line_height,
                     is_write,
@@ -582,7 +582,7 @@ pub fn sync_document_highlights(
 
                 commands.spawn((
                     DocumentHighlightData {
-                        position: Vec2::new(x_offset + vp.offset_x + width / 2.0, y_offset),
+                        position: Vec2::new(x_offset + vp.screen_position.x + width / 2.0, y_offset),
                         width,
                         height: line_height,
                         is_write,

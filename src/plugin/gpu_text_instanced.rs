@@ -10,7 +10,6 @@ use crate::settings::*;
 use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::*;
 use bevy::prelude::*;
-use std::sync::Arc;
 
 // Re-export types from text_view for backward compatibility
 pub use crate::text_view::render::{GlyphBatchComponent, GlyphInstance, TextViewBatch};
@@ -155,18 +154,20 @@ pub(crate) fn update_gpu_text_instanced(
     atlas.update_texture(&mut images);
 
     // Update or create batch entity
-    if arc_instances.is_empty() {
-        for (entity, _, mut batch_comp) in batch_query.iter_mut() {
-            // Clear instances immediately — no deferred commands, takes effect this frame
-            batch_comp.instances = arc_instances.clone();
+    if instances.is_empty() {
+        for (entity, _) in batch_query.iter() {
+            commands.entity(entity).insert(GlyphBatchComponent {
+                instances: Vec::new(),
+                atlas_texture: atlas.texture.clone(),
+            });
             commands.entity(entity).insert(Visibility::Hidden);
         }
     } else {
-        let existing_batches: Vec<Entity> = batch_query.iter().map(|(e, _, _)| e).collect();
+        let existing_batches: Vec<Entity> = batch_query.iter().map(|(e, _)| e).collect();
 
         if let Some(&first_entity) = existing_batches.first() {
             commands.entity(first_entity).insert(GlyphBatchComponent {
-                instances: arc_instances,
+                instances,
                 atlas_texture: atlas.texture.clone(),
             });
             commands.entity(first_entity).insert(Visibility::Visible);
@@ -185,7 +186,7 @@ pub(crate) fn update_gpu_text_instanced(
         } else {
             commands.spawn((
                 GlyphBatchComponent {
-                    instances: arc_instances,
+                    instances,
                     atlas_texture: atlas.texture.clone(),
                 },
                 Transform::default(),

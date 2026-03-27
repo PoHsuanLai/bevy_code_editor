@@ -13,7 +13,7 @@ use crate::lsp::state::{
     SignatureHelpState,
 };
 use crate::text_view::TextViewState;
-use crate::types::{CodeEditor, CodeEditorState, CursorState};
+use crate::types::{CodeEditor, CursorState};
 use bevy::prelude::*;
 
 /// System that listens to TextEditEvent and sends incremental didChange to LSP.
@@ -27,13 +27,36 @@ pub fn listen_text_edit_events(
     mut lsp_sync: ResMut<LspSyncState>,
 ) {
     let Ok(tv) = query.single() else { return };
-    for _event in events.read() {
-        // Only send if we have a document URI
+    for event in events.read() {
         if let Some(uri) = lsp_sync.document_uri.clone() {
             lsp_sync.document_version += 1;
 
-            // Get the full text content
-            let text = tv.rope.to_string();
+            // Convert byte offsets to LSP positions using the CURRENT rope
+            // (which already has the edit applied)
+            let rope = &tv.rope;
+
+            // start_byte position (same in old and new)
+            let start_pos = byte_to_lsp_position(rope, event.start_byte);
+
+            // old_end_byte: we need the position in the OLD document.
+            // Since the rope is already updated, compute the old end position
+            // from the start position plus the old range length.
+            let old_len = event.old_end_byte - event.start_byte;
+
+            // For the old end position, we can compute it relative to start
+            // using the old document structure. Since we only have the new rope,
+            // use range_length mode which doesn't need old_end_position.
+            let new_text_start = event.start_byte.min(rope.len_bytes());
+            let new_text_end = event.new_end_byte.min(rope.len_bytes());
+
+            // Extract the new text from the rope
+            let new_text = if new_text_start < new_text_end {
+                let start_char = rope.byte_to_char(new_text_start);
+                let end_char = rope.byte_to_char(new_text_end);
+                rope.slice(start_char..end_char).to_string()
+            } else {
+                String::new()
+            };
 
             use lsp_types::TextDocumentContentChangeEvent;
             let msg = LspMessage::DidChange {
@@ -70,7 +93,6 @@ fn byte_to_lsp_position(rope: &ropey::Rope, byte_offset: usize) -> lsp_types::Po
 /// System that listens to RequestCompletionEvent and buffers for debouncing
 pub fn listen_completion_requests(
     mut events: MessageReader<RequestCompletionEvent>,
-    lsp_client: Res<LspClient>,
     lsp_sync: Res<LspSyncState>,
     mut debounce: ResMut<LspDebounceTimers>,
     mut completion_state: ResMut<CompletionState>,
@@ -95,8 +117,7 @@ pub fn listen_completion_requests(
 pub fn listen_hover_requests(
     mut events: MessageReader<RequestHoverEvent>,
     lsp_sync: Res<LspSyncState>,
-    lsp_client: Res<LspClient>,
-    _hover_state: ResMut<HoverState>,
+    mut debounce: ResMut<LspDebounceTimers>,
 ) {
     for event in events.read() {
         if let Some(uri) = &lsp_sync.document_uri {
@@ -116,7 +137,7 @@ pub fn listen_rename_requests(
     mut events: MessageReader<RequestRenameEvent>,
     lsp_sync: Res<LspSyncState>,
     lsp_client: Res<LspClient>,
-    _rename_state: ResMut<RenameState>,
+    mut rename_state: ResMut<RenameState>,
 ) {
     for event in events.read() {
         if let Some(uri) = &lsp_sync.document_uri {
@@ -139,7 +160,7 @@ pub fn listen_signature_help_requests(
     mut events: MessageReader<RequestSignatureHelpEvent>,
     lsp_sync: Res<LspSyncState>,
     lsp_client: Res<LspClient>,
-    _sig_help_state: ResMut<SignatureHelpState>,
+    mut sig_help_state: ResMut<SignatureHelpState>,
 ) {
     for event in events.read() {
         if let Some(uri) = &lsp_sync.document_uri {
@@ -239,10 +260,10 @@ pub fn tick_lsp_debounce_timers(
 /// System that listens to ApplyCompletionEvent
 pub fn listen_apply_completion(
     mut events: MessageReader<ApplyCompletionEvent>,
-    mut query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState), With<CodeEditor>>,
+    mut query: Query<(&mut CursorState, &mut TextViewState), With<CodeEditor>>,
     mut completion_state: ResMut<CompletionState>,
 ) {
-    let Ok((_editor, mut cursor_state, mut tv)) = query.single_mut() else { return };
+    let Ok((mut cursor_state, mut tv)) = query.single_mut() else { return };
     for event in events.read() {
         if event.item_index < completion_state.items.len() {
             let item = &completion_state.items[event.item_index];

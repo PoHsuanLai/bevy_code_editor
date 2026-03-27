@@ -264,8 +264,8 @@ fn update_camera_viewport(
     };
 
     // Convert from center-origin viewport coordinates to top-left origin window coordinates
-    // For resizable panels: viewport.offset_x/offset_y store the LEFT and TOP edges (not center!)
-    // For auto-resize mode: offset_x/y are (0, 0) and panel is centered
+    // For resizable panels: viewport.screen_position stores the LEFT and TOP edges (not center!)
+    // For auto-resize mode: screen_position is (0, 0) and panel is centered
     // viewport.width/height are the panel dimensions
     let window_width = window.width();
     let window_height = window.height();

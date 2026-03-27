@@ -50,7 +50,6 @@ pub(crate) use self::brackets::{update_bracket_highlight, update_bracket_match};
 pub(crate) use self::folding::update_fold_indicators;
 pub(crate) use self::gpu_line_numbers::update_gpu_line_numbers;
 pub(crate) use self::gpu_text_instanced::update_gpu_text_instanced;
-pub use self::gpu_text_instanced::LineGlyphCache;
 
 /// Marker component for the entity that handles editor input (InputManager)
 #[derive(Component)]
@@ -112,7 +111,6 @@ impl Plugin for CodeEditorPlugin {
         // Initialize feature-specific resources
         app.insert_resource(BracketMatchState::default());
         app.insert_resource(GotoLineState::default());
-        app.insert_resource(LineGlyphCache::default());
 
         #[cfg(feature = "folding")]
         app.insert_resource(FoldState::default());
