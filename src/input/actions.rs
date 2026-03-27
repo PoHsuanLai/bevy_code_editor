@@ -139,7 +139,7 @@ fn delete_selection_with_history(state: &mut CodeEditorState, sel: &mut Selectio
 
 /// Apply selected completion item
 #[cfg(feature = "lsp")]
-pub fn apply_completion(state: &mut CodeEditorState, _sel: &mut SelectionState, _hist: &mut EditHistoryState, _syntax: &mut SyntaxCacheState, _display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState, completion_state: &mut lsp::CompletionState) {
+pub fn apply_completion(state: &mut CodeEditorState, cursor: &mut CursorState, tv: &mut TextViewState, completion_state: &mut lsp::CompletionState) {
     // Get filtered items and select from that list
     let filtered = completion_state.filtered_items();
     if let Some(item) = filtered.get(completion_state.selected_index) {
@@ -806,8 +806,7 @@ fn add_cursor_below(sel: &mut SelectionState, cursor: &mut CursorState, tv: &mut
     sel.add_cursor(cursor, tv, new_pos);
 }
 
-/// Execute an editor action (Non-LSP version)
-#[cfg(all(not(feature = "lsp"), feature = "folding"))]
+/// Execute an editor action — unified entry point for all feature combinations.
 pub fn execute_action(
     state: &mut CodeEditorState,
     sel: &mut SelectionState,
@@ -818,8 +817,12 @@ pub fn execute_action(
     tv: &mut TextViewState,
     action: EditorAction,
     indentation: &IndentationSettings,
+    #[cfg(feature = "lsp")] lsp: &LspSettings,
     goto_line_state: &mut GotoLineState,
-    fold_state: &mut FoldState,
+    #[cfg(feature = "folding")] fold_state: &mut FoldState,
+    #[cfg(feature = "lsp")] lsp_client: &lsp::LspClient,
+    #[cfg(feature = "lsp")] completion_state: &mut lsp::CompletionState,
+    #[cfg(feature = "lsp")] lsp_sync: &mut lsp::LspSyncState,
 ) {
     if action == EditorAction::ClearSelection {
         if sel.has_multiple_cursors(cursor) {
@@ -832,224 +835,82 @@ pub fn execute_action(
         }
     }
 
-    let _ = execute_action_core(state, sel, hist, syntax, display, cursor, tv, action, indentation, goto_line_state, fold_state);
-}
+    // LSP completion navigation intercepts certain actions
+    #[cfg(feature = "lsp")]
+    {
+        let filtered_count = completion_state.filtered_items().len();
+        let max_visible = lsp.completion.max_items;
 
-/// Execute an editor action (Non-LSP, no folding version)
-#[cfg(all(not(feature = "lsp"), not(feature = "folding")))]
-pub fn execute_action(
-    state: &mut CodeEditorState,
-    sel: &mut SelectionState,
-    hist: &mut EditHistoryState,
-    syntax: &mut SyntaxCacheState,
-    display: &mut EditorDisplayState,
-    cursor: &mut CursorState,
-    tv: &mut TextViewState,
-    action: EditorAction,
-    indentation: &IndentationSettings,
-    goto_line_state: &mut GotoLineState,
-) {
-    if action == EditorAction::ClearSelection {
-        if sel.has_multiple_cursors(cursor) {
-            sel.clear_secondary_cursors(cursor, tv);
-            return;
-        }
-        if goto_line_state.active {
-            goto_line_state.clear();
-            return;
-        }
-    }
-
-    let _ = execute_action_core(state, sel, hist, syntax, display, cursor, tv, action, indentation, goto_line_state, None);
-}
-
-/// Execute an editor action (LSP version with folding)
-#[cfg(all(feature = "lsp", feature = "folding"))]
-pub fn execute_action(
-    state: &mut CodeEditorState,
-    sel: &mut SelectionState,
-    hist: &mut EditHistoryState,
-    syntax: &mut SyntaxCacheState,
-    display: &mut EditorDisplayState,
-    cursor: &mut CursorState,
-    tv: &mut TextViewState,
-    action: EditorAction,
-    indentation: &IndentationSettings,
-    lsp: &LspSettings,
-    goto_line_state: &mut GotoLineState,
-    fold_state: &mut FoldState,
-    lsp_client: &lsp::LspClient,
-    completion_state: &mut lsp::CompletionState,
-    lsp_sync: &mut lsp::LspSyncState,
-) {
-    if action == EditorAction::ClearSelection {
-        if sel.has_multiple_cursors(cursor) {
-            sel.clear_secondary_cursors(cursor, tv);
-            return;
-        }
-        if goto_line_state.active {
-            goto_line_state.clear();
-            return;
-        }
-    }
-
-    let filtered_count = completion_state.filtered_items().len();
-    let max_visible = lsp.completion.max_items;
-
-    if completion_state.visible && filtered_count > 0 {
-        match action {
-            EditorAction::MoveCursorUp => {
-                if completion_state.selected_index > 0 {
-                    completion_state.selected_index -= 1;
-                } else {
-                    completion_state.selected_index = filtered_count.saturating_sub(1);
+        if completion_state.visible && filtered_count > 0 {
+            match action {
+                EditorAction::MoveCursorUp => {
+                    if completion_state.selected_index > 0 {
+                        completion_state.selected_index -= 1;
+                    } else {
+                        completion_state.selected_index = filtered_count.saturating_sub(1);
+                    }
+                    completion_state.ensure_selected_visible_with_max(max_visible);
+                    return;
                 }
-                completion_state.ensure_selected_visible_with_max(max_visible);
-                return;
-            }
-            EditorAction::MoveCursorDown => {
-                if completion_state.selected_index + 1 < filtered_count {
-                    completion_state.selected_index += 1;
-                } else {
-                    completion_state.selected_index = 0;
+                EditorAction::MoveCursorDown => {
+                    if completion_state.selected_index + 1 < filtered_count {
+                        completion_state.selected_index += 1;
+                    } else {
+                        completion_state.selected_index = 0;
+                    }
+                    completion_state.ensure_selected_visible_with_max(max_visible);
+                    return;
                 }
-                completion_state.ensure_selected_visible_with_max(max_visible);
-                return;
+                EditorAction::InsertNewline | EditorAction::InsertTab => {
+                    apply_completion(state, cursor, tv, completion_state);
+                    send_did_change(&tv.rope, lsp_client, lsp_sync);
+                    return;
+                }
+                EditorAction::ClearSelection => {
+                    completion_state.visible = false;
+                    completion_state.filter.clear();
+                    completion_state.scroll_offset = 0;
+                    return;
+                }
+                _ => {}
             }
-            EditorAction::InsertNewline | EditorAction::InsertTab => {
-                apply_completion(state, sel, hist, syntax, display, cursor, tv, completion_state);
-                send_did_change(&tv.rope, lsp_client, lsp_sync);
-                return;
-            }
-            EditorAction::ClearSelection => {
+        }
+
+        if action == EditorAction::RequestCompletion {
+            request_completion(cursor, &tv.rope, lsp_client, completion_state, lsp_sync);
+            return;
+        }
+    }
+
+    let result = execute_action_core(
+        state, sel, hist, syntax, display, cursor, tv, action, indentation, goto_line_state,
+        #[cfg(feature = "folding")] fold_state,
+        #[cfg(not(feature = "folding"))] None,
+    );
+
+    #[cfg(feature = "lsp")]
+    {
+        if result.horizontal_move {
+            completion_state.visible = false;
+        }
+
+        if action == EditorAction::DeleteBackward && completion_state.visible {
+            if cursor.cursor_pos > completion_state.start_char_index {
+                update_completion_filter(cursor, &tv.rope, completion_state);
+            } else if cursor.cursor_pos == completion_state.start_char_index {
+                completion_state.filter.clear();
+                completion_state.selected_index = 0;
+            } else {
                 completion_state.visible = false;
                 completion_state.filter.clear();
-                completion_state.scroll_offset = 0;
-                return;
             }
-            _ => {}
+        }
+
+        if result.text_changed {
+            send_did_change(&tv.rope, lsp_client, lsp_sync);
         }
     }
 
-    if action == EditorAction::RequestCompletion {
-        request_completion(cursor, &tv.rope, lsp_client, completion_state, lsp_sync);
-        return;
-    }
-
-    let result = execute_action_core(state, sel, hist, syntax, display, cursor, tv, action, indentation, goto_line_state, fold_state);
-
-    if result.horizontal_move {
-        completion_state.visible = false;
-    }
-
-    if action == EditorAction::DeleteBackward && completion_state.visible {
-        if cursor.cursor_pos > completion_state.start_char_index {
-            update_completion_filter(cursor, &tv.rope, completion_state);
-        } else if cursor.cursor_pos == completion_state.start_char_index {
-            completion_state.filter.clear();
-            completion_state.selected_index = 0;
-        } else {
-            completion_state.visible = false;
-            completion_state.filter.clear();
-        }
-    }
-
-    if result.text_changed {
-        send_did_change(&tv.rope, lsp_client, lsp_sync);
-    }
-}
-
-/// Execute an editor action (LSP version without folding)
-#[cfg(all(feature = "lsp", not(feature = "folding")))]
-pub fn execute_action(
-    state: &mut CodeEditorState,
-    sel: &mut SelectionState,
-    hist: &mut EditHistoryState,
-    syntax: &mut SyntaxCacheState,
-    display: &mut EditorDisplayState,
-    cursor: &mut CursorState,
-    tv: &mut TextViewState,
-    action: EditorAction,
-    indentation: &IndentationSettings,
-    lsp: &LspSettings,
-    goto_line_state: &mut GotoLineState,
-    lsp_client: &lsp::LspClient,
-    completion_state: &mut lsp::CompletionState,
-    lsp_sync: &mut lsp::LspSyncState,
-) {
-    if action == EditorAction::ClearSelection {
-        if sel.has_multiple_cursors(cursor) {
-            sel.clear_secondary_cursors(cursor, tv);
-            return;
-        }
-        if goto_line_state.active {
-            goto_line_state.clear();
-            return;
-        }
-    }
-
-    let filtered_count = completion_state.filtered_items().len();
-    let max_visible = lsp.completion.max_items;
-
-    if completion_state.visible && filtered_count > 0 {
-        match action {
-            EditorAction::MoveCursorUp => {
-                if completion_state.selected_index > 0 {
-                    completion_state.selected_index -= 1;
-                } else {
-                    completion_state.selected_index = filtered_count.saturating_sub(1);
-                }
-                completion_state.ensure_selected_visible_with_max(max_visible);
-                return;
-            }
-            EditorAction::MoveCursorDown => {
-                if completion_state.selected_index + 1 < filtered_count {
-                    completion_state.selected_index += 1;
-                } else {
-                    completion_state.selected_index = 0;
-                }
-                completion_state.ensure_selected_visible_with_max(max_visible);
-                return;
-            }
-            EditorAction::InsertNewline | EditorAction::InsertTab => {
-                apply_completion(state, sel, hist, syntax, display, cursor, tv, completion_state);
-                send_did_change(&tv.rope, lsp_client, lsp_sync);
-                return;
-            }
-            EditorAction::ClearSelection => {
-                completion_state.visible = false;
-                completion_state.filter.clear();
-                completion_state.scroll_offset = 0;
-                return;
-            }
-            _ => {}
-        }
-    }
-
-    if action == EditorAction::RequestCompletion {
-        request_completion(cursor, &tv.rope, lsp_client, completion_state, lsp_sync);
-        return;
-    }
-
-    let result = execute_action_core(state, sel, hist, syntax, display, cursor, tv, action, indentation, goto_line_state, None);
-
-    if result.horizontal_move {
-        completion_state.visible = false;
-    }
-
-    if action == EditorAction::DeleteBackward && completion_state.visible {
-        if cursor.cursor_pos > completion_state.start_char_index {
-            update_completion_filter(cursor, &tv.rope, completion_state);
-        } else if cursor.cursor_pos == completion_state.start_char_index {
-            completion_state.filter.clear();
-            completion_state.selected_index = 0;
-        } else {
-            completion_state.visible = false;
-            completion_state.filter.clear();
-        }
-    }
-
-    if result.text_changed {
-        send_did_change(&tv.rope, lsp_client, lsp_sync);
-    }
+    #[cfg(not(feature = "lsp"))]
+    let _ = result;
 }

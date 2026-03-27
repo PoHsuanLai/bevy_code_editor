@@ -18,7 +18,6 @@ use bevy::prelude::*;
 use leafwing_input_manager::prelude::*;
 use std::time::Instant;
 
-/// All possible editor actions for iteration
 const ALL_ACTIONS: [EditorAction; 45] = [
     EditorAction::DeleteBackward,
     EditorAction::DeleteForward,
@@ -67,7 +66,6 @@ const ALL_ACTIONS: [EditorAction; 45] = [
     EditorAction::Open,
 ];
 
-/// System to handle keyboard input using leafwing-input-manager
 pub fn handle_keyboard_input(
     mut editor_query: Query<(&mut CodeEditorState, &mut SelectionState, &mut EditHistoryState, &mut SyntaxCacheState, &mut EditorDisplayState, &mut CursorState, &mut TextViewState, &TextViewViewport), With<CodeEditor>>,
     mut char_events: MessageReader<KeyboardInput>,
@@ -90,7 +88,6 @@ pub fn handle_keyboard_input(
 ) {
     let Ok((mut state, mut sel, mut hist, mut syntax, mut display, mut cursor, mut tv, _viewport)) = editor_query.single_mut() else { return; };
 
-    // Only process input if editor is focused
     if !state.is_focused {
         return;
     }
@@ -100,10 +97,8 @@ pub fn handle_keyboard_input(
         return;
     };
 
-    // Handle rename dialog input (LSP feature)
     #[cfg(feature = "lsp")]
     if rename_state.visible {
-        // Rename dialog is active - capture input for the rename text field
         for event in char_events.read() {
             if !event.state.is_pressed() {
                 continue;
@@ -124,7 +119,6 @@ pub fn handle_keyboard_input(
                     rename_state.new_name.pop();
                 }
                 bevy::input::keyboard::Key::Enter => {
-                    // Submit rename
                     if rename_state.can_submit() {
                         if let Some(position) = rename_state.position {
                             if let Some(uri) = &lsp_sync.document_uri {
@@ -140,25 +134,21 @@ pub fn handle_keyboard_input(
                     rename_state.reset();
                 }
                 bevy::input::keyboard::Key::Escape => {
-                    // Cancel rename
                     rename_state.reset();
                 }
                 _ => {}
             }
         }
-        // Consume all events and return - don't process normal editor input
         return;
     }
 
     let mut action_to_execute: Option<EditorAction> = None;
     let now = Instant::now();
 
-    // First, check for any newly pressed action
     for action in ALL_ACTIONS {
         if action_state.just_pressed(&action) {
             action_to_execute = Some(action);
 
-            // If this is a repeatable action, start tracking it
             if action.is_repeatable() {
                 key_repeat_state.current_action = Some(action);
                 key_repeat_state.press_start = Some(now);
@@ -168,7 +158,7 @@ pub fn handle_keyboard_input(
         }
     }
 
-    // Also check code folding actions (not in ALL_ACTIONS to keep array size reasonable)
+    // Folding actions checked separately to keep ALL_ACTIONS array small
     if action_to_execute.is_none() {
         for action in [
             EditorAction::ToggleFold,
@@ -184,10 +174,9 @@ pub fn handle_keyboard_input(
         }
     }
 
-    // If no new press, check for key repeat on held actions
+    // Key repeat on held actions
     if action_to_execute.is_none() {
         if let Some(current_action) = key_repeat_state.current_action {
-            // Check if the action is still being held
             if action_state.pressed(&current_action) {
                 let initial_delay = cursor_settings.key_repeat.initial_delay_ms as f64 / 1000.0;
                 let repeat_interval = cursor_settings.key_repeat.repeat_delay_ms as f64 / 1000.0;
@@ -195,12 +184,10 @@ pub fn handle_keyboard_input(
                 if let Some(press_start) = key_repeat_state.press_start {
                     let elapsed = now.duration_since(press_start).as_secs_f64();
 
-                    // Check if we've passed the initial delay
                     if elapsed >= initial_delay {
-                        // Check if it's time for a repeat
                         let should_repeat = match key_repeat_state.last_repeat {
                             Some(last) => now.duration_since(last).as_secs_f64() >= repeat_interval,
-                            None => true, // First repeat after initial delay
+                            None => true,
                         };
 
                         if should_repeat {
@@ -210,7 +197,6 @@ pub fn handle_keyboard_input(
                     }
                 }
             } else {
-                // Key was released, clear the repeat state
                 key_repeat_state.current_action = None;
                 key_repeat_state.press_start = None;
                 key_repeat_state.last_repeat = None;
@@ -218,37 +204,31 @@ pub fn handle_keyboard_input(
         }
     }
 
-    // Handle character input (for printable characters)
-    // Only process if no keybinding action was triggered
     if action_to_execute.is_none() {
         for event in char_events.read() {
-            // Only handle key presses with text
             if event.state.is_pressed() {
                 match &event.logical_key {
                     bevy::input::keyboard::Key::Character(ref text) => {
                         for c in text.chars() {
-                            // Skip control characters (they're handled by keybindings)
                             if c.is_control() {
                                 continue;
                             }
 
-                            // Check for quote skip-over (typing closing quote when already there)
+                            // Skip over existing closing quote instead of inserting a duplicate
                             if brackets.auto_close_quotes
                                 && get_closing_quote(c).is_some()
                                 && should_skip_auto_close(&cursor, &tv.rope, c)
                             {
-                                // Just move cursor past the existing quote
                                 state.move_cursor(&mut cursor, &tv.rope, 1);
                                 tv.pending_update = true;
                                 continue;
                             }
 
-                            // Check for bracket skip-over (typing closing bracket when already there)
+                            // Skip over existing closing bracket instead of inserting a duplicate
                             if brackets.auto_close {
                                 let is_closing_bracket =
                                     brackets.pairs.iter().any(|(_, close)| *close == c);
                                 if is_closing_bracket && should_skip_auto_close(&cursor, &tv.rope, c) {
-                                    // Just move cursor past the existing bracket
                                     state.move_cursor(&mut cursor, &tv.rope, 1);
                                     tv.pending_update = true;
                                     continue;
@@ -257,20 +237,16 @@ pub fn handle_keyboard_input(
 
                             insert_char(&mut state, &mut sel, &mut hist, &mut syntax, &mut display, &mut cursor, &mut tv, c);
 
-                            // Auto-close brackets
                             if brackets.auto_close {
                                 if let Some(closing) = get_closing_bracket(c, &brackets.pairs) {
                                     insert_closing_char(&mut state, &cursor, &mut tv, closing);
                                 }
                             }
 
-                            // Auto-close quotes
                             if brackets.auto_close_quotes {
                                 if let Some(closing) = get_closing_quote(c) {
-                                    // Only auto-close if we didn't just skip over an existing quote
-                                    // and if the previous char wasn't an alphanumeric (to avoid closing in contractions like "don't")
+                                    // Don't auto-close single quotes mid-word (e.g. "don't")
                                     let should_close = if c == '\'' {
-                                        // For single quotes, check if previous char is alphanumeric
                                         let cur_pos = cursor.cursor_pos;
                                         if cur_pos >= 2 {
                                             let prev_char = tv.rope.char(cur_pos - 2);
@@ -288,20 +264,17 @@ pub fn handle_keyboard_input(
                                 }
                             }
 
-                            // Notify LSP of text change
                             #[cfg(feature = "lsp")]
                             send_did_change(&tv.rope, &lsp_client, &mut lsp_sync);
 
-                            // Auto-trigger completion on trigger chars, OR update filter if already visible
+                            // Trigger or update LSP completion based on typed character
                             #[cfg(feature = "lsp")]
                             if lsp.completion.enabled {
-                                // Check for trigger characters (including multi-char like "::")
                                 let mut is_trigger = false;
                                 let cursor_pos = cursor.cursor_pos;
 
                                 for trigger in &lsp.completion.trigger_characters {
                                     if trigger.len() == 1 {
-                                        // Single character trigger (like ".")
                                         if c.to_string() == *trigger {
                                             is_trigger = true;
                                             #[cfg(debug_assertions)]
@@ -312,8 +285,7 @@ pub fn handle_keyboard_input(
                                             break;
                                         }
                                     } else {
-                                        // Multi-character trigger (like "::")
-                                        // Check if we just completed typing this trigger
+                                        // Multi-character trigger (e.g. "::")
                                         if cursor_pos >= trigger.len() {
                                             let start = cursor_pos - trigger.len();
                                             let recent_text: String = tv
@@ -337,8 +309,7 @@ pub fn handle_keyboard_input(
                                 }
 
                                 if is_trigger {
-                                    // Trigger character detected - open new completion
-                                    // Mark completion as not visible to force start_char_index reset
+                                    // Force start_char_index reset by marking not visible
                                     #[cfg(debug_assertions)]
                                     debug!("[LSP] Trigger detected, requesting completion, was_visible={}", completion_state.visible);
                                     completion_state.visible = false;
@@ -349,22 +320,18 @@ pub fn handle_keyboard_input(
                                         &mut completion_state,
                                         &lsp_sync,
                                     );
-                                } else if c.is_alphanumeric() || c == '_' {
-                                    // Typing identifier characters
+                                } else if c.is_alphanumeric() || c == '_'  {
                                     if completion_state.visible {
-                                        // Completion already visible - update filter
                                         #[cfg(debug_assertions)]
                                         eprintln!("[LSP] Completion visible, updating filter for char '{}'", c);
                                         update_completion_filter(&cursor, &tv.rope, &mut completion_state);
                                     } else {
-                                        // Not visible yet - check if we should auto-trigger after N chars
+                                        // Auto-trigger after min_word_length identifier chars
                                         let word_start =
                                             find_word_start(&tv.rope, cursor.cursor_pos);
                                         let word_len = cursor.cursor_pos - word_start;
 
-                                        // Trigger after min_word_length characters (configurable, like VSCode's 3)
                                         if word_len >= lsp.completion.min_word_length {
-                                            // Set start_char_index to word start so filter works correctly
                                             completion_state.start_char_index = word_start;
                                             request_completion(
                                                 &cursor,
@@ -376,7 +343,6 @@ pub fn handle_keyboard_input(
                                         }
                                     }
                                 } else if completion_state.visible {
-                                    // Non-identifier, non-trigger character while completion is visible - dismiss it
                                     #[cfg(debug_assertions)]
                                     debug!("[LSP] Non-identifier char '{}' while completion visible, dismissing", c);
                                     completion_state.visible = false;
@@ -385,13 +351,10 @@ pub fn handle_keyboard_input(
                             }
                         }
                     }
-                    // Bevy sends Space as a separate variant, not Character(" ")
                     bevy::input::keyboard::Key::Space => {
                         insert_char(&mut state, &mut sel, &mut hist, &mut syntax, &mut display, &mut cursor, &mut tv, ' ');
-                        // Notify LSP of text change
                         #[cfg(feature = "lsp")]
                         send_did_change(&tv.rope, &lsp_client, &mut lsp_sync);
-                        // Dismiss completion on space
                         #[cfg(feature = "lsp")]
                         {
                             completion_state.visible = false;
@@ -402,32 +365,26 @@ pub fn handle_keyboard_input(
             }
         }
     } else {
-        // Drain character events when a keybinding was triggered
-        // This prevents the character from being inserted
+        // Drain char events so they don't get inserted alongside the keybinding action
         for _ in char_events.read() {}
     }
 
-    // Execute the action if we have one
     if let Some(action) = action_to_execute {
-        // Handle Save action - emit event for host app
         if action == EditorAction::Save {
             let content: String = tv.rope.chars().collect();
             save_events.write(crate::types::SaveRequested { content });
             return;
         }
 
-        // Handle Open action - emit event for host app
         if action == EditorAction::Open {
             open_events.write(crate::types::OpenRequested);
             return;
         }
 
-        // Handle RenameSymbol specially (LSP feature)
         #[cfg(feature = "lsp")]
         if action == EditorAction::RenameSymbol {
             if lsp_client.capabilities.supports_rename() {
                 if let Some(uri) = &lsp_sync.document_uri {
-                    // Convert cursor position to LSP position
                     let cp = cursor.cursor_pos.min(tv.rope.len_chars());
                     let line = tv.rope.char_to_line(cp);
                     let line_start = tv.rope.line_to_char(line);
@@ -438,7 +395,11 @@ pub fn handle_keyboard_input(
                         character: character as u32,
                     };
 
-                    // Start prepare rename flow
+                    eprintln!(
+                        "[Rename] Requesting prepare rename at line={}, char={}",
+                        position.line, position.character
+                    );
+
                     rename_state.start_prepare(position);
                     crate::lsp::systems::request_prepare_rename(&lsp_client, uri, position);
                 }
@@ -446,31 +407,15 @@ pub fn handle_keyboard_input(
             return;
         }
 
-        #[cfg(all(not(feature = "lsp"), feature = "folding"))]
         execute_action(
             &mut state, &mut sel, &mut hist, &mut syntax, &mut display,
             &mut cursor, &mut tv, action, &indentation,
-            &mut goto_line_state, &mut fold_state,
-        );
-        #[cfg(all(not(feature = "lsp"), not(feature = "folding")))]
-        execute_action(
-            &mut state, &mut sel, &mut hist, &mut syntax, &mut display,
-            &mut cursor, &mut tv, action, &indentation,
+            #[cfg(feature = "lsp")] &lsp,
             &mut goto_line_state,
-        );
-        #[cfg(all(feature = "lsp", feature = "folding"))]
-        execute_action(
-            &mut state, &mut sel, &mut hist, &mut syntax, &mut display,
-            &mut cursor, &mut tv, action, &indentation, &lsp,
-            &mut goto_line_state, &mut fold_state,
-            &lsp_client, &mut completion_state, &mut lsp_sync,
-        );
-        #[cfg(all(feature = "lsp", not(feature = "folding")))]
-        execute_action(
-            &mut state, &mut sel, &mut hist, &mut syntax, &mut display,
-            &mut cursor, &mut tv, action, &indentation, &lsp,
-            &mut goto_line_state,
-            &lsp_client, &mut completion_state, &mut lsp_sync,
+            #[cfg(feature = "folding")] &mut fold_state,
+            #[cfg(feature = "lsp")] &lsp_client,
+            #[cfg(feature = "lsp")] &mut completion_state,
+            #[cfg(feature = "lsp")] &mut lsp_sync,
         );
     }
 }

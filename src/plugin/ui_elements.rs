@@ -300,7 +300,6 @@ pub(crate) fn update_indent_guides(
     let line_height = font.line_height;
     let char_width = font.char_width;
     let indent_size = indentation.indent_size;
-    let viewport_width = vp.width as f32;
     let viewport_height = vp.height as f32;
 
     // Calculate visible display row range

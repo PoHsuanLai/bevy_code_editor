@@ -14,10 +14,8 @@ pub struct CursorPlugin;
 
 impl Plugin for CursorPlugin {
     fn build(&self, app: &mut App) {
-        // Track cursor movement for blink reset (must run before cursor rendering)
         app.add_systems(Update, track_cursor_movement.in_set(super::ApplyStateSet));
 
-        // Cursor rendering and animation
         app.add_systems(
             Update,
             (update_cursor, animate_cursor)
@@ -25,18 +23,13 @@ impl Plugin for CursorPlugin {
                 .in_set(super::RenderingSet),
         );
 
-        // Cursor line highlight
-        app.add_systems(
-            Update,
-            update_cursor_line_highlight
-                .in_set(super::RenderingSet),
-        );
+        // Note: update_cursor_line_highlight is registered by EditorUiPlugin
+        // where it's chained with other visual systems.
     }
 }
 
-/// Track when cursor position changes and update the timestamp for blink reset
-/// Uses a separate field (last_cursor_pos_for_blink) to avoid race conditions
-/// with auto_scroll_to_cursor which also uses last_cursor_pos
+/// Uses last_cursor_pos_for_blink (separate from last_cursor_pos) to avoid
+/// race conditions with auto_scroll_to_cursor
 pub(crate) fn track_cursor_movement(
     mut editor_query: Query<&mut CursorState, With<CodeEditor>>,
     time: Res<Time>,
@@ -44,7 +37,6 @@ pub(crate) fn track_cursor_movement(
     let Ok(mut cursor) = editor_query.single_mut() else {
         return;
     };
-    // Check if cursor position has changed (use cursors[0].position for multi-cursor support)
     let current_pos = cursor.cursors.first().map(|c| c.position).unwrap_or(0);
     if current_pos != cursor.last_cursor_pos_for_blink {
         cursor.cursor_moved_time = time.elapsed_secs_f64();
@@ -74,28 +66,23 @@ pub(crate) fn update_cursor(
     let cursor_height = line_height * cursor_settings.height_multiplier;
     let cursor_count = cursor.cursors.len();
 
-    // Check if we're using soft line wrapping
     let use_wrapping = wrapping.enabled && display.display_map.wrap_width > 0;
 
-    // Collect existing cursor entities by their index
     let mut cursor_entities: std::collections::HashMap<usize, Entity> =
         std::collections::HashMap::new();
     for (entity, ec, _, _) in cursor_query.iter() {
         cursor_entities.insert(ec.cursor_index, entity);
     }
 
-    // Update or create cursor entities for each cursor
     for (idx, c) in cursor.cursors.iter().enumerate() {
         let cursor_pos = c.position.min(tv.rope.len_chars());
         let line_index = tv.rope.char_to_line(cursor_pos);
         let line_start = tv.rope.line_to_char(line_index);
         let col_index = cursor_pos - line_start;
 
-        // Calculate display row and column based on wrapping and folding
         let (display_row, display_col) = if use_wrapping {
             display.display_map.buffer_to_display(line_index, col_index)
         } else {
-            // Account for folded lines
             #[cfg(feature = "folding")]
             let display_row = fold_state.actual_to_display_line(line_index);
             #[cfg(not(feature = "folding"))]
@@ -103,7 +90,6 @@ pub(crate) fn update_cursor(
             (display_row, col_index)
         };
 
-        // For wrapped continuation rows, add indent offset
         let extra_indent = if use_wrapping && wrapping.indent_wrapped_lines {
             if display.display_map.is_continuation(display_row) {
                 indentation.indent_size as f32 * char_width
@@ -118,7 +104,6 @@ pub(crate) fn update_cursor(
         let y_offset =
             vp.text_area_top + tv.scroll_offset + (display_row as f32 * line_height);
 
-        // No horizontal scroll in wrapped mode
         let h_scroll = if use_wrapping {
             0.0
         } else {
@@ -136,14 +121,12 @@ pub(crate) fn update_cursor(
         );
 
         if let Some(&entity) = cursor_entities.get(&idx) {
-            // Update existing cursor entity
             if let Ok((_, _, mut transform, mut visibility)) = cursor_query.get_mut(entity) {
                 transform.translation = Vec3::new(translation.x, translation.y, 1.0);
                 *visibility = Visibility::Visible;
             }
             cursor_entities.remove(&idx);
         } else {
-            // Spawn new cursor entity
             let mut entity_cmd = commands.spawn((
                 Sprite {
                     color: theme.cursor,
@@ -161,22 +144,18 @@ pub(crate) fn update_cursor(
         }
     }
 
-    // Hide or despawn excess cursor entities
     for (idx, entity) in cursor_entities {
         if idx < cursor_count {
-            // This shouldn't happen, but hide just in case
             if let Ok((_, _, _, mut visibility)) = cursor_query.get_mut(entity) {
                 *visibility = Visibility::Hidden;
             }
         } else {
-            // Despawn cursor entities that are no longer needed
             commands.entity(entity).despawn();
         }
     }
 }
 
-/// Animate cursor blinking for all cursors
-/// The cursor stays visible for a short period after movement before blinking resumes
+/// The cursor stays visible briefly after movement before blinking resumes
 pub(crate) fn animate_cursor(
     time: Res<Time>,
     cursor_settings: Res<CursorSettings>,
@@ -194,15 +173,12 @@ pub(crate) fn animate_cursor(
         return;
     }
 
-    // Keep cursor visible for 0.5 seconds after movement before blinking
     let time_since_move = time.elapsed_secs_f64() - cursor.cursor_moved_time;
     let blink_pause_duration = 0.5; // seconds
 
     let new_visibility = if time_since_move < blink_pause_duration {
-        // Cursor was recently moved - stay visible
         Visibility::Visible
     } else {
-        // Resume blinking, starting from the time after the pause
         let blink_time = (time_since_move - blink_pause_duration) as f32;
         let blink_phase = (blink_time * cursor_settings.blink_rate) % 1.0;
         if blink_phase < 0.5 {
@@ -245,9 +221,7 @@ pub(crate) fn update_cursor_line_highlight(
         Without<CursorLineBorder>,
     >,
 ) {
-    // Skip if cursor line highlighting is disabled entirely
     if !cursor_line.enabled {
-        // Hide all existing borders and word highlights
         for (_, _, _, _, mut visibility) in border_query.iter_mut() {
             *visibility = Visibility::Hidden;
         }
@@ -257,11 +231,9 @@ pub(crate) fn update_cursor_line_highlight(
         return;
     }
 
-    // Get base highlight color from theme (unused for now, kept for future reference)
     let _base_highlight_color = match theme.line_highlight {
         Some(color) => color,
         None => {
-            // Hide all existing borders and word highlights
             for (_, _, _, _, mut visibility) in border_query.iter_mut() {
                 *visibility = Visibility::Hidden;
             }
@@ -280,14 +252,10 @@ pub(crate) fn update_cursor_line_highlight(
     let char_width = font.char_width;
     let use_wrapping = wrapping.enabled && display.display_map.wrap_width > 0;
 
-    // Border settings from configuration
     let border_thickness = cursor_line.border_thickness;
     let border_color = cursor_line.border_color;
-
-    // Word highlight color from configuration
     let word_highlight_color = cursor_line.word_highlight_color;
 
-    // Collect existing entities
     let mut border_entities: std::collections::HashMap<(usize, bool), Entity> =
         std::collections::HashMap::new();
     for (entity, border, _, _, _) in border_query.iter() {
@@ -300,24 +268,20 @@ pub(crate) fn update_cursor_line_highlight(
         word_entities.insert(word_hl.cursor_index, entity);
     }
 
-    // Calculate border width (code area only, not the gutter)
     let code_area_start = vp.text_area_left;
     let border_width = vp.width as f32 - code_area_start;
     // Camera viewport handles panel positioning, so no offset_x here
     let border_center_x = vp.world_left() + code_area_start + border_width / 2.0;
 
-    // Process each cursor
     for (idx, c) in cursor.cursors.iter().enumerate() {
         let cursor_pos = c.position.min(tv.rope.len_chars());
         let line_index = tv.rope.char_to_line(cursor_pos);
 
-        // Skip if line is hidden due to folding
         #[cfg(feature = "folding")]
         if fold_state.is_line_hidden(line_index) {
             continue;
         }
 
-        // Calculate display row
         let display_row = if use_wrapping {
             display.display_map.buffer_to_display(line_index, 0).0
         } else {
@@ -340,7 +304,6 @@ pub(crate) fn update_cursor_line_highlight(
         let y_from_top =
             vp.text_area_top + tv.scroll_offset + (display_row as f32 * line_height);
 
-        // === TOP BORDER ===
         if cursor_line.show_border {
             let top_y = vp.world_top() - y_from_top + line_height / 2.0
                 - border_thickness / 2.0;
@@ -376,7 +339,6 @@ pub(crate) fn update_cursor_line_highlight(
                 }
             }
 
-            // === BOTTOM BORDER ===
             let bottom_y = vp.world_top() - y_from_top - line_height / 2.0
                 + border_thickness / 2.0;
             let bottom_translation = Vec3::new(border_center_x, bottom_y, -0.4);

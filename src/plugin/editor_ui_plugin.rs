@@ -28,9 +28,8 @@ use bevy_camera::Viewport;
 #[derive(Component)]
 pub struct EditorCamera;
 use super::{
-    animate_cursor,
-    to_bevy_coords_dynamic, to_bevy_coords_left_aligned, track_cursor_movement,
-    update_cursor, update_cursor_line_highlight,
+    to_bevy_coords_dynamic, to_bevy_coords_left_aligned,
+    update_cursor_line_highlight,
     update_gpu_line_numbers, update_gpu_text_instanced, update_indent_guides,
     update_selection_highlight, EditorSetupSet,
 };
@@ -222,16 +221,8 @@ impl Plugin for EditorUiPlugin {
                 .in_set(super::ApplyStateSet),
         );
 
-        // Track cursor movement for blink reset (must run before cursor rendering)
-        app.add_systems(Update, track_cursor_movement.in_set(super::ApplyStateSet));
-
-        // Cursor systems in RenderingSet
-        app.add_systems(
-            Update,
-            (update_cursor, animate_cursor)
-                .chain()
-                .in_set(super::RenderingSet),
-        );
+        // Note: cursor systems (track_cursor_movement, update_cursor, animate_cursor)
+        // are registered by CursorPlugin — not duplicated here.
 
         // Camera viewport update (for restricted rendering when not full-window)
         // Run on PostStartup to set initial viewport, then on Update when ViewportDimensions changes
@@ -256,8 +247,6 @@ fn update_camera_viewport(
     let Ok(viewport) = viewport_query.single() else {
         return;
     };
-    println!("update_camera_viewport called! auto_resize={}, found {} editor cameras", config.auto_resize_to_window, camera_query.iter().count());
-
     // Only set camera viewport when NOT auto-resizing (manual viewport control)
     if config.auto_resize_to_window {
         // Clear any existing viewport restriction and reset camera position

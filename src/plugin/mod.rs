@@ -40,10 +40,7 @@ pub use self::scrollbar::ScrollbarPlugin;
 pub use self::syntax_highlighting::{HighlightCache, SyntaxResource, SyntaxPlugin};
 
 // Re-export helper functions and systems for internal plugin use (crate-visible only)
-pub(crate) use self::cursor::{
-    animate_cursor, track_cursor_movement, update_cursor,
-    update_cursor_line_highlight,
-};
+pub(crate) use self::cursor::update_cursor_line_highlight;
 pub(crate) use self::ui_elements::{
     update_indent_guides, update_selection_highlight,
 };

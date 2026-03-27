@@ -70,7 +70,18 @@ pub mod prelude {
         TextView, TextViewBatchEntity, TextViewPlugin, TextViewRenderSet,
         TextViewState, TextViewViewport, GlyphBatchComponent, GlyphInstance, TextViewBatch,
     };
-    pub use crate::types::*;
+    // User-facing editor components
+    pub use crate::types::editor::{
+        CodeEditor, CodeEditorState, CursorState, SelectionState, EditHistoryState,
+        SyntaxCacheState, EditorDisplayState,
+        ViewportConfig, ViewportDimensions,
+        EditorScrollControl, KeyRepeatState,
+        SaveRequested, OpenRequested,
+    };
+    // User-facing data types
+    pub use crate::types::selection::Cursor;
+    pub use crate::types::display_map::LineSegment;
+    pub use crate::types::fold::{FoldState, GotoLineState};
 
     // Selective re-exports from display_map to avoid name conflicts with types.rs
     pub use crate::display_map::{

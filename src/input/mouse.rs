@@ -31,8 +31,6 @@ fn screen_to_char_pos(
     current_scroll_offset: f32,
     font: &FontSettings,
     viewport: &TextViewViewport,
-    _viewport_width: f32,
-    _viewport_height: f32,
     #[cfg(feature = "folding")] fold_state: &FoldState,
     scroll_offset_override: Option<f32>,
 ) -> usize {
@@ -125,8 +123,6 @@ pub fn handle_mouse_input(
                 tv.scroll_offset,
                 &font,
                 &viewport,
-                viewport_width,
-                viewport_height,
                 #[cfg(feature = "folding")]
                 &fold_state,
                 None, // Use current scroll offset for initial position calculation
@@ -348,8 +344,6 @@ pub fn handle_mouse_input(
                     tv.scroll_offset,
                     &font,
                     &viewport,
-                    viewport_width,
-                    viewport_height,
                     #[cfg(feature = "folding")]
                     &fold_state,
                     Some(drag_state.drag_start_scroll_offset),
