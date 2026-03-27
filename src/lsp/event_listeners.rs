@@ -27,7 +27,8 @@ pub fn listen_text_edit_events(
     mut lsp_sync: ResMut<LspSyncState>,
 ) {
     let Ok(tv) = query.single() else { return };
-    for event in events.read() {
+    for _event in events.read() {
+        // Only send if we have a document URI
         if let Some(uri) = lsp_sync.document_uri.clone() {
             lsp_sync.document_version += 1;
 
@@ -94,7 +95,8 @@ pub fn listen_completion_requests(
 pub fn listen_hover_requests(
     mut events: MessageReader<RequestHoverEvent>,
     lsp_sync: Res<LspSyncState>,
-    mut debounce: ResMut<LspDebounceTimers>,
+    lsp_client: Res<LspClient>,
+    _hover_state: ResMut<HoverState>,
 ) {
     for event in events.read() {
         if let Some(uri) = &lsp_sync.document_uri {
@@ -114,7 +116,7 @@ pub fn listen_rename_requests(
     mut events: MessageReader<RequestRenameEvent>,
     lsp_sync: Res<LspSyncState>,
     lsp_client: Res<LspClient>,
-    mut rename_state: ResMut<RenameState>,
+    _rename_state: ResMut<RenameState>,
 ) {
     for event in events.read() {
         if let Some(uri) = &lsp_sync.document_uri {
@@ -137,7 +139,7 @@ pub fn listen_signature_help_requests(
     mut events: MessageReader<RequestSignatureHelpEvent>,
     lsp_sync: Res<LspSyncState>,
     lsp_client: Res<LspClient>,
-    mut sig_help_state: ResMut<SignatureHelpState>,
+    _sig_help_state: ResMut<SignatureHelpState>,
 ) {
     for event in events.read() {
         if let Some(uri) = &lsp_sync.document_uri {
@@ -240,7 +242,7 @@ pub fn listen_apply_completion(
     mut query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState), With<CodeEditor>>,
     mut completion_state: ResMut<CompletionState>,
 ) {
-    let Ok((mut editor, mut cursor_state, mut tv)) = query.single_mut() else { return };
+    let Ok((_editor, mut cursor_state, mut tv)) = query.single_mut() else { return };
     for event in events.read() {
         if event.item_index < completion_state.items.len() {
             let item = &completion_state.items[event.item_index];

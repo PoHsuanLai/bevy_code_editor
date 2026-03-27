@@ -35,11 +35,8 @@ pub(crate) fn find_matching_bracket(
 
     let char_at_cursor = rope.char(pos);
 
-    // Check if cursor is on a bracket
-    // First check opening brackets
     for &(open, close) in bracket_pairs {
         if char_at_cursor == open {
-            // Find matching closing bracket
             if let Some(match_pos) = find_closing_bracket(rope, pos, open, close) {
                 return Some(BracketMatch {
                     cursor_bracket_pos: pos,
@@ -47,7 +44,6 @@ pub(crate) fn find_matching_bracket(
                 });
             }
         } else if char_at_cursor == close {
-            // Find matching opening bracket
             if let Some(match_pos) = find_opening_bracket(rope, pos, open, close) {
                 return Some(BracketMatch {
                     cursor_bracket_pos: pos,
@@ -82,7 +78,6 @@ pub(crate) fn find_matching_bracket(
     None
 }
 
-/// Find matching closing bracket, handling nesting
 pub(crate) fn find_closing_bracket(
     rope: &ropey::Rope,
     start_pos: usize,
@@ -109,7 +104,6 @@ pub(crate) fn find_closing_bracket(
     None
 }
 
-/// Find matching opening bracket, handling nesting
 pub(crate) fn find_opening_bracket(
     rope: &ropey::Rope,
     start_pos: usize,
@@ -135,17 +129,15 @@ pub(crate) fn find_opening_bracket(
     None
 }
 
-/// Update bracket match state based on cursor position
 pub(crate) fn update_bracket_match(
     editor_query: Query<(&CodeEditorState, &CursorState, &TextViewState), With<CodeEditor>>,
     brackets: Res<BracketSettings>,
     mut bracket_state: ResMut<BracketMatchState>,
 ) {
-    let Ok((state, cursor, tv)) = editor_query.single() else {
+    let Ok((_state, cursor, tv)) = editor_query.single() else {
         return;
     };
 
-    // Check if bracket matching is enabled
     if !brackets.enabled {
         bracket_state.current_match = None;
         return;
@@ -155,7 +147,6 @@ pub(crate) fn update_bracket_match(
     bracket_state.current_match = find_matching_bracket(&tv.rope, cursor_pos, &brackets.pairs);
 }
 
-/// Render bracket match highlights
 pub(crate) fn update_bracket_highlight(
     mut commands: Commands,
     editor_query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
@@ -189,7 +180,6 @@ pub(crate) fn update_bracket_highlight(
                 || matches!(brackets.style, BracketHighlightStyle::Both);
             let border_thickness = 2.0; // Default thickness
 
-            // Calculate positions for both brackets
             let positions = [
                 bracket_match.cursor_bracket_pos,
                 bracket_match.matching_bracket_pos,
@@ -200,7 +190,6 @@ pub(crate) fn update_bracket_highlight(
             for (bracket_idx, &bracket_pos) in positions.iter().enumerate() {
                 let line_idx = tv.rope.char_to_line(bracket_pos);
 
-                // Skip if line is hidden due to folding
                 #[cfg(feature = "folding")]
                 if fold_state.is_line_hidden(line_idx) {
                     continue;
@@ -209,7 +198,6 @@ pub(crate) fn update_bracket_highlight(
                 let line_start = tv.rope.line_to_char(line_idx);
                 let col_idx = bracket_pos - line_start;
 
-                // Calculate display row accounting for folded lines
                 #[cfg(feature = "folding")]
                 let display_row = fold_state.actual_to_display_line(line_idx);
                 #[cfg(not(feature = "folding"))]
@@ -265,7 +253,6 @@ pub(crate) fn update_bracket_highlight(
                         let size = Vec2::new(*w, *h);
 
                         if entity_index < highlights.len() {
-                            // Reuse existing entity
                             let (_, _, ref mut transform, ref mut sprite, ref mut visibility) =
                                 &mut highlights[entity_index];
                             transform.translation = translation;
@@ -273,7 +260,6 @@ pub(crate) fn update_bracket_highlight(
                             sprite.color = theme.bracket_match;
                             **visibility = Visibility::Visible;
                         } else {
-                            // Spawn new edge entity
                             let mut entity_cmd = commands.spawn((
                                 Sprite {
                                     color: theme.bracket_match,
@@ -300,7 +286,6 @@ pub(crate) fn update_bracket_highlight(
                     let size = Vec2::new(char_width, line_height);
 
                     if entity_index < highlights.len() {
-                        // Reuse existing entity
                         let (_, _, ref mut transform, ref mut sprite, ref mut visibility) =
                             &mut highlights[entity_index];
                         transform.translation = translation;
@@ -308,7 +293,6 @@ pub(crate) fn update_bracket_highlight(
                         sprite.color = theme.bracket_match;
                         **visibility = Visibility::Visible;
                     } else {
-                        // Spawn new highlight entity
                         let mut entity_cmd = commands.spawn((
                             Sprite {
                                 color: theme.bracket_match,
@@ -331,14 +315,12 @@ pub(crate) fn update_bracket_highlight(
                 }
             }
 
-            // Hide any extra highlight entities
             for i in entity_index..highlights.len() {
                 let (_, _, _, _, ref mut visibility) = &mut highlights[i];
                 **visibility = Visibility::Hidden;
             }
         }
         None => {
-            // Hide all bracket highlights
             for (_, _, _, _, mut visibility) in highlight_query.iter_mut() {
                 *visibility = Visibility::Hidden;
             }

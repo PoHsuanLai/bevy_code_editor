@@ -55,7 +55,7 @@ pub fn update_completion_ui(
     lsp: Res<LspSettings>,
     ui_query: Query<Entity, With<CompletionUI>>,
 ) {
-    let Ok((editor_state, cursor_state, tv, vp)) = query.single() else { return };
+    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else { return };
     let filtered_items = completion_state.filtered_items();
 
     // If not visible or no filtered items, clear and return
@@ -314,7 +314,7 @@ pub fn update_signature_help_ui(
     ui: Res<UiSettings>,
     ui_query: Query<Entity, With<SignatureHelpUI>>,
 ) {
-    let Ok((editor_state, cursor_state, tv, vp)) = query.single() else { return };
+    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else { return };
 
     if !sig_state.visible || sig_state.signatures.is_empty() {
         for entity in ui_query.iter() {
@@ -430,7 +430,7 @@ pub fn update_code_action_ui(
     ui: Res<UiSettings>,
     ui_query: Query<Entity, With<CodeActionUI>>,
 ) {
-    let Ok((editor_state, cursor_state, tv, vp)) = query.single() else { return };
+    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else { return };
 
     if !action_state.visible || action_state.actions.is_empty() {
         for entity in ui_query.iter() {

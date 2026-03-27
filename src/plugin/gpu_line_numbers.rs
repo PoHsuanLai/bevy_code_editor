@@ -38,7 +38,7 @@ pub(crate) fn update_gpu_line_numbers(
     mut images: ResMut<Assets<Image>>,
     batch_query: Query<(Entity, &GpuLineNumbersBatch)>,
 ) {
-    let Ok((state, cursor, tv, viewport)) = editor_query.single() else {
+    let Ok((_state, cursor, tv, viewport)) = editor_query.single() else {
         return;
     };
     // Hide if line numbers are disabled

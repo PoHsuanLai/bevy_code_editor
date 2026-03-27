@@ -23,7 +23,7 @@ fn main() {
 
 #[cfg(feature = "lsp")]
 fn run_with_lsp() {
-    use bevy_code_editor::lsp::*;
+    
 
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -67,7 +67,7 @@ fn setup_editor(
     mut lsp_sync: ResMut<bevy_code_editor::lsp::LspSyncState>,
     #[cfg(feature = "tree-sitter")] mut syntax: ResMut<bevy_code_editor::plugin::SyntaxResource>,
 ) {
-    let Ok((mut state, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) = editor_query.single_mut() else {
+    let Ok((_state, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) = editor_query.single_mut() else {
         return;
     };
 

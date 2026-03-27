@@ -1,7 +1,4 @@
-//! Glyph Atlas - Caches rasterized glyphs in a GPU texture
-//!
-//! Uses cosmic_text (same as Zed) for high-quality font rasterization.
-//! Glyphs are rasterized once and cached in a texture atlas for efficient GPU rendering.
+//! Glyph atlas: rasterizes glyphs once via cosmic_text and caches them in a GPU texture.
 
 use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
@@ -9,22 +6,18 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use cosmic_text::{CacheKey, FontSystem, SwashCache};
 use std::collections::HashMap;
 
-/// Size of the glyph atlas texture (power of 2 for GPU efficiency)
+/// Power of 2 for GPU efficiency.
 pub const ATLAS_SIZE: u32 = 2048;
 
-/// Padding between glyphs to prevent bleeding
 const GLYPH_PADDING: u32 = 2;
 
-/// DPI scale factor for high-quality text rendering
-/// Rasterize at 2x resolution for crisp text on Retina/HiDPI displays
+/// Rasterize at 2x for crisp text on HiDPI displays.
 const DPI_SCALE: f32 = 2.0;
 
-/// A unique identifier for a cached glyph
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct GlyphKey {
-    /// The character
     pub character: char,
-    /// Font size in pixels (scaled by 10 for sub-pixel precision)
+    /// Scaled by 10 for sub-pixel precision.
     pub font_size_tenths: u32,
 }
 
@@ -37,49 +30,37 @@ impl GlyphKey {
     }
 }
 
-/// Information about a glyph's location in the atlas
 #[derive(Clone, Copy, Debug)]
 pub struct GlyphInfo {
     /// UV coordinates in the atlas (0.0 to 1.0)
     pub uv_min: Vec2,
     pub uv_max: Vec2,
-    /// Size in pixels (at original/logical resolution for rendering)
+    /// Size in logical pixels (atlas stores high-res, rendering uses logical size)
     pub size: Vec2,
-    /// Offset from the baseline (at original/logical resolution)
+    /// Offset from the baseline in logical pixels
     pub offset: Vec2,
-    /// Advance width (how far to move for next character)
     pub advance: f32,
 }
 
-/// Row-based packing for the atlas (simple shelf algorithm)
+/// Shelf-based row packing for the atlas.
 struct AtlasRow {
     y: u32,
     height: u32,
     x_cursor: u32,
 }
 
-/// The glyph atlas resource
 #[derive(Resource)]
 pub struct GlyphAtlas {
-    /// The atlas texture handle
     pub texture: Handle<Image>,
-    /// Cached glyph information
     glyphs: HashMap<GlyphKey, GlyphInfo>,
-    /// Current packing rows
     rows: Vec<AtlasRow>,
-    /// Current Y position for new rows
     current_y: u32,
-    /// Raw pixel data for CPU-side updates
     pixels: Vec<u8>,
-    /// Whether the texture needs to be updated
     pub dirty: bool,
-    /// Font system for text rasterization
     font_system: FontSystem,
-    /// Swash cache for glyph rasterization
     swash_cache: SwashCache,
-    /// Cached font ID for the configured font
     configured_font_id: Option<cosmic_text::fontdb::ID>,
-    /// Cache for cosmic_text cache keys (for instanced rendering)
+    /// Cache keyed by cosmic_text CacheKey (used by instanced rendering path)
     cache: HashMap<cosmic_text::CacheKey, GlyphInfo>,
     /// Generation counter — incremented on atlas clear for cache invalidation
     pub generation: u64,
@@ -89,18 +70,12 @@ pub struct GlyphAtlas {
 }
 
 impl GlyphAtlas {
-    /// Create a new glyph atlas with default font
     pub fn new(images: &mut Assets<Image>) -> Self {
         Self::new_with_font(images, None)
     }
 
-    /// Create a new glyph atlas with a specific font
-    ///
-    /// The font_path can be:
-    /// - A path to a font file (e.g., "fonts/FiraMono-Regular.ttf")
-    /// - A font family name (e.g., "Fira Mono", "JetBrains Mono")
+    /// `font_path` can be a file path ("fonts/FiraMono-Regular.ttf") or family name ("Fira Mono").
     pub fn new_with_font(images: &mut Assets<Image>, font_path: Option<&str>) -> Self {
-        // Create RGBA texture
         let pixels = vec![0u8; (ATLAS_SIZE * ATLAS_SIZE * 4) as usize];
 
         let image = Image::new(
@@ -118,11 +93,9 @@ impl GlyphAtlas {
 
         let texture = images.add(image);
 
-        // Initialize cosmic_text font system
         let mut font_system = FontSystem::new();
         let swash_cache = SwashCache::new();
 
-        // Try to load/find the configured font
         let configured_font_id = if let Some(path) = font_path {
             Self::find_or_load_font(&mut font_system, path)
         } else {
@@ -146,14 +119,11 @@ impl GlyphAtlas {
         }
     }
 
-    /// Find or load a font by path or family name
     fn find_or_load_font(
         font_system: &mut FontSystem,
         font_path: &str,
     ) -> Option<cosmic_text::fontdb::ID> {
-        // First, try to load as a file path
         if font_path.ends_with(".ttf") || font_path.ends_with(".otf") {
-            // Try different base paths
             let paths_to_try = [
                 font_path.to_string(),
                 format!("assets/{}", font_path),
@@ -162,17 +132,13 @@ impl GlyphAtlas {
 
             for path in &paths_to_try {
                 if let Ok(data) = std::fs::read(path) {
-                    // Load the font into the font system
-                    // load_font_data returns the number of fonts loaded, and we need to find the ID
                     let db = font_system.db_mut();
                     let count_before = db.faces().count();
                     db.load_font_data(data);
                     let count_after = db.faces().count();
 
-                    // If a new font was added, find its ID
                     if count_after > count_before {
                         if let Some(face) = db.faces().last() {
-                            // Get the font family name for logging
                             let family_name = face
                                 .families
                                 .first()
@@ -186,10 +152,8 @@ impl GlyphAtlas {
             }
         }
 
-        // Try to find by family name
         // Extract family name from path if it looks like a path
         let family_name = if font_path.contains('/') || font_path.contains('\\') {
-            // Extract filename without extension
             std::path::Path::new(font_path)
                 .file_stem()
                 .and_then(|s| s.to_str())

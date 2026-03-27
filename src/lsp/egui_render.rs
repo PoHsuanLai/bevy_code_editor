@@ -17,8 +17,6 @@ use armas::prelude::*;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 
-use super::client::LspClient;
-use super::messages::LspMessage;
 use super::state::*;
 use crate::settings::FontSettings;
 use crate::text_view::{TextViewState, TextViewViewport};
@@ -112,7 +110,7 @@ pub fn render_completion_egui(
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
 ) {
-    let Ok((editor_state, cursor_state, tv, vp)) = query.single() else { return };
+    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else { return };
     let filtered_items = completion_state.filtered_items();
     if !completion_state.visible || filtered_items.is_empty() {
         return;
@@ -337,7 +335,7 @@ pub fn render_signature_help_egui(
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
 ) {
-    let Ok((editor_state, cursor_state, tv, vp)) = query.single() else { return };
+    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else { return };
 
     if !sig_state.visible || sig_state.signatures.is_empty() {
         return;
@@ -474,7 +472,7 @@ pub fn render_code_actions_egui(
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
 ) {
-    let Ok((editor_state, cursor_state, tv, vp)) = query.single() else { return };
+    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else { return };
 
     if !action_state.visible || action_state.actions.is_empty() {
         return;

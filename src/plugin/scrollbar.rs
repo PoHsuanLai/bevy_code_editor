@@ -142,7 +142,7 @@ fn handle_scrollbar_mouse(
     thumb_query: Query<(&ScrollbarThumb, &Transform, &Sprite)>,
     font: Res<crate::settings::FontSettings>,
 ) {
-    let Ok((mut state, mut cursor_state, mut tv, viewport)) = editor_query.single_mut() else {
+    let Ok((_state, mut cursor_state, mut tv, viewport)) = editor_query.single_mut() else {
         return;
     };
     let Ok(window) = windows.single() else {

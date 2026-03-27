@@ -490,7 +490,7 @@ pub fn request_document_highlights(
         return;
     }
 
-    let Ok((editor_state, cursor_state, tv)) = query.single() else { return };
+    let Ok((_editor_state, cursor_state, tv)) = query.single() else { return };
 
     let Some(uri) = &lsp_sync.document_uri else {
         return;

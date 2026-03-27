@@ -2,7 +2,6 @@ use bevy::input::keyboard::KeyCode;
 use bevy::prelude::*;
 use leafwing_input_manager::prelude::*;
 
-/// Create the default input map with all keybindings
 pub fn default_input_map() -> InputMap<EditorAction> {
     let mut input_map = InputMap::default();
 
@@ -177,7 +176,6 @@ pub fn default_input_map() -> InputMap<EditorAction> {
             KeyCode::BracketRight,
         ]),
     );
-    // FoldAll and UnfoldAll typically use Ctrl+K followed by another key - we'll use simpler bindings
     input_map.insert(
         EditorAction::FoldAll,
         ButtonlikeChord::new([KeyCode::ControlLeft, KeyCode::AltLeft, KeyCode::BracketLeft]),
@@ -204,7 +202,6 @@ pub fn default_input_map() -> InputMap<EditorAction> {
     input_map
 }
 
-/// Editor action that can be triggered by keybindings
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Reflect, Actionlike)]
 pub enum EditorAction {
     // Deletion
@@ -262,63 +259,46 @@ pub enum EditorAction {
     // LSP
     RequestCompletion,
     GotoDefinition,
-    /// Rename symbol at cursor (F2)
     RenameSymbol,
 
     // Multi-cursor
-    /// Add cursor at next occurrence of selection (Ctrl+D)
     AddCursorAtNextOccurrence,
-    /// Add cursor above current cursor (Ctrl+Alt+Up)
     AddCursorAbove,
-    /// Add cursor below current cursor (Ctrl+Alt+Down)
     AddCursorBelow,
-    /// Clear all secondary cursors, keeping only the primary one (Escape when multi-cursor)
     ClearSecondaryCursors,
 
     // Code folding
-    /// Toggle fold at current line (Ctrl+Shift+[)
     ToggleFold,
-    /// Fold region at current line (Ctrl+Shift+[)
     Fold,
-    /// Unfold region at current line (Ctrl+Shift+])
     Unfold,
-    /// Fold all regions (Ctrl+K Ctrl+0)
     FoldAll,
-    /// Unfold all regions (Ctrl+K Ctrl+J)
     UnfoldAll,
 
-    // File operations (emit events for host app to handle)
-    /// Save the current buffer (Ctrl+S) - emits SaveRequested event
+    // File operations — emit events for the host app to handle
     Save,
-    /// Open a file (Ctrl+O) - emits OpenRequested event
     Open,
 }
 
 impl EditorAction {
-    /// Returns true if this action should repeat when the key is held down
     pub fn is_repeatable(&self) -> bool {
         matches!(
             self,
-            // Deletion actions repeat
             EditorAction::DeleteBackward
                 | EditorAction::DeleteForward
                 | EditorAction::DeleteWordBackward
                 | EditorAction::DeleteWordForward
-                // Cursor movement repeats
                 | EditorAction::MoveCursorLeft
                 | EditorAction::MoveCursorRight
                 | EditorAction::MoveCursorUp
                 | EditorAction::MoveCursorDown
                 | EditorAction::MoveCursorWordLeft
                 | EditorAction::MoveCursorWordRight
-                // Selection movement repeats
                 | EditorAction::SelectLeft
                 | EditorAction::SelectRight
                 | EditorAction::SelectUp
                 | EditorAction::SelectDown
                 | EditorAction::SelectWordLeft
                 | EditorAction::SelectWordRight
-                // Undo/Redo repeat
                 | EditorAction::Undo
                 | EditorAction::Redo
         )

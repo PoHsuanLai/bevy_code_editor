@@ -2,45 +2,36 @@
 
 use bevy::prelude::*;
 
-/// A segment of text with a specific color on a specific line
+/// A segment of text with a specific color on a specific line.
 #[derive(Clone, Debug)]
 pub struct LineSegment {
     pub text: String,
     pub color: Color,
 }
 
-// ========== Soft Line Wrapping ==========
-
-/// A wrapped row represents a visual row in the display
-/// Multiple wrapped rows can come from the same buffer line
+/// A visual row in the display; multiple wrapped rows can come from one buffer line.
 #[derive(Clone, Debug)]
 pub struct WrappedRow {
-    /// The buffer line index this row comes from
     pub buffer_line: usize,
-    /// The character offset within the buffer line where this row starts
+    /// Character offset within the buffer line where this row starts
     pub start_offset: usize,
-    /// The character offset within the buffer line where this row ends (exclusive)
+    /// Character offset within the buffer line where this row ends (exclusive)
     pub end_offset: usize,
-    /// Whether this is a continuation of the previous line (wrapped)
+    /// True if this is a continuation of the previous line (wrapped)
     pub is_continuation: bool,
-    /// The segments for this wrapped row (with colors)
     pub segments: Vec<LineSegment>,
 }
 
-/// Display map that handles soft line wrapping
-/// Maps between buffer lines and display rows
+/// Maps between buffer lines and display rows, handling soft line wrapping.
 #[derive(Clone, Debug, Default)]
 pub struct DisplayMap {
-    /// All wrapped rows in display order
     pub rows: Vec<WrappedRow>,
-    /// Wrap width in characters (0 = no wrapping)
+    /// In characters; 0 means no wrapping
     pub wrap_width: usize,
-    /// Version counter to track when map needs rebuilding
     pub version: u64,
 }
 
 impl DisplayMap {
-    /// Create a new display map with the given wrap width
     pub fn new(wrap_width: usize) -> Self {
         Self {
             rows: Vec::new(),
@@ -49,18 +40,15 @@ impl DisplayMap {
         }
     }
 
-    /// Clear all rows
     pub fn clear(&mut self) {
         self.rows.clear();
         self.version += 1;
     }
 
-    /// Get the total number of display rows
     pub fn row_count(&self) -> usize {
         self.rows.len()
     }
 
-    /// Convert a buffer position (line, column) to display position (row, column)
     pub fn buffer_to_display(&self, buffer_line: usize, buffer_col: usize) -> (usize, usize) {
         let mut display_row = 0;
 
@@ -69,21 +57,17 @@ impl DisplayMap {
                 if buffer_col >= row.start_offset && buffer_col < row.end_offset {
                     return (display_row, buffer_col - row.start_offset);
                 } else if buffer_col < row.start_offset {
-                    // Column is before this row, must be on previous row
                     return (display_row.saturating_sub(1), buffer_col);
                 }
             } else if row.buffer_line > buffer_line {
-                // We've passed the target line
                 break;
             }
             display_row += 1;
         }
 
-        // Fallback: return last row of the buffer line
         (display_row.saturating_sub(1), buffer_col)
     }
 
-    /// Convert a display position (row, column) to buffer position (line, column)
     pub fn display_to_buffer(&self, display_row: usize, display_col: usize) -> (usize, usize) {
         if let Some(row) = self.rows.get(display_row) {
             let buffer_col = row.start_offset + display_col;
@@ -98,7 +82,6 @@ impl DisplayMap {
         }
     }
 
-    /// Get the display row for a buffer line (first row of that line)
     pub fn buffer_line_to_first_row(&self, buffer_line: usize) -> usize {
         for (i, row) in self.rows.iter().enumerate() {
             if row.buffer_line == buffer_line && !row.is_continuation {

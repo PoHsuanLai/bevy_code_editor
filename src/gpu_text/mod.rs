@@ -1,24 +1,8 @@
-//! GPU Text Rendering Module
-//!
-//! High-performance text rendering using instanced GPU rendering.
-//! Inspired by Zed's GPUI approach.
-//!
-//! ## Architecture
+//! GPU text rendering via instanced draw calls and a glyph atlas.
 //!
 //! 1. **Glyph Atlas** - Rasterizes glyphs to a texture atlas once
 //! 2. **Instanced Rendering** - Renders all visible glyphs in a single draw call
-//! 3. **Custom Shader** - WGSL shader for efficient text rendering with colors
-//!
-//! ## Usage
-//!
-//! ```rust,ignore
-//! // Add the plugin
-//! app.add_plugins(GpuTextPlugin);
-//!
-//! // Build a text batch
-//! let mut batch = GlyphBatch::new();
-//! batch.add_string("Hello, World!", 0.0, 0.0, 14.0, Color::WHITE, &mut atlas);
-//! ```
+//! 3. **Custom Shader** - WGSL shader for text rendering with per-glyph colors
 
 mod atlas;
 mod render;
@@ -33,18 +17,15 @@ pub use atlas::{PlacementInfo, PositionedGlyph};
 
 pub use instanced_render::InstancedTextRenderPlugin;
 
-// Re-export new_with_font for creating atlas with custom font
 pub use atlas::GlyphAtlas as GlyphAtlasType;
 pub use render::{
     update_atlas_texture, GlyphBatch, GlyphInstance, GpuTextPlugin, TextBatchBuilder, TextMaterial,
     TextRenderState,
 };
 
-// Re-export from bevy for convenience
 pub use bevy::sprite_render::MeshMaterial2d;
 
-/// System condition that checks if the glyph atlas is ready to use
-/// This ensures font assets are loaded before rendering text
+/// System condition: true once the glyph atlas resource exists.
 pub fn atlas_ready(atlas: Option<Res<GlyphAtlas>>) -> bool {
     atlas.is_some()
 }

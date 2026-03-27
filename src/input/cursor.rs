@@ -4,7 +4,6 @@ use crate::text_view::TextViewState;
 use crate::types::*;
 use ropey::Rope;
 
-/// Initialize selection if not already started
 pub fn init_selection(sel: &mut SelectionState, cursor: &CursorState) {
     if sel.selection_start.is_none() {
         sel.selection_start = Some(cursor.cursor_pos);
@@ -12,7 +11,6 @@ pub fn init_selection(sel: &mut SelectionState, cursor: &CursorState) {
     }
 }
 
-/// Move cursor up one line
 pub fn move_cursor_up(cursor: &mut CursorState, rope: &Rope) {
     if cursor.cursor_pos > 0 {
         let line_idx = rope.char_to_line(cursor.cursor_pos);
@@ -26,7 +24,6 @@ pub fn move_cursor_up(cursor: &mut CursorState, rope: &Rope) {
     }
 }
 
-/// Move cursor down one line
 pub fn move_cursor_down(cursor: &mut CursorState, rope: &Rope) {
     let line_idx = rope.char_to_line(cursor.cursor_pos);
     if line_idx + 1 < rope.len_lines() {
@@ -38,13 +35,11 @@ pub fn move_cursor_down(cursor: &mut CursorState, rope: &Rope) {
     }
 }
 
-/// Move cursor to line start
 pub fn move_cursor_line_start(cursor: &mut CursorState, rope: &Rope) {
     let line_idx = rope.char_to_line(cursor.cursor_pos);
     cursor.cursor_pos = rope.line_to_char(line_idx);
 }
 
-/// Move cursor to line end
 pub fn move_cursor_line_end(cursor: &mut CursorState, rope: &Rope) {
     let line_idx = rope.char_to_line(cursor.cursor_pos);
     let line_start = rope.line_to_char(line_idx);
@@ -52,7 +47,6 @@ pub fn move_cursor_line_end(cursor: &mut CursorState, rope: &Rope) {
     cursor.cursor_pos = line_start + line_len.saturating_sub(1).max(0);
 }
 
-/// Character classification for word boundary detection
 #[derive(PartialEq, Eq, Clone, Copy)]
 enum CharClass {
     Whitespace,
@@ -172,23 +166,19 @@ pub fn find_word_boundary_right(rope: &ropey::Rope, pos: usize) -> usize {
     current
 }
 
-/// Move cursor to the previous word boundary
 pub fn move_cursor_word_left(cursor: &mut CursorState, rope: &Rope) {
     cursor.cursor_pos = find_word_boundary_left(rope, cursor.cursor_pos);
 }
 
-/// Move cursor to the next word boundary
 pub fn move_cursor_word_right(cursor: &mut CursorState, rope: &Rope) {
     cursor.cursor_pos = find_word_boundary_right(rope, cursor.cursor_pos);
 }
 
-/// Delete from cursor to previous word boundary
-pub fn delete_word_backward(state: &mut CodeEditorState, sel: &mut SelectionState, hist: &mut EditHistoryState, cursor: &mut CursorState, tv: &mut TextViewState) {
+pub fn delete_word_backward(state: &mut CodeEditorState, _sel: &mut SelectionState, hist: &mut EditHistoryState, cursor: &mut CursorState, tv: &mut TextViewState) {
     let cursor_before = cursor.cursor_pos;
     let word_start = find_word_boundary_left(&tv.rope, cursor.cursor_pos);
 
     if word_start < cursor_before {
-        // Get the text being deleted for undo
         let deleted_text: String = tv
             .rope
             .slice(word_start..cursor_before)
