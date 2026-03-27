@@ -349,7 +349,12 @@ pub(crate) fn update_syntax_tree(
                 // Clear the highlight cache when tree-sitter finishes
                 highlight_cache.clear();
 
-                // Force a render update to display the new highlights immediately
+                // Bump content_version so the line glyph cache is fully invalidated
+                // (otherwise cached uncolored glyphs from the pre-parse render persist).
+                // Set last_highlighted_version to match so we don't re-trigger a parse.
+                tv.content_version += 1;
+                syntax_cache.last_highlighted_version = tv.content_version;
+                tv.dirty_lines = None;
                 tv.needs_update = true;
             }
             // Remove the completed task
