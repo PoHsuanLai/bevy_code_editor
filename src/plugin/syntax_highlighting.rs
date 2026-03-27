@@ -457,13 +457,13 @@ pub(crate) fn byte_to_point(rope: &ropey::Rope, byte_offset: usize) -> tree_sitt
 /// This runs before record_edits_for_incremental_parsing to ensure edits are recorded
 fn send_text_edit_events(
     mut editor_query: Query<(&mut CodeEditorState, &mut SyntaxCacheState, &TextViewState), With<CodeEditor>>,
-    mut writer: MessageWriter<crate::events::TextEditEvent>,
+    mut writer: MessageWriter<crate::types::events::TextEditEvent>,
 ) {
     let Ok((_state, mut syntax_cache, tv)) = editor_query.single_mut() else {
         return;
     };
     if let Some((start_byte, old_end_byte, new_end_byte)) = syntax_cache.pending_tree_sitter_edit.take() {
-        writer.write(crate::events::TextEditEvent::new(
+        writer.write(crate::types::events::TextEditEvent::new(
             start_byte,
             old_end_byte,
             new_end_byte,
@@ -481,7 +481,7 @@ fn send_text_edit_events(
 fn record_edits_for_incremental_parsing(
     editor_query: Query<(&CodeEditorState, &SyntaxCacheState, &TextViewState), With<CodeEditor>>,
     mut syntax: ResMut<SyntaxResource>,
-    mut events: MessageReader<crate::events::TextEditEvent>,
+    mut events: MessageReader<crate::types::events::TextEditEvent>,
 ) {
     let Ok((_state, _syntax_cache, tv)) = editor_query.single() else {
         return;
@@ -521,7 +521,7 @@ impl Plugin for SyntaxPlugin {
 
         // Register the TextEditEvent for cross-plugin communication
         // This allows LSP and other plugins to listen for text changes
-        app.add_message::<crate::events::TextEditEvent>();
+        app.add_message::<crate::types::events::TextEditEvent>();
 
         // Add systems for tree-sitter incremental parsing
         #[cfg(feature = "tree-sitter")]

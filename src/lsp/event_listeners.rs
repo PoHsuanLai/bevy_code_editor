@@ -2,7 +2,7 @@
 //!
 //! These systems listen to editor events and translate them into LSP operations
 
-use crate::events::{
+use crate::types::events::{
     ApplyCompletionEvent, DismissCompletionEvent, RequestCompletionEvent, RequestHoverEvent,
     RequestRenameEvent, RequestSignatureHelpEvent, TextEditEvent,
 };

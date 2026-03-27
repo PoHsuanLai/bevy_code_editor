@@ -7,7 +7,7 @@ use bevy::prelude::*;
 use ropey::Rope;
 use std::ops::Range;
 
-use crate::line_width::LineWidthTracker;
+use super::line_width::LineWidthTracker;
 use crate::types::LineSegment;
 
 /// Generic text view state — holds everything needed to render styled text in a scrollable viewport.

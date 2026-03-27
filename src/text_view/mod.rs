@@ -19,6 +19,7 @@
 //! ));
 //! ```
 
+pub mod line_width;
 pub mod plugin;
 pub mod render;
 pub mod state;

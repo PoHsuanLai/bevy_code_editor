@@ -39,11 +39,9 @@
 //! ```
 
 pub mod display_map;
-pub mod events;
 pub mod gpu_text;
 pub mod input;
 pub mod language;
-pub mod line_width;
 pub mod plugin;
 pub mod settings;
 pub mod syntax;
@@ -55,7 +53,7 @@ pub mod lsp;
 
 pub mod prelude {
     //! Convenient re-exports for common usage
-    pub use crate::events::*;
+    pub use crate::types::events::*;
     pub use crate::input::*;
     pub use crate::language::{Language, TreeSitterConfig};
     pub use crate::plugin::{

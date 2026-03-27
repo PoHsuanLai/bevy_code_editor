@@ -3,6 +3,7 @@
 pub mod anchor;
 pub mod display_map;
 pub mod editor;
+pub mod events;
 pub mod fold;
 pub mod history;
 pub mod selection;

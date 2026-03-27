@@ -5,7 +5,7 @@ use crate::syntax::TreeSitterProvider;
 
 #[derive(Clone)]
 pub struct Language {
-    pub name: &'static str,
+    pub name: String,
 
     #[cfg(feature = "tree-sitter")]
     pub tree_sitter: Option<TreeSitterConfig>,
@@ -18,7 +18,7 @@ pub struct Language {
 #[derive(Clone)]
 pub struct TreeSitterConfig {
     pub grammar: tree_sitter::Language,
-    pub highlights_query: &'static str,
+    pub highlights_query: String,
 }
 
 impl Language {
@@ -28,7 +28,7 @@ impl Language {
         let config = self.tree_sitter.as_ref()?;
         let mut provider = TreeSitterProvider::new();
         provider
-            .set_query(config.highlights_query, config.grammar.clone())
+            .set_query(&config.highlights_query, config.grammar.clone())
             .ok()?;
         Some(provider)
     }

@@ -83,12 +83,12 @@ impl Plugin for LspPlugin {
         app.add_message::<WorkspaceEditEvent>();
 
         // Register LSP input events (editor -> LSP)
-        app.add_message::<crate::events::RequestCompletionEvent>();
-        app.add_message::<crate::events::RequestHoverEvent>();
-        app.add_message::<crate::events::RequestRenameEvent>();
-        app.add_message::<crate::events::RequestSignatureHelpEvent>();
-        app.add_message::<crate::events::DismissCompletionEvent>();
-        app.add_message::<crate::events::ApplyCompletionEvent>();
+        app.add_message::<crate::types::events::RequestCompletionEvent>();
+        app.add_message::<crate::types::events::RequestHoverEvent>();
+        app.add_message::<crate::types::events::RequestRenameEvent>();
+        app.add_message::<crate::types::events::RequestSignatureHelpEvent>();
+        app.add_message::<crate::types::events::DismissCompletionEvent>();
+        app.add_message::<crate::types::events::ApplyCompletionEvent>();
 
         // Configure system set ordering
         app.configure_sets(Update, LspUiSyncSet.before(LspUiRenderSet));
