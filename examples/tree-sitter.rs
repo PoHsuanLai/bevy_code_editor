@@ -104,10 +104,10 @@ fn main() {
 
     // Define Rust language configuration
     let rust_lang = Language {
-        name: "rust",
+        name: "rust".to_string(),
         tree_sitter: Some(TreeSitterConfig {
             grammar: tree_sitter_rust::LANGUAGE.into(),
-            highlights_query: tree_sitter_rust::HIGHLIGHTS_QUERY,
+            highlights_query: tree_sitter_rust::HIGHLIGHTS_QUERY.to_string(),
         }),
         #[cfg(feature = "lsp")]
         lsp_command: Some(("rust-analyzer", &[])),

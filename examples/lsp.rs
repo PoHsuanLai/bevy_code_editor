@@ -81,11 +81,11 @@ fn setup_editor(
 
     // Define Rust language configuration
     let rust_lang = Language {
-        name: "rust",
+        name: "rust".to_string(),
         #[cfg(feature = "tree-sitter")]
         tree_sitter: Some(TreeSitterConfig {
             grammar: tree_sitter_rust::LANGUAGE.into(),
-            highlights_query: tree_sitter_rust::HIGHLIGHTS_QUERY,
+            highlights_query: tree_sitter_rust::HIGHLIGHTS_QUERY.to_string(),
         }),
         lsp_command: Some(("rust-analyzer", &[])),
     };
@@ -157,7 +157,7 @@ fn display_lsp_info(lsp_client: Res<LspClient>) {
 #[cfg(feature = "lsp")]
 fn auto_request_completion(
     editor_query: Query<(&CodeEditorState, &CursorState, &TextViewState), With<CodeEditor>>,
-    mut writer: MessageWriter<bevy_code_editor::events::RequestCompletionEvent>,
+    mut writer: MessageWriter<bevy_code_editor::types::events::RequestCompletionEvent>,
 ) {
     let Ok((_state, cursor, tv)) = editor_query.single() else {
         return;
@@ -176,7 +176,7 @@ fn auto_request_completion(
     let line_start = tv.rope.line_to_char(line);
     let character = cursor_pos - line_start;
 
-    writer.write(bevy_code_editor::events::RequestCompletionEvent::new(
+    writer.write(bevy_code_editor::types::events::RequestCompletionEvent::new(
         line, character,
     ));
 }

@@ -124,21 +124,14 @@ fn main() {
 fn setup(
     mut commands: Commands,
     mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState, &mut TextViewViewport, &mut EditHistoryState, &mut SelectionState, &mut SyntaxCacheState), With<CodeEditor>>,
-    mut minimap_settings: ResMut<MinimapSettings>,
     panel: Res<EditorPanel>,
 ) {
     let Ok((mut state, mut cursor, mut tv, mut viewport, mut hist, mut sel, mut syntax_cache)) = editor_query.single_mut() else {
         return;
     };
 
-    // Disable minimap for the resizable example (it doesn't fit well in small panels)
-    minimap_settings.enabled = false;
-
     // Set initial viewport position (left/top of panel in window coords)
-    // IMPORTANT: These are set ONCE and NEVER updated during resize
-    // This keeps the camera fixed and prevents UI elements from repositioning
-    viewport.offset_x = panel.left;
-    viewport.offset_y = panel.top;
+    viewport.screen_position = bevy::math::Vec2::new(panel.left, panel.top);
 
     // Spawn 4 border sprites (top, bottom, left, right)
     // Camera is positioned at panel center, so borders are relative to camera center (0, 0)
@@ -436,7 +429,7 @@ fn sync_viewport_to_panel(
 
     if size_changed {
         // Only update viewport SIZE, never position
-        // offset_x/y are set once at startup and never change
+        // screen_position is set once at startup and never changes
         // This prevents UI elements from repositioning when panel resizes
         viewport.width = new_width;
         viewport.height = new_height;
