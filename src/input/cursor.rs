@@ -1,6 +1,8 @@
 //! Cursor movement and word boundary helpers
 
+use crate::text_view::TextViewState;
 use crate::types::*;
+use ropey::Rope;
 
 /// Initialize selection if not already started
 pub fn init_selection(state: &mut CodeEditorState) {
@@ -11,42 +13,42 @@ pub fn init_selection(state: &mut CodeEditorState) {
 }
 
 /// Move cursor up one line
-pub fn move_cursor_up(state: &mut CodeEditorState) {
+pub fn move_cursor_up(state: &mut CodeEditorState, rope: &Rope) {
     if state.cursor_pos > 0 {
-        let line_idx = state.rope.char_to_line(state.cursor_pos);
+        let line_idx = rope.char_to_line(state.cursor_pos);
         if line_idx > 0 {
-            let line_start = state.rope.line_to_char(line_idx);
+            let line_start = rope.line_to_char(line_idx);
             let col_offset = state.cursor_pos - line_start;
-            let prev_line_start = state.rope.line_to_char(line_idx - 1);
-            let prev_line_len = state.rope.line(line_idx - 1).len_chars();
+            let prev_line_start = rope.line_to_char(line_idx - 1);
+            let prev_line_len = rope.line(line_idx - 1).len_chars();
             state.cursor_pos = prev_line_start + col_offset.min(prev_line_len.saturating_sub(1));
         }
     }
 }
 
 /// Move cursor down one line
-pub fn move_cursor_down(state: &mut CodeEditorState) {
-    let line_idx = state.rope.char_to_line(state.cursor_pos);
-    if line_idx + 1 < state.rope.len_lines() {
-        let line_start = state.rope.line_to_char(line_idx);
+pub fn move_cursor_down(state: &mut CodeEditorState, rope: &Rope) {
+    let line_idx = rope.char_to_line(state.cursor_pos);
+    if line_idx + 1 < rope.len_lines() {
+        let line_start = rope.line_to_char(line_idx);
         let col_offset = state.cursor_pos - line_start;
-        let next_line_start = state.rope.line_to_char(line_idx + 1);
-        let next_line_len = state.rope.line(line_idx + 1).len_chars();
+        let next_line_start = rope.line_to_char(line_idx + 1);
+        let next_line_len = rope.line(line_idx + 1).len_chars();
         state.cursor_pos = next_line_start + col_offset.min(next_line_len.saturating_sub(1));
     }
 }
 
 /// Move cursor to line start
-pub fn move_cursor_line_start(state: &mut CodeEditorState) {
-    let line_idx = state.rope.char_to_line(state.cursor_pos);
-    state.cursor_pos = state.rope.line_to_char(line_idx);
+pub fn move_cursor_line_start(state: &mut CodeEditorState, rope: &Rope) {
+    let line_idx = rope.char_to_line(state.cursor_pos);
+    state.cursor_pos = rope.line_to_char(line_idx);
 }
 
 /// Move cursor to line end
-pub fn move_cursor_line_end(state: &mut CodeEditorState) {
-    let line_idx = state.rope.char_to_line(state.cursor_pos);
-    let line_start = state.rope.line_to_char(line_idx);
-    let line_len = state.rope.line(line_idx).len_chars();
+pub fn move_cursor_line_end(state: &mut CodeEditorState, rope: &Rope) {
+    let line_idx = rope.char_to_line(state.cursor_pos);
+    let line_start = rope.line_to_char(line_idx);
+    let line_len = rope.line(line_idx).len_chars();
     state.cursor_pos = line_start + line_len.saturating_sub(1).max(0);
 }
 
@@ -171,37 +173,37 @@ pub fn find_word_boundary_right(rope: &ropey::Rope, pos: usize) -> usize {
 }
 
 /// Move cursor to the previous word boundary
-pub fn move_cursor_word_left(state: &mut CodeEditorState) {
-    state.cursor_pos = find_word_boundary_left(&state.rope, state.cursor_pos);
+pub fn move_cursor_word_left(state: &mut CodeEditorState, rope: &Rope) {
+    state.cursor_pos = find_word_boundary_left(rope, state.cursor_pos);
 }
 
 /// Move cursor to the next word boundary
-pub fn move_cursor_word_right(state: &mut CodeEditorState) {
-    state.cursor_pos = find_word_boundary_right(&state.rope, state.cursor_pos);
+pub fn move_cursor_word_right(state: &mut CodeEditorState, rope: &Rope) {
+    state.cursor_pos = find_word_boundary_right(rope, state.cursor_pos);
 }
 
 /// Delete from cursor to previous word boundary
-pub fn delete_word_backward(state: &mut CodeEditorState) {
+pub fn delete_word_backward(state: &mut CodeEditorState, tv: &mut TextViewState) {
     let cursor_before = state.cursor_pos;
-    let word_start = find_word_boundary_left(&state.rope, state.cursor_pos);
+    let word_start = find_word_boundary_left(&tv.rope, state.cursor_pos);
 
     if word_start < cursor_before {
         // Get the text being deleted for undo
-        let deleted_text: String = state
+        let deleted_text: String = tv
             .rope
             .slice(word_start..cursor_before)
             .chars()
             .collect();
 
         // Remove the text
-        let start_byte = state.rope.char_to_byte(word_start);
-        let end_byte = state.rope.char_to_byte(cursor_before);
+        let start_byte = tv.rope.char_to_byte(word_start);
+        let end_byte = tv.rope.char_to_byte(cursor_before);
 
         // Record edit for incremental parsing
         #[cfg(feature = "tree-sitter")]
         state.record_edit(start_byte, end_byte, start_byte);
 
-        state.rope.remove(start_byte..end_byte);
+        tv.rope.remove(start_byte..end_byte);
 
         // Update cursor
         state.cursor_pos = word_start;
@@ -217,34 +219,34 @@ pub fn delete_word_backward(state: &mut CodeEditorState) {
         });
 
         // Mark for update
-        state.needs_update = true;
-        state.pending_update = false;
-        state.content_version += 1;
-        let line_idx = state.rope.char_to_line(word_start);
-        let new_line_count = state.rope.len_lines();
-        state.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-        state.previous_line_count = new_line_count;
+        tv.needs_update = true;
+        tv.pending_update = false;
+        tv.content_version += 1;
+        let line_idx = tv.rope.char_to_line(word_start);
+        let new_line_count = tv.rope.len_lines();
+        tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
+        tv.previous_line_count = new_line_count;
     }
 }
 
 /// Delete from cursor to next word boundary
-pub fn delete_word_forward(state: &mut CodeEditorState) {
+pub fn delete_word_forward(state: &mut CodeEditorState, tv: &mut TextViewState) {
     let cursor_before = state.cursor_pos;
-    let word_end = find_word_boundary_right(&state.rope, state.cursor_pos);
+    let word_end = find_word_boundary_right(&tv.rope, state.cursor_pos);
 
     if word_end > cursor_before {
         // Get the text being deleted for undo
-        let deleted_text: String = state.rope.slice(cursor_before..word_end).chars().collect();
+        let deleted_text: String = tv.rope.slice(cursor_before..word_end).chars().collect();
 
         // Remove the text
-        let start_byte = state.rope.char_to_byte(cursor_before);
-        let end_byte = state.rope.char_to_byte(word_end);
+        let start_byte = tv.rope.char_to_byte(cursor_before);
+        let end_byte = tv.rope.char_to_byte(word_end);
 
         // Record edit for incremental parsing
         #[cfg(feature = "tree-sitter")]
         state.record_edit(start_byte, end_byte, start_byte);
 
-        state.rope.remove(start_byte..end_byte);
+        tv.rope.remove(start_byte..end_byte);
 
         // Cursor stays at the same position
 
@@ -259,12 +261,12 @@ pub fn delete_word_forward(state: &mut CodeEditorState) {
         });
 
         // Mark for update
-        state.needs_update = true;
-        state.pending_update = false;
-        state.content_version += 1;
-        let line_idx = state.rope.char_to_line(cursor_before);
-        let new_line_count = state.rope.len_lines();
-        state.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-        state.previous_line_count = new_line_count;
+        tv.needs_update = true;
+        tv.pending_update = false;
+        tv.content_version += 1;
+        let line_idx = tv.rope.char_to_line(cursor_before);
+        let new_line_count = tv.rope.len_lines();
+        tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
+        tv.previous_line_count = new_line_count;
     }
 }

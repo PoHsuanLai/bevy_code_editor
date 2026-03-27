@@ -3,8 +3,10 @@ use super::keybindings::EditorAction;
 use crate::settings::IndentationSettings;
 #[cfg(feature = "lsp")]
 use crate::settings::LspSettings;
+use crate::text_view::TextViewState;
 use crate::types::*;
 use arboard::Clipboard;
+use ropey::Rope;
 
 #[cfg(feature = "lsp")]
 use crate::lsp;
@@ -18,41 +20,41 @@ pub struct ActionResult {
 }
 
 /// Insert a character at cursor position
-pub fn insert_char(state: &mut CodeEditorState, c: char) {
+pub fn insert_char(state: &mut CodeEditorState, tv: &mut TextViewState, c: char) {
     // Delete selection if exists
     if state.selection_start.is_some() && state.selection_end.is_some() {
-        delete_selection(state);
+        delete_selection(state, tv);
     }
 
-    state.insert_char(c);
+    state.insert_char(tv, c);
 }
 
 /// Insert a closing character at cursor position without moving the cursor
 /// Used for bracket/quote auto-close
-pub fn insert_closing_char(state: &mut CodeEditorState, c: char) {
-    let cursor_pos = state.cursor_pos.min(state.rope.len_chars());
+pub fn insert_closing_char(state: &mut CodeEditorState, tv: &mut TextViewState, c: char) {
+    let cursor_pos = state.cursor_pos.min(tv.rope.len_chars());
 
     // Record for incremental parsing
     #[cfg(feature = "tree-sitter")]
     {
-        let start_byte = state.rope.char_to_byte(cursor_pos);
+        let start_byte = tv.rope.char_to_byte(cursor_pos);
         let char_len = c.len_utf8();
         state.record_edit(start_byte, start_byte, start_byte + char_len);
     }
 
     // Insert at cursor position
-    state.rope.insert_char(cursor_pos, c);
+    tv.rope.insert_char(cursor_pos, c);
 
     // Don't move cursor - it stays between the brackets
     // OPTIMIZATION: Use debounce instead of immediate update
-    state.pending_update = true;
-    state.content_version += 1;
+    tv.pending_update = true;
+    tv.content_version += 1;
 
     // Mark only current line as dirty (not entire rest of file!)
-    let line_idx = state.rope.char_to_line(cursor_pos);
-    let new_line_count = state.rope.len_lines();
-    state.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-    state.previous_line_count = new_line_count;
+    let line_idx = tv.rope.char_to_line(cursor_pos);
+    let new_line_count = tv.rope.len_lines();
+    tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
+    tv.previous_line_count = new_line_count;
 }
 
 /// Get the closing bracket for an opening bracket
@@ -70,22 +72,22 @@ pub fn get_closing_quote(c: char) -> Option<char> {
 
 /// Check if we should skip inserting a closing character
 /// (e.g., when cursor is already followed by the same character)
-pub fn should_skip_auto_close(state: &CodeEditorState, closing: char) -> bool {
+pub fn should_skip_auto_close(state: &CodeEditorState, rope: &Rope, closing: char) -> bool {
     let cursor_pos = state.cursor_pos;
-    if cursor_pos >= state.rope.len_chars() {
+    if cursor_pos >= rope.len_chars() {
         return false;
     }
     // If the next character is the same as what we'd insert, skip
-    state.rope.char(cursor_pos) == closing
+    rope.char(cursor_pos) == closing
 }
 
 /// Delete selected text (with undo recording)
-pub fn delete_selection(state: &mut CodeEditorState) {
-    delete_selection_with_history(state, true);
+pub fn delete_selection(state: &mut CodeEditorState, tv: &mut TextViewState) {
+    delete_selection_with_history(state, tv, true);
 }
 
 /// Delete selected text with optional history recording
-fn delete_selection_with_history(state: &mut CodeEditorState, record_history: bool) {
+fn delete_selection_with_history(state: &mut CodeEditorState, tv: &mut TextViewState, record_history: bool) {
     if let (Some(start), Some(end)) = (state.selection_start, state.selection_end) {
         let (start, end) = if start <= end {
             (start, end)
@@ -96,17 +98,17 @@ fn delete_selection_with_history(state: &mut CodeEditorState, record_history: bo
         let cursor_before = state.cursor_pos;
 
         // Get the text being deleted for undo
-        let deleted_text: String = state.rope.slice(start..end).chars().collect();
+        let deleted_text: String = tv.rope.slice(start..end).chars().collect();
 
         // Remove selected text
-        let start_byte = state.rope.char_to_byte(start);
-        let end_byte = state.rope.char_to_byte(end);
+        let start_byte = tv.rope.char_to_byte(start);
+        let end_byte = tv.rope.char_to_byte(end);
 
         // Record edit for incremental parsing
         #[cfg(feature = "tree-sitter")]
         state.record_edit(start_byte, end_byte, start_byte);
 
-        state.rope.remove(start_byte..end_byte);
+        tv.rope.remove(start_byte..end_byte);
 
         // Move cursor to start of selection
         state.cursor_pos = start;
@@ -128,17 +130,17 @@ fn delete_selection_with_history(state: &mut CodeEditorState, record_history: bo
         state.selection_end = None;
         state.sync_cursors_from_primary();
 
-        state.needs_update = true;
-        state.pending_update = false;
-        state.content_version += 1;
-        state.dirty_lines = None;
-        state.previous_line_count = state.rope.len_lines();
+        tv.needs_update = true;
+        tv.pending_update = false;
+        tv.content_version += 1;
+        tv.dirty_lines = None;
+        tv.previous_line_count = tv.rope.len_lines();
     }
 }
 
 /// Apply selected completion item
 #[cfg(feature = "lsp")]
-pub fn apply_completion(state: &mut CodeEditorState, completion_state: &mut lsp::CompletionState) {
+pub fn apply_completion(state: &mut CodeEditorState, tv: &mut TextViewState, completion_state: &mut lsp::CompletionState) {
     // Get filtered items and select from that list
     let filtered = completion_state.filtered_items();
     if let Some(item) = filtered.get(completion_state.selected_index) {
@@ -147,28 +149,27 @@ pub fn apply_completion(state: &mut CodeEditorState, completion_state: &mut lsp:
         let insert_text = item.insert_text().to_string();
 
         // Ensure valid range
-        if start <= end && end <= state.rope.len_chars() {
-            let start_byte = state.rope.char_to_byte(start);
-            let end_byte = state.rope.char_to_byte(end);
+        if start <= end && end <= tv.rope.len_chars() {
+            let start_byte = tv.rope.char_to_byte(start);
+            let end_byte = tv.rope.char_to_byte(end);
             let new_end_byte = start_byte + insert_text.len();
 
             // Record edit for incremental parsing (remove + insert = replace)
             state.record_edit(start_byte, end_byte, new_end_byte);
 
-            // rope.remove takes char indices, not bytes
-            state.rope.remove(start..end);
-            state.rope.insert(start, &insert_text);
+            tv.rope.remove(start_byte..end_byte);
+            tv.rope.insert(start, &insert_text);
 
             state.cursor_pos = start + insert_text.chars().count();
-            state.needs_update = true;
-            state.pending_update = false;
-            state.content_version += 1;
+            tv.needs_update = true;
+            tv.pending_update = false;
+            tv.content_version += 1;
 
             // Mark lines as dirty for highlighting update
-            let line_idx = state.rope.char_to_line(start);
-            let new_line_count = state.rope.len_lines();
-            state.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-            state.previous_line_count = new_line_count;
+            let line_idx = tv.rope.char_to_line(start);
+            let new_line_count = tv.rope.len_lines();
+            tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
+            tv.previous_line_count = new_line_count;
         }
     }
     completion_state.visible = false;
@@ -199,14 +200,15 @@ pub fn find_word_start(rope: &ropey::Rope, cursor_pos: usize) -> usize {
 #[cfg(feature = "lsp")]
 pub fn update_completion_filter(
     state: &CodeEditorState,
+    rope: &Rope,
     completion_state: &mut lsp::CompletionState,
 ) {
-    let cursor_pos = state.cursor_pos.min(state.rope.len_chars());
+    let cursor_pos = state.cursor_pos.min(rope.len_chars());
     let start = completion_state.start_char_index;
 
-    if cursor_pos > start && start <= state.rope.len_chars() {
+    if cursor_pos > start && start <= rope.len_chars() {
         // Extract the filter text from start_char_index to cursor
-        let filter_text: String = state.rope.slice(start..cursor_pos).chars().collect();
+        let filter_text: String = rope.slice(start..cursor_pos).chars().collect();
         completion_state.filter = filter_text;
         // Reset selection and scroll when filter changes
         completion_state.selected_index = 0;
@@ -224,6 +226,7 @@ pub fn update_completion_filter(
 #[cfg(feature = "lsp")]
 pub fn request_completion(
     state: &CodeEditorState,
+    rope: &Rope,
     lsp_client: &lsp::LspClient,
     completion_state: &mut lsp::CompletionState,
     lsp_sync: &lsp::LspSyncState,
@@ -231,9 +234,9 @@ pub fn request_completion(
     use crate::lsp::LspMessage;
     use lsp_types::Position;
 
-    let cursor_pos = state.cursor_pos.min(state.rope.len_chars());
-    let line_index = state.rope.char_to_line(cursor_pos);
-    let char_in_line_index = cursor_pos - state.rope.line_to_char(line_index);
+    let cursor_pos = state.cursor_pos.min(rope.len_chars());
+    let line_index = rope.char_to_line(cursor_pos);
+    let char_in_line_index = cursor_pos - rope.line_to_char(line_index);
 
     let lsp_position = Position {
         line: line_index as u32,
@@ -264,7 +267,7 @@ pub fn request_completion(
         }
 
         // Always update word completions from the document
-        completion_state.update_word_completions(&state.rope, cursor_pos);
+        completion_state.update_word_completions(rope, cursor_pos);
 
         completion_state.visible = true;
     } else {
@@ -277,7 +280,7 @@ pub fn request_completion(
         }
 
         // Populate word completions even without LSP
-        completion_state.update_word_completions(&state.rope, cursor_pos);
+        completion_state.update_word_completions(rope, cursor_pos);
         completion_state.visible = true;
 
         #[cfg(debug_assertions)]
@@ -291,7 +294,7 @@ pub fn request_completion(
 /// Send textDocument/didChange notification to LSP
 #[cfg(feature = "lsp")]
 pub fn send_did_change(
-    state: &CodeEditorState,
+    rope: &Rope,
     lsp_client: &lsp::LspClient,
     lsp_sync: &mut lsp::LspSyncState,
 ) {
@@ -307,7 +310,7 @@ pub fn send_did_change(
         let change = lsp_types::TextDocumentContentChangeEvent {
             range: None,
             range_length: None,
-            text: state.rope.chunks().collect(),
+            text: rope.chunks().collect(),
         };
 
         lsp_client.send(LspMessage::DidChange {
@@ -324,6 +327,7 @@ pub fn send_did_change(
 /// Core action execution - shared between LSP and non-LSP builds
 fn execute_action_core(
     state: &mut CodeEditorState,
+    tv: &mut TextViewState,
     action: EditorAction,
     indentation: &IndentationSettings,
     goto_line_state: &mut GotoLineState,
@@ -337,45 +341,45 @@ fn execute_action_core(
 
     match action {
         EditorAction::InsertNewline => {
-            insert_char(state, '\n');
+            insert_char(state, tv, '\n');
             result.text_changed = true;
         }
         EditorAction::InsertTab => {
             for _ in 0..indentation.tab_width {
-                insert_char(state, ' ');
+                insert_char(state, tv, ' ');
             }
             result.text_changed = true;
         }
 
         EditorAction::DeleteBackward => {
             if state.selection_start.is_some() {
-                delete_selection(state);
+                delete_selection(state, tv);
             } else {
-                state.delete_backward();
+                state.delete_backward(tv);
             }
             result.text_changed = true;
         }
         EditorAction::DeleteForward => {
             if state.selection_start.is_some() {
-                delete_selection(state);
+                delete_selection(state, tv);
             } else {
-                state.delete_forward();
+                state.delete_forward(tv);
             }
             result.text_changed = true;
         }
         EditorAction::DeleteWordBackward => {
             if state.selection_start.is_some() {
-                delete_selection(state);
+                delete_selection(state, tv);
             } else {
-                delete_word_backward(state);
+                delete_word_backward(state, tv);
             }
             result.text_changed = true;
         }
         EditorAction::DeleteWordForward => {
             if state.selection_start.is_some() {
-                delete_selection(state);
+                delete_selection(state, tv);
             } else {
-                delete_word_forward(state);
+                delete_word_forward(state, tv);
             }
             result.text_changed = true;
         }
@@ -386,53 +390,53 @@ fn execute_action_core(
         EditorAction::MoveCursorLeft => {
             state.selection_start = None;
             state.selection_end = None;
-            state.move_cursor(-1);
+            state.move_cursor(&tv.rope, -1);
             state.sync_cursors_from_primary();
             result.horizontal_move = true;
         }
         EditorAction::MoveCursorRight => {
             state.selection_start = None;
             state.selection_end = None;
-            state.move_cursor(1);
+            state.move_cursor(&tv.rope, 1);
             state.sync_cursors_from_primary();
             result.horizontal_move = true;
         }
         EditorAction::MoveCursorUp => {
             state.selection_start = None;
             state.selection_end = None;
-            move_cursor_up(state);
+            move_cursor_up(state, &tv.rope);
             state.sync_cursors_from_primary();
         }
         EditorAction::MoveCursorDown => {
             state.selection_start = None;
             state.selection_end = None;
-            move_cursor_down(state);
+            move_cursor_down(state, &tv.rope);
             state.sync_cursors_from_primary();
         }
         EditorAction::MoveCursorWordLeft => {
             state.selection_start = None;
             state.selection_end = None;
-            move_cursor_word_left(state);
+            move_cursor_word_left(state, &tv.rope);
             state.sync_cursors_from_primary();
             result.horizontal_move = true;
         }
         EditorAction::MoveCursorWordRight => {
             state.selection_start = None;
             state.selection_end = None;
-            move_cursor_word_right(state);
+            move_cursor_word_right(state, &tv.rope);
             state.sync_cursors_from_primary();
             result.horizontal_move = true;
         }
         EditorAction::MoveCursorLineStart => {
             state.selection_start = None;
             state.selection_end = None;
-            move_cursor_line_start(state);
+            move_cursor_line_start(state, &tv.rope);
             state.sync_cursors_from_primary();
         }
         EditorAction::MoveCursorLineEnd => {
             state.selection_start = None;
             state.selection_end = None;
-            move_cursor_line_end(state);
+            move_cursor_line_end(state, &tv.rope);
             state.sync_cursors_from_primary();
         }
         EditorAction::MoveCursorDocumentStart => {
@@ -444,7 +448,7 @@ fn execute_action_core(
         EditorAction::MoveCursorDocumentEnd => {
             state.selection_start = None;
             state.selection_end = None;
-            state.cursor_pos = state.rope.len_chars();
+            state.cursor_pos = tv.rope.len_chars();
             state.sync_cursors_from_primary();
         }
         EditorAction::MoveCursorPageUp => {
@@ -462,56 +466,56 @@ fn execute_action_core(
 
         EditorAction::SelectLeft => {
             init_selection(state);
-            state.move_cursor(-1);
+            state.move_cursor(&tv.rope, -1);
             state.selection_end = Some(state.cursor_pos);
             state.sync_cursors_from_primary();
         }
         EditorAction::SelectRight => {
             init_selection(state);
-            state.move_cursor(1);
+            state.move_cursor(&tv.rope, 1);
             state.selection_end = Some(state.cursor_pos);
             state.sync_cursors_from_primary();
         }
         EditorAction::SelectUp => {
             init_selection(state);
-            move_cursor_up(state);
+            move_cursor_up(state, &tv.rope);
             state.selection_end = Some(state.cursor_pos);
             state.sync_cursors_from_primary();
         }
         EditorAction::SelectDown => {
             init_selection(state);
-            move_cursor_down(state);
+            move_cursor_down(state, &tv.rope);
             state.selection_end = Some(state.cursor_pos);
             state.sync_cursors_from_primary();
         }
         EditorAction::SelectWordLeft => {
             init_selection(state);
-            move_cursor_word_left(state);
+            move_cursor_word_left(state, &tv.rope);
             state.selection_end = Some(state.cursor_pos);
             state.sync_cursors_from_primary();
         }
         EditorAction::SelectWordRight => {
             init_selection(state);
-            move_cursor_word_right(state);
+            move_cursor_word_right(state, &tv.rope);
             state.selection_end = Some(state.cursor_pos);
             state.sync_cursors_from_primary();
         }
         EditorAction::SelectLineStart => {
             init_selection(state);
-            move_cursor_line_start(state);
+            move_cursor_line_start(state, &tv.rope);
             state.selection_end = Some(state.cursor_pos);
             state.sync_cursors_from_primary();
         }
         EditorAction::SelectLineEnd => {
             init_selection(state);
-            move_cursor_line_end(state);
+            move_cursor_line_end(state, &tv.rope);
             state.selection_end = Some(state.cursor_pos);
             state.sync_cursors_from_primary();
         }
         EditorAction::SelectAll => {
             state.selection_start = Some(0);
-            state.selection_end = Some(state.rope.len_chars());
-            state.cursor_pos = state.rope.len_chars();
+            state.selection_end = Some(tv.rope.len_chars());
+            state.cursor_pos = tv.rope.len_chars();
             state.sync_cursors_from_primary();
         }
         EditorAction::ClearSelection => {
@@ -523,9 +527,9 @@ fn execute_action_core(
         EditorAction::Copy => {
             if let (Some(s), Some(e)) = (state.selection_start, state.selection_end) {
                 let (start, end) = if s < e { (s, e) } else { (e, s) };
-                let start = start.min(state.rope.len_chars());
-                let end = end.min(state.rope.len_chars());
-                let text = state.rope.slice(start..end).to_string();
+                let start = start.min(tv.rope.len_chars());
+                let end = end.min(tv.rope.len_chars());
+                let text = tv.rope.slice(start..end).to_string();
                 if let Ok(mut clipboard) = Clipboard::new() {
                     let _ = clipboard.set_text(text);
                 }
@@ -534,9 +538,9 @@ fn execute_action_core(
         EditorAction::Cut => {
             if let (Some(s), Some(e)) = (state.selection_start, state.selection_end) {
                 let (start, end) = if s < e { (s, e) } else { (e, s) };
-                let start = start.min(state.rope.len_chars());
-                let end = end.min(state.rope.len_chars());
-                let selected_text = state.rope.slice(start..end).to_string();
+                let start = start.min(tv.rope.len_chars());
+                let end = end.min(tv.rope.len_chars());
+                let selected_text = tv.rope.slice(start..end).to_string();
                 let cursor_before = state.cursor_pos;
 
                 // Copy to clipboard
@@ -545,14 +549,14 @@ fn execute_action_core(
                 }
 
                 // Delete the selection
-                let start_byte = state.rope.char_to_byte(start);
-                let end_byte = state.rope.char_to_byte(end);
+                let start_byte = tv.rope.char_to_byte(start);
+                let end_byte = tv.rope.char_to_byte(end);
 
                 // Record edit for incremental parsing
                 #[cfg(feature = "tree-sitter")]
                 state.record_edit(start_byte, end_byte, start_byte);
 
-                state.rope.remove(start_byte..end_byte);
+                tv.rope.remove(start_byte..end_byte);
                 state.cursor_pos = start;
 
                 // Record for undo
@@ -567,14 +571,14 @@ fn execute_action_core(
 
                 state.selection_start = None;
                 state.selection_end = None;
-                state.needs_update = true;
-                state.pending_update = false;
-                state.content_version += 1;
+                tv.needs_update = true;
+                tv.pending_update = false;
+                tv.content_version += 1;
 
-                let new_line_count = state.rope.len_lines();
-                let line_idx = state.rope.char_to_line(start);
-                state.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-                state.previous_line_count = new_line_count;
+                let new_line_count = tv.rope.len_lines();
+                let line_idx = tv.rope.char_to_line(start);
+                tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
+                tv.previous_line_count = new_line_count;
 
                 result.text_changed = true;
             }
@@ -596,43 +600,43 @@ fn execute_action_core(
                             } else {
                                 (end, start)
                             };
-                            let start = start.min(state.rope.len_chars());
-                            let end = end.min(state.rope.len_chars());
+                            let start = start.min(tv.rope.len_chars());
+                            let end = end.min(tv.rope.len_chars());
 
-                            deleted_text = state.rope.slice(start..end).to_string();
+                            deleted_text = tv.rope.slice(start..end).to_string();
 
-                            let start_byte = state.rope.char_to_byte(start);
-                            let end_byte = state.rope.char_to_byte(end);
+                            let start_byte = tv.rope.char_to_byte(start);
+                            let end_byte = tv.rope.char_to_byte(end);
                             let new_end_byte = start_byte + text.len();
 
                             // Record combined edit for incremental parsing (delete + insert)
                             #[cfg(feature = "tree-sitter")]
                             state.record_edit(start_byte, end_byte, new_end_byte);
 
-                            state.rope.remove(start_byte..end_byte);
+                            tv.rope.remove(start_byte..end_byte);
                             state.cursor_pos = start;
                             state.selection_start = None;
                             state.selection_end = None;
                             paste_position = start;
                         } else {
-                            paste_position = state.cursor_pos.min(state.rope.len_chars());
+                            paste_position = state.cursor_pos.min(tv.rope.len_chars());
 
                             // Record insert-only edit for incremental parsing
                             #[cfg(feature = "tree-sitter")]
                             {
-                                let start_byte = state.rope.char_to_byte(paste_position);
+                                let start_byte = tv.rope.char_to_byte(paste_position);
                                 state.record_edit(start_byte, start_byte, start_byte + text.len());
                             }
                         }
 
                         // Insert pasted text
-                        let line_idx = state.rope.char_to_line(paste_position);
+                        let line_idx = tv.rope.char_to_line(paste_position);
 
-                        state.rope.insert(paste_position, &text);
+                        tv.rope.insert(paste_position, &text);
                         state.cursor_pos = paste_position + text.chars().count();
-                        state.needs_update = true;
-                        state.pending_update = false;
-                        state.content_version += 1;
+                        tv.needs_update = true;
+                        tv.pending_update = false;
+                        tv.content_version += 1;
 
                         // Record for undo (combined delete selection + insert paste)
                         state.history.record(EditOperation {
@@ -644,9 +648,9 @@ fn execute_action_core(
                             kind: EditKind::Paste, // Paste is always its own transaction
                         });
 
-                        let new_line_count = state.rope.len_lines();
-                        state.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-                        state.previous_line_count = new_line_count;
+                        let new_line_count = tv.rope.len_lines();
+                        tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
+                        tv.previous_line_count = new_line_count;
 
                         result.text_changed = true;
                     }
@@ -655,12 +659,12 @@ fn execute_action_core(
         }
 
         EditorAction::Undo => {
-            if state.undo() {
+            if state.undo(tv) {
                 result.text_changed = true;
             }
         }
         EditorAction::Redo => {
-            if state.redo() {
+            if state.redo(tv) {
                 result.text_changed = true;
             }
         }
@@ -689,53 +693,53 @@ fn execute_action_core(
         EditorAction::AddCursorAtNextOccurrence => {
             // Sync the cursors from primary first
             state.sync_cursors_from_primary();
-            state.add_cursor_at_next_occurrence();
+            state.add_cursor_at_next_occurrence(tv);
         }
         EditorAction::AddCursorAbove => {
             // Add cursor on the line above
             state.sync_cursors_from_primary();
-            add_cursor_above(state);
+            add_cursor_above(state, tv);
         }
         EditorAction::AddCursorBelow => {
             // Add cursor on the line below
             state.sync_cursors_from_primary();
-            add_cursor_below(state);
+            add_cursor_below(state, tv);
         }
         EditorAction::ClearSecondaryCursors => {
             // Clear all but primary cursor
             if state.has_multiple_cursors() {
-                state.clear_secondary_cursors();
+                state.clear_secondary_cursors(tv);
             }
         }
 
         // Code folding actions
         #[cfg(feature = "folding")]
         EditorAction::ToggleFold => {
-            let line = state.rope.char_to_line(state.cursor_pos);
+            let line = tv.rope.char_to_line(state.cursor_pos);
             fold_state.toggle_fold_at_line(line);
-            state.pending_update = true;
+            tv.pending_update = true;
         }
         #[cfg(feature = "folding")]
         EditorAction::Fold => {
-            let line = state.rope.char_to_line(state.cursor_pos);
+            let line = tv.rope.char_to_line(state.cursor_pos);
             fold_state.fold_at_line(line);
-            state.pending_update = true;
+            tv.pending_update = true;
         }
         #[cfg(feature = "folding")]
         EditorAction::Unfold => {
-            let line = state.rope.char_to_line(state.cursor_pos);
+            let line = tv.rope.char_to_line(state.cursor_pos);
             fold_state.unfold_at_line(line);
-            state.pending_update = true;
+            tv.pending_update = true;
         }
         #[cfg(feature = "folding")]
         EditorAction::FoldAll => {
             fold_state.fold_all();
-            state.pending_update = true;
+            tv.pending_update = true;
         }
         #[cfg(feature = "folding")]
         EditorAction::UnfoldAll => {
             fold_state.unfold_all();
-            state.pending_update = true;
+            tv.pending_update = true;
         }
         #[cfg(not(feature = "folding"))]
         EditorAction::ToggleFold | EditorAction::Fold | EditorAction::Unfold | EditorAction::FoldAll | EditorAction::UnfoldAll => {
@@ -753,61 +757,56 @@ fn execute_action_core(
 }
 
 /// Add a cursor on the line above the primary cursor
-fn add_cursor_above(state: &mut CodeEditorState) {
+fn add_cursor_above(state: &mut CodeEditorState, tv: &mut TextViewState) {
     if state.cursors.is_empty() {
         return;
     }
 
-    // Get the primary cursor's line and column
     let primary_pos = state.cursors[0].position;
-    let line_idx = state.rope.char_to_line(primary_pos);
+    let line_idx = tv.rope.char_to_line(primary_pos);
 
     if line_idx == 0 {
-        // Already at top, can't go up
         return;
     }
 
-    let line_start = state.rope.line_to_char(line_idx);
+    let line_start = tv.rope.line_to_char(line_idx);
     let col_offset = primary_pos - line_start;
 
-    // Find position on the line above
-    let prev_line_start = state.rope.line_to_char(line_idx - 1);
-    let prev_line_len = state.rope.line(line_idx - 1).len_chars().saturating_sub(1); // Exclude newline
+    let prev_line_start = tv.rope.line_to_char(line_idx - 1);
+    let prev_line_len = tv.rope.line(line_idx - 1).len_chars().saturating_sub(1);
     let new_pos = prev_line_start + col_offset.min(prev_line_len);
 
-    state.add_cursor(new_pos);
+    state.add_cursor(tv, new_pos);
 }
 
 /// Add a cursor on the line below the primary cursor
-fn add_cursor_below(state: &mut CodeEditorState) {
+fn add_cursor_below(state: &mut CodeEditorState, tv: &mut TextViewState) {
     if state.cursors.is_empty() {
         return;
     }
 
-    // Get the primary cursor's line and column
     let primary_pos = state.cursors[0].position;
-    let line_idx = state.rope.char_to_line(primary_pos);
+    let line_idx = tv.rope.char_to_line(primary_pos);
 
-    if line_idx + 1 >= state.rope.len_lines() {
-        // Already at bottom, can't go down
+    if line_idx + 1 >= tv.rope.len_lines() {
         return;
     }
 
-    let line_start = state.rope.line_to_char(line_idx);
+    let line_start = tv.rope.line_to_char(line_idx);
     let col_offset = primary_pos - line_start;
 
-    // Find position on the line below
-    let next_line_start = state.rope.line_to_char(line_idx + 1);
-    let next_line_len = state.rope.line(line_idx + 1).len_chars().saturating_sub(1); // Exclude newline
+    let next_line_start = tv.rope.line_to_char(line_idx + 1);
+    let next_line_len = tv.rope.line(line_idx + 1).len_chars().saturating_sub(1);
     let new_pos = next_line_start + col_offset.min(next_line_len);
 
-    state.add_cursor(new_pos);
+    state.add_cursor(tv, new_pos);
 }
 
 /// Execute an editor action (Non-LSP version)
 #[cfg(all(not(feature = "lsp"), feature = "folding"))]
 pub fn execute_action(
     state: &mut CodeEditorState,
+    tv: &mut TextViewState,
     action: EditorAction,
     indentation: &IndentationSettings,
     goto_line_state: &mut GotoLineState,
@@ -817,7 +816,7 @@ pub fn execute_action(
     if action == EditorAction::ClearSelection {
         // First priority: clear secondary cursors if we have multiple
         if state.has_multiple_cursors() {
-            state.clear_secondary_cursors();
+            state.clear_secondary_cursors(tv);
             return;
         }
         if goto_line_state.active {
@@ -826,13 +825,14 @@ pub fn execute_action(
         }
     }
 
-    let _ = execute_action_core(state, action, indentation, goto_line_state, fold_state);
+    let _ = execute_action_core(state, tv, action, indentation, goto_line_state, fold_state);
 }
 
 /// Execute an editor action (Non-LSP, no folding version)
 #[cfg(all(not(feature = "lsp"), not(feature = "folding")))]
 pub fn execute_action(
     state: &mut CodeEditorState,
+    tv: &mut TextViewState,
     action: EditorAction,
     indentation: &IndentationSettings,
     goto_line_state: &mut GotoLineState,
@@ -841,7 +841,7 @@ pub fn execute_action(
     if action == EditorAction::ClearSelection {
         // First priority: clear secondary cursors if we have multiple
         if state.has_multiple_cursors() {
-            state.clear_secondary_cursors();
+            state.clear_secondary_cursors(tv);
             return;
         }
         if goto_line_state.active {
@@ -850,13 +850,14 @@ pub fn execute_action(
         }
     }
 
-    let _ = execute_action_core(state, action, indentation, goto_line_state, None);
+    let _ = execute_action_core(state, tv, action, indentation, goto_line_state, None);
 }
 
 /// Execute an editor action (LSP version with folding)
 #[cfg(all(feature = "lsp", feature = "folding"))]
 pub fn execute_action(
     state: &mut CodeEditorState,
+    tv: &mut TextViewState,
     action: EditorAction,
     indentation: &IndentationSettings,
     lsp: &LspSettings,
@@ -870,7 +871,7 @@ pub fn execute_action(
     if action == EditorAction::ClearSelection {
         // First priority: clear secondary cursors if we have multiple
         if state.has_multiple_cursors() {
-            state.clear_secondary_cursors();
+            state.clear_secondary_cursors(tv);
             return;
         }
         if goto_line_state.active {
@@ -904,8 +905,8 @@ pub fn execute_action(
                 return;
             }
             EditorAction::InsertNewline | EditorAction::InsertTab => {
-                apply_completion(state, completion_state);
-                send_did_change(state, lsp_client, lsp_sync);
+                apply_completion(state, tv, completion_state);
+                send_did_change(&tv.rope, lsp_client, lsp_sync);
                 return;
             }
             EditorAction::ClearSelection => {
@@ -920,12 +921,12 @@ pub fn execute_action(
 
     // Handle LSP-specific actions
     if action == EditorAction::RequestCompletion {
-        request_completion(state, lsp_client, completion_state, lsp_sync);
+        request_completion(state, &tv.rope, lsp_client, completion_state, lsp_sync);
         return;
     }
 
     // Execute the core action
-    let result = execute_action_core(state, action, indentation, goto_line_state, fold_state);
+    let result = execute_action_core(state, tv, action, indentation, goto_line_state, fold_state);
 
     // LSP-specific post-processing: dismiss completion on horizontal move
     if result.horizontal_move {
@@ -935,7 +936,7 @@ pub fn execute_action(
     // Update completion filter on delete backward
     if action == EditorAction::DeleteBackward && completion_state.visible {
         if state.cursor_pos > completion_state.start_char_index {
-            update_completion_filter(state, completion_state);
+            update_completion_filter(state, &tv.rope, completion_state);
         } else if state.cursor_pos == completion_state.start_char_index {
             completion_state.filter.clear();
             completion_state.selected_index = 0;
@@ -947,7 +948,7 @@ pub fn execute_action(
 
     // Notify LSP of text changes
     if result.text_changed {
-        send_did_change(state, lsp_client, lsp_sync);
+        send_did_change(&tv.rope, lsp_client, lsp_sync);
     }
 }
 
@@ -955,6 +956,7 @@ pub fn execute_action(
 #[cfg(all(feature = "lsp", not(feature = "folding")))]
 pub fn execute_action(
     state: &mut CodeEditorState,
+    tv: &mut TextViewState,
     action: EditorAction,
     indentation: &IndentationSettings,
     lsp: &LspSettings,
@@ -967,7 +969,7 @@ pub fn execute_action(
     if action == EditorAction::ClearSelection {
         // First priority: clear secondary cursors if we have multiple
         if state.has_multiple_cursors() {
-            state.clear_secondary_cursors();
+            state.clear_secondary_cursors(tv);
             return;
         }
         if goto_line_state.active {
@@ -1001,8 +1003,8 @@ pub fn execute_action(
                 return;
             }
             EditorAction::InsertNewline | EditorAction::InsertTab => {
-                apply_completion(state, completion_state);
-                send_did_change(state, lsp_client, lsp_sync);
+                apply_completion(state, tv, completion_state);
+                send_did_change(&tv.rope, lsp_client, lsp_sync);
                 return;
             }
             EditorAction::ClearSelection => {
@@ -1017,12 +1019,12 @@ pub fn execute_action(
 
     // Handle LSP-specific actions
     if action == EditorAction::RequestCompletion {
-        request_completion(state, lsp_client, completion_state, lsp_sync);
+        request_completion(state, &tv.rope, lsp_client, completion_state, lsp_sync);
         return;
     }
 
     // Execute the core action
-    let result = execute_action_core(state, action, indentation, goto_line_state, None);
+    let result = execute_action_core(state, tv, action, indentation, goto_line_state, None);
 
     // LSP-specific post-processing: dismiss completion on horizontal move
     if result.horizontal_move {
@@ -1032,7 +1034,7 @@ pub fn execute_action(
     // Update completion filter on delete backward
     if action == EditorAction::DeleteBackward && completion_state.visible {
         if state.cursor_pos > completion_state.start_char_index {
-            update_completion_filter(state, completion_state);
+            update_completion_filter(state, &tv.rope, completion_state);
         } else if state.cursor_pos == completion_state.start_char_index {
             completion_state.filter.clear();
             completion_state.selected_index = 0;
@@ -1044,6 +1046,6 @@ pub fn execute_action(
 
     // Notify LSP of text changes
     if result.text_changed {
-        send_did_change(state, lsp_client, lsp_sync);
+        send_did_change(&tv.rope, lsp_client, lsp_sync);
     }
 }

@@ -195,8 +195,8 @@ pub fn process_lsp_messages(
 
             LspResponse::Format { edits } => {
                 #[cfg(debug_assertions)]
-                debug!("[LSP] Format: {} edit(s)", edits.len());
-                apply_text_edits(&mut editor_state, edits);
+                eprintln!("[LSP] Format: {} edit(s)", edits.len());
+                apply_text_edits(&mut editor_state, &mut tv, edits);
             }
 
             LspResponse::SignatureHelp {
@@ -259,7 +259,7 @@ pub fn process_lsp_messages(
                 if let Some(changes) = &edit.changes {
                     if let Some(uri) = &lsp_sync.document_uri {
                         if let Some(edits) = changes.get(uri) {
-                            apply_text_edits(&mut editor_state, edits.clone());
+                            apply_text_edits(&mut editor_state, &mut tv, edits.clone());
                         }
                     }
                 }
@@ -275,7 +275,7 @@ pub fn process_lsp_messages(
 }
 
 /// Apply text edits from formatting
-fn apply_text_edits(editor_state: &mut CodeEditorState, edits: Vec<TextEdit>) {
+fn apply_text_edits(editor_state: &mut CodeEditorState, tv: &mut TextViewState, edits: Vec<TextEdit>) {
     // Sort edits in reverse order to preserve positions
     let mut edits_sorted = edits;
     edits_sorted.sort_by(|a, b| {
@@ -290,39 +290,39 @@ fn apply_text_edits(editor_state: &mut CodeEditorState, edits: Vec<TextEdit>) {
         let start_char = edit.range.start.character as usize;
         let end_char = edit.range.end.character as usize;
 
-        if start_line < editor_state.rope.len_lines() {
-            let start_line_char = editor_state.rope.line_to_char(start_line);
+        if start_line < tv.rope.len_lines() {
+            let start_line_char = tv.rope.line_to_char(start_line);
             let start_pos = start_line_char + start_char;
 
-            let end_pos = if end_line < editor_state.rope.len_lines() {
-                let end_line_char = editor_state.rope.line_to_char(end_line);
-                (end_line_char + end_char).min(editor_state.rope.len_chars())
+            let end_pos = if end_line < tv.rope.len_lines() {
+                let end_line_char = tv.rope.line_to_char(end_line);
+                (end_line_char + end_char).min(tv.rope.len_chars())
             } else {
-                editor_state.rope.len_chars()
+                tv.rope.len_chars()
             };
 
-            let start_pos = start_pos.min(editor_state.rope.len_chars());
-            let end_pos = end_pos.min(editor_state.rope.len_chars());
+            let start_pos = start_pos.min(tv.rope.len_chars());
+            let end_pos = end_pos.min(tv.rope.len_chars());
 
             if start_pos <= end_pos {
-                let start_byte = editor_state.rope.char_to_byte(start_pos);
-                let end_byte = editor_state.rope.char_to_byte(end_pos);
+                let start_byte = tv.rope.char_to_byte(start_pos);
+                let end_byte = tv.rope.char_to_byte(end_pos);
                 let new_end_byte = start_byte + edit.new_text.len();
 
                 #[cfg(feature = "tree-sitter")]
                 editor_state.record_edit(start_byte, end_byte, new_end_byte);
 
-                editor_state.rope.remove(start_byte..end_byte);
-                editor_state.rope.insert(start_pos, &edit.new_text);
+                tv.rope.remove(start_byte..end_byte);
+                tv.rope.insert(start_pos, &edit.new_text);
             }
         }
     }
 
-    editor_state.needs_update = true;
-    editor_state.pending_update = false;
-    editor_state.content_version += 1;
-    editor_state.dirty_lines = None;
-    editor_state.previous_line_count = editor_state.rope.len_lines();
+    tv.needs_update = true;
+    tv.pending_update = false;
+    tv.content_version += 1;
+    tv.dirty_lines = None;
+    tv.previous_line_count = tv.rope.len_lines();
 }
 
 /// System to sync document with LSP (debounced)

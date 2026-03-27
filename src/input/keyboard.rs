@@ -235,10 +235,10 @@ pub fn handle_keyboard_input(
                             // Check for quote skip-over (typing closing quote when already there)
                             if brackets.auto_close_quotes
                                 && get_closing_quote(c).is_some()
-                                && should_skip_auto_close(&state, c)
+                                && should_skip_auto_close(&state, &tv.rope, c)
                             {
                                 // Just move cursor past the existing quote
-                                state.move_cursor(1);
+                                state.move_cursor(&tv.rope, 1);
                                 tv.pending_update = true;
                                 continue;
                             }
@@ -247,20 +247,20 @@ pub fn handle_keyboard_input(
                             if brackets.auto_close {
                                 let is_closing_bracket =
                                     brackets.pairs.iter().any(|(_, close)| *close == c);
-                                if is_closing_bracket && should_skip_auto_close(&state, c) {
+                                if is_closing_bracket && should_skip_auto_close(&state, &tv.rope, c) {
                                     // Just move cursor past the existing bracket
-                                    state.move_cursor(1);
+                                    state.move_cursor(&tv.rope, 1);
                                     tv.pending_update = true;
                                     continue;
                                 }
                             }
 
-                            insert_char(&mut state, c);
+                            insert_char(&mut state, &mut tv, c);
 
                             // Auto-close brackets
                             if brackets.auto_close {
                                 if let Some(closing) = get_closing_bracket(c, &brackets.pairs) {
-                                    insert_closing_char(&mut state, closing);
+                                    insert_closing_char(&mut state, &mut tv, closing);
                                 }
                             }
 
@@ -283,14 +283,14 @@ pub fn handle_keyboard_input(
                                     };
 
                                     if should_close {
-                                        insert_closing_char(&mut state, closing);
+                                        insert_closing_char(&mut state, &mut tv, closing);
                                     }
                                 }
                             }
 
                             // Notify LSP of text change
                             #[cfg(feature = "lsp")]
-                            send_did_change(&state, &lsp_client, &mut lsp_sync);
+                            send_did_change(&tv.rope, &lsp_client, &mut lsp_sync);
 
                             // Auto-trigger completion on trigger chars, OR update filter if already visible
                             #[cfg(feature = "lsp")]
@@ -344,6 +344,7 @@ pub fn handle_keyboard_input(
                                     completion_state.visible = false;
                                     request_completion(
                                         &state,
+                                        &tv.rope,
                                         &lsp_client,
                                         &mut completion_state,
                                         &lsp_sync,
@@ -353,8 +354,8 @@ pub fn handle_keyboard_input(
                                     if completion_state.visible {
                                         // Completion already visible - update filter
                                         #[cfg(debug_assertions)]
-                                        debug!("[LSP] Completion visible, updating filter for char '{}'", c);
-                                        update_completion_filter(&state, &mut completion_state);
+                                        eprintln!("[LSP] Completion visible, updating filter for char '{}'", c);
+                                        update_completion_filter(&state, &tv.rope, &mut completion_state);
                                     } else {
                                         // Not visible yet - check if we should auto-trigger after N chars
                                         let word_start =
@@ -367,6 +368,7 @@ pub fn handle_keyboard_input(
                                             completion_state.start_char_index = word_start;
                                             request_completion(
                                                 &state,
+                                                &tv.rope,
                                                 &lsp_client,
                                                 &mut completion_state,
                                                 &lsp_sync,
@@ -385,10 +387,10 @@ pub fn handle_keyboard_input(
                     }
                     // Bevy sends Space as a separate variant, not Character(" ")
                     bevy::input::keyboard::Key::Space => {
-                        insert_char(&mut state, ' ');
+                        insert_char(&mut state, &mut tv, ' ');
                         // Notify LSP of text change
                         #[cfg(feature = "lsp")]
-                        send_did_change(&state, &lsp_client, &mut lsp_sync);
+                        send_did_change(&tv.rope, &lsp_client, &mut lsp_sync);
                         // Dismiss completion on space
                         #[cfg(feature = "lsp")]
                         {
@@ -447,6 +449,7 @@ pub fn handle_keyboard_input(
         #[cfg(all(not(feature = "lsp"), feature = "folding"))]
         execute_action(
             &mut state,
+            &mut tv,
             action,
             &indentation,
             &mut goto_line_state,
@@ -455,6 +458,7 @@ pub fn handle_keyboard_input(
         #[cfg(all(not(feature = "lsp"), not(feature = "folding")))]
         execute_action(
             &mut state,
+            &mut tv,
             action,
             &indentation,
             &mut goto_line_state,
@@ -462,6 +466,7 @@ pub fn handle_keyboard_input(
         #[cfg(all(feature = "lsp", feature = "folding"))]
         execute_action(
             &mut state,
+            &mut tv,
             action,
             &indentation,
             &lsp,
@@ -474,6 +479,7 @@ pub fn handle_keyboard_input(
         #[cfg(all(feature = "lsp", not(feature = "folding")))]
         execute_action(
             &mut state,
+            &mut tv,
             action,
             &indentation,
             &lsp,

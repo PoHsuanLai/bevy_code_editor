@@ -4,6 +4,7 @@ use crate::types::*;
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
+use ropey::Rope;
 
 #[cfg(feature = "lsp")]
 use crate::lsp::{reset_hover_state, LspMessage};
@@ -23,10 +24,11 @@ pub struct MouseDragState {
 
 /// Convert screen coordinates to character position in the editor
 /// screen_pos should already be in viewport-local coordinates (0,0 at top-left of viewport)
-/// scroll_offset_override: if provided, use this instead of state.scroll_offset (for stable drag selection)
+/// scroll_offset_override: if provided, use this instead of current scroll_offset (for stable drag selection)
 fn screen_to_char_pos(
     screen_pos: Vec2,
-    state: &CodeEditorState,
+    rope: &Rope,
+    current_scroll_offset: f32,
     font: &FontSettings,
     viewport: &TextViewViewport,
     _viewport_width: f32,
@@ -40,7 +42,7 @@ fn screen_to_char_pos(
     let relative_x = screen_pos.x - viewport.text_area_left;
 
     // Use override if provided (for drag operations), otherwise use current scroll
-    let scroll_offset = scroll_offset_override.unwrap_or(state.scroll_offset);
+    let scroll_offset = scroll_offset_override.unwrap_or(current_scroll_offset);
 
     // scroll_offset is negative when scrolled, so -scroll_offset gives how many pixels we've scrolled
     // screen_pos.y starts at 0 at top of viewport
@@ -60,14 +62,14 @@ fn screen_to_char_pos(
     let buffer_line = display_row;
 
     // Convert line/col to character position
-    let line_count = state.rope.len_lines();
+    let line_count = rope.len_lines();
     if buffer_line >= line_count {
         // Click below last line - go to end of document
-        return state.rope.len_chars();
+        return rope.len_chars();
     }
 
-    let line_start_char = state.rope.line_to_char(buffer_line);
-    let line_len = state.rope.line(buffer_line).len_chars().saturating_sub(1); // Exclude newline
+    let line_start_char = rope.line_to_char(buffer_line);
+    let line_len = rope.line(buffer_line).len_chars().saturating_sub(1); // Exclude newline
     let char_in_line = col.min(line_len);
 
     line_start_char + char_in_line
@@ -119,7 +121,8 @@ pub fn handle_mouse_input(
 
             Some(screen_to_char_pos(
                 viewport_local_pos,
-                &state,
+                &tv.rope,
+                tv.scroll_offset,
                 &font,
                 &viewport,
                 viewport_width,
@@ -276,7 +279,7 @@ pub fn handle_mouse_input(
             if alt_pressed {
                 // Add cursor at clicked position
                 state.sync_cursors_from_primary();
-                state.add_cursor(char_pos);
+                state.add_cursor(&mut tv, char_pos);
                 // Hide hover on click
                 #[cfg(feature = "lsp")]
                 reset_hover_state(&mut hover_state);
@@ -291,7 +294,7 @@ pub fn handle_mouse_input(
 
             // Clear secondary cursors on regular click
             if state.has_multiple_cursors() {
-                state.clear_secondary_cursors();
+                state.clear_secondary_cursors(&mut tv);
             }
 
             // Update cursor and clear selection
@@ -341,7 +344,8 @@ pub fn handle_mouse_input(
                 // Use the scroll offset from drag start to prevent auto-scroll from affecting selection
                 let current_pos = screen_to_char_pos(
                     viewport_local_pos,
-                    &state,
+                    &tv.rope,
+                    tv.scroll_offset,
                     &font,
                     &viewport,
                     viewport_width,
