@@ -9,7 +9,7 @@ use bevy::prelude::*;
 
 use crate::settings::*;
 use crate::text_view::{TextViewState, TextViewViewport};
-use crate::types::{CodeEditor, CodeEditorState};
+use crate::types::{CodeEditor, CodeEditorState, CursorState};
 
 use super::components::*;
 use super::messages::CodeActionOrCommand;
@@ -19,13 +19,13 @@ use super::state::*;
 pub fn sync_completion_popup(
     mut commands: Commands,
     completion_state: Res<CompletionState>,
-    query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    query: Query<(&CodeEditorState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     lsp: Res<LspSettings>,
     existing: Query<Entity, With<CompletionPopupData>>,
 ) {
-    let Ok((editor_state, tv, vp)) = query.single() else { return };
+    let Ok((editor_state, cursor_state, tv, vp)) = query.single() else { return };
     let filtered_items = completion_state.filtered_items();
 
     // If not visible or no items, despawn existing
@@ -37,7 +37,7 @@ pub fn sync_completion_popup(
     }
 
     // Calculate position
-    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let cursor_pos = cursor_state.cursor_pos.min(tv.rope.len_chars());
     let line_index = tv.rope.char_to_line(cursor_pos);
     let line_start = tv.rope.line_to_char(line_index);
     let col_index = cursor_pos - line_start;
@@ -169,12 +169,12 @@ pub fn sync_hover_popup(
 pub fn sync_signature_help_popup(
     mut commands: Commands,
     sig_state: Res<SignatureHelpState>,
-    query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    query: Query<(&CodeEditorState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     existing: Query<Entity, With<SignatureHelpPopupData>>,
 ) {
-    let Ok((editor_state, tv, vp)) = query.single() else { return };
+    let Ok((editor_state, cursor_state, tv, vp)) = query.single() else { return };
 
     if !sig_state.visible || sig_state.signatures.is_empty() {
         for entity in existing.iter() {
@@ -190,7 +190,7 @@ pub fn sync_signature_help_popup(
         return;
     };
 
-    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let cursor_pos = cursor_state.cursor_pos.min(tv.rope.len_chars());
     let line_index = tv.rope.char_to_line(cursor_pos);
     let line_start = tv.rope.line_to_char(line_index);
     let col_index = cursor_pos - line_start;
@@ -256,12 +256,12 @@ pub fn sync_signature_help_popup(
 pub fn sync_code_actions_popup(
     mut commands: Commands,
     action_state: Res<CodeActionState>,
-    query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    query: Query<(&CodeEditorState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     existing: Query<Entity, With<CodeActionsPopupData>>,
 ) {
-    let Ok((editor_state, tv, vp)) = query.single() else { return };
+    let Ok((editor_state, cursor_state, tv, vp)) = query.single() else { return };
 
     if !action_state.visible || action_state.actions.is_empty() {
         for entity in existing.iter() {
@@ -270,7 +270,7 @@ pub fn sync_code_actions_popup(
         return;
     }
 
-    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let cursor_pos = cursor_state.cursor_pos.min(tv.rope.len_chars());
     let line_index = tv.rope.char_to_line(cursor_pos);
 
     let line_height = font.line_height;

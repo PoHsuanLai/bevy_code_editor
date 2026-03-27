@@ -22,7 +22,7 @@ use super::messages::LspMessage;
 use super::state::*;
 use crate::settings::FontSettings;
 use crate::text_view::{TextViewState, TextViewViewport};
-use crate::types::{CodeEditor, CodeEditorState};
+use crate::types::{CodeEditor, CodeEditorState, CursorState};
 
 /// Screen-space offset for positioning egui overlays relative to the editor panel.
 ///
@@ -108,11 +108,11 @@ fn position_popup(
 pub fn render_completion_egui(
     mut contexts: EguiContexts,
     completion_state: Res<CompletionState>,
-    query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    query: Query<(&CodeEditorState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
 ) {
-    let Ok((editor_state, tv, vp)) = query.single() else { return };
+    let Ok((editor_state, cursor_state, tv, vp)) = query.single() else { return };
     let filtered_items = completion_state.filtered_items();
     if !completion_state.visible || filtered_items.is_empty() {
         return;
@@ -127,7 +127,7 @@ pub fn render_completion_egui(
     };
 
     // Calculate position relative to cursor
-    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let cursor_pos = cursor_state.cursor_pos.min(tv.rope.len_chars());
     let line_index = tv.rope.char_to_line(cursor_pos);
     let line_start = tv.rope.line_to_char(line_index);
     let col_index = cursor_pos - line_start;
@@ -333,11 +333,11 @@ pub fn render_hover_egui(
 pub fn render_signature_help_egui(
     mut contexts: EguiContexts,
     sig_state: Res<SignatureHelpState>,
-    query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    query: Query<(&CodeEditorState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
 ) {
-    let Ok((editor_state, tv, vp)) = query.single() else { return };
+    let Ok((editor_state, cursor_state, tv, vp)) = query.single() else { return };
 
     if !sig_state.visible || sig_state.signatures.is_empty() {
         return;
@@ -355,7 +355,7 @@ pub fn render_signature_help_egui(
         }
     };
 
-    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let cursor_pos = cursor_state.cursor_pos.min(tv.rope.len_chars());
     let line_index = tv.rope.char_to_line(cursor_pos);
     let line_start = tv.rope.line_to_char(line_index);
     let col_index = cursor_pos - line_start;
@@ -470,11 +470,11 @@ pub fn render_signature_help_egui(
 pub fn render_code_actions_egui(
     mut contexts: EguiContexts,
     action_state: Res<CodeActionState>,
-    query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    query: Query<(&CodeEditorState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
 ) {
-    let Ok((editor_state, tv, vp)) = query.single() else { return };
+    let Ok((editor_state, cursor_state, tv, vp)) = query.single() else { return };
 
     if !action_state.visible || action_state.actions.is_empty() {
         return;
@@ -484,7 +484,7 @@ pub fn render_code_actions_egui(
         return;
     };
 
-    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let cursor_pos = cursor_state.cursor_pos.min(tv.rope.len_chars());
     let line_index = tv.rope.char_to_line(cursor_pos);
 
     // Position near the gutter

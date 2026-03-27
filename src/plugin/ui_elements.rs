@@ -9,7 +9,7 @@ use bevy::prelude::*;
 /// Update selection highlight rectangles for all cursors
 pub(crate) fn update_selection_highlight(
     mut commands: Commands,
-    editor_query: Query<(&TextViewState, &TextViewViewport, &CodeEditorState), With<CodeEditor>>,
+    editor_query: Query<(&TextViewState, &TextViewViewport, &CodeEditorState, &CursorState), With<CodeEditor>>,
     font: Res<FontSettings>,
     theme: Res<ThemeSettings>,
     wrapping: Res<WrappingSettings>,
@@ -25,7 +25,7 @@ pub(crate) fn update_selection_highlight(
         &mut SelectionHighlight,
     )>,
 ) {
-    let Ok((tv, vp, editor)) = editor_query.single() else {
+    let Ok((tv, vp, editor, cursor)) = editor_query.single() else {
         return;
     };
 
@@ -44,8 +44,8 @@ pub(crate) fn update_selection_highlight(
     // (cursor_idx, display_row, start_col, end_col, is_continuation)
     let mut selection_rects: Vec<(usize, usize, usize, usize, bool)> = Vec::new();
 
-    for (cursor_idx, cursor) in editor.cursors.iter().enumerate() {
-        if let Some((start, end)) = cursor.selection_range() {
+    for (cursor_idx, cur) in cursor.cursors.iter().enumerate() {
+        if let Some((start, end)) = cur.selection_range() {
             if start == end {
                 continue;
             }
@@ -119,7 +119,7 @@ pub(crate) fn update_selection_highlight(
     }
 
     // Also handle backward-compatible selection_start/selection_end if cursors is empty/mismatched
-    if editor.cursors.is_empty() || (editor.cursors.len() == 1 && editor.selection_start.is_some()) {
+    if cursor.cursors.is_empty() || (cursor.cursors.len() == 1 && editor.selection_start.is_some()) {
         if let (Some(sel_start), Some(sel_end)) = (editor.selection_start, editor.selection_end) {
             let (start, end) = if sel_start <= sel_end {
                 (sel_start, sel_end)
@@ -523,7 +523,7 @@ pub(crate) fn animate_smooth_scroll(
 
 /// Run condition: only run auto_scroll_to_cursor when cursor has moved and not dragging scrollbar
 pub(crate) fn should_auto_scroll(
-    editor_query: Query<(&TextViewState, &CodeEditorState), With<CodeEditor>>,
+    editor_query: Query<(&TextViewState, &CursorState), With<CodeEditor>>,
     #[cfg(feature = "scrollbar")]
     scrollbar_drag: Res<super::scrollbar::ScrollbarDragState>,
     mouse_drag: Res<crate::input::MouseDragState>,
@@ -539,30 +539,30 @@ pub(crate) fn should_auto_scroll(
         return false;
     }
 
-    let Ok((tv, editor)) = editor_query.single() else {
+    let Ok((tv, cursor)) = editor_query.single() else {
         return false;
     };
 
     // Only run when cursor has moved
-    let cursor_pos = editor.cursor_pos.min(tv.rope.len_chars());
-    cursor_pos != editor.last_cursor_pos
+    let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
+    cursor_pos != cursor.last_cursor_pos
 }
 
 /// Auto-scroll viewport to keep cursor visible
 /// Writes to target_scroll_offset, not scroll_offset (applied by animate_smooth_scroll)
 pub(crate) fn auto_scroll_to_cursor(
-    mut editor_query: Query<(&mut TextViewState, &mut CodeEditorState, &TextViewViewport), With<CodeEditor>>,
+    mut editor_query: Query<(&mut TextViewState, &mut CursorState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
 ) {
-    let Ok((mut tv, mut editor, vp)) = editor_query.single_mut() else {
+    let Ok((mut tv, mut cursor, vp)) = editor_query.single_mut() else {
         return;
     };
 
     // Get cursor position
-    let cursor_pos = editor.cursor_pos.min(tv.rope.len_chars());
+    let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
 
     // Update last cursor position
-    editor.last_cursor_pos = cursor_pos;
+    cursor.last_cursor_pos = cursor_pos;
     let line_index = tv.rope.char_to_line(cursor_pos);
     let line_height = font.line_height;
     let viewport_height = vp.height as f32;

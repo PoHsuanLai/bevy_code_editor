@@ -20,19 +20,19 @@ pub struct ActionResult {
 }
 
 /// Insert a character at cursor position
-pub fn insert_char(state: &mut CodeEditorState, tv: &mut TextViewState, c: char) {
+pub fn insert_char(state: &mut CodeEditorState, cursor: &mut CursorState, tv: &mut TextViewState, c: char) {
     // Delete selection if exists
     if state.selection_start.is_some() && state.selection_end.is_some() {
-        delete_selection(state, tv);
+        delete_selection(state, cursor, tv);
     }
 
-    state.insert_char(tv, c);
+    state.insert_char(cursor, tv, c);
 }
 
 /// Insert a closing character at cursor position without moving the cursor
 /// Used for bracket/quote auto-close
-pub fn insert_closing_char(state: &mut CodeEditorState, tv: &mut TextViewState, c: char) {
-    let cursor_pos = state.cursor_pos.min(tv.rope.len_chars());
+pub fn insert_closing_char(state: &mut CodeEditorState, cursor: &CursorState, tv: &mut TextViewState, c: char) {
+    let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
 
     // Record for incremental parsing
     #[cfg(feature = "tree-sitter")]
@@ -72,8 +72,8 @@ pub fn get_closing_quote(c: char) -> Option<char> {
 
 /// Check if we should skip inserting a closing character
 /// (e.g., when cursor is already followed by the same character)
-pub fn should_skip_auto_close(state: &CodeEditorState, rope: &Rope, closing: char) -> bool {
-    let cursor_pos = state.cursor_pos;
+pub fn should_skip_auto_close(cursor: &CursorState, rope: &Rope, closing: char) -> bool {
+    let cursor_pos = cursor.cursor_pos;
     if cursor_pos >= rope.len_chars() {
         return false;
     }
@@ -82,12 +82,12 @@ pub fn should_skip_auto_close(state: &CodeEditorState, rope: &Rope, closing: cha
 }
 
 /// Delete selected text (with undo recording)
-pub fn delete_selection(state: &mut CodeEditorState, tv: &mut TextViewState) {
-    delete_selection_with_history(state, tv, true);
+pub fn delete_selection(state: &mut CodeEditorState, cursor: &mut CursorState, tv: &mut TextViewState) {
+    delete_selection_with_history(state, cursor, tv, true);
 }
 
 /// Delete selected text with optional history recording
-fn delete_selection_with_history(state: &mut CodeEditorState, tv: &mut TextViewState, record_history: bool) {
+fn delete_selection_with_history(state: &mut CodeEditorState, cursor: &mut CursorState, tv: &mut TextViewState, record_history: bool) {
     if let (Some(start), Some(end)) = (state.selection_start, state.selection_end) {
         let (start, end) = if start <= end {
             (start, end)
@@ -95,7 +95,7 @@ fn delete_selection_with_history(state: &mut CodeEditorState, tv: &mut TextViewS
             (end, start)
         };
 
-        let cursor_before = state.cursor_pos;
+        let cursor_before = cursor.cursor_pos;
 
         // Get the text being deleted for undo
         let deleted_text: String = tv.rope.slice(start..end).chars().collect();
@@ -111,7 +111,7 @@ fn delete_selection_with_history(state: &mut CodeEditorState, tv: &mut TextViewS
         tv.rope.remove(start_byte..end_byte);
 
         // Move cursor to start of selection
-        state.cursor_pos = start;
+        cursor.cursor_pos = start;
 
         // Record for undo
         if record_history && !deleted_text.is_empty() {
@@ -140,12 +140,12 @@ fn delete_selection_with_history(state: &mut CodeEditorState, tv: &mut TextViewS
 
 /// Apply selected completion item
 #[cfg(feature = "lsp")]
-pub fn apply_completion(state: &mut CodeEditorState, tv: &mut TextViewState, completion_state: &mut lsp::CompletionState) {
+pub fn apply_completion(state: &mut CodeEditorState, cursor: &mut CursorState, tv: &mut TextViewState, completion_state: &mut lsp::CompletionState) {
     // Get filtered items and select from that list
     let filtered = completion_state.filtered_items();
     if let Some(item) = filtered.get(completion_state.selected_index) {
         let start = completion_state.start_char_index;
-        let end = state.cursor_pos;
+        let end = cursor.cursor_pos;
         let insert_text = item.insert_text().to_string();
 
         // Ensure valid range
@@ -160,7 +160,7 @@ pub fn apply_completion(state: &mut CodeEditorState, tv: &mut TextViewState, com
             tv.rope.remove(start_byte..end_byte);
             tv.rope.insert(start, &insert_text);
 
-            state.cursor_pos = start + insert_text.chars().count();
+            cursor.cursor_pos = start + insert_text.chars().count();
             tv.needs_update = true;
             tv.pending_update = false;
             tv.content_version += 1;
@@ -199,11 +199,11 @@ pub fn find_word_start(rope: &ropey::Rope, cursor_pos: usize) -> usize {
 /// Update the completion filter based on text typed since start_char_index
 #[cfg(feature = "lsp")]
 pub fn update_completion_filter(
-    state: &CodeEditorState,
+    cursor: &CursorState,
     rope: &Rope,
     completion_state: &mut lsp::CompletionState,
 ) {
-    let cursor_pos = state.cursor_pos.min(rope.len_chars());
+    let cursor_pos = cursor.cursor_pos.min(rope.len_chars());
     let start = completion_state.start_char_index;
 
     if cursor_pos > start && start <= rope.len_chars() {
@@ -225,7 +225,7 @@ pub fn update_completion_filter(
 /// Request completion from LSP
 #[cfg(feature = "lsp")]
 pub fn request_completion(
-    state: &CodeEditorState,
+    cursor: &CursorState,
     rope: &Rope,
     lsp_client: &lsp::LspClient,
     completion_state: &mut lsp::CompletionState,
@@ -234,7 +234,7 @@ pub fn request_completion(
     use crate::lsp::LspMessage;
     use lsp_types::Position;
 
-    let cursor_pos = state.cursor_pos.min(rope.len_chars());
+    let cursor_pos = cursor.cursor_pos.min(rope.len_chars());
     let line_index = rope.char_to_line(cursor_pos);
     let char_in_line_index = cursor_pos - rope.line_to_char(line_index);
 
@@ -327,6 +327,7 @@ pub fn send_did_change(
 /// Core action execution - shared between LSP and non-LSP builds
 fn execute_action_core(
     state: &mut CodeEditorState,
+    cursor: &mut CursorState,
     tv: &mut TextViewState,
     action: EditorAction,
     indentation: &IndentationSettings,
@@ -341,45 +342,45 @@ fn execute_action_core(
 
     match action {
         EditorAction::InsertNewline => {
-            insert_char(state, tv, '\n');
+            insert_char(state, cursor, tv, '\n');
             result.text_changed = true;
         }
         EditorAction::InsertTab => {
             for _ in 0..indentation.tab_width {
-                insert_char(state, tv, ' ');
+                insert_char(state, cursor, tv, ' ');
             }
             result.text_changed = true;
         }
 
         EditorAction::DeleteBackward => {
             if state.selection_start.is_some() {
-                delete_selection(state, tv);
+                delete_selection(state, cursor, tv);
             } else {
-                state.delete_backward(tv);
+                state.delete_backward(cursor, tv);
             }
             result.text_changed = true;
         }
         EditorAction::DeleteForward => {
             if state.selection_start.is_some() {
-                delete_selection(state, tv);
+                delete_selection(state, cursor, tv);
             } else {
-                state.delete_forward(tv);
+                state.delete_forward(cursor, tv);
             }
             result.text_changed = true;
         }
         EditorAction::DeleteWordBackward => {
             if state.selection_start.is_some() {
-                delete_selection(state, tv);
+                delete_selection(state, cursor, tv);
             } else {
-                delete_word_backward(state, tv);
+                delete_word_backward(state, cursor, tv);
             }
             result.text_changed = true;
         }
         EditorAction::DeleteWordForward => {
             if state.selection_start.is_some() {
-                delete_selection(state, tv);
+                delete_selection(state, cursor, tv);
             } else {
-                delete_word_forward(state, tv);
+                delete_word_forward(state, cursor, tv);
             }
             result.text_changed = true;
         }
@@ -390,138 +391,138 @@ fn execute_action_core(
         EditorAction::MoveCursorLeft => {
             state.selection_start = None;
             state.selection_end = None;
-            state.move_cursor(&tv.rope, -1);
-            state.sync_cursors_from_primary();
+            state.move_cursor(cursor, &tv.rope, -1);
+            state.sync_cursors_from_primary(cursor);
             result.horizontal_move = true;
         }
         EditorAction::MoveCursorRight => {
             state.selection_start = None;
             state.selection_end = None;
-            state.move_cursor(&tv.rope, 1);
-            state.sync_cursors_from_primary();
+            state.move_cursor(cursor, &tv.rope, 1);
+            state.sync_cursors_from_primary(cursor);
             result.horizontal_move = true;
         }
         EditorAction::MoveCursorUp => {
             state.selection_start = None;
             state.selection_end = None;
-            move_cursor_up(state, &tv.rope);
-            state.sync_cursors_from_primary();
+            move_cursor_up(cursor, &tv.rope);
+            state.sync_cursors_from_primary(cursor);
         }
         EditorAction::MoveCursorDown => {
             state.selection_start = None;
             state.selection_end = None;
-            move_cursor_down(state, &tv.rope);
-            state.sync_cursors_from_primary();
+            move_cursor_down(cursor, &tv.rope);
+            state.sync_cursors_from_primary(cursor);
         }
         EditorAction::MoveCursorWordLeft => {
             state.selection_start = None;
             state.selection_end = None;
-            move_cursor_word_left(state, &tv.rope);
-            state.sync_cursors_from_primary();
+            move_cursor_word_left(cursor, &tv.rope);
+            state.sync_cursors_from_primary(cursor);
             result.horizontal_move = true;
         }
         EditorAction::MoveCursorWordRight => {
             state.selection_start = None;
             state.selection_end = None;
-            move_cursor_word_right(state, &tv.rope);
-            state.sync_cursors_from_primary();
+            move_cursor_word_right(cursor, &tv.rope);
+            state.sync_cursors_from_primary(cursor);
             result.horizontal_move = true;
         }
         EditorAction::MoveCursorLineStart => {
             state.selection_start = None;
             state.selection_end = None;
-            move_cursor_line_start(state, &tv.rope);
-            state.sync_cursors_from_primary();
+            move_cursor_line_start(cursor, &tv.rope);
+            state.sync_cursors_from_primary(cursor);
         }
         EditorAction::MoveCursorLineEnd => {
             state.selection_start = None;
             state.selection_end = None;
-            move_cursor_line_end(state, &tv.rope);
-            state.sync_cursors_from_primary();
+            move_cursor_line_end(cursor, &tv.rope);
+            state.sync_cursors_from_primary(cursor);
         }
         EditorAction::MoveCursorDocumentStart => {
             state.selection_start = None;
             state.selection_end = None;
-            state.cursor_pos = 0;
-            state.sync_cursors_from_primary();
+            cursor.cursor_pos = 0;
+            state.sync_cursors_from_primary(cursor);
         }
         EditorAction::MoveCursorDocumentEnd => {
             state.selection_start = None;
             state.selection_end = None;
-            state.cursor_pos = tv.rope.len_chars();
-            state.sync_cursors_from_primary();
+            cursor.cursor_pos = tv.rope.len_chars();
+            state.sync_cursors_from_primary(cursor);
         }
         EditorAction::MoveCursorPageUp => {
             state.selection_start = None;
             state.selection_end = None;
             // TODO: Implement page up
-            state.sync_cursors_from_primary();
+            state.sync_cursors_from_primary(cursor);
         }
         EditorAction::MoveCursorPageDown => {
             state.selection_start = None;
             state.selection_end = None;
             // TODO: Implement page down
-            state.sync_cursors_from_primary();
+            state.sync_cursors_from_primary(cursor);
         }
 
         EditorAction::SelectLeft => {
-            init_selection(state);
-            state.move_cursor(&tv.rope, -1);
-            state.selection_end = Some(state.cursor_pos);
-            state.sync_cursors_from_primary();
+            init_selection(state, cursor);
+            state.move_cursor(cursor, &tv.rope, -1);
+            state.selection_end = Some(cursor.cursor_pos);
+            state.sync_cursors_from_primary(cursor);
         }
         EditorAction::SelectRight => {
-            init_selection(state);
-            state.move_cursor(&tv.rope, 1);
-            state.selection_end = Some(state.cursor_pos);
-            state.sync_cursors_from_primary();
+            init_selection(state, cursor);
+            state.move_cursor(cursor, &tv.rope, 1);
+            state.selection_end = Some(cursor.cursor_pos);
+            state.sync_cursors_from_primary(cursor);
         }
         EditorAction::SelectUp => {
-            init_selection(state);
-            move_cursor_up(state, &tv.rope);
-            state.selection_end = Some(state.cursor_pos);
-            state.sync_cursors_from_primary();
+            init_selection(state, cursor);
+            move_cursor_up(cursor, &tv.rope);
+            state.selection_end = Some(cursor.cursor_pos);
+            state.sync_cursors_from_primary(cursor);
         }
         EditorAction::SelectDown => {
-            init_selection(state);
-            move_cursor_down(state, &tv.rope);
-            state.selection_end = Some(state.cursor_pos);
-            state.sync_cursors_from_primary();
+            init_selection(state, cursor);
+            move_cursor_down(cursor, &tv.rope);
+            state.selection_end = Some(cursor.cursor_pos);
+            state.sync_cursors_from_primary(cursor);
         }
         EditorAction::SelectWordLeft => {
-            init_selection(state);
-            move_cursor_word_left(state, &tv.rope);
-            state.selection_end = Some(state.cursor_pos);
-            state.sync_cursors_from_primary();
+            init_selection(state, cursor);
+            move_cursor_word_left(cursor, &tv.rope);
+            state.selection_end = Some(cursor.cursor_pos);
+            state.sync_cursors_from_primary(cursor);
         }
         EditorAction::SelectWordRight => {
-            init_selection(state);
-            move_cursor_word_right(state, &tv.rope);
-            state.selection_end = Some(state.cursor_pos);
-            state.sync_cursors_from_primary();
+            init_selection(state, cursor);
+            move_cursor_word_right(cursor, &tv.rope);
+            state.selection_end = Some(cursor.cursor_pos);
+            state.sync_cursors_from_primary(cursor);
         }
         EditorAction::SelectLineStart => {
-            init_selection(state);
-            move_cursor_line_start(state, &tv.rope);
-            state.selection_end = Some(state.cursor_pos);
-            state.sync_cursors_from_primary();
+            init_selection(state, cursor);
+            move_cursor_line_start(cursor, &tv.rope);
+            state.selection_end = Some(cursor.cursor_pos);
+            state.sync_cursors_from_primary(cursor);
         }
         EditorAction::SelectLineEnd => {
-            init_selection(state);
-            move_cursor_line_end(state, &tv.rope);
-            state.selection_end = Some(state.cursor_pos);
-            state.sync_cursors_from_primary();
+            init_selection(state, cursor);
+            move_cursor_line_end(cursor, &tv.rope);
+            state.selection_end = Some(cursor.cursor_pos);
+            state.sync_cursors_from_primary(cursor);
         }
         EditorAction::SelectAll => {
             state.selection_start = Some(0);
             state.selection_end = Some(tv.rope.len_chars());
-            state.cursor_pos = tv.rope.len_chars();
-            state.sync_cursors_from_primary();
+            cursor.cursor_pos = tv.rope.len_chars();
+            state.sync_cursors_from_primary(cursor);
         }
         EditorAction::ClearSelection => {
             state.selection_start = None;
             state.selection_end = None;
-            state.sync_cursors_from_primary();
+            state.sync_cursors_from_primary(cursor);
         }
 
         EditorAction::Copy => {
@@ -541,7 +542,7 @@ fn execute_action_core(
                 let start = start.min(tv.rope.len_chars());
                 let end = end.min(tv.rope.len_chars());
                 let selected_text = tv.rope.slice(start..end).to_string();
-                let cursor_before = state.cursor_pos;
+                let cursor_before = cursor.cursor_pos;
 
                 // Copy to clipboard
                 if let Ok(mut clipboard) = Clipboard::new() {
@@ -557,7 +558,7 @@ fn execute_action_core(
                 state.record_edit(start_byte, end_byte, start_byte);
 
                 tv.rope.remove(start_byte..end_byte);
-                state.cursor_pos = start;
+                cursor.cursor_pos = start;
 
                 // Record for undo
                 state.history.record(EditOperation {
@@ -587,7 +588,7 @@ fn execute_action_core(
             {
                 if let Ok(mut clipboard) = Clipboard::new() {
                     if let Ok(text) = clipboard.get_text() {
-                        let cursor_before = state.cursor_pos;
+                        let cursor_before = cursor.cursor_pos;
                         let mut deleted_text = String::new();
                         let paste_position;
 
@@ -614,12 +615,12 @@ fn execute_action_core(
                             state.record_edit(start_byte, end_byte, new_end_byte);
 
                             tv.rope.remove(start_byte..end_byte);
-                            state.cursor_pos = start;
+                            cursor.cursor_pos = start;
                             state.selection_start = None;
                             state.selection_end = None;
                             paste_position = start;
                         } else {
-                            paste_position = state.cursor_pos.min(tv.rope.len_chars());
+                            paste_position = cursor.cursor_pos.min(tv.rope.len_chars());
 
                             // Record insert-only edit for incremental parsing
                             #[cfg(feature = "tree-sitter")]
@@ -633,7 +634,7 @@ fn execute_action_core(
                         let line_idx = tv.rope.char_to_line(paste_position);
 
                         tv.rope.insert(paste_position, &text);
-                        state.cursor_pos = paste_position + text.chars().count();
+                        cursor.cursor_pos = paste_position + text.chars().count();
                         tv.needs_update = true;
                         tv.pending_update = false;
                         tv.content_version += 1;
@@ -644,7 +645,7 @@ fn execute_action_core(
                             inserted_text: text.clone(),
                             position: paste_position,
                             cursor_before,
-                            cursor_after: state.cursor_pos,
+                            cursor_after: cursor.cursor_pos,
                             kind: EditKind::Paste, // Paste is always its own transaction
                         });
 
@@ -659,12 +660,12 @@ fn execute_action_core(
         }
 
         EditorAction::Undo => {
-            if state.undo(tv) {
+            if state.undo(cursor, tv) {
                 result.text_changed = true;
             }
         }
         EditorAction::Redo => {
-            if state.redo(tv) {
+            if state.redo(cursor, tv) {
                 result.text_changed = true;
             }
         }
@@ -692,42 +693,42 @@ fn execute_action_core(
         // Multi-cursor actions
         EditorAction::AddCursorAtNextOccurrence => {
             // Sync the cursors from primary first
-            state.sync_cursors_from_primary();
-            state.add_cursor_at_next_occurrence(tv);
+            state.sync_cursors_from_primary(cursor);
+            state.add_cursor_at_next_occurrence(cursor, tv);
         }
         EditorAction::AddCursorAbove => {
             // Add cursor on the line above
-            state.sync_cursors_from_primary();
-            add_cursor_above(state, tv);
+            state.sync_cursors_from_primary(cursor);
+            add_cursor_above(state, cursor, tv);
         }
         EditorAction::AddCursorBelow => {
             // Add cursor on the line below
-            state.sync_cursors_from_primary();
-            add_cursor_below(state, tv);
+            state.sync_cursors_from_primary(cursor);
+            add_cursor_below(state, cursor, tv);
         }
         EditorAction::ClearSecondaryCursors => {
             // Clear all but primary cursor
-            if state.has_multiple_cursors() {
-                state.clear_secondary_cursors(tv);
+            if state.has_multiple_cursors(cursor) {
+                state.clear_secondary_cursors(cursor, tv);
             }
         }
 
         // Code folding actions
         #[cfg(feature = "folding")]
         EditorAction::ToggleFold => {
-            let line = tv.rope.char_to_line(state.cursor_pos);
+            let line = tv.rope.char_to_line(cursor.cursor_pos);
             fold_state.toggle_fold_at_line(line);
             tv.pending_update = true;
         }
         #[cfg(feature = "folding")]
         EditorAction::Fold => {
-            let line = tv.rope.char_to_line(state.cursor_pos);
+            let line = tv.rope.char_to_line(cursor.cursor_pos);
             fold_state.fold_at_line(line);
             tv.pending_update = true;
         }
         #[cfg(feature = "folding")]
         EditorAction::Unfold => {
-            let line = tv.rope.char_to_line(state.cursor_pos);
+            let line = tv.rope.char_to_line(cursor.cursor_pos);
             fold_state.unfold_at_line(line);
             tv.pending_update = true;
         }
@@ -757,12 +758,12 @@ fn execute_action_core(
 }
 
 /// Add a cursor on the line above the primary cursor
-fn add_cursor_above(state: &mut CodeEditorState, tv: &mut TextViewState) {
-    if state.cursors.is_empty() {
+fn add_cursor_above(state: &mut CodeEditorState, cursor: &mut CursorState, tv: &mut TextViewState) {
+    if cursor.cursors.is_empty() {
         return;
     }
 
-    let primary_pos = state.cursors[0].position;
+    let primary_pos = cursor.cursors[0].position;
     let line_idx = tv.rope.char_to_line(primary_pos);
 
     if line_idx == 0 {
@@ -776,16 +777,16 @@ fn add_cursor_above(state: &mut CodeEditorState, tv: &mut TextViewState) {
     let prev_line_len = tv.rope.line(line_idx - 1).len_chars().saturating_sub(1);
     let new_pos = prev_line_start + col_offset.min(prev_line_len);
 
-    state.add_cursor(tv, new_pos);
+    state.add_cursor(cursor, tv, new_pos);
 }
 
 /// Add a cursor on the line below the primary cursor
-fn add_cursor_below(state: &mut CodeEditorState, tv: &mut TextViewState) {
-    if state.cursors.is_empty() {
+fn add_cursor_below(state: &mut CodeEditorState, cursor: &mut CursorState, tv: &mut TextViewState) {
+    if cursor.cursors.is_empty() {
         return;
     }
 
-    let primary_pos = state.cursors[0].position;
+    let primary_pos = cursor.cursors[0].position;
     let line_idx = tv.rope.char_to_line(primary_pos);
 
     if line_idx + 1 >= tv.rope.len_lines() {
@@ -799,24 +800,23 @@ fn add_cursor_below(state: &mut CodeEditorState, tv: &mut TextViewState) {
     let next_line_len = tv.rope.line(line_idx + 1).len_chars().saturating_sub(1);
     let new_pos = next_line_start + col_offset.min(next_line_len);
 
-    state.add_cursor(tv, new_pos);
+    state.add_cursor(cursor, tv, new_pos);
 }
 
 /// Execute an editor action (Non-LSP version)
 #[cfg(all(not(feature = "lsp"), feature = "folding"))]
 pub fn execute_action(
     state: &mut CodeEditorState,
+    cursor: &mut CursorState,
     tv: &mut TextViewState,
     action: EditorAction,
     indentation: &IndentationSettings,
     goto_line_state: &mut GotoLineState,
     fold_state: &mut FoldState,
 ) {
-    // Handle Escape to clear multi-cursors, find mode, or goto line mode
     if action == EditorAction::ClearSelection {
-        // First priority: clear secondary cursors if we have multiple
-        if state.has_multiple_cursors() {
-            state.clear_secondary_cursors(tv);
+        if state.has_multiple_cursors(cursor) {
+            state.clear_secondary_cursors(cursor, tv);
             return;
         }
         if goto_line_state.active {
@@ -825,23 +825,22 @@ pub fn execute_action(
         }
     }
 
-    let _ = execute_action_core(state, tv, action, indentation, goto_line_state, fold_state);
+    let _ = execute_action_core(state, cursor, tv, action, indentation, goto_line_state, fold_state);
 }
 
 /// Execute an editor action (Non-LSP, no folding version)
 #[cfg(all(not(feature = "lsp"), not(feature = "folding")))]
 pub fn execute_action(
     state: &mut CodeEditorState,
+    cursor: &mut CursorState,
     tv: &mut TextViewState,
     action: EditorAction,
     indentation: &IndentationSettings,
     goto_line_state: &mut GotoLineState,
 ) {
-    // Handle Escape to clear multi-cursors, find mode, or goto line mode
     if action == EditorAction::ClearSelection {
-        // First priority: clear secondary cursors if we have multiple
-        if state.has_multiple_cursors() {
-            state.clear_secondary_cursors(tv);
+        if state.has_multiple_cursors(cursor) {
+            state.clear_secondary_cursors(cursor, tv);
             return;
         }
         if goto_line_state.active {
@@ -850,13 +849,14 @@ pub fn execute_action(
         }
     }
 
-    let _ = execute_action_core(state, tv, action, indentation, goto_line_state, None);
+    let _ = execute_action_core(state, cursor, tv, action, indentation, goto_line_state, None);
 }
 
 /// Execute an editor action (LSP version with folding)
 #[cfg(all(feature = "lsp", feature = "folding"))]
 pub fn execute_action(
     state: &mut CodeEditorState,
+    cursor: &mut CursorState,
     tv: &mut TextViewState,
     action: EditorAction,
     indentation: &IndentationSettings,
@@ -867,11 +867,9 @@ pub fn execute_action(
     completion_state: &mut lsp::CompletionState,
     lsp_sync: &mut lsp::LspSyncState,
 ) {
-    // Handle Escape to clear multi-cursors, goto line mode, find mode, or completion
     if action == EditorAction::ClearSelection {
-        // First priority: clear secondary cursors if we have multiple
-        if state.has_multiple_cursors() {
-            state.clear_secondary_cursors(tv);
+        if state.has_multiple_cursors(cursor) {
+            state.clear_secondary_cursors(cursor, tv);
             return;
         }
         if goto_line_state.active {
@@ -880,7 +878,6 @@ pub fn execute_action(
         }
     }
 
-    // Handle Completion UI Navigation first
     let filtered_count = completion_state.filtered_items().len();
     let max_visible = lsp.completion.max_items;
 
@@ -905,7 +902,7 @@ pub fn execute_action(
                 return;
             }
             EditorAction::InsertNewline | EditorAction::InsertTab => {
-                apply_completion(state, tv, completion_state);
+                apply_completion(state, cursor, tv, completion_state);
                 send_did_change(&tv.rope, lsp_client, lsp_sync);
                 return;
             }
@@ -919,25 +916,21 @@ pub fn execute_action(
         }
     }
 
-    // Handle LSP-specific actions
     if action == EditorAction::RequestCompletion {
-        request_completion(state, &tv.rope, lsp_client, completion_state, lsp_sync);
+        request_completion(cursor, &tv.rope, lsp_client, completion_state, lsp_sync);
         return;
     }
 
-    // Execute the core action
-    let result = execute_action_core(state, tv, action, indentation, goto_line_state, fold_state);
+    let result = execute_action_core(state, cursor, tv, action, indentation, goto_line_state, fold_state);
 
-    // LSP-specific post-processing: dismiss completion on horizontal move
     if result.horizontal_move {
         completion_state.visible = false;
     }
 
-    // Update completion filter on delete backward
     if action == EditorAction::DeleteBackward && completion_state.visible {
-        if state.cursor_pos > completion_state.start_char_index {
-            update_completion_filter(state, &tv.rope, completion_state);
-        } else if state.cursor_pos == completion_state.start_char_index {
+        if cursor.cursor_pos > completion_state.start_char_index {
+            update_completion_filter(cursor, &tv.rope, completion_state);
+        } else if cursor.cursor_pos == completion_state.start_char_index {
             completion_state.filter.clear();
             completion_state.selected_index = 0;
         } else {
@@ -946,7 +939,6 @@ pub fn execute_action(
         }
     }
 
-    // Notify LSP of text changes
     if result.text_changed {
         send_did_change(&tv.rope, lsp_client, lsp_sync);
     }
@@ -956,6 +948,7 @@ pub fn execute_action(
 #[cfg(all(feature = "lsp", not(feature = "folding")))]
 pub fn execute_action(
     state: &mut CodeEditorState,
+    cursor: &mut CursorState,
     tv: &mut TextViewState,
     action: EditorAction,
     indentation: &IndentationSettings,
@@ -965,11 +958,9 @@ pub fn execute_action(
     completion_state: &mut lsp::CompletionState,
     lsp_sync: &mut lsp::LspSyncState,
 ) {
-    // Handle Escape to clear multi-cursors, goto line mode, find mode, or completion
     if action == EditorAction::ClearSelection {
-        // First priority: clear secondary cursors if we have multiple
-        if state.has_multiple_cursors() {
-            state.clear_secondary_cursors(tv);
+        if state.has_multiple_cursors(cursor) {
+            state.clear_secondary_cursors(cursor, tv);
             return;
         }
         if goto_line_state.active {
@@ -978,7 +969,6 @@ pub fn execute_action(
         }
     }
 
-    // Handle Completion UI Navigation first
     let filtered_count = completion_state.filtered_items().len();
     let max_visible = lsp.completion.max_items;
 
@@ -1003,7 +993,7 @@ pub fn execute_action(
                 return;
             }
             EditorAction::InsertNewline | EditorAction::InsertTab => {
-                apply_completion(state, tv, completion_state);
+                apply_completion(state, cursor, tv, completion_state);
                 send_did_change(&tv.rope, lsp_client, lsp_sync);
                 return;
             }
@@ -1017,25 +1007,21 @@ pub fn execute_action(
         }
     }
 
-    // Handle LSP-specific actions
     if action == EditorAction::RequestCompletion {
-        request_completion(state, &tv.rope, lsp_client, completion_state, lsp_sync);
+        request_completion(cursor, &tv.rope, lsp_client, completion_state, lsp_sync);
         return;
     }
 
-    // Execute the core action
-    let result = execute_action_core(state, tv, action, indentation, goto_line_state, None);
+    let result = execute_action_core(state, cursor, tv, action, indentation, goto_line_state, None);
 
-    // LSP-specific post-processing: dismiss completion on horizontal move
     if result.horizontal_move {
         completion_state.visible = false;
     }
 
-    // Update completion filter on delete backward
     if action == EditorAction::DeleteBackward && completion_state.visible {
-        if state.cursor_pos > completion_state.start_char_index {
-            update_completion_filter(state, &tv.rope, completion_state);
-        } else if state.cursor_pos == completion_state.start_char_index {
+        if cursor.cursor_pos > completion_state.start_char_index {
+            update_completion_filter(cursor, &tv.rope, completion_state);
+        } else if cursor.cursor_pos == completion_state.start_char_index {
             completion_state.filter.clear();
             completion_state.selected_index = 0;
         } else {
@@ -1044,7 +1030,6 @@ pub fn execute_action(
         }
     }
 
-    // Notify LSP of text changes
     if result.text_changed {
         send_did_change(&tv.rope, lsp_client, lsp_sync);
     }

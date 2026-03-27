@@ -31,10 +31,10 @@ fn main() {
 
 #[cfg(feature = "tree-sitter")]
 fn setup_editor(
-    mut editor_query: Query<(&mut CodeEditorState, &mut TextViewState), With<CodeEditor>>,
+    mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState), With<CodeEditor>>,
     mut syntax: ResMut<SyntaxResource>,
 ) {
-    let Ok((mut state, mut tv)) = editor_query.single_mut() else {
+    let Ok((mut state, mut cursor, mut tv)) = editor_query.single_mut() else {
         return;
     };
 
@@ -64,7 +64,7 @@ fn setup_editor(
         }
     };
 
-    state.set_text(&mut tv, &content);
+    state.set_text(&mut cursor, &mut tv, &content);
 
     // Set up tree-sitter highlighting for C
     let language = tree_sitter_c::LANGUAGE.into();
@@ -83,9 +83,9 @@ fn setup_editor(
 
 #[cfg(not(feature = "tree-sitter"))]
 fn setup_editor(
-    mut editor_query: Query<(&mut CodeEditorState, &mut TextViewState), With<CodeEditor>>,
+    mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState), With<CodeEditor>>,
 ) {
-    let Ok((mut state, mut tv)) = editor_query.single_mut() else {
+    let Ok((mut state, mut cursor, mut tv)) = editor_query.single_mut() else {
         return;
     };
 
@@ -115,7 +115,7 @@ fn setup_editor(
         }
     };
 
-    state.set_text(&mut tv, &content);
+    state.set_text(&mut cursor, &mut tv, &content);
 }
 
 fn update_cursor_icon(

@@ -5,7 +5,7 @@ use bevy::sprite::Anchor;
 
 use crate::settings::*;
 use crate::text_view::{TextViewState, TextViewViewport};
-use crate::types::{CodeEditor, CodeEditorState};
+use crate::types::{CodeEditor, CodeEditorState, CursorState};
 
 use super::state::{
     CodeActionState, CompletionState, DocumentHighlightState, HoverState, InlayHintState,
@@ -49,13 +49,13 @@ pub struct RenameUI;
 pub fn update_completion_ui(
     mut commands: Commands,
     completion_state: Res<CompletionState>,
-    query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    query: Query<(&CodeEditorState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     lsp: Res<LspSettings>,
     ui_query: Query<Entity, With<CompletionUI>>,
 ) {
-    let Ok((editor_state, tv, vp)) = query.single() else { return };
+    let Ok((editor_state, cursor_state, tv, vp)) = query.single() else { return };
     let filtered_items = completion_state.filtered_items();
 
     // If not visible or no filtered items, clear and return
@@ -75,7 +75,7 @@ pub fn update_completion_ui(
     }
 
     // Calculate position
-    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let cursor_pos = cursor_state.cursor_pos.min(tv.rope.len_chars());
     let line_index = tv.rope.char_to_line(cursor_pos);
     let line_start = tv.rope.line_to_char(line_index);
     let col_index = cursor_pos - line_start;
@@ -209,12 +209,12 @@ pub fn update_completion_ui(
 pub fn update_hover_ui(
     mut commands: Commands,
     hover_state: Res<HoverState>,
-    query: Query<(&CodeEditorState, Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
+    query: Query<(&CodeEditorState, &CursorState, Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     ui_query: Query<Entity, With<HoverUI>>,
 ) {
-    let Ok((_editor_state, tv, vp)) = query.single() else { return };
+    let Ok((_editor_state, _cursor_state, tv, vp)) = query.single() else { return };
 
     if !hover_state.visible || hover_state.content.is_empty() {
         for entity in ui_query.iter() {
@@ -309,12 +309,12 @@ pub fn update_hover_ui(
 pub fn update_signature_help_ui(
     mut commands: Commands,
     sig_state: Res<SignatureHelpState>,
-    query: Query<(&CodeEditorState, Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
+    query: Query<(&CodeEditorState, &CursorState, Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     ui_query: Query<Entity, With<SignatureHelpUI>>,
 ) {
-    let Ok((editor_state, tv, vp)) = query.single() else { return };
+    let Ok((editor_state, cursor_state, tv, vp)) = query.single() else { return };
 
     if !sig_state.visible || sig_state.signatures.is_empty() {
         for entity in ui_query.iter() {
@@ -341,7 +341,7 @@ pub fn update_signature_help_ui(
     };
 
     // Position above cursor
-    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let cursor_pos = cursor_state.cursor_pos.min(tv.rope.len_chars());
     let line_index = tv.rope.char_to_line(cursor_pos);
     let line_start = tv.rope.line_to_char(line_index);
     let col_index = cursor_pos - line_start;
@@ -425,12 +425,12 @@ pub fn update_signature_help_ui(
 pub fn update_code_action_ui(
     mut commands: Commands,
     action_state: Res<CodeActionState>,
-    query: Query<(&CodeEditorState, Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
+    query: Query<(&CodeEditorState, &CursorState, Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     ui_query: Query<Entity, With<CodeActionUI>>,
 ) {
-    let Ok((editor_state, tv, vp)) = query.single() else { return };
+    let Ok((editor_state, cursor_state, tv, vp)) = query.single() else { return };
 
     if !action_state.visible || action_state.actions.is_empty() {
         for entity in ui_query.iter() {
@@ -452,7 +452,7 @@ pub fn update_code_action_ui(
         commands.entity(entity).despawn();
     }
 
-    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let cursor_pos = cursor_state.cursor_pos.min(tv.rope.len_chars());
     let line_index = tv.rope.char_to_line(cursor_pos);
 
     let line_height = font.line_height;

@@ -24,10 +24,10 @@ fn main() {
 
 #[cfg(feature = "tree-sitter")]
 fn setup_editor_with_treesitter(
-    mut editor_query: Query<(&mut CodeEditorState, &mut TextViewState), With<CodeEditor>>,
+    mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState), With<CodeEditor>>,
     mut syntax: ResMut<SyntaxResource>,
 ) {
-    let Ok((mut state, mut tv)) = editor_query.single_mut() else {
+    let Ok((mut state, mut cursor, mut tv)) = editor_query.single_mut() else {
         return;
     };
 
@@ -100,7 +100,7 @@ fn main() {
 }
 "#;
 
-    state.set_text(&mut tv, rust_code);
+    state.set_text(&mut cursor, &mut tv, rust_code);
 
     // Define Rust language configuration
     let rust_lang = Language {
@@ -123,9 +123,9 @@ fn main() {
 
 #[cfg(not(feature = "tree-sitter"))]
 fn setup_editor_with_treesitter(
-    mut editor_query: Query<(&mut CodeEditorState, &mut TextViewState), With<CodeEditor>>,
+    mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState), With<CodeEditor>>,
 ) {
-    let Ok((mut state, mut tv)) = editor_query.single_mut() else {
+    let Ok((mut state, mut cursor, mut tv)) = editor_query.single_mut() else {
         return;
     };
 
@@ -140,5 +140,5 @@ Or use the default features:
     cargo run --example treesitter_highlighting
 "#;
 
-    state.set_text(&mut tv, message);
+    state.set_text(&mut cursor, &mut tv, message);
 }

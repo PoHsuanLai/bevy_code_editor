@@ -26,7 +26,7 @@ pub struct GpuLineNumbersBatch {
 /// GPU-accelerated line numbers rendering system
 pub(crate) fn update_gpu_line_numbers(
     mut commands: Commands,
-    editor_query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    editor_query: Query<(&CodeEditorState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     theme: Res<ThemeSettings>,
     ui: Res<UiSettings>,
@@ -38,7 +38,7 @@ pub(crate) fn update_gpu_line_numbers(
     mut images: ResMut<Assets<Image>>,
     batch_query: Query<(Entity, &GpuLineNumbersBatch)>,
 ) {
-    let Ok((state, tv, viewport)) = editor_query.single() else {
+    let Ok((state, cursor, tv, viewport)) = editor_query.single() else {
         return;
     };
     // Hide if line numbers are disabled
@@ -75,7 +75,7 @@ pub(crate) fn update_gpu_line_numbers(
     let viewport_height = viewport.height as f32;
 
     // Collect cursor lines for highlighting active line numbers
-    let cursor_lines: std::collections::HashSet<usize> = state
+    let cursor_lines: std::collections::HashSet<usize> = cursor
         .cursors
         .iter()
         .map(|c| {

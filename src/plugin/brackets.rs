@@ -137,11 +137,11 @@ pub(crate) fn find_opening_bracket(
 
 /// Update bracket match state based on cursor position
 pub(crate) fn update_bracket_match(
-    editor_query: Query<(&CodeEditorState, &TextViewState), With<CodeEditor>>,
+    editor_query: Query<(&CodeEditorState, &CursorState, &TextViewState), With<CodeEditor>>,
     brackets: Res<BracketSettings>,
     mut bracket_state: ResMut<BracketMatchState>,
 ) {
-    let Ok((state, tv)) = editor_query.single() else {
+    let Ok((state, cursor, tv)) = editor_query.single() else {
         return;
     };
 
@@ -151,7 +151,7 @@ pub(crate) fn update_bracket_match(
         return;
     }
 
-    let cursor_pos = state.cursor_pos.min(tv.rope.len_chars());
+    let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
     bracket_state.current_match = find_matching_bracket(&tv.rope, cursor_pos, &brackets.pairs);
 }
 

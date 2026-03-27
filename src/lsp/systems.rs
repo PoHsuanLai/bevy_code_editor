@@ -5,7 +5,7 @@ use lsp_types::*;
 
 use crate::settings::*;
 use crate::text_view::{TextViewState, TextViewViewport};
-use crate::types::{CodeEditor, CodeEditorState};
+use crate::types::{CodeEditor, CodeEditorState, CursorState};
 
 use super::client::LspClient;
 use super::messages::{CodeActionOrCommand, LspMessage, LspResponse};
@@ -73,13 +73,13 @@ pub fn process_lsp_messages(
     mut hint_state: ResMut<InlayHintState>,
     mut highlight_state: ResMut<DocumentHighlightState>,
     mut rename_state: ResMut<RenameState>,
-    mut editor_query: Query<(&mut CodeEditorState, &mut TextViewState), With<CodeEditor>>,
+    mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState), With<CodeEditor>>,
     lsp_sync: Res<LspSyncState>,
     mut navigate_events: MessageWriter<NavigateToFileEvent>,
     mut multi_location_events: MessageWriter<MultipleLocationsEvent>,
     mut workspace_edit_events: MessageWriter<WorkspaceEditEvent>,
 ) {
-    let Ok((mut editor_state, mut tv)) = editor_query.single_mut() else { return };
+    let Ok((mut editor_state, mut cursor_state, mut tv)) = editor_query.single_mut() else { return };
     // Clean up timed out requests periodically
     lsp_client.cleanup_timeouts();
 
@@ -168,7 +168,7 @@ pub fn process_lsp_messages(
                     if line_num < tv.rope.len_lines() {
                         let line_start_char = tv.rope.line_to_char(line_num);
                         let target_char_pos = line_start_char + char_in_line;
-                        editor_state.cursor_pos =
+                        cursor_state.cursor_pos =
                             target_char_pos.min(tv.rope.len_chars());
                         tv.needs_update = true;
                     }
@@ -482,7 +482,7 @@ pub fn execute_code_action(lsp_client: &LspClient, action: &CodeActionOrCommand)
 pub fn request_document_highlights(
     time: Res<Time>,
     lsp_client: Res<LspClient>,
-    query: Query<(&CodeEditorState, &TextViewState), With<CodeEditor>>,
+    query: Query<(&CodeEditorState, &CursorState, &TextViewState), With<CodeEditor>>,
     lsp_sync: Res<LspSyncState>,
     mut highlight_state: ResMut<DocumentHighlightState>,
 ) {
@@ -490,14 +490,14 @@ pub fn request_document_highlights(
         return;
     }
 
-    let Ok((editor_state, tv)) = query.single() else { return };
+    let Ok((editor_state, cursor_state, tv)) = query.single() else { return };
 
     let Some(uri) = &lsp_sync.document_uri else {
         return;
     };
 
     // Check if cursor moved
-    if editor_state.cursor_pos == highlight_state.cursor_position && highlight_state.visible {
+    if cursor_state.cursor_pos == highlight_state.cursor_position && highlight_state.visible {
         return;
     }
 
@@ -510,16 +510,16 @@ pub fn request_document_highlights(
     } else {
         // Start debounce timer
         highlight_state.debounce_timer = Some(Timer::from_seconds(0.15, TimerMode::Once));
-        highlight_state.cursor_position = editor_state.cursor_pos;
+        highlight_state.cursor_position = cursor_state.cursor_pos;
         return;
     }
 
     // Clear timer and send request
     highlight_state.debounce_timer = None;
-    highlight_state.cursor_position = editor_state.cursor_pos;
+    highlight_state.cursor_position = cursor_state.cursor_pos;
 
     // Convert cursor position to LSP position
-    let cursor_pos = editor_state.cursor_pos.min(tv.rope.len_chars());
+    let cursor_pos = cursor_state.cursor_pos.min(tv.rope.len_chars());
     let line = tv.rope.char_to_line(cursor_pos);
     let line_start = tv.rope.line_to_char(line);
     let character = cursor_pos - line_start;

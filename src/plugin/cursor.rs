@@ -38,23 +38,23 @@ impl Plugin for CursorPlugin {
 /// Uses a separate field (last_cursor_pos_for_blink) to avoid race conditions
 /// with auto_scroll_to_cursor which also uses last_cursor_pos
 pub(crate) fn track_cursor_movement(
-    mut editor_query: Query<&mut CodeEditorState, With<CodeEditor>>,
+    mut editor_query: Query<&mut CursorState, With<CodeEditor>>,
     time: Res<Time>,
 ) {
-    let Ok(mut editor) = editor_query.single_mut() else {
+    let Ok(mut cursor) = editor_query.single_mut() else {
         return;
     };
     // Check if cursor position has changed (use cursors[0].position for multi-cursor support)
-    let current_pos = editor.cursors.first().map(|c| c.position).unwrap_or(0);
-    if current_pos != editor.last_cursor_pos_for_blink {
-        editor.cursor_moved_time = time.elapsed_secs_f64();
-        editor.last_cursor_pos_for_blink = current_pos;
+    let current_pos = cursor.cursors.first().map(|c| c.position).unwrap_or(0);
+    if current_pos != cursor.last_cursor_pos_for_blink {
+        cursor.cursor_moved_time = time.elapsed_secs_f64();
+        cursor.last_cursor_pos_for_blink = current_pos;
     }
 }
 
 pub(crate) fn update_cursor(
     mut commands: Commands,
-    editor_query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    editor_query: Query<(&CodeEditorState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     cursor_settings: Res<CursorSettings>,
     theme: Res<ThemeSettings>,
@@ -65,14 +65,14 @@ pub(crate) fn update_cursor(
     render_config: Res<EditorRenderConfig>,
     mut cursor_query: Query<(Entity, &EditorCursor, &mut Transform, &mut Visibility)>,
 ) {
-    let Ok((editor, tv, vp)) = editor_query.single() else {
+    let Ok((editor, cursor, tv, vp)) = editor_query.single() else {
         return;
     };
 
     let char_width = font.char_width;
     let line_height = font.line_height;
     let cursor_height = line_height * cursor_settings.height_multiplier;
-    let cursor_count = editor.cursors.len();
+    let cursor_count = cursor.cursors.len();
 
     // Check if we're using soft line wrapping
     let use_wrapping = wrapping.enabled && editor.display_map.wrap_width > 0;
@@ -80,13 +80,13 @@ pub(crate) fn update_cursor(
     // Collect existing cursor entities by their index
     let mut cursor_entities: std::collections::HashMap<usize, Entity> =
         std::collections::HashMap::new();
-    for (entity, cursor, _, _) in cursor_query.iter() {
-        cursor_entities.insert(cursor.cursor_index, entity);
+    for (entity, ec, _, _) in cursor_query.iter() {
+        cursor_entities.insert(ec.cursor_index, entity);
     }
 
     // Update or create cursor entities for each cursor
-    for (idx, cursor) in editor.cursors.iter().enumerate() {
-        let cursor_pos = cursor.position.min(tv.rope.len_chars());
+    for (idx, c) in cursor.cursors.iter().enumerate() {
+        let cursor_pos = c.position.min(tv.rope.len_chars());
         let line_index = tv.rope.char_to_line(cursor_pos);
         let line_start = tv.rope.line_to_char(line_index);
         let col_index = cursor_pos - line_start;
@@ -179,15 +179,15 @@ pub(crate) fn update_cursor(
 /// The cursor stays visible for a short period after movement before blinking resumes
 pub(crate) fn animate_cursor(
     time: Res<Time>,
-    cursor: Res<CursorSettings>,
-    editor_query: Query<&CodeEditorState, With<CodeEditor>>,
+    cursor_settings: Res<CursorSettings>,
+    editor_query: Query<&CursorState, With<CodeEditor>>,
     mut cursor_query: Query<&mut Visibility, With<EditorCursor>>,
 ) {
-    let Ok(editor) = editor_query.single() else {
+    let Ok(cursor) = editor_query.single() else {
         return;
     };
 
-    if cursor.blink_rate == 0.0 {
+    if cursor_settings.blink_rate == 0.0 {
         for mut visibility in cursor_query.iter_mut() {
             *visibility = Visibility::Visible;
         }
@@ -195,7 +195,7 @@ pub(crate) fn animate_cursor(
     }
 
     // Keep cursor visible for 0.5 seconds after movement before blinking
-    let time_since_move = time.elapsed_secs_f64() - editor.cursor_moved_time;
+    let time_since_move = time.elapsed_secs_f64() - cursor.cursor_moved_time;
     let blink_pause_duration = 0.5; // seconds
 
     let new_visibility = if time_since_move < blink_pause_duration {
@@ -204,7 +204,7 @@ pub(crate) fn animate_cursor(
     } else {
         // Resume blinking, starting from the time after the pause
         let blink_time = (time_since_move - blink_pause_duration) as f32;
-        let blink_phase = (blink_time * cursor.blink_rate) % 1.0;
+        let blink_phase = (blink_time * cursor_settings.blink_rate) % 1.0;
         if blink_phase < 0.5 {
             Visibility::Visible
         } else {
@@ -218,7 +218,7 @@ pub(crate) fn animate_cursor(
 }
 pub(crate) fn update_cursor_line_highlight(
     mut commands: Commands,
-    editor_query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    editor_query: Query<(&CodeEditorState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     cursor_line: Res<CursorLineSettings>,
     theme: Res<ThemeSettings>,
@@ -272,7 +272,7 @@ pub(crate) fn update_cursor_line_highlight(
         }
     };
 
-    let Ok((editor, tv, vp)) = editor_query.single() else {
+    let Ok((editor, cursor, tv, vp)) = editor_query.single() else {
         return;
     };
 
@@ -307,8 +307,8 @@ pub(crate) fn update_cursor_line_highlight(
     let border_center_x = vp.world_left() + code_area_start + border_width / 2.0;
 
     // Process each cursor
-    for (idx, cursor) in editor.cursors.iter().enumerate() {
-        let cursor_pos = cursor.position.min(tv.rope.len_chars());
+    for (idx, c) in cursor.cursors.iter().enumerate() {
+        let cursor_pos = c.position.min(tv.rope.len_chars());
         let line_index = tv.rope.char_to_line(cursor_pos);
 
         // Skip if line is hidden due to folding
@@ -425,7 +425,7 @@ pub(crate) fn update_cursor_line_highlight(
         let line_chars: Vec<char> = line.chars().collect();
 
         // Check if cursor is on a word character (also check char before cursor if cursor is at end)
-        let is_word_char = |c: char| c.is_alphanumeric() || c == '_';
+        let is_word_char = |ch: char| ch.is_alphanumeric() || ch == '_';
 
         let on_word = if col < line_chars.len() && is_word_char(line_chars[col]) {
             true

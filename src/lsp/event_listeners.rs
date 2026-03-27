@@ -13,7 +13,7 @@ use crate::lsp::state::{
     SignatureHelpState,
 };
 use crate::text_view::TextViewState;
-use crate::types::{CodeEditor, CodeEditorState};
+use crate::types::{CodeEditor, CodeEditorState, CursorState};
 use bevy::prelude::*;
 
 /// System that listens to TextEditEvent and sends incremental didChange to LSP.
@@ -237,16 +237,16 @@ pub fn tick_lsp_debounce_timers(
 /// System that listens to ApplyCompletionEvent
 pub fn listen_apply_completion(
     mut events: MessageReader<ApplyCompletionEvent>,
-    mut query: Query<(&mut CodeEditorState, &mut TextViewState), With<CodeEditor>>,
+    mut query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState), With<CodeEditor>>,
     mut completion_state: ResMut<CompletionState>,
 ) {
-    let Ok((mut editor, mut tv)) = query.single_mut() else { return };
+    let Ok((mut editor, mut cursor_state, mut tv)) = query.single_mut() else { return };
     for event in events.read() {
         if event.item_index < completion_state.items.len() {
             let item = &completion_state.items[event.item_index];
 
             // Calculate current position from cursor_pos
-            let cursor_pos = editor.cursor_pos.min(tv.rope.len_chars());
+            let cursor_pos = cursor_state.cursor_pos.min(tv.rope.len_chars());
             let line = tv.rope.char_to_line(cursor_pos);
             let line_start = tv.rope.line_to_char(line);
             let cursor_char = cursor_pos - line_start;
@@ -263,14 +263,14 @@ pub fn listen_apply_completion(
                 let start_pos = line_start + word_start;
                 let end_pos = line_start + cursor_char;
                 tv.rope.remove(start_pos..end_pos);
-                editor.cursor_pos = start_pos + word_start;
+                cursor_state.cursor_pos = start_pos + word_start;
             }
 
             // Insert the completion text
             let insert_text = item.insert_text.as_ref().unwrap_or(&item.label);
-            let cursor_pos = editor.cursor_pos;
+            let cursor_pos = cursor_state.cursor_pos;
             tv.rope.insert(cursor_pos, insert_text);
-            editor.cursor_pos += insert_text.len();
+            cursor_state.cursor_pos += insert_text.len();
 
             // Mark as needing update
             tv.pending_update = true;

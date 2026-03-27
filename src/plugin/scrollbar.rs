@@ -136,13 +136,13 @@ fn handle_scrollbar_mouse(
     windows: Query<&Window>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut drag_state: ResMut<ScrollbarDragState>,
-    mut editor_query: Query<(&mut crate::types::CodeEditorState, &mut TextViewState, &TextViewViewport), With<CodeEditor>>,
+    mut editor_query: Query<(&mut crate::types::CodeEditorState, &mut crate::types::CursorState, &mut TextViewState, &TextViewViewport), With<CodeEditor>>,
     scrollbar_query: Query<(Entity, &Scrollbar)>,
     _track_query: Query<(&ScrollbarTrack, &Transform, &Sprite)>,
     thumb_query: Query<(&ScrollbarThumb, &Transform, &Sprite)>,
     font: Res<crate::settings::FontSettings>,
 ) {
-    let Ok((mut state, mut tv, viewport)) = editor_query.single_mut() else {
+    let Ok((mut state, mut cursor_state, mut tv, viewport)) = editor_query.single_mut() else {
         return;
     };
     let Ok(window) = windows.single() else {
@@ -234,7 +234,7 @@ fn handle_scrollbar_mouse(
                     // IMPORTANT: Update last_cursor_pos to prevent auto_scroll_to_cursor from
                     // snapping back after drag release. We keep the cursor at the same position
                     // so auto-scroll thinks the cursor hasn't moved.
-                    state.last_cursor_pos = state.cursor_pos;
+                    cursor_state.last_cursor_pos = cursor_state.cursor_pos;
                 }
             }
         }

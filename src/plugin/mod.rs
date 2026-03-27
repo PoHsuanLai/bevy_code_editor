@@ -249,6 +249,7 @@ fn spawn_editor_entity(mut commands: Commands) {
     commands.spawn((
         CodeEditor,
         CodeEditorState::default(),
+        CursorState::default(),
         crate::text_view::TextViewState::default(),
         crate::text_view::TextViewViewport::default(),
         Name::new("CodeEditor"),
