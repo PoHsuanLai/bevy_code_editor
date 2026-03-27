@@ -1,3 +1,5 @@
+use bevy::log::trace;
+
 use super::cursor::*;
 use super::keybindings::EditorAction;
 use crate::settings::IndentationSettings;
@@ -213,8 +215,7 @@ pub fn update_completion_filter(
         completion_state.selected_index = 0;
         completion_state.scroll_offset = 0;
 
-        #[cfg(debug_assertions)]
-        eprintln!("[LSP] Filter updated: '{}'", completion_state.filter);
+        trace!("[LSP] Filter updated: '{}'", completion_state.filter);
     } else {
         completion_state.filter.clear();
         completion_state.scroll_offset = 0;
@@ -243,8 +244,7 @@ pub fn request_completion(
     };
 
     if let Some(uri) = &lsp_sync.document_uri {
-        #[cfg(debug_assertions)]
-        eprintln!(
+        trace!(
             "[LSP] Requesting completion at line={}, char={}, visible={}, start_idx={}",
             lsp_position.line,
             lsp_position.character,
@@ -282,8 +282,7 @@ pub fn request_completion(
         completion_state.update_word_completions(rope, cursor_pos);
         completion_state.visible = true;
 
-        #[cfg(debug_assertions)]
-        eprintln!(
+        trace!(
             "[bevy_code_editor] No LSP document URI - using word completions only ({} words)",
             completion_state.word_items.len()
         );
@@ -318,8 +317,7 @@ pub fn send_did_change(
             changes: vec![change],
         });
 
-        #[cfg(debug_assertions)]
-        eprintln!("[LSP] DidChange sent, version={}", version);
+        trace!("[LSP] DidChange sent, version={}", version);
     }
 }
 

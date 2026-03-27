@@ -114,8 +114,7 @@ pub fn process_lsp_messages(
                 items,
                 is_incomplete,
             } => {
-                #[cfg(debug_assertions)]
-                eprintln!(
+                trace!(
                     "[LSP] Completion: {} items, incomplete={}",
                     items.len(),
                     is_incomplete
@@ -194,8 +193,7 @@ pub fn process_lsp_messages(
             }
 
             LspResponse::Format { edits } => {
-                #[cfg(debug_assertions)]
-                eprintln!("[LSP] Format: {} edit(s)", edits.len());
+                trace!("[LSP] Format: {} edit(s)", edits.len());
                 apply_text_edits(&mut editor_state, &mut tv, edits);
             }
 
@@ -231,8 +229,7 @@ pub fn process_lsp_messages(
             }
 
             LspResponse::DocumentHighlights { highlights } => {
-                #[cfg(debug_assertions)]
-                eprintln!(
+                trace!(
                     "[LSP] DocumentHighlights: {} highlight(s)",
                     highlights.len()
                 );
@@ -242,8 +239,7 @@ pub fn process_lsp_messages(
             }
 
             LspResponse::PrepareRename { range, placeholder } => {
-                #[cfg(debug_assertions)]
-                eprintln!(
+                trace!(
                     "[LSP] PrepareRename: range={:?}, placeholder={:?}",
                     range, placeholder
                 );

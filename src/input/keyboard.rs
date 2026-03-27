@@ -277,8 +277,7 @@ pub fn handle_keyboard_input(
                                     if trigger.len() == 1 {
                                         if c.to_string() == *trigger {
                                             is_trigger = true;
-                                            #[cfg(debug_assertions)]
-                                            eprintln!(
+                                            trace!(
                                                 "[LSP] Single-char trigger detected: '{}'",
                                                 trigger
                                             );
@@ -297,8 +296,7 @@ pub fn handle_keyboard_input(
                                             debug!("[LSP] Checking multi-char trigger '{}' against recent text '{}'", trigger, recent_text);
                                             if recent_text == *trigger {
                                                 is_trigger = true;
-                                                #[cfg(debug_assertions)]
-                                                eprintln!(
+                                                trace!(
                                                     "[LSP] Multi-char trigger MATCHED: '{}'",
                                                     trigger
                                                 );
@@ -322,8 +320,7 @@ pub fn handle_keyboard_input(
                                     );
                                 } else if c.is_alphanumeric() || c == '_'  {
                                     if completion_state.visible {
-                                        #[cfg(debug_assertions)]
-                                        eprintln!("[LSP] Completion visible, updating filter for char '{}'", c);
+                                        trace!("[LSP] Completion visible, updating filter for char '{}'", c);
                                         update_completion_filter(&cursor, &tv.rope, &mut completion_state);
                                     } else {
                                         // Auto-trigger after min_word_length identifier chars
@@ -395,7 +392,7 @@ pub fn handle_keyboard_input(
                         character: character as u32,
                     };
 
-                    eprintln!(
+                    trace!(
                         "[Rename] Requesting prepare rename at line={}, char={}",
                         position.line, position.character
                     );

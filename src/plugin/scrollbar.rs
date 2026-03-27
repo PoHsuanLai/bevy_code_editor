@@ -184,7 +184,7 @@ fn handle_scrollbar_mouse(
             {
                 // Start dragging
                 if let Ok((entity, _scrollbar)) = scrollbar_query.get(thumb.parent) {
-                    eprintln!(
+                    trace!(
                         "[Scrollbar] DRAG STARTED at cursor_y={}, scroll_offset={}",
                         cursor_y, tv.scroll_offset
                     );
@@ -243,7 +243,7 @@ fn handle_scrollbar_mouse(
     // Handle mouse release
     if mouse_button.just_released(MouseButton::Left) {
         if drag_state.is_dragging {
-            eprintln!(
+            trace!(
                 "[Scrollbar] DRAG ENDED at scroll_offset={}, target={}",
                 tv.scroll_offset, tv.target_scroll_offset
             );

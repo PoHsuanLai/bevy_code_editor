@@ -221,8 +221,7 @@ impl LspClient {
     pub fn send(&self, message: LspMessage) {
         // Check capabilities before sending (skip for Initialize and notifications)
         if !self.should_send(&message) {
-            #[cfg(debug_assertions)]
-            eprintln!(
+            trace!(
                 "[LSP] Skipping unsupported request: {:?}",
                 std::mem::discriminant(&message)
             );
@@ -301,8 +300,7 @@ impl LspClient {
                     },
                 );
             }
-            #[cfg(debug_assertions)]
-            eprintln!(
+            trace!(
                 "[LSP] Sending request (id={}): {:?}",
                 id,
                 std::mem::discriminant(&message)
