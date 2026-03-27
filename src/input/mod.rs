@@ -1,18 +1,16 @@
-//! Input handling for the code editor
-//!
-//! This module provides keyboard and mouse input handling using
-//! leafwing-input-manager for action-based keybindings.
+//! Keyboard and mouse input handling via leafwing-input-manager.
 
 mod actions;
 mod cursor;
+mod editor_ops;
+mod editing;
 mod keybindings;
 mod keyboard;
 mod mouse;
+mod selection_ops;
 
-// Re-export public types
 pub use keybindings::{default_input_map, EditorAction};
 pub use keyboard::handle_keyboard_input;
 pub use mouse::{handle_mouse_input, handle_mouse_wheel, MouseDragState};
 
-// Re-export leafwing types for user customization
 pub use leafwing_input_manager::prelude::{ActionState, Actionlike, ButtonlikeChord, InputMap};

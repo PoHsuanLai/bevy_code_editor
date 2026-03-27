@@ -1,0 +1,334 @@
+//! Text editing operations on EditHistoryState.
+//!
+//! Insert, delete, undo/redo, set_text, and anchor management.
+
+use crate::text_view::TextViewState;
+use crate::types::*;
+use ropey::Rope;
+
+impl EditHistoryState {
+    /// Insert character at cursor position (with undo recording)
+    pub fn insert_char(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState, c: char) {
+        self.insert_char_with_history(sel, syntax, display, cursor, tv, c, true);
+    }
+
+    /// Insert character at cursor position with optional history recording
+    pub fn insert_char_with_history(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState, c: char, record_history: bool) {
+        let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
+        let line_idx = tv.rope.char_to_line(cursor_pos);
+        let cursor_before = cursor_pos;
+
+        #[cfg(feature = "tree-sitter")]
+        let start_byte = tv.rope.char_to_byte(cursor_pos);
+        #[cfg(feature = "tree-sitter")]
+        let char_byte_len = c.len_utf8();
+
+        self.anchors.record_edit(TextEdit::insert(cursor_pos, 1));
+
+        tv.rope.insert_char(cursor_pos, c);
+        cursor.cursor_pos += 1;
+        sel.sync_cursors_from_primary(cursor);
+        tv.pending_update = true;
+        tv.content_version += 1;
+
+        #[cfg(feature = "tree-sitter")]
+        {
+            syntax.pending_tree_sitter_edit = Some((
+                start_byte,
+                start_byte,
+                start_byte + char_byte_len,
+            ));
+        }
+
+        if record_history {
+            let kind = if c == '\n' {
+                EditKind::Newline
+            } else {
+                EditKind::Insert
+            };
+            self.history.record(EditOperation {
+                removed_text: String::new(),
+                inserted_text: c.to_string(),
+                position: cursor_before,
+                cursor_before,
+                cursor_after: cursor.cursor_pos,
+                kind,
+            });
+        }
+
+        let new_line_count = tv.rope.len_lines();
+        tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
+
+        if c == '\n' {
+            display.invalidate_lines_from = Some(line_idx);
+        }
+
+        tv.previous_line_count = new_line_count;
+    }
+
+    /// Delete character before cursor (with undo recording)
+    pub fn delete_backward(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState) {
+        self.delete_backward_with_history(sel, syntax, display, cursor, tv, true);
+    }
+
+    /// Delete character before cursor with optional history recording
+    pub fn delete_backward_with_history(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState, record_history: bool) {
+        if cursor.cursor_pos > 0 && cursor.cursor_pos <= tv.rope.len_chars() {
+            let cursor_before = cursor.cursor_pos;
+            let line_idx = tv.rope.char_to_line(cursor.cursor_pos - 1);
+            let deleted_char = tv.rope.char(cursor.cursor_pos - 1);
+            let char_idx = tv.rope.char_to_byte(cursor.cursor_pos - 1);
+            let byte_idx_end = tv.rope.char_to_byte(cursor.cursor_pos);
+
+            self.anchors
+                .record_edit(TextEdit::delete(cursor.cursor_pos - 1, cursor.cursor_pos));
+
+            tv.rope.remove(char_idx..byte_idx_end);
+            cursor.cursor_pos -= 1;
+            sel.sync_cursors_from_primary(cursor);
+            tv.pending_update = true;
+            tv.content_version += 1;
+
+            #[cfg(feature = "tree-sitter")]
+            {
+                syntax.pending_tree_sitter_edit = Some((char_idx, byte_idx_end, char_idx));
+            }
+
+            if record_history {
+                self.history.record(EditOperation {
+                    removed_text: deleted_char.to_string(),
+                    inserted_text: String::new(),
+                    position: cursor.cursor_pos,
+                    cursor_before,
+                    cursor_after: cursor.cursor_pos,
+                    kind: EditKind::DeleteBackward,
+                });
+            }
+
+            let new_line_count = tv.rope.len_lines();
+            tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
+
+            if deleted_char == '\n' {
+                display.invalidate_lines_from = Some(line_idx);
+            }
+
+            tv.previous_line_count = new_line_count;
+        }
+    }
+
+    /// Delete character after cursor (with undo recording)
+    pub fn delete_forward(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState) {
+        self.delete_forward_with_history(sel, syntax, display, cursor, tv, true);
+    }
+
+    /// Delete character after cursor with optional history recording
+    pub fn delete_forward_with_history(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState, record_history: bool) {
+        if cursor.cursor_pos < tv.rope.len_chars() {
+            let cursor_before = cursor.cursor_pos;
+            let line_idx = tv.rope.char_to_line(cursor.cursor_pos);
+            let deleted_char = tv.rope.char(cursor.cursor_pos);
+            let char_idx = tv.rope.char_to_byte(cursor.cursor_pos);
+            let byte_idx_end = tv.rope.char_to_byte(cursor.cursor_pos + 1);
+
+            self.anchors
+                .record_edit(TextEdit::delete(cursor.cursor_pos, cursor.cursor_pos + 1));
+
+            tv.rope.remove(char_idx..byte_idx_end);
+            sel.sync_cursors_from_primary(cursor);
+            tv.pending_update = true;
+            tv.content_version += 1;
+
+            #[cfg(feature = "tree-sitter")]
+            {
+                syntax.pending_tree_sitter_edit = Some((char_idx, byte_idx_end, char_idx));
+            }
+
+            if record_history {
+                self.history.record(EditOperation {
+                    removed_text: deleted_char.to_string(),
+                    inserted_text: String::new(),
+                    position: cursor.cursor_pos,
+                    cursor_before,
+                    cursor_after: cursor.cursor_pos,
+                    kind: EditKind::DeleteForward,
+                });
+            }
+
+            let new_line_count = tv.rope.len_lines();
+            tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
+
+            if deleted_char == '\n' {
+                display.invalidate_lines_from = Some(line_idx);
+            }
+
+            tv.previous_line_count = new_line_count;
+        }
+    }
+
+    /// Insert text at a specific position (used for undo/redo)
+    pub fn insert_text_at(&mut self, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, tv: &mut TextViewState, pos: usize, text: &str) {
+        let pos = pos.min(tv.rope.len_chars());
+        let text_char_len = text.chars().count();
+        let line_idx = tv.rope.char_to_line(pos);
+
+        #[cfg(feature = "tree-sitter")]
+        let start_byte = tv.rope.char_to_byte(pos);
+        #[cfg(feature = "tree-sitter")]
+        let text_byte_len = text.len();
+
+        self.anchors
+            .record_edit(TextEdit::insert(pos, text_char_len));
+
+        tv.rope.insert(pos, text);
+        tv.pending_update = true;
+        tv.content_version += 1;
+        tv.dirty_lines = None;
+
+        if text.contains('\n') {
+            display.invalidate_lines_from = Some(line_idx);
+        }
+
+        tv.previous_line_count = tv.rope.len_lines();
+
+        #[cfg(feature = "tree-sitter")]
+        {
+            syntax.pending_tree_sitter_edit = Some((
+                start_byte,
+                start_byte,
+                start_byte + text_byte_len,
+            ));
+        }
+    }
+
+    /// Remove text range (used for undo/redo)
+    pub fn remove_range(&mut self, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, tv: &mut TextViewState, start: usize, end: usize) {
+        let start = start.min(tv.rope.len_chars());
+        let end = end.min(tv.rope.len_chars());
+        if start < end {
+            let line_idx = tv.rope.char_to_line(start);
+            let start_byte = tv.rope.char_to_byte(start);
+            let end_byte = tv.rope.char_to_byte(end);
+
+            let removed_text: String = tv.rope.slice(start..end).chars().collect();
+            let has_newlines = removed_text.contains('\n');
+
+            self.anchors.record_edit(TextEdit::delete(start, end));
+
+            tv.rope.remove(start_byte..end_byte);
+            tv.pending_update = true;
+            tv.content_version += 1;
+            tv.dirty_lines = None;
+
+            if has_newlines {
+                display.invalidate_lines_from = Some(line_idx);
+            }
+
+            tv.previous_line_count = tv.rope.len_lines();
+
+            #[cfg(feature = "tree-sitter")]
+            {
+                syntax.pending_tree_sitter_edit = Some((start_byte, end_byte, start_byte));
+            }
+        }
+    }
+
+    /// Perform undo operation
+    pub fn undo(&mut self, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState) -> bool {
+        if let Some(transaction) = self.history.pop_undo() {
+            for op in transaction.operations.iter().rev() {
+                if !op.inserted_text.is_empty() {
+                    let end_pos = op.position + op.inserted_text.chars().count();
+                    self.remove_range(syntax, display, tv, op.position, end_pos);
+                }
+                if !op.removed_text.is_empty() {
+                    self.insert_text_at(syntax, display, tv, op.position, &op.removed_text);
+                }
+            }
+
+            if let Some(first_op) = transaction.operations.first() {
+                cursor.cursor_pos = first_op.cursor_before;
+            }
+
+            self.history.push_redo(transaction);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Perform redo operation
+    pub fn redo(&mut self, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState) -> bool {
+        if let Some(transaction) = self.history.pop_redo() {
+            for op in transaction.operations.iter() {
+                if !op.removed_text.is_empty() {
+                    let end_pos = op.position + op.removed_text.chars().count();
+                    self.remove_range(syntax, display, tv, op.position, end_pos);
+                }
+                if !op.inserted_text.is_empty() {
+                    self.insert_text_at(syntax, display, tv, op.position, &op.inserted_text);
+                }
+            }
+
+            if let Some(last_op) = transaction.operations.last() {
+                cursor.cursor_pos = last_op.cursor_after;
+            }
+
+            self.history.push_undo(transaction);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Set text content
+    pub fn set_text(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, cursor: &mut CursorState, tv: &mut TextViewState, text: &str) {
+        #[cfg(feature = "tree-sitter")]
+        let old_byte_len = tv.rope.len_bytes();
+        #[cfg(feature = "tree-sitter")]
+        let new_byte_len = text.len();
+
+        tv.rope = Rope::from_str(text);
+        cursor.cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
+        tv.pending_update = true;
+        tv.content_version += 1;
+        tv.dirty_lines = None;
+        tv.previous_line_count = tv.rope.len_lines();
+        self.anchors.clear();
+        sel.selections = SelectionCollection::with_cursor(cursor.cursor_pos);
+        tv.line_width_tracker.rebuild(&tv.rope);
+        tv.max_content_width_version = 0;
+
+        #[cfg(feature = "tree-sitter")]
+        {
+            syntax.pending_tree_sitter_edit = Some((0, old_byte_len, new_byte_len));
+        }
+    }
+
+    // ========== Anchor methods ==========
+
+    /// Create an anchor at the given position
+    pub fn create_anchor(&mut self, rope: &Rope, offset: usize, bias: AnchorBias) -> Anchor {
+        let offset = offset.min(rope.len_chars());
+        self.anchors.anchor_at(offset, bias)
+    }
+
+    /// Create an anchor with left bias
+    pub fn anchor_at(&mut self, rope: &Rope, offset: usize) -> Anchor {
+        self.create_anchor(rope, offset, AnchorBias::Left)
+    }
+
+    /// Resolve an anchor's current position
+    pub fn resolve_anchor(&self, rope: &Rope, anchor: &Anchor) -> usize {
+        self.anchors.resolve(anchor).min(rope.len_chars())
+    }
+
+    /// Apply pending anchor edits
+    pub fn apply_anchor_edits(&mut self) {
+        self.anchors.apply_pending_edits();
+    }
+
+    /// Remove an anchor by its ID
+    pub fn remove_anchor(&mut self, id: u64) -> Option<Anchor> {
+        self.anchors.remove(id)
+    }
+}
