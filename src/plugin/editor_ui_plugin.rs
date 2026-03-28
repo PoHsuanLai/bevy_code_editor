@@ -20,7 +20,7 @@ use bevy_camera::visibility::RenderLayers;
 use crate::settings::*;
 use crate::text_view::TextViewViewport;
 use crate::types::{
-    CodeEditor, CodeEditorState, EditorCursor, Separator, ViewportConfig,
+    CodeEditor, CodeEditorState, EditorCursor, Separator, ViewportConfig, ViewportDimensions,
 };
 use bevy_camera::Viewport;
 
@@ -144,7 +144,8 @@ impl Plugin for EditorUiPlugin {
         );
 
         // Update viewport when window resizes (if auto_resize_to_window is true)
-        app.add_systems(Update, detect_viewport_resize);
+        // or sync from ViewportDimensions resource (if auto_resize_to_window is false)
+        app.add_systems(Update, (detect_viewport_resize, sync_viewport_from_resource));
 
         // Update separator position when viewport changes
         app.add_systems(
@@ -383,6 +384,28 @@ fn detect_viewport_resize(
             viewport.width = new_width;
             viewport.height = new_height;
         }
+    }
+}
+
+/// Sync ViewportDimensions resource → TextViewViewport component.
+/// When auto_resize_to_window is false, the host app sets ViewportDimensions
+/// and this system propagates size to the per-entity TextViewViewport.
+/// screen_position is NOT propagated — in render-to-texture mode the camera
+/// is centered at origin, so TextViewViewport keeps screen_position = ZERO.
+fn sync_viewport_from_resource(
+    config: Res<ViewportConfig>,
+    dims: Res<ViewportDimensions>,
+    mut viewport_query: Query<&mut TextViewViewport, With<CodeEditor>>,
+) {
+    if config.auto_resize_to_window {
+        return;
+    }
+    let Ok(mut viewport) = viewport_query.single_mut() else {
+        return;
+    };
+    if viewport.width != dims.width || viewport.height != dims.height {
+        viewport.width = dims.width;
+        viewport.height = dims.height;
     }
 }
 
