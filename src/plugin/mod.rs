@@ -104,8 +104,8 @@ impl Plugin for CodeEditorPlugin {
             .insert_into(app);
 
         // Initialize core resources
-        app.insert_resource(ViewportConfig::default());
-        app.insert_resource(ViewportDimensions::default());
+        app.init_resource::<ViewportConfig>();
+        app.init_resource::<ViewportDimensions>();
         app.insert_resource(crate::input::MouseDragState::default());
         app.insert_resource(KeyRepeatState::default());
 
