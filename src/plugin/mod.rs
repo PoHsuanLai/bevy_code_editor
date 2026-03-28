@@ -136,8 +136,10 @@ impl Plugin for CodeEditorPlugin {
             crate::input::EditorAction,
         >::default());
 
-        // Spawn the input manager entity and editor entity with default keybindings
-        app.add_systems(Startup, (spawn_input_manager, spawn_editor_entity));
+        // Spawn the editor entity. The host app is responsible for spawning
+        // the EditorInputManager entity with its chosen InputMap<EditorAction>.
+        // Use `default_input_map()` for the standard keybindings.
+        app.add_systems(Startup, spawn_editor_entity);
 
         // Force initial render after setup
         app.add_systems(PostStartup, force_initial_render);
@@ -192,16 +194,6 @@ impl Plugin for CodeEditorPlugin {
                 .in_set(RenderingSet),
         );
     }
-}
-
-/// Spawn the input manager entity with configured keybindings
-fn spawn_input_manager(mut commands: Commands) {
-    commands.spawn((
-        EditorInputManager,
-        crate::input::default_input_map(),
-        leafwing_input_manager::action_state::ActionState::<crate::input::EditorAction>::default(),
-        Name::new("EditorInputManager"),
-    ));
 }
 
 /// Force initial render by promoting pending_update to needs_update
