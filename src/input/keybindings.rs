@@ -301,6 +301,7 @@ impl EditorAction {
                 | EditorAction::SelectWordRight
                 | EditorAction::Undo
                 | EditorAction::Redo
+                | EditorAction::InsertNewline
         )
     }
 }

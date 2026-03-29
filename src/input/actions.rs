@@ -22,7 +22,16 @@ pub struct ActionResult {
 }
 
 /// Insert a character at cursor position
-pub fn insert_char(state: &mut CodeEditorState, sel: &mut SelectionState, hist: &mut EditHistoryState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState, c: char) {
+pub fn insert_char(
+    state: &mut CodeEditorState,
+    sel: &mut SelectionState,
+    hist: &mut EditHistoryState,
+    syntax: &mut SyntaxCacheState,
+    display: &mut EditorDisplayState,
+    cursor: &mut CursorState,
+    tv: &mut TextViewState,
+    c: char,
+) {
     // Delete selection if exists
     if sel.selection_start.is_some() && sel.selection_end.is_some() {
         delete_selection(state, sel, hist, syntax, display, cursor, tv);
@@ -33,7 +42,12 @@ pub fn insert_char(state: &mut CodeEditorState, sel: &mut SelectionState, hist: 
 
 /// Insert a closing character at cursor position without moving the cursor
 /// Used for bracket/quote auto-close
-pub fn insert_closing_char(state: &mut CodeEditorState, cursor: &CursorState, tv: &mut TextViewState, c: char) {
+pub fn insert_closing_char(
+    state: &mut CodeEditorState,
+    cursor: &CursorState,
+    tv: &mut TextViewState,
+    c: char,
+) {
     let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
 
     // Record for incremental parsing
@@ -84,12 +98,29 @@ pub fn should_skip_auto_close(cursor: &CursorState, rope: &Rope, closing: char) 
 }
 
 /// Delete selected text (with undo recording)
-pub fn delete_selection(state: &mut CodeEditorState, sel: &mut SelectionState, hist: &mut EditHistoryState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState) {
+pub fn delete_selection(
+    state: &mut CodeEditorState,
+    sel: &mut SelectionState,
+    hist: &mut EditHistoryState,
+    syntax: &mut SyntaxCacheState,
+    display: &mut EditorDisplayState,
+    cursor: &mut CursorState,
+    tv: &mut TextViewState,
+) {
     delete_selection_with_history(state, sel, hist, syntax, display, cursor, tv, true);
 }
 
 /// Delete selected text with optional history recording
-fn delete_selection_with_history(state: &mut CodeEditorState, sel: &mut SelectionState, hist: &mut EditHistoryState, _syntax: &mut SyntaxCacheState, _display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState, record_history: bool) {
+fn delete_selection_with_history(
+    state: &mut CodeEditorState,
+    sel: &mut SelectionState,
+    hist: &mut EditHistoryState,
+    _syntax: &mut SyntaxCacheState,
+    _display: &mut EditorDisplayState,
+    cursor: &mut CursorState,
+    tv: &mut TextViewState,
+    record_history: bool,
+) {
     if let (Some(start), Some(end)) = (sel.selection_start, sel.selection_end) {
         let (start, end) = if start <= end {
             (start, end)
@@ -141,7 +172,12 @@ fn delete_selection_with_history(state: &mut CodeEditorState, sel: &mut Selectio
 
 /// Apply selected completion item
 #[cfg(feature = "lsp")]
-pub fn apply_completion(state: &mut CodeEditorState, cursor: &mut CursorState, tv: &mut TextViewState, completion_state: &mut lsp::CompletionState) {
+pub fn apply_completion(
+    state: &mut CodeEditorState,
+    cursor: &mut CursorState,
+    tv: &mut TextViewState,
+    completion_state: &mut lsp::CompletionState,
+) {
     // Get filtered items and select from that list
     let filtered = completion_state.filtered_items();
     if let Some(item) = filtered.get(completion_state.selected_index) {
@@ -291,11 +327,7 @@ pub fn request_completion(
 
 /// Send textDocument/didChange notification to LSP
 #[cfg(feature = "lsp")]
-pub fn send_did_change(
-    rope: &Rope,
-    lsp_client: &lsp::LspClient,
-    lsp_sync: &mut lsp::LspSyncState,
-) {
+pub fn send_did_change(rope: &Rope, lsp_client: &lsp::LspClient, lsp_sync: &mut lsp::LspSyncState) {
     use crate::lsp::LspMessage;
 
     if let Some(uri) = &lsp_sync.document_uri {
@@ -594,9 +626,7 @@ fn execute_action_core(
                         let paste_position;
 
                         // Delete selection if any
-                        if let (Some(start), Some(end)) =
-                            (sel.selection_start, sel.selection_end)
-                        {
+                        if let (Some(start), Some(end)) = (sel.selection_start, sel.selection_end) {
                             let (start, end) = if start < end {
                                 (start, end)
                             } else {
@@ -744,7 +774,11 @@ fn execute_action_core(
             tv.pending_update = true;
         }
         #[cfg(not(feature = "folding"))]
-        EditorAction::ToggleFold | EditorAction::Fold | EditorAction::Unfold | EditorAction::FoldAll | EditorAction::UnfoldAll => {
+        EditorAction::ToggleFold
+        | EditorAction::Fold
+        | EditorAction::Unfold
+        | EditorAction::FoldAll
+        | EditorAction::UnfoldAll => {
             // Folding feature is disabled, no-op
         }
 
@@ -881,9 +915,20 @@ pub fn execute_action(
     }
 
     let result = execute_action_core(
-        state, sel, hist, syntax, display, cursor, tv, action, indentation, goto_line_state,
-        #[cfg(feature = "folding")] fold_state,
-        #[cfg(not(feature = "folding"))] None,
+        state,
+        sel,
+        hist,
+        syntax,
+        display,
+        cursor,
+        tv,
+        action,
+        indentation,
+        goto_line_state,
+        #[cfg(feature = "folding")]
+        fold_state,
+        #[cfg(not(feature = "folding"))]
+        None,
     );
 
     #[cfg(feature = "lsp")]

@@ -90,6 +90,9 @@ folding = []
 # Bracket matching and highlighting
 brackets = []
 
+# Dynamic linking for fast iteration (dev only, not for release builds)
+dynamic_linking = ["bevy/dynamic_linking"]
+
 # egui/armas overlay rendering for LSP popups (completion, hover, etc.)
 egui-overlays = ["bevy_egui", "armas", "lsp"]
 
