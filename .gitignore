@@ -1,8 +1,9 @@
 /target
 .claude
 CLAUDE.md
+.DS_Store
 
-zed/*
+/zed
 
 *.md
 
