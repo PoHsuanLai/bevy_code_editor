@@ -17,6 +17,10 @@ pub use crate::text_view::render::{GlyphBatchComponent, GlyphInstance, TextViewB
 /// Legacy alias for TextViewBatch — used by existing editor code
 pub type GpuTextBatch = TextViewBatch;
 
+/// Marker component to distinguish code editor batches from other TextViewBatch users.
+#[derive(Component)]
+pub struct CodeEditorBatch;
+
 /// System to update instanced GPU text display for the editor.
 ///
 /// Reads the TextViewState component directly from the editor entity,
@@ -35,9 +39,10 @@ pub(crate) fn update_gpu_text_instanced(
     #[cfg(feature = "folding")] fold_state: Res<FoldState>,
     mut atlas: ResMut<GlyphAtlas>,
     mut images: ResMut<Assets<Image>>,
-    batch_query: Query<(Entity, &TextViewBatch)>,
+    batch_query: Query<(Entity, &TextViewBatch), With<CodeEditorBatch>>,
     mut syntax: ResMut<SyntaxResource>,
     time: Res<Time>,
+    render_config: Option<Res<super::editor_ui_plugin::EditorRenderConfig>>,
 ) {
     // Try to get the entity's TextViewState; fall back to Resource viewport if entity not ready
     let Ok((mut tv_state, tv_viewport)) = tv_query.single_mut() else {
@@ -153,12 +158,20 @@ pub(crate) fn update_gpu_text_instanced(
     // Update atlas texture
     atlas.update_texture(&mut images);
 
+    // Extract render layer number from config
+    let batch_render_layer: Option<u8> = render_config.as_ref().and_then(|config| {
+        config.render_layers.as_ref().and_then(|layers| {
+            (0u8..=31).find(|&i| layers.intersects(&bevy_camera::visibility::RenderLayers::layer(i as usize)))
+        })
+    });
+
     // Update or create batch entity
     if instances.is_empty() {
         for (entity, _) in batch_query.iter() {
             commands.entity(entity).insert(GlyphBatchComponent {
                 instances: Vec::new(),
                 atlas_texture: atlas.texture.clone(),
+                render_layer: batch_render_layer,
             });
             commands.entity(entity).insert(Visibility::Hidden);
         }
@@ -166,12 +179,14 @@ pub(crate) fn update_gpu_text_instanced(
         let existing_batches: Vec<Entity> = batch_query.iter().map(|(e, _)| e).collect();
 
         if let Some(&first_entity) = existing_batches.first() {
-            commands.entity(first_entity).insert(GlyphBatchComponent {
+            let mut cmds = commands.entity(first_entity);
+            cmds.insert(GlyphBatchComponent {
                 instances,
                 atlas_texture: atlas.texture.clone(),
+                render_layer: batch_render_layer,
             });
-            commands.entity(first_entity).insert(Visibility::Visible);
-            commands.entity(first_entity).insert(TextViewBatch {
+            cmds.insert(Visibility::Visible);
+            cmds.insert(TextViewBatch {
                 built_at_scroll: tv_state.scroll_offset,
                 built_at_horizontal_scroll: tv_state.horizontal_scroll_offset,
                 first_line: first_visible,
@@ -179,15 +194,22 @@ pub(crate) fn update_gpu_text_instanced(
                 built_at_width: tv_viewport.width,
                 built_at_height: tv_viewport.height,
             });
+            // Ensure render layers are applied on existing batch too
+            if let Some(ref config) = render_config {
+                if let Some(ref layers) = config.render_layers {
+                    cmds.insert(layers.clone());
+                }
+            }
 
             for &entity in &existing_batches[1..] {
                 commands.entity(entity).despawn();
             }
         } else {
-            commands.spawn((
+            let mut entity_cmds = commands.spawn((
                 GlyphBatchComponent {
                     instances,
                     atlas_texture: atlas.texture.clone(),
+                    render_layer: batch_render_layer,
                 },
                 Transform::default(),
                 GlobalTransform::default(),
@@ -199,11 +221,19 @@ pub(crate) fn update_gpu_text_instanced(
                     built_at_width: tv_viewport.width,
                     built_at_height: tv_viewport.height,
                 },
+                CodeEditorBatch,
                 Name::new("GpuTextBatch"),
                 Visibility::Visible,
                 InheritedVisibility::default(),
                 ViewVisibility::default(),
             ));
+            // Apply render layers from EditorRenderConfig so the batch is visible
+            // only to the code editor camera (not the main camera or other text view cameras)
+            if let Some(ref config) = render_config {
+                if let Some(ref layers) = config.render_layers {
+                    entity_cmds.insert(layers.clone());
+                }
+            }
         }
     }
 

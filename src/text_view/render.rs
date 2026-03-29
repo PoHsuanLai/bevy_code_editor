@@ -46,6 +46,9 @@ pub struct TextViewBatch {
 pub struct GlyphBatchComponent {
     pub instances: Vec<GlyphInstance>,
     pub atlas_texture: Handle<Image>,
+    /// Which render layer this batch belongs to (for multi-viewport filtering).
+    /// None = layer 0 (default).
+    pub render_layer: Option<u8>,
 }
 
 /// Render styled text from a TextViewState into glyph instances.

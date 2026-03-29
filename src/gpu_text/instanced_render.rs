@@ -26,6 +26,8 @@ use bevy::{
     },
 };
 
+use bevy_camera::visibility::RenderLayers;
+
 use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::CodeEditor;
 
@@ -37,15 +39,15 @@ use bevy::render::Extract;
 
 fn extract_text_globals(
     mut commands: Commands,
-    query: Extract<Query<(&TextViewState, &TextViewViewport), With<CodeEditor>>>,
+    code_editor_query: Extract<Query<(&TextViewState, &TextViewViewport), With<CodeEditor>>>,
 ) {
-    let Ok((state, viewport)) = query.single() else {
-        return;
-    };
-    commands.insert_resource(ExtractedTextGlobals {
-        scroll_offset: Vec2::new(state.horizontal_scroll_offset, state.scroll_offset),
-        viewport_size: Vec2::new(viewport.width as f32, viewport.height as f32),
-    });
+    // Legacy: still insert global resource for backwards compat
+    if let Ok((state, viewport)) = code_editor_query.single() {
+        commands.insert_resource(ExtractedTextGlobals {
+            scroll_offset: Vec2::new(state.horizontal_scroll_offset, state.scroll_offset),
+            viewport_size: Vec2::new(viewport.width as f32, viewport.height as f32),
+        });
+    }
 }
 
 /// Plugin for instanced glyph rendering
@@ -93,9 +95,11 @@ impl ExtractComponent for GlyphBatchComponent {
         Some(GlyphBatchComponent {
             instances: item.instances.clone(),
             atlas_texture: item.atlas_texture.clone(),
+            render_layer: item.render_layer,
         })
     }
 }
+
 
 #[derive(Component, Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable, ShaderType)]
 #[repr(C)]
@@ -110,8 +114,6 @@ struct ExtractedTextGlobals {
     viewport_size: Vec2,
 }
 
-
-
 /// GPU buffer for instance data
 #[derive(Component)]
 pub struct InstanceBuffer {
@@ -125,7 +127,11 @@ pub struct TextureBindGroup {
     pub bind_group: BindGroup,
 }
 
-/// Prepare view bind group
+/// Prepare view bind group — each view gets its own TextGlobals derived from its projection.
+///
+/// For orthographic cameras (code editor, chat), the viewport size is derived from the
+/// projection matrix: width = 2/m[0][0], height = 2/m[1][1]. This gives the logical
+/// viewport size matching ScalingMode::Fixed, so each camera gets correct NDC conversion.
 fn prepare_view_bind_group(
     mut commands: Commands,
     pipeline: Res<InstancedTextPipeline>,
@@ -133,23 +139,35 @@ fn prepare_view_bind_group(
     views: Query<(Entity, &ExtractedView)>,
     globals: Option<Res<ExtractedTextGlobals>>,
 ) {
-    let (scroll_offset, viewport_size) = if let Some(g) = globals {
-        // Debug logging for viewport size
-        // bevy::log::info!("GPU Text: Using extracted logical viewport: {:?}", g.viewport_size);
-        (g.scroll_offset, g.viewport_size)
-    } else {
-        if let Some((_, view)) = views.iter().next() {
-             let physical = view.viewport.zw().as_vec2();
-             bevy::log::warn!("GPU Text: Extraction failed! Fallback to physical size: {:?} (May cause sizing/position issues)", physical);
-             (Vec2::ZERO, physical)
-        } else {
-             bevy::log::error!("GPU Text: Extraction failed and no views!");
-             (Vec2::ZERO, Vec2::new(800.0, 600.0))
-        }
-    };
+    for (entity, view) in &views {
+        let m = &view.clip_from_view;
+        let is_ortho = (m.w_axis.w - 1.0).abs() < 0.001;
 
-    for (entity, _view) in &views {
-        // Use logical viewport size extracted from main world, not physical from view
+        let (scroll_offset, viewport_size) = if is_ortho {
+            // Derive logical viewport from orthographic projection matrix
+            let width = 2.0 / m.x_axis.x;
+            let height = 2.0 / m.y_axis.y;
+            // Use extracted scroll offset if this matches the code editor's viewport
+            let scroll = if let Some(ref g) = globals {
+                if (g.viewport_size.x - width).abs() < 1.0
+                    && (g.viewport_size.y - height).abs() < 1.0
+                {
+                    g.scroll_offset
+                } else {
+                    Vec2::ZERO
+                }
+            } else {
+                Vec2::ZERO
+            };
+            (scroll, Vec2::new(width, height))
+        } else if let Some(ref g) = globals {
+            // Non-ortho fallback: use extracted globals (legacy)
+            (g.scroll_offset, g.viewport_size)
+        } else {
+            let physical = view.viewport.zw().as_vec2();
+            (Vec2::ZERO, physical)
+        };
+
         let globals_data = TextGlobals {
             viewport_size,
             scroll_offset,
@@ -385,19 +403,21 @@ impl SpecializedRenderPipeline for InstancedTextPipeline {
     }
 }
 
-/// Queue instanced text for rendering
+/// Queue instanced text for rendering, filtered by RenderLayers.
 fn queue_instanced_text(
     transparent_2d_draw_functions: Res<DrawFunctions<Transparent2d>>,
     instanced_text_pipeline: Res<InstancedTextPipeline>,
     mut pipelines: ResMut<SpecializedRenderPipelines<InstancedTextPipeline>>,
     pipeline_cache: Res<PipelineCache>,
-    batches: Query<(Entity, Option<&GlobalTransform>), With<GlyphBatchComponent>>,
+    batches: Query<(Entity, Option<&GlobalTransform>, &GlyphBatchComponent)>,
     mut transparent_render_phases: ResMut<ViewSortedRenderPhases<Transparent2d>>,
-    views: Query<&ExtractedView>,
+    views: Query<(Entity, &ExtractedView, Option<&RenderLayers>)>,
 ) {
     let draw_function = transparent_2d_draw_functions.read().id::<DrawInstancedText>();
 
-    for view in &views {
+    for (_view_entity, view, view_layers) in &views {
+        let view_render_layers = view_layers.cloned().unwrap_or(RenderLayers::layer(0));
+
         let Some(transparent_phase) = transparent_render_phases.get_mut(&view.retained_view_entity)
         else {
             continue;
@@ -406,7 +426,16 @@ fn queue_instanced_text(
         // Use MSAA sample count of 4 (default for Bevy 2D)
         let pipeline_id = pipelines.specialize(&pipeline_cache, &instanced_text_pipeline, 4);
 
-        for (entity, global_transform) in &batches {
+        for (entity, global_transform, batch) in &batches {
+            // Filter: only queue batches visible to this view's render layers.
+            // None = no explicit layer = visible to all cameras (skip filtering).
+            if let Some(layer) = batch.render_layer {
+                let batch_render_layers = RenderLayers::layer(layer as usize);
+                if !view_render_layers.intersects(&batch_render_layers) {
+                    continue;
+                }
+            }
+
             // Use Z from GlobalTransform as sort key for proper layering with sprites
             // Higher Z values render on top (later in the sorted phase)
             let z = global_transform.map(|t| t.translation().z).unwrap_or(0.0);
@@ -422,6 +451,7 @@ fn queue_instanced_text(
                 indexed: false, // We use draw() not draw_indexed()
             });
         }
+
     }
 }
 

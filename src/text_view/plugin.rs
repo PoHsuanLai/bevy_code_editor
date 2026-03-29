@@ -38,9 +38,13 @@ pub struct TextViewPlugin;
 
 impl Plugin for TextViewPlugin {
     fn build(&self, app: &mut App) {
-        // Add GPU rendering infrastructure
-        app.add_plugins(crate::gpu_text::GpuTextPlugin);
-        app.add_plugins(crate::gpu_text::InstancedTextRenderPlugin);
+        // Add GPU rendering infrastructure (skip if already registered by CodeEditorPlugin)
+        if !app.is_plugin_added::<crate::gpu_text::GpuTextPlugin>() {
+            app.add_plugins(crate::gpu_text::GpuTextPlugin);
+        }
+        if !app.is_plugin_added::<crate::gpu_text::InstancedTextRenderPlugin>() {
+            app.add_plugins(crate::gpu_text::InstancedTextRenderPlugin);
+        }
 
         // Text view systems
         app.add_systems(
@@ -133,6 +137,7 @@ fn update_text_views(
             &mut TextViewState,
             &TextViewViewport,
             Option<&TextViewBatchEntity>,
+            Option<&bevy_camera::visibility::RenderLayers>,
         ),
         With<TextView>,
     >,
@@ -144,7 +149,7 @@ fn update_text_views(
     mut images: ResMut<Assets<Image>>,
     time: Res<Time>,
 ) {
-    for (tv_entity, mut state, viewport, batch_entity_opt) in text_views.iter_mut() {
+    for (tv_entity, mut state, viewport, batch_entity_opt, render_layers) in text_views.iter_mut() {
         // Check if viewport changed
         let viewport_changed = if let Some(batch_e) = batch_entity_opt {
             if let Ok((_, batch)) = batch_query.get(batch_e.0) {
@@ -159,6 +164,7 @@ fn update_text_views(
         if !state.needs_update && !state.needs_scroll_update && !viewport_changed {
             continue;
         }
+
 
         // Calculate content start X (for text views without gutter, starts at text_area_left)
         let content_start_x = if viewport.gutter_width > 0.0 {
@@ -207,32 +213,42 @@ fn update_text_views(
                 commands.entity(batch_e.0).insert(Visibility::Hidden);
             }
         } else {
+            let layer = render_layers.and_then(|l| {
+                // Extract the first set layer as a u8
+                (0u8..=31).find(|&i| l.intersects(&bevy_camera::visibility::RenderLayers::layer(i as usize)))
+            });
             let batch_comp = GlyphBatchComponent {
                 instances,
                 atlas_texture: atlas.texture.clone(),
+                render_layer: layer,
             };
 
             if let Some(batch_e) = batch_entity_opt {
                 // Update existing batch entity
-                commands
-                    .entity(batch_e.0)
-                    .insert(batch_comp)
+                let mut cmds = commands.entity(batch_e.0);
+                cmds.insert(batch_comp)
                     .insert(Visibility::Visible)
                     .insert(batch_data);
+                if let Some(layers) = render_layers {
+                    cmds.insert(layers.clone());
+                }
             } else {
                 // Spawn new batch entity as child
-                let batch_entity = commands
-                    .spawn((
-                        batch_comp,
-                        Transform::default(),
-                        GlobalTransform::default(),
-                        batch_data,
-                        Name::new("TextViewBatch"),
-                        Visibility::Visible,
-                        InheritedVisibility::default(),
-                        ViewVisibility::default(),
-                    ))
-                    .id();
+                let mut entity_cmds = commands.spawn((
+                    batch_comp,
+                    Transform::default(),
+                    GlobalTransform::default(),
+                    batch_data,
+                    Name::new("TextViewBatch"),
+                    Visibility::Visible,
+                    InheritedVisibility::default(),
+                    ViewVisibility::default(),
+                ));
+                // Copy render layers from parent text view entity
+                if let Some(layers) = render_layers {
+                    entity_cmds.insert(layers.clone());
+                }
+                let batch_entity = entity_cmds.id();
 
                 commands
                     .entity(tv_entity)

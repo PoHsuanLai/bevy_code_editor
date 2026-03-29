@@ -227,6 +227,9 @@ pub(crate) fn update_gpu_line_numbers(
             .insert(GlyphBatchComponent {
                 instances,
                 atlas_texture: atlas.texture.clone(),
+                render_layer: render_config.render_layers.as_ref().and_then(|layers| {
+                    (0u8..=31).find(|&i| layers.intersects(&bevy_camera::visibility::RenderLayers::layer(i as usize)))
+                }),
             })
             .insert(GpuLineNumbersBatch {
                 built_at_version: tv.content_version,
@@ -245,6 +248,9 @@ pub(crate) fn update_gpu_line_numbers(
             GlyphBatchComponent {
                 instances,
                 atlas_texture: atlas.texture.clone(),
+                render_layer: render_config.render_layers.as_ref().and_then(|layers| {
+                    (0u8..=31).find(|&i| layers.intersects(&bevy_camera::visibility::RenderLayers::layer(i as usize)))
+                }),
             },
             Transform::default(),
             GlobalTransform::default(),
