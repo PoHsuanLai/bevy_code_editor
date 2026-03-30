@@ -46,6 +46,9 @@ impl Plugin for TextViewPlugin {
             app.add_plugins(crate::gpu_text::InstancedTextRenderPlugin);
         }
 
+        // Interaction resources
+        app.init_resource::<super::interaction::TextViewDragState>();
+
         // Text view systems
         app.add_systems(
             Update,
@@ -57,6 +60,16 @@ impl Plugin for TextViewPlugin {
                     .in_set(TextViewRenderSet),
             )
                 .chain(),
+        );
+
+        // Interaction systems (scroll, selection, copy)
+        app.add_systems(
+            Update,
+            (
+                super::interaction::handle_text_view_scroll,
+                super::interaction::handle_text_view_mouse,
+                super::interaction::handle_text_view_copy,
+            ),
         );
     }
 }

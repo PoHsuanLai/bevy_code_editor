@@ -12,8 +12,14 @@ pub struct TextViewViewport {
     /// Viewport height in pixels
     pub height: u32,
 
-    /// Top-left position of the editor panel in window/screen pixels (set by host app)
+    /// Top-left position of the editor panel in window/screen pixels (set by host app).
+    /// Used by `world_left()`/`world_top()` for glyph positioning.
+    /// For render-to-texture views with centered ortho cameras, keep this at ZERO.
     pub screen_position: bevy::math::Vec2,
+
+    /// Screen-space hit-test rect for mouse interaction (independent of rendering coords).
+    /// Set this to the actual screen position even for render-to-texture views.
+    pub hit_test_position: bevy::math::Vec2,
 
     // === Computed Layout ===
     /// Left margin/padding before text starts
@@ -32,6 +38,7 @@ impl Default for TextViewViewport {
             width: 800,
             height: 600,
             screen_position: bevy::math::Vec2::ZERO,
+            hit_test_position: bevy::math::Vec2::ZERO,
             text_area_left: 0.0,
             text_area_top: 8.0,
             gutter_width: 0.0,

@@ -19,6 +19,7 @@
 //! ));
 //! ```
 
+pub mod interaction;
 pub mod line_width;
 pub mod plugin;
 pub mod render;
@@ -29,3 +30,4 @@ pub use plugin::{TextView, TextViewBatchEntity, TextViewPlugin, TextViewRenderSe
 pub use render::{GlyphBatchComponent, GlyphInstance, TextViewBatch};
 pub use state::TextViewState;
 pub use viewport::TextViewViewport;
+pub use interaction::{TextViewSelectionState, TextViewDragState, copy_selection, screen_to_char_pos};
