@@ -7,6 +7,8 @@ use bevy::prelude::*;
 pub struct LineSegment {
     pub text: String,
     pub color: Color,
+    /// Optional background color rendered as a solid rectangle behind the text.
+    pub background: Option<Color>,
 }
 
 /// A visual row in the display; multiple wrapped rows can come from one buffer line.
@@ -240,6 +242,7 @@ impl DisplayMap {
                 result.push(LineSegment {
                     text,
                     color: seg_color,
+                    background: None,
                 });
             }
 

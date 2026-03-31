@@ -234,6 +234,7 @@ impl SyntaxProvider for TreeSitterProvider {
                             vec![LineSegment {
                                 text: line.to_string(),
                                 color: default_color,
+                                background: None,
                             }]
                         }
                     })
@@ -254,6 +255,7 @@ impl SyntaxProvider for TreeSitterProvider {
                             vec![LineSegment {
                                 text: line.to_string(),
                                 color: default_color,
+                                background: None,
                             }]
                         }
                     })
@@ -274,6 +276,7 @@ impl SyntaxProvider for TreeSitterProvider {
                             vec![LineSegment {
                                 text: line.to_string(),
                                 color: default_color,
+                                background: None,
                             }]
                         }
                     })
@@ -294,6 +297,7 @@ impl SyntaxProvider for TreeSitterProvider {
                         vec![LineSegment {
                             text: line.to_string(),
                             color: default_color,
+                            background: None,
                         }]
                     }
                 })
@@ -390,6 +394,7 @@ impl SyntaxProvider for TreeSitterProvider {
                         current_line_segments.push(LineSegment {
                             text: segment_text.to_string(),
                             color,
+                            background: None,
                         });
                     }
                     char_pos = segment_end;

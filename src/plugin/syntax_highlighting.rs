@@ -90,6 +90,7 @@ impl SyntaxResource {
                         vec![crate::types::LineSegment {
                             text: line.to_string(),
                             color: default_color,
+                            background: None,
                         }]
                     }
                 })

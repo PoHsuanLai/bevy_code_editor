@@ -86,10 +86,11 @@ pub fn render_text_view(
     let visible_count = ((viewport.height as f32 + buffer * 2.0) / line_height).ceil() as usize;
     let last_visible_display_row = first_visible_display_row + visible_count;
 
-    // Pre-allocate instances
+    // Pre-allocate instances — backgrounds are collected separately and prepended
     let estimated_chars_per_line = 80;
     let estimated_capacity = visible_count * estimated_chars_per_line;
-    let mut instances: Vec<GlyphInstance> = Vec::with_capacity(estimated_capacity);
+    let mut text_instances: Vec<GlyphInstance> = Vec::with_capacity(estimated_capacity);
+    let mut bg_instances: Vec<GlyphInstance> = Vec::new();
 
     // Calculate start buffer line accounting for folding
     let has_folding = !fold.regions.is_empty();
@@ -171,7 +172,7 @@ pub fn render_text_view(
                     let world_x = viewport.world_left() + screen_x;
                     let world_y = viewport.world_top() - screen_y - info.size.y;
 
-                    instances.push(GlyphInstance {
+                    text_instances.push(GlyphInstance {
                         position: Vec2::new(world_x, world_y),
                         uv_min: info.uv_min,
                         uv_max: info.uv_max,
@@ -186,8 +187,46 @@ pub fn render_text_view(
                 }
             }
         } else {
-            // Styled segments
+            // Styled segments — check for line-level background
+            let line_bg = segments.iter().find_map(|s| s.background);
+            if let Some(bg_color) = line_bg {
+                // Emit a background quad with left/right margins matching the text area
+                let bg_linear = bg_color.to_linear();
+                let margin = content_start_x;
+                let bg_world_x = viewport.world_left() + margin;
+                let bg_width = viewport.width as f32 - margin * 2.0;
+                let bg_world_y = viewport.world_top() - (base_y - baseline_offset) - line_height * 0.5;
+                bg_instances.push(GlyphInstance {
+                    position: Vec2::new(bg_world_x, bg_world_y),
+                    uv_min: atlas.solid_uv.uv_min,
+                    uv_max: atlas.solid_uv.uv_max,
+                    size: Vec2::new(bg_width, line_height),
+                    color: [bg_linear.red, bg_linear.green, bg_linear.blue, bg_linear.alpha],
+                    z_index: 0.0,
+                    _padding: [0.0; 3],
+                });
+            }
+
             for segment in segments {
+                // Per-segment background (for inline code etc.) when different from line bg
+                if let Some(seg_bg) = segment.background {
+                    if line_bg != Some(seg_bg) {
+                        let seg_bg_linear = seg_bg.to_linear();
+                        let seg_width = segment.text.chars().filter(|c| *c != '\n' && *c != '\r').count() as f32 * char_width;
+                        let seg_world_x = viewport.world_left() + line_start_x + current_x_offset;
+                        let seg_world_y = viewport.world_top() - (base_y - baseline_offset) - line_height * 0.5;
+                        bg_instances.push(GlyphInstance {
+                            position: Vec2::new(seg_world_x, seg_world_y),
+                            uv_min: atlas.solid_uv.uv_min,
+                            uv_max: atlas.solid_uv.uv_max,
+                            size: Vec2::new(seg_width, line_height),
+                            color: [seg_bg_linear.red, seg_bg_linear.green, seg_bg_linear.blue, seg_bg_linear.alpha],
+                            z_index: 0.0,
+                            _padding: [0.0; 3],
+                        });
+                    }
+                }
+
                 let color_linear = segment.color.to_linear();
                 let color_arr = [
                     color_linear.red,
@@ -214,7 +253,7 @@ pub fn render_text_view(
                         let world_x = viewport.world_left() + screen_x;
                         let world_y = viewport.world_top() - screen_y - info.size.y;
 
-                        instances.push(GlyphInstance {
+                        text_instances.push(GlyphInstance {
                             position: Vec2::new(world_x, world_y),
                             uv_min: info.uv_min,
                             uv_max: info.uv_max,
@@ -234,5 +273,7 @@ pub fn render_text_view(
         current_display_row += 1;
     }
 
-    instances
+    // Backgrounds first (painter's order), then text on top
+    bg_instances.extend(text_instances);
+    bg_instances
 }

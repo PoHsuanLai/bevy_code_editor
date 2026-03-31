@@ -67,6 +67,8 @@ pub struct GlyphAtlas {
     /// Dirty row range for partial texture upload (min_y..max_y in pixels)
     dirty_min_y: u32,
     dirty_max_y: u32,
+    /// UV info for a solid white pixel — used for background rectangles
+    pub solid_uv: GlyphInfo,
 }
 
 impl GlyphAtlas {
@@ -102,7 +104,7 @@ impl GlyphAtlas {
             None
         };
 
-        Self {
+        let mut atlas = Self {
             texture,
             glyphs: HashMap::new(),
             rows: Vec::new(),
@@ -116,7 +118,21 @@ impl GlyphAtlas {
             generation: 0,
             dirty_min_y: ATLAS_SIZE,
             dirty_max_y: 0,
-        }
+            solid_uv: GlyphInfo {
+                uv_min: Vec2::ZERO,
+                uv_max: Vec2::ZERO,
+                size: Vec2::ONE,
+                offset: Vec2::ZERO,
+                advance: 0.0,
+            },
+        };
+
+        atlas.reserve_solid_pixel();
+        atlas.dirty = true;
+        atlas.dirty_min_y = 0;
+        atlas.dirty_max_y = 2;
+
+        atlas
     }
 
     fn find_or_load_font(
@@ -481,6 +497,36 @@ impl GlyphAtlas {
         self.generation += 1;
         self.dirty_min_y = 0;
         self.dirty_max_y = ATLAS_SIZE;
+        // Re-reserve the solid white pixel for background fills
+        self.reserve_solid_pixel();
+    }
+
+    /// Reserve a 2×2 white pixel region for solid-fill backgrounds.
+    fn reserve_solid_pixel(&mut self) {
+        if let Some((sx, sy)) = self.allocate(2, 2) {
+            for dy in 0..2u32 {
+                for dx in 0..2u32 {
+                    let idx = (((sy + dy) * ATLAS_SIZE + sx + dx) * 4) as usize;
+                    self.pixels[idx] = 255;
+                    self.pixels[idx + 1] = 255;
+                    self.pixels[idx + 2] = 255;
+                    self.pixels[idx + 3] = 255;
+                }
+            }
+            self.solid_uv = GlyphInfo {
+                uv_min: Vec2::new(
+                    (sx as f32 + 0.5) / ATLAS_SIZE as f32,
+                    (sy as f32 + 0.5) / ATLAS_SIZE as f32,
+                ),
+                uv_max: Vec2::new(
+                    (sx as f32 + 1.5) / ATLAS_SIZE as f32,
+                    (sy as f32 + 1.5) / ATLAS_SIZE as f32,
+                ),
+                size: Vec2::ONE,
+                offset: Vec2::ZERO,
+                advance: 0.0,
+            };
+        }
     }
 
     /// Check if a glyph is cached
