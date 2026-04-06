@@ -24,7 +24,11 @@ pub struct GlyphInstance {
     pub size: Vec2,
     pub color: [f32; 4],
     pub z_index: f32,
-    pub _padding: [f32; 3],
+    /// Corner radius in pixels (0 = sharp corners, used for background rects)
+    pub corner_radius: f32,
+    /// Horizontal skew factor for italic simulation (0.0 = normal, ~0.2 = italic)
+    pub skew: f32,
+    pub _padding: f32,
 }
 
 /// Marker component for a text view's GPU batch entity
@@ -141,8 +145,11 @@ pub fn render_text_view(
             &[]
         };
 
+        // Per-line X offset (for right-alignment, indentation, etc.)
+        let line_x_extra = state.line_x_offsets.get(buffer_line).copied().unwrap_or(0.0);
+
         // Current X offset relative to line start
-        let mut current_x_offset: f32 = 0.0;
+        let mut current_x_offset: f32 = line_x_extra;
 
         if segments.is_empty() {
             // Plain text fallback — use foreground color
@@ -179,7 +186,9 @@ pub fn render_text_view(
                         size: info.size,
                         color: color_arr,
                         z_index: 0.0,
-                        _padding: [0.0; 3],
+                        corner_radius: 0.0,
+                    skew: 0.0,
+                            _padding: 0.0,
                     });
                     current_x_offset += char_width;
                 } else {
@@ -189,12 +198,19 @@ pub fn render_text_view(
         } else {
             // Styled segments — check for line-level background
             let line_bg = segments.iter().find_map(|s| s.background);
+            let line_corner_radius = segments.iter().find_map(|s| {
+                if s.background.is_some() && s.corner_radius > 0.0 { Some(s.corner_radius) } else { None }
+            }).unwrap_or(0.0);
             if let Some(bg_color) = line_bg {
-                // Emit a background quad with left/right margins matching the text area
+                // Emit a background quad with left/right margins.
+                // For lines with X offset (right-aligned), extend the background with
+                // padding on the left side of the text.
                 let bg_linear = bg_color.to_linear();
                 let margin = content_start_x;
-                let bg_world_x = viewport.world_left() + margin;
-                let bg_width = viewport.width as f32 - margin * 2.0;
+                let bg_pad = if line_x_extra > 0.0 { char_width * 1.5 } else { 0.0 };
+                let bg_x_start = (line_x_extra - bg_pad).max(0.0);
+                let bg_world_x = viewport.world_left() + margin + bg_x_start;
+                let bg_width = viewport.width as f32 - margin * 2.0 - bg_x_start;
                 let bg_world_y = viewport.world_top() - (base_y - baseline_offset) - line_height * 0.5;
                 bg_instances.push(GlyphInstance {
                     position: Vec2::new(bg_world_x, bg_world_y),
@@ -203,7 +219,9 @@ pub fn render_text_view(
                     size: Vec2::new(bg_width, line_height),
                     color: [bg_linear.red, bg_linear.green, bg_linear.blue, bg_linear.alpha],
                     z_index: 0.0,
-                    _padding: [0.0; 3],
+                    corner_radius: line_corner_radius,
+                    skew: 0.0,
+                            _padding: 0.0,
                 });
             }
 
@@ -222,7 +240,9 @@ pub fn render_text_view(
                             size: Vec2::new(seg_width, line_height),
                             color: [seg_bg_linear.red, seg_bg_linear.green, seg_bg_linear.blue, seg_bg_linear.alpha],
                             z_index: 0.0,
-                            _padding: [0.0; 3],
+                            corner_radius: segment.corner_radius,
+                            skew: 0.0,
+                            _padding: 0.0,
                         });
                     }
                 }
@@ -235,18 +255,30 @@ pub fn render_text_view(
                     color_linear.alpha,
                 ];
 
+                // Per-segment font size: font_scale > 0 overrides the default
+                let seg_font_size = if segment.font_scale > 0.0 {
+                    font_size * segment.font_scale
+                } else {
+                    font_size
+                };
+                let seg_char_width = if segment.font_scale > 0.0 {
+                    char_width * segment.font_scale
+                } else {
+                    char_width
+                };
+
                 for ch in segment.text.chars() {
                     if ch == '\n' || ch == '\r' {
                         continue;
                     }
                     if ch == '\t' {
-                        current_x_offset += char_width * 4.0;
+                        current_x_offset += seg_char_width * 4.0;
                         continue;
                     }
 
-                    let key = GlyphKey::new(ch, font_size);
+                    let key = GlyphKey::new(ch, seg_font_size);
                     if let Some(info) =
-                        atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, font_size))
+                        atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, seg_font_size))
                     {
                         let screen_x = line_start_x + current_x_offset + info.offset.x;
                         let screen_y = base_y - info.offset.y;
@@ -260,11 +292,13 @@ pub fn render_text_view(
                             size: info.size,
                             color: color_arr,
                             z_index: 0.0,
-                            _padding: [0.0; 3],
+                            corner_radius: 0.0,
+                            skew: segment.skew,
+                            _padding: 0.0,
                         });
-                        current_x_offset += char_width;
+                        current_x_offset += seg_char_width;
                     } else {
-                        current_x_offset += char_width;
+                        current_x_offset += seg_char_width;
                     }
                 }
             }

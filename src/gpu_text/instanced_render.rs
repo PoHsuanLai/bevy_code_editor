@@ -346,6 +346,18 @@ impl SpecializedRenderPipeline for InstancedTextPipeline {
                     offset: 48,
                     shader_location: 5,
                 },
+                // corner_radius (f32)
+                VertexAttribute {
+                    format: VertexFormat::Float32,
+                    offset: 52,
+                    shader_location: 6,
+                },
+                // skew (f32)
+                VertexAttribute {
+                    format: VertexFormat::Float32,
+                    offset: 56,
+                    shader_location: 7,
+                },
             ],
         };
 

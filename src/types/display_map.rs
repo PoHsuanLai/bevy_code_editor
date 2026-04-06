@@ -9,6 +9,12 @@ pub struct LineSegment {
     pub color: Color,
     /// Optional background color rendered as a solid rectangle behind the text.
     pub background: Option<Color>,
+    /// Corner radius for the background rectangle (0 = sharp corners).
+    pub corner_radius: f32,
+    /// Font size scale factor (1.0 = normal, 1.3 = header, etc.). 0.0 means use default.
+    pub font_scale: f32,
+    /// Horizontal skew for italic simulation (0.0 = normal, ~0.2 = italic).
+    pub skew: f32,
 }
 
 /// A visual row in the display; multiple wrapped rows can come from one buffer line.
@@ -243,6 +249,9 @@ impl DisplayMap {
                     text,
                     color: seg_color,
                     background: None,
+                    corner_radius: 0.0,
+                    font_scale: 0.0,
+                    skew: 0.0,
                 });
             }
 
