@@ -46,7 +46,8 @@ use bevy::prelude::*;
 use ropey::Rope;
 
 /// A row/column point in a coordinate space
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Reflect)]
+#[reflect(Default, Debug, PartialEq, Hash)]
 pub struct Point {
     pub row: u32,
     pub column: u32,

@@ -4,7 +4,8 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// Text wrapping settings
-#[derive(Clone, Debug, Resource, Serialize, Deserialize)]
+#[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
+#[reflect(Resource, Default, Debug)]
 pub struct WrappingSettings {
     /// Enable line wrapping
     pub enabled: bool,

@@ -42,7 +42,8 @@ pub struct TextViewRenderSet;
 /// This component intentionally requires only engine-side data. Editor /
 /// interaction layers attach their own components via their own
 /// `#[require]` cascades on top of `TextView`.
-#[derive(Component, Default)]
+#[derive(Component, Default, Reflect)]
+#[reflect(Component, Default)]
 #[require(
     TextViewState,
     TextViewViewport,
@@ -55,7 +56,8 @@ pub struct TextView;
 
 /// Component that links a text view to its batch rendering entity.
 /// Managed automatically by [`update_text_views`].
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct TextViewBatchEntity(pub Entity);
 
 /// View-side plugin: registers the rendering and scroll animation systems.
@@ -69,6 +71,16 @@ pub struct TextEnginePlugin;
 
 impl Plugin for TextEnginePlugin {
     fn build(&self, app: &mut App) {
+        app.register_type::<FontConfig>()
+            .register_type::<super::overlay::RectOverlay>()
+            .register_type::<super::overlay::RowVertical>()
+            .register_type::<TextView>()
+            .register_type::<TextViewBatchEntity>()
+            .register_type::<TextViewOverlays>()
+            .register_type::<TextViewState>()
+            .register_type::<TextViewViewport>()
+            .register_type::<super::viewport::ViewportOrigin>();
+
         app.add_systems(
             Update,
             (

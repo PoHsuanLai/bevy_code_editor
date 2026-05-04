@@ -26,7 +26,8 @@ use crate::types::{
 use bevy_camera::Viewport;
 
 /// Marker component for the editor camera
-#[derive(Component)]
+#[derive(Component, Default, Reflect)]
+#[reflect(Component, Default)]
 pub struct EditorCamera;
 use super::{
     to_bevy_coords_left_aligned, update_cursor_line_highlight,
@@ -42,6 +43,8 @@ use super::update_fold_indicators;
 use super::scrollbar::update_editor_scrollbar;
 
 /// Resource to store render layer configuration for the editor
+// not reflectable: holds `RenderLayers`, which is not derived `Reflect` in
+// bevy 0.17. Skipping this resource.
 #[derive(Resource, Clone, Default)]
 pub struct EditorRenderConfig {
     /// Optional render layer for editor entities.
@@ -525,15 +528,15 @@ fn update_font_metrics(
     mut atlas: ResMut<GlyphAtlas>,
 ) {
     for mut font in editors.iter_mut() {
-        // Measure '0' for monospace width (standard for code)
-        if let Some(width) = atlas.measure_char_width('0', font.size) {
-            if (font.char_width - width).abs() > 0.01 {
-                info!(
-                    "Updating font char_width from {:.3} to {:.3} (measured)",
-                    font.char_width, width
-                );
-                font.char_width = width;
-            }
+        // Measure '0' for monospace width (standard for code). Shape a one-glyph
+        // line through cosmic-text — `shape.width` is the exact advance.
+        let width = atlas.shape_line("0", font.size).width;
+        if width > 0.0 && (font.char_width - width).abs() > 0.01 {
+            info!(
+                "Updating font char_width from {:.3} to {:.3} (measured)",
+                font.char_width, width
+            );
+            font.char_width = width;
         }
     }
 }

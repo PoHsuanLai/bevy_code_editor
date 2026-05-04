@@ -3,7 +3,8 @@
 use bevy::prelude::*;
 
 /// Notifies plugins (syntax highlighting, LSP, etc.) about text changes for incremental updates
-#[derive(Message, Clone, Debug)]
+#[derive(Message, Clone, Debug, Reflect)]
+#[reflect(Clone, Debug)]
 pub struct TextEditEvent {
     pub start_byte: usize,
     pub old_end_byte: usize,
@@ -28,7 +29,8 @@ impl TextEditEvent {
 }
 
 /// Fired when user presses Ctrl+Space or types a trigger character
-#[derive(Message, Clone, Debug)]
+#[derive(Message, Clone, Debug, Reflect)]
+#[reflect(Clone, Debug)]
 pub struct RequestCompletionEvent {
     pub line: usize,
     pub character: usize,
@@ -41,7 +43,8 @@ impl RequestCompletionEvent {
 }
 
 /// Fired when user hovers over a symbol
-#[derive(Message, Clone, Debug)]
+#[derive(Message, Clone, Debug, Reflect)]
+#[reflect(Clone, Debug)]
 pub struct RequestHoverEvent {
     pub line: usize,
     pub character: usize,
@@ -54,7 +57,8 @@ impl RequestHoverEvent {
 }
 
 /// Fired when user initiates a rename (F2)
-#[derive(Message, Clone, Debug)]
+#[derive(Message, Clone, Debug, Reflect)]
+#[reflect(Clone, Debug)]
 pub struct RequestRenameEvent {
     pub line: usize,
     pub character: usize,
@@ -67,7 +71,8 @@ impl RequestRenameEvent {
 }
 
 /// Fired when user types '(' or ','
-#[derive(Message, Clone, Debug)]
+#[derive(Message, Clone, Debug, Reflect)]
+#[reflect(Clone, Debug)]
 pub struct RequestSignatureHelpEvent {
     pub line: usize,
     pub character: usize,
@@ -79,10 +84,12 @@ impl RequestSignatureHelpEvent {
     }
 }
 
-#[derive(Message, Clone, Debug, Default)]
+#[derive(Message, Clone, Debug, Default, Reflect)]
+#[reflect(Clone, Debug, Default)]
 pub struct DismissCompletionEvent;
 
-#[derive(Message, Clone, Debug)]
+#[derive(Message, Clone, Debug, Reflect)]
+#[reflect(Clone, Debug)]
 pub struct ApplyCompletionEvent {
     pub item_index: usize,
 }

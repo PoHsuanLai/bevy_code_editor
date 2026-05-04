@@ -28,6 +28,12 @@ pub struct DisplayMapPlugin;
 
 impl Plugin for DisplayMapPlugin {
     fn build(&self, app: &mut App) {
+        app.register_type::<super::Point>()
+            .register_type::<super::point::BufferPoint>()
+            .register_type::<super::point::DisplayPoint>()
+            .register_type::<super::point::FoldPoint>()
+            .register_type::<super::point::WrapPoint>();
+
         app.configure_sets(
             Update,
             DisplayMapSet

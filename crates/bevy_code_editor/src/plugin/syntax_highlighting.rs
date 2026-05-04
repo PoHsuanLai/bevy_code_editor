@@ -22,6 +22,8 @@ use std::collections::VecDeque;
 use bevy_tree_sitter::{HighlightRange, ParseCompleted, SyntaxProvider, TreeSitterProvider};
 
 /// Resource that holds the syntax highlighting provider
+// not reflectable: holds `TreeSitterProvider` which wraps `tree_sitter::*`
+// types that don't implement `Reflect`.
 #[derive(Resource)]
 pub struct SyntaxResource {
     #[cfg(feature = "tree-sitter")]
@@ -341,6 +343,8 @@ struct CachedRange {
     lines: Vec<Vec<LineSegment>>,
 }
 
+// not reflectable: `CachedRange` (private) holds `Vec<Vec<LineSegment>>`
+// and the cache is hot-path internal state, not user-facing data.
 #[derive(Resource)]
 pub struct HighlightCache {
     ranges: VecDeque<CachedRange>,

@@ -15,6 +15,13 @@ pub struct TreeSitterPlugin;
 
 impl Plugin for TreeSitterPlugin {
     fn build(&self, app: &mut App) {
+        // Reflect not registered: every public type in this crate
+        // (`ParseTask`, `ParseCompleted`, `Language`, `TreeSitterConfig`,
+        // `TreeSitterProvider`) embeds `tree_sitter::Tree`/`Language`/`Parser`
+        // or a `Task`, none of which implement `Reflect`. Skipping is
+        // documented; the consumer crate keeps capture-name `Arc<str>`
+        // strings reachable via its own reflected types.
+
         app.add_message::<ParseCompleted>();
         app.add_systems(Update, poll_parse_tasks);
     }

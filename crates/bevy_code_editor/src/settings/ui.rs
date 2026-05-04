@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 ///
 /// Note: Layout dimensions (margins, positions) are computed by the UI plugin
 /// and stored in the `ViewportDimensions` resource for decoupling.
-#[derive(Clone, Debug, Resource, Serialize, Deserialize)]
+#[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
+#[reflect(Resource, Default, Debug)]
 pub struct UiSettings {
     /// Show line numbers
     pub show_line_numbers: bool,
@@ -44,7 +45,8 @@ pub struct UiSettings {
     pub margin_top: f32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+#[reflect(Debug, PartialEq)]
 pub enum WhitespaceMode {
     None,
     Selection,
@@ -71,7 +73,8 @@ impl Default for UiSettings {
 }
 
 /// Indentation settings
-#[derive(Clone, Debug, Resource, Serialize, Deserialize)]
+#[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
+#[reflect(Resource, Default, Debug)]
 pub struct IndentationSettings {
     /// Use spaces instead of tabs
     pub use_spaces: bool,
@@ -98,7 +101,8 @@ impl Default for IndentationSettings {
 }
 
 /// Bracket matching settings
-#[derive(Clone, Debug, Resource, Serialize, Deserialize)]
+#[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
+#[reflect(Resource, Default, Debug)]
 pub struct BracketSettings {
     /// Enable bracket matching
     pub enabled: bool,
@@ -116,7 +120,8 @@ pub struct BracketSettings {
     pub pairs: Vec<(char, char)>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+#[reflect(Debug, PartialEq)]
 pub enum BracketHighlightStyle {
     Underline,
     Background,

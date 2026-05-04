@@ -3,7 +3,7 @@
 //! Uses the same instanced rendering pipeline as the main code text for visual consistency.
 
 use super::editor_ui_plugin::EditorRenderConfig;
-use bevy_text_engine::gpu::{GlyphAtlas, GlyphKey, GlyphRasterizer};
+use bevy_text_engine::gpu::GlyphAtlas;
 use bevy_text_engine::FontConfig;
 use crate::settings::*;
 use crate::text_view::render::{GlyphBatchComponent, GlyphInstance};
@@ -12,7 +12,8 @@ use crate::types::*;
 use bevy::prelude::*;
 
 /// Marker component for the GPU line numbers batch entity
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct GpuLineNumbersBatch {
     /// Editor entity this batch belongs to
     pub editor: Entity,
@@ -165,55 +166,43 @@ pub(crate) fn update_gpu_line_numbers(
             color_linear.alpha,
         ];
 
-        // Calculate text width for right-alignment in gutter
-        // Use exact metrics if available, otherwise approximation
-        let mut estimated_width = 0.0;
-        for ch in line_number_text.chars() {
-            if let Some(w) = atlas.measure_char_width(ch, font_size) {
-                estimated_width += w;
-            } else {
-                estimated_width += font.char_width;
-            }
-        }
+        // Shape the line number text via cosmic-text. `shape.width` gives an
+        // exact pixel width for right-alignment, and `shape.glyphs` carry the
+        // per-glyph pen-x and atlas cache_key the renderer needs.
+        let shape = atlas.shape_line(&line_number_text, font_size);
 
         // Right-align: start X so that text ends near the right edge of gutter (with padding)
         let right_padding = 8.0;
         let start_x =
-            gutter_center_x + viewport.gutter_width / 2.0 - right_padding - estimated_width;
+            gutter_center_x + viewport.gutter_width / 2.0 - right_padding - shape.width;
 
-        let mut x = start_x;
+        // Emit each shaped glyph
+        for g in &shape.glyphs {
+            let Some((info, _)) = atlas.get_or_rasterize_glyph(g.cache_key) else {
+                continue;
+            };
 
-        // Render each character
-        for ch in line_number_text.chars() {
-            let key = GlyphKey::new(ch, font_size);
-            if let Some(info) =
-                atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, font_size))
-            {
-                // Calculate screen position (same logic as main text)
-                let screen_y = base_y - info.offset.y;
+            // Calculate screen position (same logic as main text)
+            let screen_y = base_y - info.offset.y;
 
-                // Convert to camera-relative world coordinates
-                // Camera is at viewport center, entities positioned relative to camera
-                let world_x = x + info.offset.x;
-                let world_y = viewport.world_top() - screen_y - info.size.y;
+            // Convert to camera-relative world coordinates
+            // Camera is at viewport center, entities positioned relative to camera
+            let world_x = start_x + g.x + info.offset.x;
+            let world_y = viewport.world_top() - screen_y - info.size.y;
 
-                let instance = GlyphInstance {
-                    position: Vec2::new(world_x, world_y),
-                    uv_min: info.uv_min,
-                    uv_max: info.uv_max,
-                    size: info.size,
-                    color: color_arr,
-                    z_index: 0.0, // Line numbers at same level as main text
-                    corner_radius: 0.0,
-                    skew: 0.0,
-                    _padding: 0.0,
-                };
+            let instance = GlyphInstance {
+                position: Vec2::new(world_x, world_y),
+                uv_min: info.uv_min,
+                uv_max: info.uv_max,
+                size: info.size,
+                color: color_arr,
+                z_index: 0.0, // Line numbers at same level as main text
+                corner_radius: 0.0,
+                skew: 0.0,
+                _padding: 0.0,
+            };
 
-                instances.push(instance);
-                x += info.advance;
-            } else {
-                x += font_size * 0.6;
-            }
+            instances.push(instance);
         }
 
         current_display_row += 1;

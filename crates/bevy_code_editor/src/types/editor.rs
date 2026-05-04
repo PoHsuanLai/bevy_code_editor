@@ -14,7 +14,8 @@ use super::history::EditHistory;
 use super::selection::{Cursor, SelectionCollection};
 
 /// Configuration for viewport behavior
-#[derive(Resource, Clone, Copy, Debug)]
+#[derive(Resource, Clone, Copy, Debug, Reflect)]
+#[reflect(Resource, Default, Debug)]
 pub struct ViewportConfig {
     /// If true, viewport automatically resizes to match window size.
     /// If false, you must manually set [`ViewportDimensions`].
@@ -35,7 +36,8 @@ impl Default for ViewportConfig {
 /// This resource tracks both the viewport size and the computed layout for rendering.
 /// The UI plugin (or custom UI) is responsible for computing the layout based on
 /// its own settings and updating this resource.
-#[derive(Resource, Clone, Copy, Debug)]
+#[derive(Resource, Clone, Copy, Debug, Reflect)]
+#[reflect(Resource, Default, Debug)]
 pub struct ViewportDimensions {
     /// Viewport width in pixels
     pub width: u32,
@@ -108,7 +110,8 @@ impl Default for ViewportDimensions {
 /// components attached here are read by the editor's input systems and
 /// kept on `CodeEditor` (rather than `TextView`) so plain text views
 /// don't pay for them.
-#[derive(Component, Default)]
+#[derive(Component, Default, Reflect)]
+#[reflect(Component, Default)]
 #[require(
     bevy_text_engine::TextView,
     SelectionState,
@@ -260,27 +263,33 @@ pub struct EditorBuf<'a> {
 
 /// Component markers for editor entities
 
-#[derive(Component)]
+#[derive(Component, Default, Reflect)]
+#[reflect(Component, Default)]
 pub struct EditorText;
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct HighlightedTextToken {
     pub index: usize,
 }
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct EditorCursor {
     /// Index of this cursor in the cursors array (0 = primary cursor)
     pub cursor_index: usize,
 }
 
-#[derive(Component)]
+#[derive(Component, Default, Reflect)]
+#[reflect(Component, Default)]
 pub struct LineNumbers;
 
-#[derive(Component)]
+#[derive(Component, Default, Reflect)]
+#[reflect(Component, Default)]
 pub struct Separator;
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct SelectionHighlight {
     pub line_index: usize,
     /// Index of the cursor this selection belongs to (0 = primary cursor)
@@ -288,7 +297,8 @@ pub struct SelectionHighlight {
 }
 
 /// Component marker for bracket match highlight entities (bounding box style)
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct BracketMatchHighlight {
     /// Which bracket this belongs to (0 = cursor bracket, 1 = matching bracket)
     pub bracket_index: usize,
@@ -297,7 +307,8 @@ pub struct BracketMatchHighlight {
 }
 
 /// Component marker for current line border (top or bottom line)
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct CursorLineBorder {
     /// The cursor index this border belongs to (for multi-cursor support)
     pub cursor_index: usize,
@@ -306,14 +317,16 @@ pub struct CursorLineBorder {
 }
 
 /// Component marker for current word highlight (under cursor)
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct CursorWordHighlight {
     /// The cursor index this highlight belongs to (for multi-cursor support)
     pub cursor_index: usize,
 }
 
 /// Component marker for indent guide entities
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct IndentGuide {
     /// The indentation level (0 = first indent, 1 = second indent, etc.)
     pub level: usize,
@@ -322,37 +335,44 @@ pub struct IndentGuide {
 }
 
 /// Component marker for the minimap background
-#[derive(Component)]
+#[derive(Component, Default, Reflect)]
+#[reflect(Component, Default)]
 pub struct MinimapBackground;
 
 /// Component marker for the minimap viewport slider (appears on hover)
-#[derive(Component)]
+#[derive(Component, Default, Reflect)]
+#[reflect(Component, Default)]
 pub struct MinimapSlider;
 
 /// Component marker for the minimap viewport highlight (subtle, always visible)
-#[derive(Component)]
+#[derive(Component, Default, Reflect)]
+#[reflect(Component, Default)]
 pub struct MinimapViewportHighlight;
 
 /// Component marker for the minimap scrollbar
-#[derive(Component)]
+#[derive(Component, Default, Reflect)]
+#[reflect(Component, Default)]
 pub struct MinimapScrollbar;
 
 /// Component marker for minimap line entities
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct MinimapLine {
     /// The line index this represents
     pub line_index: usize,
 }
 
 /// Component marker for minimap search match highlights
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct MinimapFindHighlight {
     /// The line index this highlight represents
     pub line_index: usize,
 }
 
 /// Component marker for GPU minimap mesh entity
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct GpuMinimapMesh {
     /// The content version when this mesh was built
     pub built_at_version: u64,
@@ -367,18 +387,21 @@ pub struct GpuMinimapMesh {
 }
 
 /// Component marker for the minimap camera
-#[derive(Component)]
+#[derive(Component, Default, Reflect)]
+#[reflect(Component, Default)]
 pub struct MinimapCamera;
 
 /// Resource to track minimap hover state
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Reflect)]
+#[reflect(Resource, Default)]
 pub struct MinimapHoverState {
     /// Whether the mouse is currently hovering over the minimap
     pub is_hovered: bool,
 }
 
 /// Resource to track minimap drag state for click-to-scroll and drag-to-scroll
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Reflect)]
+#[reflect(Resource, Default)]
 pub struct MinimapDragState {
     /// Whether we're currently dragging the minimap slider
     pub is_dragging: bool,
@@ -391,18 +414,24 @@ pub struct MinimapDragState {
 }
 
 /// Resource to track key repeat state for editor actions
-#[derive(Resource, Default)]
+// `Instant` is not Reflect; ignore the timing fields. The action enum is
+// Reflect so the active action is still observable.
+#[derive(Resource, Default, Reflect)]
+#[reflect(Resource, Default)]
 pub struct KeyRepeatState {
     /// The action currently being repeated (if any)
     pub current_action: Option<crate::input::EditorAction>,
     /// When the action key was first pressed
+    #[reflect(ignore)]
     pub press_start: Option<Instant>,
     /// When the last repeat occurred
+    #[reflect(ignore)]
     pub last_repeat: Option<Instant>,
 }
 
 /// Represents a matched bracket pair
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Reflect)]
+#[reflect(Debug, PartialEq)]
 pub struct BracketMatch {
     /// Position of the bracket at/near cursor
     pub cursor_bracket_pos: usize,
@@ -411,14 +440,16 @@ pub struct BracketMatch {
 }
 
 /// Per-editor bracket-match state — the bracket pair under the cursor.
-#[derive(Component, Default, Clone, Debug)]
+#[derive(Component, Default, Clone, Debug, Reflect)]
+#[reflect(Component, Default, Debug)]
 pub struct BracketMatchState {
     /// Current bracket match (if any)
     pub current_match: Option<BracketMatch>,
 }
 
 /// Component marker for find/search highlight entities
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct FindHighlight {
     /// Index of this match in the matches list
     pub match_index: usize,
@@ -426,7 +457,8 @@ pub struct FindHighlight {
 
 /// Event emitted when save is requested (Ctrl+S)
 /// The host application should handle this event to save the buffer contents.
-#[derive(bevy::prelude::Message, Clone, Debug)]
+#[derive(bevy::prelude::Message, Clone, Debug, Reflect)]
+#[reflect(Clone, Debug)]
 pub struct SaveRequested {
     /// The current buffer content
     pub content: String,
@@ -434,7 +466,8 @@ pub struct SaveRequested {
 
 /// Event emitted when open is requested (Ctrl+O)
 /// The host application should handle this event to show a file picker.
-#[derive(bevy::prelude::Message, Clone, Debug)]
+#[derive(bevy::prelude::Message, Clone, Debug, Reflect, Default)]
+#[reflect(Clone, Debug, Default)]
 pub struct OpenRequested;
 
 // ========== External Scroll Control ==========
@@ -445,7 +478,8 @@ pub struct OpenRequested;
 /// - External UI reads current scroll position and content dimensions
 /// - External UI sends scroll requests via pending_* fields
 /// - bevy_code_editor's systems apply these requests and update current state
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Reflect)]
+#[reflect(Resource, Default)]
 pub struct EditorScrollControl {
     /// Current vertical scroll offset (negative when scrolled down)
     /// Updated by bevy_code_editor every frame

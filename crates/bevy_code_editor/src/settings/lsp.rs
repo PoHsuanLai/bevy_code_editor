@@ -4,7 +4,8 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// LSP settings
-#[derive(Clone, Debug, Default, Resource, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Resource, Serialize, Deserialize, Reflect)]
+#[reflect(Resource, Default, Debug)]
 pub struct LspSettings {
     /// Auto-completion settings
     pub completion: CompletionSettings,
@@ -14,7 +15,8 @@ pub struct LspSettings {
 }
 
 /// Auto-completion settings
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Reflect)]
+#[reflect(Default, Debug)]
 pub struct CompletionSettings {
     /// Enable auto-completion
     pub enabled: bool,
@@ -48,7 +50,8 @@ pub struct CompletionSettings {
 }
 
 /// Hover information settings
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Reflect)]
+#[reflect(Default, Debug)]
 pub struct HoverSettings {
     /// Enable hover information
     pub enabled: bool,

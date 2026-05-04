@@ -37,6 +37,13 @@ pub struct LspPlugin;
 
 impl Plugin for LspPlugin {
     fn build(&self, app: &mut App) {
+        // Reflect not registered: every resource in this crate embeds
+        // `lsp_types::*` (CompletionItem, SignatureInformation, Url, Range,
+        // DocumentHighlight, InlayHint, Position) or transport primitives
+        // (`tokio::Runtime`, `mpsc::Sender`, child-process handles), none of
+        // which implement `Reflect`. The LSP layer is also live-updated
+        // off-thread so inspector access would be racy. Skipped intentionally.
+
         // Core transport.
         app.insert_resource(LspClient::default());
 

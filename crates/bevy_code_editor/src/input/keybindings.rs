@@ -203,6 +203,7 @@ pub fn default_input_map() -> InputMap<EditorAction> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Reflect, Actionlike)]
+#[reflect(Debug, Hash, PartialEq)]
 pub enum EditorAction {
     // Deletion
     DeleteBackward,

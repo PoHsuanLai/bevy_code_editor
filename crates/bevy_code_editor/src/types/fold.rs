@@ -6,7 +6,8 @@ use super::editor::{CursorState, SelectionState};
 use crate::text_view::TextViewState;
 
 /// Per-editor "go to line" dialog state.
-#[derive(Clone, Debug, Default, Component)]
+#[derive(Clone, Debug, Default, Component, Reflect)]
+#[reflect(Component, Default, Debug)]
 pub struct GotoLineState {
     /// Whether the goto line dialog is active
     pub active: bool,
@@ -54,7 +55,8 @@ impl GotoLineState {
 }
 
 /// Represents a foldable region in the code
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Reflect)]
+#[reflect(Debug, PartialEq)]
 pub struct FoldRegion {
     /// Start line of the foldable region (0-indexed)
     pub start_line: usize,
@@ -106,7 +108,8 @@ impl FoldRegion {
 }
 
 /// The kind of foldable region
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Reflect)]
+#[reflect(Debug, PartialEq, Hash)]
 pub enum FoldKind {
     /// Function or method definition
     Function,
@@ -139,7 +142,8 @@ impl FoldKind {
 }
 
 /// Per-editor fold-region state.
-#[derive(Component, Clone, Debug)]
+#[derive(Component, Clone, Debug, Reflect)]
+#[reflect(Component, Default, Debug)]
 pub struct FoldState {
     /// All detected fold regions, sorted by start line
     pub regions: Vec<FoldRegion>,
@@ -324,7 +328,8 @@ impl FoldState {
 }
 
 /// Component marker for fold gutter indicator entities
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct FoldIndicator {
     /// The line this indicator is for
     pub line_index: usize,

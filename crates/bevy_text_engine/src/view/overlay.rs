@@ -11,7 +11,8 @@
 use bevy::prelude::*;
 use std::ops::Range;
 
-#[derive(Component, Default, Clone)]
+#[derive(Component, Default, Clone, Reflect)]
+#[reflect(Component, Default)]
 pub struct TextViewOverlays {
     pub rects: Vec<RectOverlay>,
     pub version: u64,
@@ -34,7 +35,8 @@ impl TextViewOverlays {
 /// backgrounds, `Caret` for cursors, `TopBand`/`BottomBand` for cursor-line
 /// borders, `UnderBaseline` for underlines/squiggles. The renderer translates
 /// these into pixels using the row's geometry. Producers never compute Y.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Reflect)]
+#[reflect(Debug)]
 pub struct RectOverlay {
     pub display_row: u32,
     pub x_range: Range<f32>,
@@ -46,7 +48,8 @@ pub struct RectOverlay {
 }
 
 /// Semantic vertical placement within a row. Resolved to pixels by the renderer.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Reflect)]
+#[reflect(Debug)]
 pub enum RowVertical {
     /// Span the full row height (selection background, line-highlight band).
     Full,

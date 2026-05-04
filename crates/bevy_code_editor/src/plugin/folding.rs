@@ -276,6 +276,12 @@ pub struct FoldingPlugin;
 
 impl Plugin for FoldingPlugin {
     fn build(&self, _app: &mut App) {
+        _app.register_type::<crate::types::fold::FoldIndicator>()
+            .register_type::<crate::types::fold::FoldKind>()
+            .register_type::<crate::types::fold::FoldRegion>()
+            .register_type::<crate::types::fold::FoldState>()
+            .register_type::<crate::types::fold::GotoLineState>();
+
         _app.add_systems(
             Update,
             (

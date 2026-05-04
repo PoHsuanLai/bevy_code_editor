@@ -7,7 +7,8 @@ use bevy::prelude::*;
 /// Replaces the old `screen_position: Vec2` + `Vec2::ZERO` sentinel pattern,
 /// which silently mis-classified views legitimately rendered at world (0,0)
 /// as "centered ortho" and forced every consumer to re-implement the branch.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Reflect)]
+#[reflect(PartialEq)]
 pub enum ViewportOrigin {
     /// Render-to-texture / centered orthographic camera: viewport's top-left
     /// in world space is `(-width/2, +height/2)`. Computed at access time
@@ -26,7 +27,8 @@ impl Default for ViewportOrigin {
 /// Viewport dimensions and layout for a single text view instance.
 ///
 /// This is a Component (not a Resource) so each text view entity has its own viewport.
-#[derive(Component, Clone, Copy, Debug)]
+#[derive(Component, Clone, Copy, Debug, Reflect)]
+#[reflect(Component, Debug)]
 pub struct TextViewViewport {
     /// Viewport width in pixels
     pub width: u32,

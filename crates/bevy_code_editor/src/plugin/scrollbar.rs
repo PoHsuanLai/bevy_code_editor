@@ -13,6 +13,11 @@ pub struct ScrollbarPlugin;
 
 impl Plugin for ScrollbarPlugin {
     fn build(&self, app: &mut App) {
+        app.register_type::<EditorScrollbar>()
+            .register_type::<Scrollbar>()
+            .register_type::<ScrollbarDragState>()
+            .register_type::<ScrollbarThumb>();
+
         // Scrollbar mouse input goes in InputSet
         app.add_systems(
             Update,
@@ -30,7 +35,8 @@ impl Plugin for ScrollbarPlugin {
 }
 
 /// Per-editor scrollbar drag state.
-#[derive(Component, Default)]
+#[derive(Component, Default, Reflect)]
+#[reflect(Component, Default)]
 pub struct ScrollbarDragState {
     /// Whether we're currently dragging a scrollbar
     pub is_dragging: bool,
@@ -75,7 +81,8 @@ pub fn mouse_not_over_scrollbar(
 }
 
 /// Component that holds scrollbar configuration
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component, Default)]
 pub struct Scrollbar {
     /// X position in world coordinates
     pub x: f32,
@@ -126,7 +133,8 @@ pub(crate) struct ScrollbarTrack {
 }
 
 /// Marker for scrollbar thumb entity
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct ScrollbarThumb {
     pub parent: Entity,
 }
@@ -426,7 +434,8 @@ fn update_scrollbars(
 }
 
 /// Marker for the main editor scrollbar
-#[derive(Component)]
+#[derive(Component, Default, Reflect)]
+#[reflect(Component, Default)]
 pub struct EditorScrollbar;
 
 /// Update the editor scrollbar based on editor state

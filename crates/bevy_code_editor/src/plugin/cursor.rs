@@ -21,6 +21,76 @@ pub struct CursorPlugin;
 
 impl Plugin for CursorPlugin {
     fn build(&self, app: &mut App) {
+        // Group register_type calls for the editor's pure-data Component /
+        // Resource / Message types here. Internal state Components carrying
+        // cosmic-text / tree-sitter / lsp_types fields stay non-reflectable
+        // and are documented at their definition sites.
+        app.register_type::<crate::types::events::ApplyCompletionEvent>()
+            .register_type::<BracketMatch>()
+            .register_type::<BracketMatchHighlight>()
+            .register_type::<BracketMatchState>()
+            .register_type::<CodeEditor>()
+            .register_type::<CursorLineBorder>()
+            .register_type::<CursorWordHighlight>()
+            .register_type::<crate::types::events::DismissCompletionEvent>()
+            .register_type::<EditorCursor>()
+            .register_type::<EditorScrollControl>()
+            .register_type::<EditorText>()
+            .register_type::<FindHighlight>()
+            .register_type::<GpuMinimapMesh>()
+            .register_type::<HighlightedTextToken>()
+            .register_type::<IndentGuide>()
+            .register_type::<KeyRepeatState>()
+            .register_type::<LineNumbers>()
+            .register_type::<MinimapBackground>()
+            .register_type::<MinimapCamera>()
+            .register_type::<MinimapDragState>()
+            .register_type::<MinimapFindHighlight>()
+            .register_type::<MinimapHoverState>()
+            .register_type::<MinimapLine>()
+            .register_type::<MinimapScrollbar>()
+            .register_type::<MinimapSlider>()
+            .register_type::<MinimapViewportHighlight>()
+            .register_type::<OpenRequested>()
+            .register_type::<crate::types::events::RequestCompletionEvent>()
+            .register_type::<crate::types::events::RequestHoverEvent>()
+            .register_type::<crate::types::events::RequestRenameEvent>()
+            .register_type::<crate::types::events::RequestSignatureHelpEvent>()
+            .register_type::<SaveRequested>()
+            .register_type::<SelectionHighlight>()
+            .register_type::<Separator>()
+            .register_type::<crate::types::events::TextEditEvent>()
+            .register_type::<ViewportConfig>()
+            .register_type::<ViewportDimensions>()
+            .register_type::<crate::input::EditorAction>()
+            .register_type::<crate::input::MouseDragState>()
+            .register_type::<super::editor_ui_plugin::EditorCamera>()
+            .register_type::<super::gpu_line_numbers::GpuLineNumbersBatch>();
+
+        // Settings resources.
+        app.register_type::<crate::settings::BracketHighlightStyle>()
+            .register_type::<crate::settings::BracketSettings>()
+            .register_type::<crate::settings::CursorLineSettings>()
+            .register_type::<crate::settings::CursorLineStyle>()
+            .register_type::<crate::settings::CursorSettings>()
+            .register_type::<crate::settings::CursorStyle>()
+            .register_type::<crate::settings::FontSettings>()
+            .register_type::<crate::settings::IndentationSettings>()
+            .register_type::<crate::settings::KeyRepeatSettings>()
+            .register_type::<crate::settings::PerformanceSettings>()
+            .register_type::<crate::settings::ScrollbarSettings>()
+            .register_type::<crate::settings::ScrollingSettings>()
+            .register_type::<crate::settings::SearchSettings>()
+            .register_type::<crate::settings::SyntaxSettings>()
+            .register_type::<crate::settings::SyntaxTheme>()
+            .register_type::<crate::settings::ThemeSettings>()
+            .register_type::<crate::settings::UiSettings>()
+            .register_type::<crate::settings::WhitespaceMode>()
+            .register_type::<crate::settings::WrappingSettings>();
+
+        #[cfg(feature = "lsp")]
+        app.register_type::<crate::settings::LspSettings>();
+
         app.add_systems(Update, track_cursor_movement.in_set(super::ApplyStateSet));
 
         // update_cursor runs in OverlaySet (between RenderingSet's display map build

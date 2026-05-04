@@ -15,6 +15,10 @@ use super::snapshot::ShapedLine;
 ///
 /// Written by `display_map::build_display_layout` (or by `trivial_layout` for
 /// standalone consumers). Read-only for the renderer.
+// not reflectable: paint-time snapshot built every frame; contains
+// `Arc<Vec<ShapedLine>>` whose leaf `cosmic_text::CacheKey` and `Arc<LineShape>`
+// are not Reflect. The component is rebuilt every frame from the rope so
+// inspector access would observe stale data anyway.
 #[derive(Component, Clone)]
 pub struct DisplayLayout {
     /// Visible-window slice of shaped lines. Shared (Arc) so scroll-only and

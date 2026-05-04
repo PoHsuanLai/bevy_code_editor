@@ -1,9 +1,12 @@
 //! Point types for different coordinate spaces in the display map
 
+use bevy::prelude::*;
+
 use super::Point;
 
 /// A point in buffer coordinate space (raw text)
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, bevy::reflect::Reflect)]
+#[reflect(Default, Debug, PartialEq, Hash)]
 pub struct BufferPoint(pub Point);
 
 impl BufferPoint {
@@ -35,7 +38,8 @@ impl From<BufferPoint> for Point {
 }
 
 /// A point in fold coordinate space (after hiding folded regions)
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, bevy::reflect::Reflect)]
+#[reflect(Default, Debug, PartialEq, Hash)]
 pub struct FoldPoint(pub Point);
 
 impl FoldPoint {
@@ -67,7 +71,8 @@ impl From<FoldPoint> for Point {
 }
 
 /// A point in wrap coordinate space (after soft wrapping)
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, bevy::reflect::Reflect)]
+#[reflect(Default, Debug, PartialEq, Hash)]
 pub struct WrapPoint(pub Point);
 
 impl WrapPoint {
@@ -99,7 +104,8 @@ impl From<WrapPoint> for Point {
 }
 
 /// A point in display coordinate space (final screen position)
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, bevy::reflect::Reflect)]
+#[reflect(Default, Debug, PartialEq, Hash)]
 pub struct DisplayPoint(pub Point);
 
 impl DisplayPoint {

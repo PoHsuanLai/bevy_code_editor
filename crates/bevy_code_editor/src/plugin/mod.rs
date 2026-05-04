@@ -10,16 +10,12 @@ pub mod folding;
 pub mod gpu_line_numbers;
 #[cfg(feature = "lsp")]
 pub mod lsp_plugin;
-#[cfg(feature = "lsp")]
-pub mod lsp_ui_plugin;
 pub mod scrollbar;
 pub mod syntax_highlighting;
 pub mod ui_elements;
 
 #[cfg(feature = "lsp")]
 pub use self::lsp_plugin::LspPlugin;
-#[cfg(feature = "lsp")]
-pub use self::lsp_ui_plugin::LspUiPlugin;
 
 // Re-export plugins publicly
 pub use self::brackets::BracketPlugin as BracketPluginType;

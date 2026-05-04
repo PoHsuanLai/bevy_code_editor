@@ -4,7 +4,8 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// Syntax highlighting settings
-#[derive(Clone, Debug, Resource, Serialize, Deserialize)]
+#[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
+#[reflect(Resource, Default, Debug)]
 pub struct SyntaxSettings {
     /// Enable syntax highlighting
     pub enabled: bool,
@@ -13,7 +14,8 @@ pub struct SyntaxSettings {
     pub theme: SyntaxTheme,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Reflect)]
+#[reflect(Default, Debug)]
 pub struct SyntaxTheme {
     pub keyword: Color,
     pub function: Color,

@@ -4,7 +4,8 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// Scrolling settings
-#[derive(Clone, Debug, Resource, Serialize, Deserialize)]
+#[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
+#[reflect(Resource, Default, Debug)]
 pub struct ScrollingSettings {
     /// Scroll speed multiplier
     pub speed: f32,

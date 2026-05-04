@@ -1,36 +1,15 @@
 //! LSP UI marker components
 //!
 //! These components contain all data needed to render LSP UI elements.
-//! Default render systems query these components and spawn visual entities.
-//! Users can disable the default systems and provide their own implementations.
+//! The crate's sync systems create / update marker entities with `*PopupData`
+//! components; hosts query them and render however they prefer (see
+//! `examples/lsp.rs` for an `egui` + `armas` reference renderer).
 //!
 //! # Architecture
 //!
-//! The component-based UI follows this pattern:
-//!
 //! 1. **State resources** (e.g., `CompletionState`) hold the raw LSP data
 //! 2. **Sync systems** create/update marker entities with `*PopupData` components
-//! 3. **Render systems** query marker components and spawn visual children
-//!
-//! This separation allows users to:
-//! - Replace render systems with custom implementations
-//! - Query the same marker components as the default systems
-//! - Use the theme resource or provide their own styling
-//!
-//! # Example
-//!
-//! ```rust,ignore
-//! // Custom render system for completion popup
-//! fn my_completion_renderer(
-//!     query: Query<(Entity, &CompletionPopupData)>,
-//!     theme: Res<LspUiTheme>,
-//!     mut commands: Commands,
-//! ) {
-//!     for (entity, popup) in query.iter() {
-//!         // Your custom rendering logic
-//!     }
-//! }
-//! ```
+//! 3. **Host renderers** query marker components and draw them however they want
 
 use bevy::prelude::*;
 

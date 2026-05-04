@@ -4,7 +4,8 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// Font settings - shared across all text rendering
-#[derive(Clone, Debug, Resource, Serialize, Deserialize)]
+#[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
+#[reflect(Resource, Default, Debug)]
 pub struct FontSettings {
     /// Font family path or name
     pub family: String,
@@ -45,7 +46,8 @@ impl Default for FontSettings {
 }
 
 /// Theme settings - colors for all UI elements
-#[derive(Clone, Debug, Resource, Serialize, Deserialize)]
+#[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
+#[reflect(Resource, Default, Debug)]
 pub struct ThemeSettings {
     /// Background color
     pub background: Color,
@@ -99,7 +101,8 @@ pub struct ThemeSettings {
 }
 
 #[cfg(feature = "lsp")]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Reflect, Default)]
+#[reflect(Default, Debug)]
 pub struct DiagnosticColors {
     pub error: Color,
     pub warning: Color,

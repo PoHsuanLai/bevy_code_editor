@@ -11,7 +11,8 @@ use ropey::Rope;
 use crate::lsp::{reset_hover_state, LspMessage};
 
 /// Mouse drag state for selection
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Reflect)]
+#[reflect(Resource, Default)]
 pub struct MouseDragState {
     /// Whether we're currently dragging
     pub is_dragging: bool,

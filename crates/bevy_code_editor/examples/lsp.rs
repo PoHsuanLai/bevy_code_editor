@@ -15,15 +15,18 @@
 
 use armas::prelude::*;
 use bevy::prelude::*;
+use bevy::sprite::Anchor;
 use bevy_code_editor::lsp::{
     CodeActionState, CompletionState, HoverState, LspClient, LspMessage, LspSyncState,
     RenameState, SignatureHelpState,
 };
-use bevy_code_editor::lsp_ui::render::{render_document_highlights, render_inlay_hints};
-use bevy_code_editor::lsp_ui::theme::LspUiTheme;
-use bevy_code_editor::lsp_ui::LspUiRenderSet;
+use bevy_code_editor::lsp_ui::components::{
+    DocumentHighlightData, InlayHintData, InlayHintKind, LspUiVisual,
+};
+use bevy_code_editor::plugin::editor_ui_plugin::EditorRenderConfig;
 use bevy_code_editor::prelude::*;
 use bevy_code_editor::settings::FontSettings;
+use bevy_code_editor::text_view::TextViewViewport;
 use bevy_code_editor::types::editor::{
     CursorState, EditHistoryState, SelectionState, SyntaxCacheState,
 };
@@ -58,18 +61,19 @@ fn main() {
         .run();
 }
 
-/// LSP UI plugin using egui/armas overlays for popup rendering.
+/// LSP UI plugin using egui/armas overlays for popup rendering, plus inline
+/// sprite decorations for inlay hints and document highlights.
 ///
-/// This is the example's local equivalent of the (now-removed) library
-/// `LspEguiUiPlugin`. It keeps inlay hints and document highlights on the
-/// sprite path since those are inline decorations (not interactive popups);
-/// to do that, it inserts `LspUiTheme`, which the sprite systems read.
+/// The library crate ships only the data-component side of LSP UI (sync +
+/// event listeners); rendering is the host's responsibility. This plugin is
+/// a self-contained reference renderer: egui for interactive popups,
+/// sprite-based for inline decorations on the editor surface.
 struct LspEguiUiPlugin;
 
 impl Plugin for LspEguiUiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LspEguiViewportOffset>();
-        app.insert_resource(LspUiTheme::default());
+        app.insert_resource(InlineDecorationsTheme::default());
 
         app.add_systems(
             Update,
@@ -84,6 +88,178 @@ impl Plugin for LspEguiUiPlugin {
             )
                 .in_set(LspUiRenderSet),
         );
+    }
+}
+
+/// Local SystemSet for grouping the example's render systems. Replaces the
+/// (now-removed) library `LspUiRenderSet`.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+struct LspUiRenderSet;
+
+/// Marker for inlay hint visual entities (sprite path).
+#[derive(Component)]
+struct InlayHintText {
+    #[allow(dead_code)]
+    line: u32,
+    #[allow(dead_code)]
+    character: u32,
+}
+
+/// Marker for document highlight visual entities (sprite path).
+#[derive(Component)]
+struct DocumentHighlightMarker {
+    #[allow(dead_code)]
+    line: u32,
+}
+
+/// Theme for the sprite-rendered inline decorations (inlay hints, document
+/// highlights). The library no longer ships a theme — this is the example's
+/// local copy of the relevant subset of the old `LspUiTheme`.
+#[derive(Resource, Clone, Debug)]
+struct InlineDecorationsTheme {
+    inlay_hints: InlayHintsTheme,
+    document_highlights: DocumentHighlightsTheme,
+}
+
+impl Default for InlineDecorationsTheme {
+    fn default() -> Self {
+        Self {
+            inlay_hints: InlayHintsTheme::default(),
+            document_highlights: DocumentHighlightsTheme::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct InlayHintsTheme {
+    type_color: Color,
+    parameter_color: Color,
+    default_color: Color,
+    font_size_multiplier: f32,
+    z_index: f32,
+}
+
+impl Default for InlayHintsTheme {
+    fn default() -> Self {
+        Self {
+            type_color: Color::srgba(0.5, 0.7, 0.9, 0.7),
+            parameter_color: Color::srgba(0.7, 0.6, 0.9, 0.7),
+            default_color: Color::srgba(0.6, 0.6, 0.6, 0.7),
+            font_size_multiplier: 0.85,
+            z_index: 50.0,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct DocumentHighlightsTheme {
+    read_color: Color,
+    write_color: Color,
+}
+
+impl Default for DocumentHighlightsTheme {
+    fn default() -> Self {
+        Self {
+            read_color: Color::srgba(0.5, 0.6, 0.8, 0.25),
+            write_color: Color::srgba(0.8, 0.5, 0.3, 0.3),
+        }
+    }
+}
+
+/// Render inlay hints from marker component data (inlined from the
+/// library's old `lsp_ui::render::render_inlay_hints`).
+fn render_inlay_hints(
+    mut commands: Commands,
+    hint_query: Query<(Entity, &InlayHintData), Added<InlayHintData>>,
+    font: Res<FontSettings>,
+    viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
+    theme: Res<InlineDecorationsTheme>,
+    render_config: Res<EditorRenderConfig>,
+) {
+    let Ok(viewport) = viewport_query.single() else {
+        return;
+    };
+
+    for (entity, hint) in hint_query.iter() {
+        let color = match hint.kind {
+            InlayHintKind::Type => theme.inlay_hints.type_color,
+            InlayHintKind::Parameter => theme.inlay_hints.parameter_color,
+            InlayHintKind::Other => theme.inlay_hints.default_color,
+        };
+
+        let pos = Vec3::new(
+            viewport.world_left() + hint.position.x,
+            viewport.world_top() - hint.position.y,
+            theme.inlay_hints.z_index,
+        );
+
+        let mut entity_cmd = commands.entity(entity);
+        entity_cmd.insert((
+            Text2d::new(&hint.label),
+            TextFont {
+                font: font.handle.clone().unwrap_or_default(),
+                font_size: font.size * theme.inlay_hints.font_size_multiplier,
+                ..default()
+            },
+            TextColor(color),
+            Transform::from_translation(pos),
+            Anchor::CENTER_LEFT,
+            InlayHintText {
+                line: hint.line,
+                character: hint.character,
+            },
+            LspUiVisual,
+        ));
+
+        if let Some(layers) = &render_config.render_layers {
+            entity_cmd.insert(layers.clone());
+        }
+    }
+}
+
+/// Render document highlights from marker component data (inlined from the
+/// library's old `lsp_ui::render::render_document_highlights`).
+fn render_document_highlights(
+    mut commands: Commands,
+    highlight_query: Query<(Entity, &DocumentHighlightData), Added<DocumentHighlightData>>,
+    viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
+    theme: Res<InlineDecorationsTheme>,
+    render_config: Res<EditorRenderConfig>,
+) {
+    let Ok(viewport) = viewport_query.single() else {
+        return;
+    };
+
+    for (entity, highlight) in highlight_query.iter() {
+        let color = if highlight.is_write {
+            theme.document_highlights.write_color
+        } else {
+            theme.document_highlights.read_color
+        };
+
+        let pos = Vec3::new(
+            viewport.world_left() + highlight.position.x,
+            viewport.world_top() - highlight.position.y,
+            5.0, // Behind text
+        );
+
+        let mut entity_cmd = commands.entity(entity);
+        entity_cmd.insert((
+            Sprite {
+                color,
+                custom_size: Some(Vec2::new(highlight.width, highlight.height)),
+                ..default()
+            },
+            Transform::from_translation(pos),
+            DocumentHighlightMarker {
+                line: highlight.line,
+            },
+            LspUiVisual,
+        ));
+
+        if let Some(layers) = &render_config.render_layers {
+            entity_cmd.insert(layers.clone());
+        }
     }
 }
 

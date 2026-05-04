@@ -19,7 +19,8 @@ use bevy::prelude::*;
 /// Monospace-only for now: `char_width` is a scalar advance applied to
 /// every glyph. Phase 4 will add weight/family/decoration on `StyleRun`,
 /// and a future phase will replace the scalar with shaped advances.
-#[derive(Component, Clone, Debug)]
+#[derive(Component, Clone, Debug, Reflect)]
+#[reflect(Component, Default, Debug)]
 pub struct FontConfig {
     /// Glyph height in pixels.
     pub size: f32,

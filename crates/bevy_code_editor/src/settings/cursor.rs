@@ -4,7 +4,8 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// Cursor settings
-#[derive(Clone, Debug, Resource, Serialize, Deserialize)]
+#[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
+#[reflect(Resource, Default, Debug)]
 pub struct CursorSettings {
     /// Cursor style
     pub style: CursorStyle,
@@ -29,7 +30,8 @@ pub struct CursorSettings {
 }
 
 /// Key repeat settings for cursor movement
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Reflect)]
+#[reflect(Default, Debug)]
 pub struct KeyRepeatSettings {
     /// Initial delay before repeat starts (milliseconds)
     pub initial_delay_ms: u64,
@@ -38,7 +40,8 @@ pub struct KeyRepeatSettings {
     pub repeat_delay_ms: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+#[reflect(Debug, PartialEq)]
 pub enum CursorStyle {
     Line,
     Block,
@@ -69,7 +72,8 @@ impl Default for KeyRepeatSettings {
 }
 
 /// Cursor line highlighting settings (VSCode-style)
-#[derive(Clone, Debug, Resource, Serialize, Deserialize)]
+#[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
+#[reflect(Resource, Default, Debug)]
 pub struct CursorLineSettings {
     /// Enable cursor line highlighting
     pub enabled: bool,
@@ -99,7 +103,8 @@ pub struct CursorLineSettings {
     pub word_highlight_color: Color,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+#[reflect(Debug, PartialEq)]
 pub enum CursorLineStyle {
     None,
     Background,

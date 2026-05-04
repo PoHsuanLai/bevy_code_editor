@@ -14,9 +14,12 @@ use ropey::Rope;
 /// invalidation now flows through `display_map::LayoutFingerprint` (which
 /// reads `content_version` and scroll/viewport changes) and Bevy's
 /// `Changed<DisplayLayout>` / `Changed<TextViewOverlays>` change detection.
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct TextViewState {
     /// The text content (efficient rope data structure)
+    // Rope is not Reflect — leave out of reflection.
+    #[reflect(ignore)]
     pub rope: Rope,
 
     /// Current vertical scroll offset in pixels
