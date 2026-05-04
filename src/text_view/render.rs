@@ -641,16 +641,19 @@ fn push_overlay_quad(
     };
     let width = (x1 - x0).max(1.0);
     // y_range is in pixels measured downward from the row's top edge.
-    //   None             → full line (0..line_height).
+    //   None             → full row (0..line_height).
     //   Some(0..2)       → 2px strip at the row top.
     //   Some(lh-2..lh)   → 2px strip at the row bottom.
+    //
+    // The row's *top* in screen-Y is `base_y - baseline_offset - line_height/2`,
+    // because the legacy convention places glyph backgrounds and selection rects
+    // centered on `(base_y - baseline_offset)` — i.e. that point is the row's
+    // vertical center, not its top.
     let (y_top_in_row, height) = match &rect.y_range {
         Some(yr) => (yr.start, (yr.end - yr.start).max(1.0)),
         None => (0.0, line_height),
     };
-    // Row-top in screen-Y = `base_y - baseline_offset` (the top of the
-    // line_height-tall band that contains the glyph baseline).
-    let row_top_screen_y = base_y - baseline_offset;
+    let row_top_screen_y = base_y - baseline_offset - line_height * 0.5;
     let rect_top_screen_y = row_top_screen_y + y_top_in_row;
     let rect_center_screen_y = rect_top_screen_y + height * 0.5;
     let world_x = world_left + line_start_x + line.x_offset + x0;
