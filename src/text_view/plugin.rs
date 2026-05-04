@@ -40,7 +40,13 @@ pub struct TextViewPlugin;
 
 impl Plugin for TextViewPlugin {
     fn build(&self, app: &mut App) {
-        // Add GPU rendering infrastructure (skip if already registered by CodeEditorPlugin)
+        // GPU rendering infrastructure. `TextViewPlugin` cannot function without
+        // these — making them an implicit add (idempotent with `CodeEditorPlugin`)
+        // is the right trade-off: requiring every standalone consumer to remember
+        // both `GpuTextPlugin` and `InstancedTextRenderPlugin` is leaky abstraction
+        // and produces opaque "atlas not ready" failures when forgotten. Hosts
+        // that genuinely want their own GPU pipeline can add the plugins first
+        // and our `is_plugin_added` check skips the duplicate add.
         if !app.is_plugin_added::<crate::gpu_text::GpuTextPlugin>() {
             app.add_plugins(crate::gpu_text::GpuTextPlugin);
         }
