@@ -371,9 +371,10 @@ pub fn render_layout(
     let viewport_world_top = viewport.world_top();
     let line_start_x = content_start_x - horizontal_scroll_offset;
 
-    // `line.y_top` is the row-top in screen-Y (already includes scroll + viewport.text_area_top
-    // and excludes baseline_offset). `base_y` re-adds baseline_offset to get the glyph baseline.
-    // base_y = y_top + baseline_offset.
+    // Single anchor: `line.y_top` is the row's visual top in screen pixels.
+    //   - Glyph baseline = y_top + line_height/2 + baseline_offset (legacy ascent ratio).
+    //   - Overlay full-line rect spans y_top..y_top+line_height.
+    //   - Sub-line overlays (`y_range: Some(0..2)`) are y_top-relative.
 
     let mut text_instances: Vec<GlyphInstance> = Vec::with_capacity(layout.lines.len() * 80);
     let mut below_instances: Vec<GlyphInstance> = Vec::new();
@@ -396,10 +397,11 @@ pub fn render_layout(
 
     // Glyphs and per-line/per-run backgrounds
     for line in layout.lines.iter() {
-        let base_y = line.y_top;
+        // Glyph baseline derived from row top.
+        let base_y = line.y_top + line_height * 0.5 + baseline_offset;
         let line_x = line_start_x + line.x_offset;
 
-        // Line background (full-width quad)
+        // Line background (full-width quad) — full row, top-anchored on y_top.
         if let Some(bg) = line.line_bg {
             let bg_linear = bg.to_linear();
             let margin = content_start_x;
@@ -411,8 +413,7 @@ pub fn render_layout(
             let bg_x_start = (line.x_offset - bg_pad).max(0.0);
             let bg_world_x = viewport_world_left + margin + bg_x_start;
             let bg_width = viewport.width as f32 - margin * 2.0 - bg_x_start;
-            let bg_world_y =
-                viewport_world_top - (base_y - baseline_offset) - line_height * 0.5;
+            let bg_world_y = viewport_world_top - line.y_top - line_height * 0.5;
             // Pick the largest corner radius among runs that share this background, if any.
             let line_corner_radius = line
                 .runs
@@ -499,8 +500,7 @@ pub fn render_layout(
                         let seg_width = visible_chars as f32 * char_width;
                         let seg_x = run_byte_to_x(line, run.byte_range.start, char_width);
                         let seg_world_x = viewport_world_left + line_x + seg_x;
-                        let seg_world_y =
-                            viewport_world_top - (base_y - baseline_offset) - line_height * 0.5;
+                        let seg_world_y = viewport_world_top - line.y_top - line_height * 0.5;
                         below_instances.push(GlyphInstance {
                             position: Vec2::new(seg_world_x, seg_world_y),
                             uv_min: atlas.solid_uv.uv_min,
@@ -629,8 +629,6 @@ fn push_overlay_quad(
         return;
     };
     let line_height = layout.line_height;
-    let baseline_offset = layout.baseline_offset;
-    let base_y = line.y_top;
     let x0 = rect.x_range.start.max(0.0);
     let x1 = if rect.x_range.end >= f32::MAX / 2.0 {
         // Full-line: extend to the viewport's right edge from `line_start_x + line.x_offset`.
@@ -640,24 +638,14 @@ fn push_overlay_quad(
         rect.x_range.end
     };
     let width = (x1 - x0).max(1.0);
-    // y_range is in pixels measured downward from the row's top edge.
-    //   None             → full row (0..line_height).
-    //   Some(0..2)       → 2px strip at the row top.
-    //   Some(lh-2..lh)   → 2px strip at the row bottom.
-    //
-    // The row's *top* in screen-Y is `base_y - baseline_offset - line_height/2`,
-    // because the legacy convention places glyph backgrounds and selection rects
-    // centered on `(base_y - baseline_offset)` — i.e. that point is the row's
-    // vertical center, not its top.
-    let (y_top_in_row, height) = match &rect.y_range {
+    let (y_off, height) = match &rect.y_range {
         Some(yr) => (yr.start, (yr.end - yr.start).max(1.0)),
         None => (0.0, line_height),
     };
-    let row_top_screen_y = base_y - baseline_offset - line_height * 0.5;
-    let rect_top_screen_y = row_top_screen_y + y_top_in_row;
-    let rect_center_screen_y = rect_top_screen_y + height * 0.5;
     let world_x = world_left + line_start_x + line.x_offset + x0;
-    let world_y = world_top - rect_center_screen_y;
+    // Single anchor: line.y_top is the row's screen-Y top. Quad position is the
+    // *center* of the rect; world_top inverts Y.
+    let world_y = world_top - line.y_top - y_off - height * 0.5;
     let color_linear = rect.color.to_linear();
     out.push(GlyphInstance {
         position: Vec2::new(world_x, world_y),

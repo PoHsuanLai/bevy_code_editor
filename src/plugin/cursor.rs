@@ -137,17 +137,11 @@ pub(crate) fn push_cursor_overlays(
 
         let x_left = extra_indent + (display_col as f32 * char_width);
         let x_right = x_left + cursor_settings.width;
-        // Caret centered vertically in the row, scaled by height_multiplier.
-        let line_h = font.line_height;
-        let cursor_height = line_h * cursor_settings.height_multiplier;
-        let center_y = line_h * 0.5;
-        let y_top = center_y - cursor_height * 0.5;
-        let y_bot = center_y + cursor_height * 0.5;
 
         overlays.rects.push(RectOverlay {
             display_row: display_row as u32,
             x_range: x_left..x_right,
-            y_range: Some(y_top..y_bot),
+            y_range: None,
             color: theme.cursor,
             z: 1, // above text
             corner_radius: 0.0,
@@ -229,8 +223,7 @@ pub(crate) fn update_cursor_line_highlight(
         };
 
         if cursor_line.show_border {
-            // y_range is measured downward from row top. Top border = first
-            // border_thickness px; bottom border = last border_thickness px.
+            // Top border: thin band from y=0 to y=border_thickness.
             overlays.rects.push(RectOverlay {
                 display_row: display_row as u32,
                 x_range: band_x_left..band_x_right,
@@ -239,10 +232,11 @@ pub(crate) fn update_cursor_line_highlight(
                 z: 0,
                 corner_radius: 0.0,
             });
+            // Bottom border: thin band at the bottom of the row.
             overlays.rects.push(RectOverlay {
                 display_row: display_row as u32,
                 x_range: band_x_left..band_x_right,
-                y_range: Some(line_height - border_thickness..line_height),
+                y_range: Some((line_height - border_thickness)..line_height),
                 color: border_color,
                 z: 0,
                 corner_radius: 0.0,

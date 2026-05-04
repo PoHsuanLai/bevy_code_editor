@@ -122,13 +122,13 @@ pub fn build_display_layout(
             display_row: current_display_row,
             buffer_row: buffer_line as u32,
             is_wrap_continuation: false,
-            // y_top is the glyph baseline Y in screen pixels — exactly the legacy
-            // `base_y`. render_layout treats this as authoritative and adds nothing.
-            // Includes scroll, viewport top inset, row offset, and baseline offset.
+            // y_top is the row's visual top in screen pixels. Glyphs and overlays
+            // both derive from this single anchor: glyph baseline = y_top + ascent
+            // (~ line_height/2 + baseline_offset); overlay full-line rect spans
+            // y_top..y_top+line_height. The legacy "row center" convention is gone.
             y_top: viewport.text_area_top
                 + state.scroll_offset
-                + current_display_row as f32 * line_height
-                + baseline_offset,
+                + current_display_row as f32 * line_height,
             x_offset: line_x_extra,
             text: render_text,
             runs,

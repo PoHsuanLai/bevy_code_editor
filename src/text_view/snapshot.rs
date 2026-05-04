@@ -93,10 +93,10 @@ pub fn trivial_layout(
             display_row: i as u32,
             buffer_row: i as u32,
             is_wrap_continuation: false,
-            // y_top is the glyph baseline screen-Y. Caller's render system adds
-            // the viewport's text_area_top + scroll_offset on top of this if
-            // needed; for a static demo we just stack rows from y=0.
-            y_top: i as f32 * line_height + baseline_offset,
+            // y_top is the row's visual top in screen-Y. Caller's render system
+            // adds the viewport's text_area_top + scroll_offset on top if needed;
+            // for a static demo we just stack rows from y=0.
+            y_top: i as f32 * line_height,
             x_offset: 0.0,
             text: text.clone(),
             runs: runs.clone(),
