@@ -662,15 +662,16 @@ fn push_overlay_quad(
             (baseline_y_off - cap_to_descender * 0.5, cap_to_descender)
         }
         super::overlay::RowVertical::Caret { height_fraction } => {
-            // Caret sits below the text baseline, with its top at the baseline
-            // and its bottom at the row's bottom edge — like an underline-style
-            // block cursor that doesn't overlap the glyphs above.
-            //
-            // Top = baseline_y_off; bottom = line_height. height_fraction scales
-            // the height (1.0 = full descender-to-bottom band).
-            let band = (line_height - baseline_y_off).max(1.0);
-            let h = (band * height_fraction).max(1.0);
-            (line_height - h, h)
+            // Caret should *cover* the glyph stack: top at the cap line, bottom
+            // a bit below the descender. baseline_y_off is the distance from
+            // row top to baseline (≈ ascent). The text extends from
+            // (baseline - ascent) to (baseline + descender). We anchor the caret
+            // top at the cap line and extend it the full text band.
+            let h = (cap_to_descender * height_fraction).max(1.0);
+            // Caret top ≈ baseline - (h * ascent_ratio); use 0.75 so most of the
+            // caret sits above the baseline, covering glyph bodies.
+            let above_baseline = h * 0.75;
+            (baseline_y_off - above_baseline, h)
         }
         super::overlay::RowVertical::TopBand { thickness } => (0.0, thickness.max(1.0)),
         super::overlay::RowVertical::BottomBand { thickness } => {
