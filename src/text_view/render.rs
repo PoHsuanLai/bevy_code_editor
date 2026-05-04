@@ -650,13 +650,20 @@ fn push_overlay_quad(
     // with the leaded box, so they sit visually on the row of text rather than
     // straddling line-spacing whitespace.
     let baseline_y_off = line_height * 0.5 + baseline_offset;
+    // Cap-to-descender extent ≈ ascent + descent, the visual "text band" within
+    // the leaded line. Approximated from the same heuristic used for baseline_offset
+    // (~32% of font size for descender-ish region above baseline). This gives a
+    // tight box around glyphs, used as the canonical text-aligned span for
+    // carets and full-line backgrounds.
+    let cap_to_descender = baseline_y_off + baseline_offset * 0.6;
     let (y_off, height) = match rect.vertical {
         super::overlay::RowVertical::Full => {
-            // Center on baseline, span ~one line worth of vertical space.
-            (baseline_y_off - line_height * 0.5, line_height)
+            // Span the text band, centered on baseline.
+            (baseline_y_off - cap_to_descender * 0.5, cap_to_descender)
         }
         super::overlay::RowVertical::Caret { height_fraction } => {
-            let h = (line_height * height_fraction).max(1.0);
+            // height_fraction = 1.0 means "full text band". Multipliers <1 shrink it.
+            let h = (cap_to_descender * height_fraction).max(1.0);
             (baseline_y_off - h * 0.5, h)
         }
         super::overlay::RowVertical::TopBand { thickness } => (0.0, thickness.max(1.0)),
