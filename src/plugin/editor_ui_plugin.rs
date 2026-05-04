@@ -20,7 +20,7 @@ use bevy_camera::visibility::RenderLayers;
 use crate::settings::*;
 use crate::text_view::TextViewViewport;
 use crate::types::{
-    CodeEditor, CodeEditorState, EditorCursor, Separator, ViewportConfig, ViewportDimensions,
+    CodeEditor, CodeEditorState, Separator, ViewportConfig, ViewportDimensions,
 };
 use bevy_camera::Viewport;
 
@@ -28,7 +28,7 @@ use bevy_camera::Viewport;
 #[derive(Component)]
 pub struct EditorCamera;
 use super::{
-    to_bevy_coords_dynamic, to_bevy_coords_left_aligned, update_cursor_line_highlight,
+    to_bevy_coords_left_aligned, update_cursor_line_highlight,
     update_gpu_line_numbers, update_gpu_text_instanced, update_indent_guides,
     update_selection_highlight, EditorSetupSet,
 };
@@ -424,7 +424,7 @@ fn setup_editor_ui(
     asset_server: Res<AssetServer>,
     mut font: ResMut<FontSettings>,
     theme: Res<ThemeSettings>,
-    cursor_settings: Res<CursorSettings>,
+    _cursor_settings: Res<CursorSettings>,
     ui: Res<UiSettings>,
     viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
     render_config: Res<EditorRenderConfig>,
@@ -463,25 +463,8 @@ fn setup_editor_ui(
         apply_render_layers(&mut separator, &render_config);
     }
 
-    // Spawn primary cursor (cursor_index = 0)
-    let cursor_height = font.line_height * cursor_settings.height_multiplier;
-    let mut cursor = commands.spawn((
-        Sprite {
-            color: theme.cursor,
-            custom_size: Some(Vec2::new(cursor_settings.width, cursor_height)),
-            ..default()
-        },
-        Transform::from_translation(to_bevy_coords_dynamic(
-            viewport.text_area_left,
-            viewport.text_area_top,
-            viewport_width,
-            viewport_height,
-        )),
-        Visibility::Hidden,
-        EditorCursor { cursor_index: 0 },
-        Name::new("EditorCursor_0"),
-    ));
-    apply_render_layers(&mut cursor, &render_config);
+    // Cursor carets are pushed into TextViewOverlays each frame by
+    // push_cursor_overlays — no Sprite entity to spawn here.
 }
 
 /// Run condition: returns true when the TextViewViewport component has changed

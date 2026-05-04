@@ -7,7 +7,7 @@
 use super::SyntaxResource;
 use crate::gpu_text::GlyphAtlas;
 use crate::settings::*;
-use crate::text_view::{TextViewState, TextViewViewport};
+use crate::text_view::{TextViewOverlays, TextViewState, TextViewViewport};
 use crate::types::*;
 use bevy::prelude::*;
 
@@ -28,7 +28,10 @@ pub struct CodeEditorBatch;
 /// the generic `render_text_view()`.
 pub(crate) fn update_gpu_text_instanced(
     mut commands: Commands,
-    mut tv_query: Query<(&mut TextViewState, &TextViewViewport), With<CodeEditor>>,
+    mut tv_query: Query<
+        (&mut TextViewState, &TextViewViewport, Ref<TextViewOverlays>),
+        With<CodeEditor>,
+    >,
     (font, theme, syntax_settings, ui_settings, performance): (
         Res<FontSettings>,
         Res<ThemeSettings>,
@@ -45,9 +48,10 @@ pub(crate) fn update_gpu_text_instanced(
     render_config: Option<Res<super::editor_ui_plugin::EditorRenderConfig>>,
 ) {
     // Try to get the entity's TextViewState; fall back to Resource viewport if entity not ready
-    let Ok((mut tv_state, tv_viewport)) = tv_query.single_mut() else {
+    let Ok((mut tv_state, tv_viewport, tv_overlays)) = tv_query.single_mut() else {
         return;
     };
+    let overlays_changed = tv_overlays.is_changed();
 
     // Check if viewport changed
     let viewport_changed = if let Some((_, batch)) = batch_query.iter().next() {
@@ -57,7 +61,11 @@ pub(crate) fn update_gpu_text_instanced(
     };
 
     // Use the entity's TextViewState for update checks
-    if !tv_state.needs_update && !tv_state.needs_scroll_update && !viewport_changed {
+    if !tv_state.needs_update
+        && !tv_state.needs_scroll_update
+        && !viewport_changed
+        && !overlays_changed
+    {
         return;
     }
 
@@ -141,17 +149,66 @@ pub(crate) fn update_gpu_text_instanced(
         .text_area_left
         .max(tv_viewport.gutter_width + ui_settings.code_margin_left);
 
-    // Delegate to generic renderer
-    let instances = crate::text_view::render::render_text_view(
+    // === Step 5b: render_layout is now the on-screen renderer ===
+    // Build a DisplayLayout snapshot and render through the new path. The legacy
+    // render_text_view stays alive only for the equivalence diagnostic in debug
+    // builds; both go away in step 9.
+    use crate::display_map::layout::build_display_layout;
+    use crate::text_view::render::render_layout;
+    let layout = build_display_layout(
         &tv_state,
         tv_viewport,
-        Some(&fold_state),
+        &fold_state,
         &font,
         &performance,
         theme.foreground,
+    );
+    let instances = render_layout(
+        &layout,
+        Some(&tv_overlays),
+        tv_viewport,
         &mut atlas,
         content_start_x,
+        tv_state.horizontal_scroll_offset,
+        font.size,
     );
+
+    #[cfg(debug_assertions)]
+    {
+        let legacy = crate::text_view::render::render_text_view(
+            &tv_state,
+            tv_viewport,
+            Some(&fold_state),
+            &font,
+            &performance,
+            theme.foreground,
+            &mut atlas,
+            content_start_x,
+        );
+        if legacy.len() != instances.len() {
+            warn!(
+                "render_layout instance count mismatch: legacy={}, new={}",
+                legacy.len(),
+                instances.len()
+            );
+        } else {
+            let mut mismatches = 0usize;
+            for (i, (a, b)) in legacy.iter().zip(instances.iter()).enumerate() {
+                if (a.position - b.position).length_squared() > 0.01 {
+                    if mismatches < 3 {
+                        warn!(
+                            "render_layout pos mismatch [{}]: legacy={:?}, new={:?}",
+                            i, a.position, b.position
+                        );
+                    }
+                    mismatches += 1;
+                }
+            }
+            if mismatches > 0 {
+                warn!("render_layout total position mismatches: {}", mismatches);
+            }
+        }
+    }
 
     // Update atlas texture
     atlas.update_texture(&mut images);

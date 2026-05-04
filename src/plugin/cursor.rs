@@ -1,14 +1,19 @@
 //! Cursor rendering and animation
+//!
+//! As of step 6a, cursor carets are pushed into `TextViewOverlays` as `RectOverlay`s
+//! rather than spawned as separate `Sprite` entities. Blink folds into `update_cursor`
+//! (no separate `animate_cursor` system).
 
-use super::editor_ui_plugin::EditorRenderConfig;
-use super::to_bevy_coords_left_aligned;
 use crate::settings::{
     CursorLineSettings, CursorSettings, FontSettings, IndentationSettings, ThemeSettings,
     WrappingSettings,
 };
-use crate::text_view::{TextViewState, TextViewViewport};
+use crate::text_view::{RectOverlay, TextViewOverlays, TextViewState, TextViewViewport};
 use crate::types::*;
 use bevy::prelude::*;
+
+#[allow(unused_imports)]
+use super::editor_ui_plugin::EditorRenderConfig;
 
 pub struct CursorPlugin;
 
@@ -16,12 +21,10 @@ impl Plugin for CursorPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, track_cursor_movement.in_set(super::ApplyStateSet));
 
-        app.add_systems(
-            Update,
-            (update_cursor, animate_cursor)
-                .chain()
-                .in_set(super::RenderingSet),
-        );
+        // update_cursor runs in OverlaySet (between RenderingSet's display map build
+        // and the actual render). For now we keep it in RenderingSet pending step 9's
+        // explicit OverlaySet introduction.
+        app.add_systems(Update, push_cursor_overlays.in_set(super::RenderingSet));
 
         // Note: update_cursor_line_highlight is registered by EditorUiPlugin
         // where it's chained with other visual systems.
@@ -44,15 +47,25 @@ pub(crate) fn track_cursor_movement(
     }
 }
 
-pub(crate) fn update_cursor(
-    mut commands: Commands,
+/// Push caret rectangles into `TextViewOverlays` for each cursor.
+///
+/// Replaces the previous `update_cursor` + `animate_cursor` pair: blink and
+/// position now collapse into one system that simply skips pushing during
+/// the off-phase of the blink cycle.
+///
+/// Note: this system is a *partial* writer of `TextViewOverlays` — it pushes
+/// caret rects without clearing first, since selection (step 6b) and other
+/// overlay producers also push. A future `OverlaySet` will introduce a single
+/// `clear_overlays` system that runs first; until then we drain previous
+/// caret rects ourselves.
+pub(crate) fn push_cursor_overlays(
     editor_query: Query<
         (
-            &CodeEditorState,
             &EditorDisplayState,
             &CursorState,
             &TextViewState,
             &TextViewViewport,
+            &mut TextViewOverlays,
         ),
         With<CodeEditor>,
     >,
@@ -62,27 +75,41 @@ pub(crate) fn update_cursor(
     wrapping: Res<WrappingSettings>,
     indentation: Res<IndentationSettings>,
     #[cfg(feature = "folding")] fold_state: Res<FoldState>,
-    render_config: Res<EditorRenderConfig>,
-    mut cursor_query: Query<(Entity, &EditorCursor, &mut Transform, &mut Visibility)>,
+    time: Res<Time>,
 ) {
-    let Ok((_editor, display, cursor, tv, vp)) = editor_query.single() else {
+    let mut iter = editor_query;
+    let Ok((display, cursor, tv, _vp, mut overlays)) = iter.single_mut() else {
         return;
     };
 
-    let char_width = font.char_width;
-    let line_height = font.line_height;
-    let cursor_height = line_height * cursor_settings.height_multiplier;
-    let cursor_count = cursor.cursors.len();
+    // Drain any caret rects from the previous frame. We mark them with z=+1 so
+    // we can identify them; selection rects use z=-1 (added in step 6b).
+    overlays.rects.retain(|r| r.z != 1);
 
-    let use_wrapping = wrapping.enabled && display.display_map.wrap_width > 0;
-
-    let mut cursor_entities: std::collections::HashMap<usize, Entity> =
-        std::collections::HashMap::new();
-    for (entity, ec, _, _) in cursor_query.iter() {
-        cursor_entities.insert(ec.cursor_index, entity);
+    // Blink: skip pushing during the off-phase. Always visible for half a second
+    // after movement, then alternates at `blink_rate` Hz.
+    let blink_visible = if cursor_settings.blink_rate == 0.0 {
+        true
+    } else {
+        let time_since_move = time.elapsed_secs_f64() - cursor.cursor_moved_time;
+        let blink_pause_duration = 0.5;
+        if time_since_move < blink_pause_duration {
+            true
+        } else {
+            let blink_time = (time_since_move - blink_pause_duration) as f32;
+            let blink_phase = (blink_time * cursor_settings.blink_rate) % 1.0;
+            blink_phase < 0.5
+        }
+    };
+    if !blink_visible {
+        overlays.version = overlays.version.wrapping_add(1);
+        return;
     }
 
-    for (idx, c) in cursor.cursors.iter().enumerate() {
+    let char_width = font.char_width;
+    let use_wrapping = wrapping.enabled && display.display_map.wrap_width > 0;
+
+    for c in cursor.cursors.iter() {
         let cursor_pos = c.position.min(tv.rope.len_chars());
         let line_index = tv.rope.char_to_line(cursor_pos);
         let line_start = tv.rope.line_to_char(line_index);
@@ -108,94 +135,19 @@ pub(crate) fn update_cursor(
             0.0
         };
 
-        let x_offset = vp.text_area_left + extra_indent + (display_col as f32 * char_width);
-        let y_offset = vp.text_area_top + tv.scroll_offset + (display_row as f32 * line_height);
+        let x_left = extra_indent + (display_col as f32 * char_width);
+        let x_right = x_left + cursor_settings.width;
 
-        let h_scroll = if use_wrapping {
-            0.0
-        } else {
-            tv.horizontal_scroll_offset
-        };
-
-        let translation = to_bevy_coords_left_aligned(
-            x_offset,
-            y_offset,
-            vp.width as f32,
-            vp.height as f32,
-            h_scroll,
-        );
-
-        if let Some(&entity) = cursor_entities.get(&idx) {
-            if let Ok((_, _, mut transform, mut visibility)) = cursor_query.get_mut(entity) {
-                transform.translation = Vec3::new(translation.x, translation.y, 1.0);
-                *visibility = Visibility::Visible;
-            }
-            cursor_entities.remove(&idx);
-        } else {
-            let mut entity_cmd = commands.spawn((
-                Sprite {
-                    color: theme.cursor,
-                    custom_size: Some(Vec2::new(cursor_settings.width, cursor_height)),
-                    ..default()
-                },
-                Transform::from_translation(Vec3::new(translation.x, translation.y, 1.0)),
-                Visibility::Visible,
-                EditorCursor { cursor_index: idx },
-                Name::new(format!("EditorCursor_{}", idx)),
-            ));
-            if let Some(ref layers) = render_config.render_layers {
-                entity_cmd.insert(layers.clone());
-            }
-        }
+        overlays.rects.push(RectOverlay {
+            display_row: display_row as u32,
+            x_range: x_left..x_right,
+            color: theme.cursor,
+            z: 1, // above text
+            corner_radius: 0.0,
+        });
     }
 
-    for (idx, entity) in cursor_entities {
-        if idx < cursor_count {
-            if let Ok((_, _, _, mut visibility)) = cursor_query.get_mut(entity) {
-                *visibility = Visibility::Hidden;
-            }
-        } else {
-            commands.entity(entity).despawn();
-        }
-    }
-}
-
-/// The cursor stays visible briefly after movement before blinking resumes
-pub(crate) fn animate_cursor(
-    time: Res<Time>,
-    cursor_settings: Res<CursorSettings>,
-    editor_query: Query<&CursorState, With<CodeEditor>>,
-    mut cursor_query: Query<&mut Visibility, With<EditorCursor>>,
-) {
-    let Ok(cursor) = editor_query.single() else {
-        return;
-    };
-
-    if cursor_settings.blink_rate == 0.0 {
-        for mut visibility in cursor_query.iter_mut() {
-            *visibility = Visibility::Visible;
-        }
-        return;
-    }
-
-    let time_since_move = time.elapsed_secs_f64() - cursor.cursor_moved_time;
-    let blink_pause_duration = 0.5; // seconds
-
-    let new_visibility = if time_since_move < blink_pause_duration {
-        Visibility::Visible
-    } else {
-        let blink_time = (time_since_move - blink_pause_duration) as f32;
-        let blink_phase = (blink_time * cursor_settings.blink_rate) % 1.0;
-        if blink_phase < 0.5 {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        }
-    };
-
-    for mut visibility in cursor_query.iter_mut() {
-        *visibility = new_visibility;
-    }
+    overlays.version = overlays.version.wrapping_add(1);
 }
 pub(crate) fn update_cursor_line_highlight(
     mut commands: Commands,

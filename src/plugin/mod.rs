@@ -183,12 +183,14 @@ impl Plugin for CodeEditorPlugin {
         #[cfg(feature = "lsp")]
         app.add_plugins(LspPlugin);
 
-        // Add main rendering system
+        // Add main rendering system. Runs after overlay-producing systems
+        // (cursor, selection) so it can read this frame's overlays.
         app.add_systems(
             Update,
             update_gpu_text_instanced
                 .run_if(crate::gpu_text::atlas_ready)
-                .in_set(RenderingSet),
+                .in_set(RenderingSet)
+                .after(crate::plugin::cursor::push_cursor_overlays),
         );
     }
 }
@@ -247,6 +249,7 @@ fn spawn_editor_entity(mut commands: Commands) {
         CursorState::default(),
         crate::text_view::TextViewState::default(),
         crate::text_view::TextViewViewport::default(),
+        crate::text_view::TextViewOverlays::default(),
         Name::new("CodeEditor"),
     ));
 }
