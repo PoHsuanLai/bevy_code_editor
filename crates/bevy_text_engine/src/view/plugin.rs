@@ -16,7 +16,7 @@ use super::overlay::TextViewOverlays;
 use super::render::{render_layout, GlyphBatchComponent, TextViewBatch};
 use super::state::TextViewState;
 use super::viewport::TextViewViewport;
-use crate::gpu::{atlas_ready, GlyphAtlas, GpuTextPlugin, InstancedTextRenderPlugin};
+use crate::gpu::{atlas_ready, GlyphAtlas, GlyphAtlasPlugin, InstancedTextRenderPlugin};
 
 /// System set for text view rendering.
 ///
@@ -95,8 +95,9 @@ impl Plugin for TextEnginePlugin {
 }
 
 /// `PluginGroup` bundling everything needed to render `TextView` entities:
-/// [`GpuTextPlugin`] (atlas + material), [`InstancedTextRenderPlugin`]
-/// (instanced draw pipeline), and [`TextEnginePlugin`] (view systems).
+/// [`GlyphAtlasPlugin`] (atlas resource bootstrap),
+/// [`InstancedTextRenderPlugin`] (instanced draw pipeline), and
+/// [`TextEnginePlugin`] (view systems).
 ///
 /// Mirror of `bevy::DefaultPlugins`: hosts that want fine-grained control
 /// can `.disable::<X>()` individual plugins or build their own group.
@@ -105,7 +106,7 @@ pub struct TextEnginePlugins;
 impl PluginGroup for TextEnginePlugins {
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
-            .add(GpuTextPlugin)
+            .add(GlyphAtlasPlugin)
             .add(InstancedTextRenderPlugin)
             .add(TextEnginePlugin)
     }

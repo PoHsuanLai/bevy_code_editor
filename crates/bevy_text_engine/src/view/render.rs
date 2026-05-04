@@ -7,7 +7,7 @@
 
 use bevy::prelude::*;
 
-use crate::gpu::{GlyphAtlas, GlyphKey, GlyphRasterizer};
+use crate::gpu::GlyphAtlas;
 
 use super::layout::{line_x_at_byte, DisplayLayout};
 use super::overlay::TextViewOverlays;
@@ -187,7 +187,6 @@ pub fn render_layout(
                     anchor,
                     style,
                     MonoMetrics {
-                        char_width,
                         font_size,
                         start_x: 0.0,
                     },
@@ -233,11 +232,6 @@ pub fn render_layout(
                 } else {
                     font_size
                 };
-                let seg_char_width = if run.font_scale > 0.0 {
-                    char_width * run.font_scale
-                } else {
-                    char_width
-                };
 
                 if let Some(shape) = shape_usable {
                     emit_shaped_run_glyphs(
@@ -255,7 +249,6 @@ pub fn render_layout(
                         anchor,
                         style,
                         MonoMetrics {
-                            char_width: seg_char_width,
                             font_size: seg_font_size,
                             start_x: seg_x_start,
                         },
@@ -366,21 +359,23 @@ fn emit_shaped_run_glyphs(
     }
 }
 
-/// Per-run metrics for the monospace fallback path. `char_width` is the
-/// uniform advance per non-tab glyph; `font_size` is the rasterizer size (may
-/// differ from the line default when a `font_scale` run overrides); `start_x`
-/// is the run's pen-x relative to the line origin (where it picks up after
-/// any preceding runs).
+/// Per-run metrics for the shape-on-demand fallback path. `font_size` is the
+/// rasterizer size (may differ from the line default when a `font_scale` run
+/// overrides); `start_x` is the run's pen-x relative to the line origin (where
+/// it picks up after any preceding runs).
 #[derive(Clone, Copy)]
 struct MonoMetrics {
-    char_width: f32,
     font_size: f32,
     start_x: f32,
 }
 
-/// Emit glyphs for a byte range using the legacy char-walk. Used when no
-/// `LineShape` is attached or when a `StyleRun.font_scale` override would
-/// require re-shaping at a different size (out of scope for W1).
+/// Emit glyphs for a byte range by shaping it on demand. Used when no
+/// `LineShape` is attached (`trivial_layout` consumers) or when a
+/// `StyleRun.font_scale` override requires re-shaping at a different size.
+///
+/// Shaping a per-frame slice is cheap — it's the same code path the producer
+/// uses, just narrowed to the run. For monospace ASCII it yields advances
+/// byte-identical to the old `col * char_width` walk.
 fn emit_monospace_glyphs(
     line: &ShapedLine,
     range: std::ops::Range<usize>,
@@ -393,22 +388,15 @@ fn emit_monospace_glyphs(
     let Some(slice) = line.text.get(range) else {
         return;
     };
-    let mut x = metrics.start_x;
-    for ch in slice.chars() {
-        if ch == '\n' || ch == '\r' {
+    // Strip a trailing newline — the rope line includes it but cosmic-text
+    // would just emit a zero-advance glyph. Matches the producer's behavior.
+    let shape_text = slice.strip_suffix('\n').unwrap_or(slice);
+    let shape = atlas.shape_line(shape_text, metrics.font_size);
+    for g in &shape.glyphs {
+        let Some((info, _)) = atlas.get_or_rasterize_glyph(g.cache_key) else {
             continue;
-        }
-        if ch == '\t' {
-            x += metrics.char_width * 4.0;
-            continue;
-        }
-        let key = GlyphKey::new(ch, metrics.font_size);
-        if let Some(info) =
-            atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, metrics.font_size))
-        {
-            out.push(glyph_quad(info, x, anchor, style));
-        }
-        x += metrics.char_width;
+        };
+        out.push(glyph_quad(info, metrics.start_x + g.x, anchor, style));
     }
 }
 

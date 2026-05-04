@@ -31,7 +31,7 @@ pub use view::*;
 
 pub mod prelude {
     //! Common types for spawning and rendering text views.
-    pub use crate::gpu::{GpuTextPlugin, InstancedTextRenderPlugin};
+    pub use crate::gpu::{GlyphAtlasPlugin, InstancedTextRenderPlugin};
     pub use crate::view::{
         DisplayLayout, FontConfig, TextEnginePlugin, TextEnginePlugins, TextView, TextViewState,
         TextViewViewport,

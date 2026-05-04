@@ -148,20 +148,24 @@ fn syntax_version(_syntax: &SyntaxResource) -> u64 {
 /// populated. The renderer never triggers atlas mutation during the paint
 /// pass — eliminates first-encounter scroll stutter (W6).
 pub(crate) fn prewarm_atlas_for_layout(
-    layouts: Query<(Ref<DisplayLayout>, &FontConfig)>,
+    layouts: Query<Ref<DisplayLayout>>,
     mut atlas: ResMut<bevy_text_engine::gpu::GlyphAtlas>,
 ) {
-    for (layout, font) in &layouts {
+    for layout in &layouts {
         if !layout.is_changed() {
             continue;
         }
-        // Per-line font size pulled from the entity's `FontConfig`. Per-run
-        // font_scale is rare enough that mid-paint rasterization is OK.
-        atlas.ensure_glyphs(
-            layout
-                .lines
-                .iter()
-                .flat_map(|l| l.text.chars().map(|c| (c, font.size))),
-        );
+        // Each `ShapedLine.shape` already carries cache_keys from the
+        // producer's shaping. Pre-rasterize them so the renderer's paint
+        // pass is a pure read. Per-run `font_scale` overrides re-shape on
+        // demand at paint time (rare enough that mid-paint rasterization
+        // is acceptable).
+        atlas.ensure_glyphs(layout.lines.iter().flat_map(|l| {
+            l.shape
+                .as_ref()
+                .map(|s| s.glyphs.iter().map(|g| g.cache_key))
+                .into_iter()
+                .flatten()
+        }));
     }
 }

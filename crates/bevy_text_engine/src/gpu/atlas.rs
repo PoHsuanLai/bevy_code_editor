@@ -3,7 +3,7 @@
 use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use cosmic_text::{CacheKey, FontSystem, SwashCache};
+use cosmic_text::{FontSystem, SwashCache};
 use std::collections::HashMap;
 
 /// Power of 2 for GPU efficiency.
@@ -13,22 +13,6 @@ const GLYPH_PADDING: u32 = 2;
 
 /// Rasterize at 2x for crisp text on HiDPI displays.
 pub const DPI_SCALE: f32 = 2.0;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct GlyphKey {
-    pub character: char,
-    /// Scaled by 10 for sub-pixel precision.
-    pub font_size_tenths: u32,
-}
-
-impl GlyphKey {
-    pub fn new(character: char, font_size: f32) -> Self {
-        Self {
-            character,
-            font_size_tenths: (font_size * 10.0) as u32,
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug)]
 pub struct GlyphInfo {
@@ -52,7 +36,6 @@ struct AtlasRow {
 #[derive(Resource)]
 pub struct GlyphAtlas {
     pub texture: Handle<Image>,
-    glyphs: HashMap<GlyphKey, GlyphInfo>,
     rows: Vec<AtlasRow>,
     current_y: u32,
     pixels: Vec<u8>,
@@ -60,7 +43,7 @@ pub struct GlyphAtlas {
     font_system: FontSystem,
     swash_cache: SwashCache,
     configured_font_id: Option<cosmic_text::fontdb::ID>,
-    /// Cache keyed by cosmic_text CacheKey (used by instanced rendering path)
+    /// Cache keyed by cosmic_text CacheKey — populated by `get_or_rasterize_glyph`.
     cache: HashMap<cosmic_text::CacheKey, GlyphInfo>,
     /// Generation counter — incremented on atlas clear for cache invalidation
     pub generation: u64,
@@ -106,7 +89,6 @@ impl GlyphAtlas {
 
         let mut atlas = Self {
             texture,
-            glyphs: HashMap::new(),
             rows: Vec::new(),
             current_y: 0,
             pixels,
@@ -216,169 +198,6 @@ impl GlyphAtlas {
         None
     }
 
-    /// Get or create a glyph entry in the atlas
-    pub fn get_or_insert(
-        &mut self,
-        key: GlyphKey,
-        rasterize: impl FnOnce() -> Option<RasterizedGlyph>,
-    ) -> Option<GlyphInfo> {
-        if let Some(info) = self.glyphs.get(&key) {
-            return Some(*info);
-        }
-
-        // Try cosmic_text rasterization first, fall back to provided rasterizer
-        let glyph = self.rasterize_with_cosmic(key).or_else(rasterize)?;
-
-        // Find space in the atlas, with generation-based recovery on full
-        let (x, y) = match self.allocate(glyph.width, glyph.height) {
-            Some(pos) => pos,
-            None => {
-                warn!(
-                    "Glyph atlas full, clearing and retrying (generation {})",
-                    self.generation
-                );
-                self.clear();
-                self.allocate(glyph.width, glyph.height)?
-            }
-        };
-
-        // Copy glyph pixels to atlas
-        self.copy_glyph_to_atlas(x, y, &glyph);
-
-        // Calculate UV coordinates
-        let uv_min = Vec2::new(x as f32 / ATLAS_SIZE as f32, y as f32 / ATLAS_SIZE as f32);
-        let uv_max = Vec2::new(
-            (x + glyph.width) as f32 / ATLAS_SIZE as f32,
-            (y + glyph.height) as f32 / ATLAS_SIZE as f32,
-        );
-
-        // Size is scaled down to logical pixels for rendering
-        // The atlas stores high-res glyphs, but we render at logical size
-        let info = GlyphInfo {
-            uv_min,
-            uv_max,
-            size: Vec2::new(
-                glyph.width as f32 / DPI_SCALE,
-                glyph.height as f32 / DPI_SCALE,
-            ),
-            offset: Vec2::new(glyph.bearing_x, glyph.bearing_y),
-            advance: glyph.advance,
-        };
-
-        self.glyphs.insert(key, info);
-        self.dirty = true;
-
-        Some(info)
-    }
-
-    /// Rasterize a glyph using cosmic_text/swash
-    fn rasterize_with_cosmic(&mut self, key: GlyphKey) -> Option<RasterizedGlyph> {
-        let font_size = key.font_size_tenths as f32 / 10.0;
-        let character = key.character;
-
-        // Skip control characters
-        if character.is_control() && character != '\t' {
-            return None;
-        }
-
-        // Use configured font if available, otherwise fall back to system monospace
-        let font_id = if let Some(id) = self.configured_font_id {
-            id
-        } else {
-            let db = self.font_system.db();
-            // Find a monospace font first for code editing
-            db.faces()
-                .find_map(|face| if face.monospaced { Some(face.id) } else { None })
-                .or_else(|| {
-                    // Fall back to any font
-                    db.faces().next().map(|f| f.id)
-                })?
-        };
-
-        // Get the font
-        let font = self.font_system.get_font(font_id)?;
-        let swash_font = font.as_swash();
-
-        // Get glyph ID for this character
-        let glyph_id = swash_font.charmap().map(character);
-        if glyph_id == 0 && character != ' ' {
-            // No glyph for this character, try fallback
-            return None;
-        }
-
-        // Rasterize at higher resolution for crisp text on HiDPI displays
-        let scaled_font_size = font_size * DPI_SCALE;
-
-        // Get glyph metrics at the scaled size
-        let metrics = swash_font.glyph_metrics(&[]).scale(scaled_font_size);
-        let scaled_advance = metrics.advance_width(glyph_id);
-        // Return advance at original size for layout
-        let advance = scaled_advance / DPI_SCALE;
-
-        // Create cache key for swash with scaled font size
-        let cache_key = CacheKey::new(
-            font_id,
-            glyph_id,
-            scaled_font_size,
-            (0.0, 0.0), // No subpixel offset
-            cosmic_text::CacheKeyFlags::empty(),
-        );
-
-        // Get the rasterized image at higher resolution
-        let image = self
-            .swash_cache
-            .get_image_uncached(&mut self.font_system, cache_key.0)?;
-
-        // Handle empty glyphs (like space)
-        if image.placement.width == 0 || image.placement.height == 0 {
-            return Some(RasterizedGlyph {
-                width: 0,
-                height: 0,
-                bearing_x: 0.0,
-                bearing_y: 0.0,
-                advance,
-                pixels: Vec::new(),
-            });
-        }
-
-        // Convert to our format - keep the high-res size for the atlas
-        let width = image.placement.width;
-        let height = image.placement.height;
-        // Scale bearings back to original size for correct positioning
-        let bearing_x = image.placement.left as f32 / DPI_SCALE;
-        let bearing_y = image.placement.top as f32 / DPI_SCALE;
-
-        // The image data is in coverage format (single channel alpha)
-        // We need to extract just the alpha values
-        let pixels = match image.content {
-            cosmic_text::SwashContent::Mask => {
-                // Already grayscale alpha
-                image.data.clone()
-            }
-            cosmic_text::SwashContent::Color => {
-                // RGBA, extract alpha channel
-                image.data.chunks(4).map(|pixel| pixel[3]).collect()
-            }
-            cosmic_text::SwashContent::SubpixelMask => {
-                // Subpixel rendering, convert to grayscale
-                image
-                    .data
-                    .chunks(3)
-                    .map(|pixel| ((pixel[0] as u16 + pixel[1] as u16 + pixel[2] as u16) / 3) as u8)
-                    .collect()
-            }
-        };
-
-        Some(RasterizedGlyph {
-            width,
-            height,
-            bearing_x,
-            bearing_y,
-            advance,
-            pixels,
-        })
-    }
-
     /// Allocate space in the atlas using shelf packing
     fn allocate(&mut self, width: u32, height: u32) -> Option<(u32, u32)> {
         if width == 0 || height == 0 {
@@ -412,34 +231,6 @@ impl GlyphAtlas {
 
         // Atlas is full
         None
-    }
-
-    /// Copy glyph pixels to the atlas, tracking dirty rect for partial upload
-    fn copy_glyph_to_atlas(&mut self, x: u32, y: u32, glyph: &RasterizedGlyph) {
-        if glyph.width == 0 || glyph.height == 0 {
-            return;
-        }
-
-        // Track dirty rect
-        self.dirty_min_y = self.dirty_min_y.min(y);
-        self.dirty_max_y = self.dirty_max_y.max(y + glyph.height);
-
-        for gy in 0..glyph.height {
-            for gx in 0..glyph.width {
-                let src_idx = (gy * glyph.width + gx) as usize;
-                let dst_x = x + gx;
-                let dst_y = y + gy;
-                let dst_idx = ((dst_y * ATLAS_SIZE + dst_x) * 4) as usize;
-
-                if dst_idx + 3 < self.pixels.len() && src_idx < glyph.pixels.len() {
-                    let alpha = glyph.pixels[src_idx];
-                    self.pixels[dst_idx] = 255; // R
-                    self.pixels[dst_idx + 1] = 255; // G
-                    self.pixels[dst_idx + 2] = 255; // B
-                    self.pixels[dst_idx + 3] = alpha; // A
-                }
-            }
-        }
     }
 
     /// Update the GPU texture with only the dirty rows (partial upload)
@@ -490,7 +281,6 @@ impl GlyphAtlas {
 
     /// Clear the atlas (e.g., when font changes or atlas is full)
     pub fn clear(&mut self) {
-        self.glyphs.clear();
         self.rows.clear();
         self.current_y = 0;
         self.pixels.fill(0);
@@ -531,82 +321,34 @@ impl GlyphAtlas {
         }
     }
 
-    /// Check if a glyph is cached
-    pub fn contains(&self, key: &GlyphKey) -> bool {
-        self.glyphs.contains_key(key)
-    }
-
-    /// Get cached glyph info
-    pub fn get(&self, key: &GlyphKey) -> Option<&GlyphInfo> {
-        self.glyphs.get(key)
-    }
-
-    /// Measure the advance width of a character
-    pub fn measure_char_width(&mut self, character: char, font_size: f32) -> Option<f32> {
-        let key = GlyphKey::new(character, font_size);
-        // Force rasterize/load if not present to ensure we get a valid measurement
-        self.get_or_insert(key, || GlyphRasterizer::rasterize(character, font_size))
-            .map(|info| info.advance)
-    }
-
-    /// Pre-rasterize a batch of (char, font_size) pairs into the atlas, ignoring
-    /// the result. Used by `display_map` to warm the atlas before the renderer
-    /// runs, so the renderer can take `&GlyphAtlas` (immutable) and never trigger
-    /// mid-paint texture uploads. Skips control characters and chars already present.
-    pub fn ensure_glyphs<I: IntoIterator<Item = (char, f32)>>(&mut self, chars: I) {
-        for (ch, font_size) in chars {
-            if ch == '\n' || ch == '\r' || ch == '\t' {
-                continue;
-            }
-            let key = GlyphKey::new(ch, font_size);
-            if self.glyphs.contains_key(&key) {
+    /// Pre-rasterize a batch of `cosmic_text::CacheKey`s into the atlas,
+    /// ignoring the result. Used by `display_map` to warm the atlas before
+    /// the renderer runs, so the renderer's paint pass never triggers
+    /// mid-frame texture uploads. Cache hits are O(1) and skip the work.
+    pub fn ensure_glyphs<I: IntoIterator<Item = cosmic_text::CacheKey>>(&mut self, keys: I) {
+        for key in keys {
+            if self.cache.contains_key(&key) {
                 continue;
             }
             // Drop the result; we just need the side effect of insertion.
-            let _ = self.get_or_insert(key, || GlyphRasterizer::rasterize(ch, font_size));
+            let _ = self.get_or_rasterize_glyph(key);
         }
     }
 }
 
-/// A rasterized glyph ready to be copied to the atlas
-pub struct RasterizedGlyph {
-    pub width: u32,
-    pub height: u32,
-    pub bearing_x: f32,
-    pub bearing_y: f32,
-    pub advance: f32,
-    /// Grayscale pixels (alpha values)
-    pub pixels: Vec<u8>,
+/// Inserts the [`GlyphAtlas`] resource at startup. The renderer
+/// (`view::render`) keys glyphs by `cosmic_text::CacheKey`; everything else
+/// — material/quad/wgsl pipeline — is handled by [`InstancedTextRenderPlugin`].
+pub struct GlyphAtlasPlugin;
+
+impl Plugin for GlyphAtlasPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(Startup, setup_glyph_atlas);
+    }
 }
 
-/// Fallback software glyph rasterizer
-/// Used when cosmic_text doesn't have the font/glyph
-pub struct GlyphRasterizer;
-
-impl GlyphRasterizer {
-    /// Rasterize a character to a bitmap (fallback)
-    pub fn rasterize(character: char, font_size: f32) -> Option<RasterizedGlyph> {
-        // Skip control characters
-        if character.is_control() && character != '\t' {
-            return None;
-        }
-
-        // Simple monospace approximation for fallback
-        let char_width = (font_size * 0.6).ceil() as u32;
-        let char_height = font_size.ceil() as u32;
-
-        // Create a simple filled rectangle (placeholder)
-        let pixels = vec![200u8; (char_width * char_height) as usize];
-
-        Some(RasterizedGlyph {
-            width: char_width.max(1),
-            height: char_height.max(1),
-            bearing_x: 0.0,
-            bearing_y: font_size * 0.8,
-            advance: char_width as f32,
-            pixels,
-        })
-    }
+fn setup_glyph_atlas(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
+    commands.insert_resource(GlyphAtlas::new(&mut images));
 }
 
 // ============================================================================
@@ -619,16 +361,6 @@ mod instanced_extensions {
     use super::*;
     use cosmic_text::{Attrs, AttrsList, ShapeBuffer, ShapeLine, Shaping};
 
-    /// Positioned glyph from cosmic_text layout
-    #[derive(Clone, Copy, Debug)]
-    pub struct PositionedGlyph {
-        pub glyph_id: u16,
-        pub x: f32,
-        pub y: f32,
-        pub font_id: cosmic_text::fontdb::ID,
-        pub byte_index: usize,
-    }
-
     /// Placement information for a rasterized glyph
     #[derive(Clone, Copy, Debug)]
     pub struct PlacementInfo {
@@ -637,7 +369,7 @@ mod instanced_extensions {
     }
 
     impl GlyphAtlas {
-        /// Pack a glyph into the atlas (simplified wrapper around get_or_insert)
+        /// Pack a glyph into the atlas — thin wrapper around `allocate`.
         pub(crate) fn pack(&mut self, width: u32, height: u32) -> Option<(u32, u32)> {
             self.allocate(width, height)
         }
@@ -677,52 +409,6 @@ mod instanced_extensions {
             self.dirty = true;
         }
 
-        /// Layout a line of text using cosmic_text
-        pub fn layout_line(&mut self, text: &str, font_size: f32) -> Vec<PositionedGlyph> {
-            let attrs = Attrs::new();
-            let attrs_list = AttrsList::new(attrs);
-
-            let line = ShapeLine::new(
-                &mut self.font_system,
-                text,
-                &attrs_list,
-                Shaping::Advanced,
-                4, // Tab width
-            );
-
-            let mut layout_lines = Vec::with_capacity(1);
-            let mut scratch = ShapeBuffer::default();
-
-            line.layout_to_buffer(
-                &mut scratch,
-                font_size,
-                None,
-                cosmic_text::Wrap::None,
-                None,
-                &mut layout_lines,
-                None,
-            );
-
-            if layout_lines.is_empty() {
-                return Vec::new();
-            }
-
-            let layout = &layout_lines[0];
-            let mut result = Vec::with_capacity(layout.glyphs.len());
-
-            for glyph in &layout.glyphs {
-                result.push(PositionedGlyph {
-                    glyph_id: glyph.glyph_id,
-                    x: glyph.x,
-                    y: glyph.y,
-                    font_id: glyph.font_id,
-                    byte_index: glyph.start,
-                });
-            }
-
-            result
-        }
-
         /// Shape a line into the engine's owned `LineShape`, ready to attach to a
         /// `ShapedLine.shape` field.
         ///
@@ -737,7 +423,20 @@ mod instanced_extensions {
         ) -> crate::view::snapshot::LineShape {
             use crate::view::snapshot::{LineShape, ShapedGlyph};
 
-            let attrs = Attrs::new();
+            // If a font was explicitly configured via `new_with_font`, pin
+            // shaping to its family name so cosmic-text doesn't fall back to
+            // the system default for unicode coverage cases.
+            let mut attrs = Attrs::new();
+            let configured_family =
+                self.configured_font_id.and_then(|id| {
+                    self.font_system
+                        .db()
+                        .face(id)
+                        .and_then(|f| f.families.first().map(|fam| fam.0.clone()))
+                });
+            if let Some(ref family) = configured_family {
+                attrs = attrs.family(cosmic_text::Family::Name(family.as_str()));
+            }
             let attrs_list = AttrsList::new(attrs);
 
             let line = ShapeLine::new(
