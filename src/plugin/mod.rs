@@ -128,10 +128,12 @@ impl Plugin for CodeEditorPlugin {
             crate::input::EditorAction,
         >::default());
 
-        // Spawn the editor entity. The host app is responsible for spawning
-        // the EditorInputManager entity with its chosen InputMap<EditorAction>.
-        // Use `default_input_map()` for the standard keybindings.
+        // Spawn the editor entity, plus a default EditorInputManager with the
+        // standard keybindings. Hosts that want to override the keymap can spawn
+        // their own EditorInputManager entity *before* PostStartup; the default
+        // spawn is gated on no existing one being present.
         app.add_systems(Startup, spawn_editor_entity);
+        app.add_systems(PostStartup, spawn_default_input_manager);
 
         // Register editor events (for file operations)
         // These events are emitted by keybindings and should be handled by the host application
@@ -208,5 +210,22 @@ fn spawn_editor_entity(mut commands: Commands) {
         crate::text_view::TextViewOverlays::default(),
         crate::text_view::DisplayLayout::default(),
         Name::new("CodeEditor"),
+    ));
+}
+
+/// Spawn a default `EditorInputManager` with `default_input_map()` if the host
+/// app didn't spawn one before `PostStartup`. Hosts that want a custom keymap
+/// can spawn their own at `Startup` and this becomes a no-op.
+fn spawn_default_input_manager(
+    mut commands: Commands,
+    existing: Query<(), With<EditorInputManager>>,
+) {
+    if !existing.is_empty() {
+        return;
+    }
+    commands.spawn((
+        EditorInputManager,
+        crate::input::default_input_map(),
+        Name::new("EditorInputManager"),
     ));
 }
