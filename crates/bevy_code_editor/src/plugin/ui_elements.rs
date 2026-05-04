@@ -92,15 +92,14 @@ pub(crate) fn update_selection_highlight(
             let e_byte = line.slice(..sel_end_col.min(line_chars)).len_bytes();
 
             push_selection_for_buffer_range(
-                line_idx as u32,
-                s_byte,
-                e_byte,
-                sel_start_col,
-                sel_end_col,
-                line_idx == end_line,
-                layout,
-                fold_state,
-                line_idx,
+                SelSpan {
+                    s_byte,
+                    e_byte,
+                    sel_start_col,
+                    sel_end_col,
+                    is_last_buffer_line: line_idx == end_line,
+                },
+                &RowMap { layout, fold_state, line_idx },
                 char_width,
                 theme.selection_background,
                 &mut overlays.rects,
@@ -112,101 +111,101 @@ pub(crate) fn update_selection_highlight(
     }
 }
 
-/// Push selection rects for a `[s_byte..e_byte]` slice of `buffer_row`. With
-/// wrap on, the slice may span multiple display rows; emit one rect per row,
-/// extending continuation rows to the row's right edge except the last row.
-#[allow(clippy::too_many_arguments)]
-fn push_selection_for_buffer_range(
-    buffer_row: u32,
+/// One buffer line's slice of a selection: the byte range, the matching
+/// char range (used as a fallback when shaping is unavailable), and a flag
+/// marking whether this line is the *last* line of the multi-line selection
+/// (the only line that must end at the actual end-x rather than extending to
+/// the row's right edge).
+struct SelSpan {
     s_byte: usize,
     e_byte: usize,
     sel_start_col: usize,
     sel_end_col: usize,
     is_last_buffer_line: bool,
-    layout: Option<&DisplayLayout>,
-    fold_state: &FoldState,
+}
+
+/// Read-only context for mapping `(buffer_row, byte)` → `(display_row, byte_in_row)`.
+/// `layout` is `None` for off-viewport buffer lines, in which case the row
+/// maps via `fold_state` and pixel math falls back to `char_width`.
+struct RowMap<'a> {
+    layout: Option<&'a DisplayLayout>,
+    fold_state: &'a FoldState,
+    /// Buffer line index, in `usize` for `fold_state` lookups. Equals the
+    /// `buffer_row` passed to `layout.buffer_to_display` (which takes `u32`).
     line_idx: usize,
+}
+
+impl<'a> RowMap<'a> {
+    fn buffer_row(&self) -> u32 {
+        self.line_idx as u32
+    }
+
+    /// Resolve `(display_row, byte_in_row)` for a byte offset within the
+    /// buffer line. Fall back to fold-state's display row + raw byte when
+    /// the layout doesn't cover this row.
+    fn locate(&self, byte_in_line: usize) -> (u32, usize) {
+        self.layout
+            .and_then(|l| l.buffer_to_display(self.buffer_row(), byte_in_line))
+            .unwrap_or_else(|| {
+                (
+                    self.fold_state.actual_to_display_line(self.line_idx) as u32,
+                    byte_in_line,
+                )
+            })
+    }
+}
+
+/// Push selection rects for one buffer line's slice. With wrap on, the slice
+/// may span multiple display rows; emit one rect per row, extending non-final
+/// rows to the row's right edge so the selection band looks continuous.
+fn push_selection_for_buffer_range(
+    span: SelSpan,
+    rows: &RowMap<'_>,
     char_width: f32,
     color: Color,
     out: &mut Vec<RectOverlay>,
 ) {
-    // Map start and end bytes to display rows + local bytes. With no layout
-    // (off-viewport row, no shaping), fall back to char-width math on the
-    // fold-derived display row.
-    let (start_row, start_byte_in_row) = layout
-        .and_then(|l| l.buffer_to_display(buffer_row, s_byte))
-        .unwrap_or_else(|| {
-            (fold_state.actual_to_display_line(line_idx) as u32, s_byte)
-        });
-    let (end_row, end_byte_in_row) = layout
-        .and_then(|l| l.buffer_to_display(buffer_row, e_byte))
-        .unwrap_or_else(|| {
-            (fold_state.actual_to_display_line(line_idx) as u32, e_byte)
-        });
+    let (start_row, start_byte_in_row) = rows.locate(span.s_byte);
+    let (end_row, end_byte_in_row) = rows.locate(span.e_byte);
 
-    if start_row == end_row {
-        // Single row — exact pixel range. For non-final selection rows on a
-        // multi-line selection, paint to the right edge so the band looks
-        // continuous (legacy behavior).
-        let xl = layout
-            .and_then(|l| l.x_at_byte(start_row, start_byte_in_row))
-            .unwrap_or(sel_start_col as f32 * char_width);
-        let xr = if is_last_buffer_line {
-            layout
-                .and_then(|l| l.x_at_byte(end_row, end_byte_in_row))
-                .unwrap_or(sel_end_col as f32 * char_width)
-        } else {
-            f32::MAX
-        };
-        out.push(RectOverlay {
-            display_row: start_row,
-            x_range: xl..xr,
-            vertical: RowVertical::Full,
-            color,
-            z: -1,
-            corner_radius: 0.0,
-        });
-        return;
-    }
-
-    // Multi-row span (selection crossed a soft-wrap break). First row: from
-    // start_x to right edge. Middle rows: full width. Last row: 0 to end_x.
-    let xl = layout
+    let start_x = rows
+        .layout
         .and_then(|l| l.x_at_byte(start_row, start_byte_in_row))
-        .unwrap_or(sel_start_col as f32 * char_width);
-    out.push(RectOverlay {
-        display_row: start_row,
-        x_range: xl..f32::MAX,
-        vertical: RowVertical::Full,
-        color,
-        z: -1,
-        corner_radius: 0.0,
-    });
-    for r in (start_row + 1)..end_row {
-        out.push(RectOverlay {
-            display_row: r,
-            x_range: 0.0..f32::MAX,
-            vertical: RowVertical::Full,
-            color,
-            z: -1,
-            corner_radius: 0.0,
-        });
-    }
-    let xr = if is_last_buffer_line {
-        layout
-            .and_then(|l| l.x_at_byte(end_row, end_byte_in_row))
-            .unwrap_or(sel_end_col as f32 * char_width)
+        .unwrap_or(span.sel_start_col as f32 * char_width);
+    let end_x_resolved = rows
+        .layout
+        .and_then(|l| l.x_at_byte(end_row, end_byte_in_row))
+        .unwrap_or(span.sel_end_col as f32 * char_width);
+    // Non-final-line rows extend to the right edge so the multi-line band
+    // looks continuous; the final line uses the resolved end-x.
+    let trailing_x = if span.is_last_buffer_line {
+        end_x_resolved
     } else {
         f32::MAX
     };
-    out.push(RectOverlay {
-        display_row: end_row,
-        x_range: 0.0..xr,
+
+    if start_row == end_row {
+        out.push(selection_rect(start_row, start_x..trailing_x, color));
+        return;
+    }
+
+    // Multi-row span (selection crossed a soft-wrap break).
+    out.push(selection_rect(start_row, start_x..f32::MAX, color));
+    for r in (start_row + 1)..end_row {
+        out.push(selection_rect(r, 0.0..f32::MAX, color));
+    }
+    out.push(selection_rect(end_row, 0.0..trailing_x, color));
+}
+
+fn selection_rect(display_row: u32, x_range: std::ops::Range<f32>, color: Color) -> RectOverlay {
+    RectOverlay {
+        display_row,
+        x_range,
         vertical: RowVertical::Full,
         color,
         z: -1,
         corner_radius: 0.0,
-    });
+    }
 }
 
 /// Update indent guide rendering

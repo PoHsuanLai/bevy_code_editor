@@ -26,45 +26,52 @@ pub struct MouseDragState {
     pub last_screen_pos: Option<Vec2>,
 }
 
+/// Read-only context needed to translate a viewport-local pixel position to
+/// a character position in the rope. Bundled because the two call sites in
+/// `handle_mouse_input` thread the same set of refs through.
+struct HitTestCtx<'a> {
+    rope: &'a Rope,
+    layout: Option<&'a DisplayLayout>,
+    font: &'a FontConfig,
+    viewport: &'a TextViewViewport,
+    fold_state: &'a FoldState,
+    /// Live scroll offset (read from `TextViewState`).
+    current_scroll_offset: f32,
+    /// When `Some`, overrides `current_scroll_offset` — used during drag
+    /// selection to anchor the hit-test to the offset at drag-start, so
+    /// auto-scroll doesn't drift the selection origin mid-drag.
+    scroll_offset_override: Option<f32>,
+}
+
 /// Convert screen coordinates to character position in the editor.
 ///
-/// `screen_pos` is viewport-local (0,0 at top-left). `layout`, when present,
-/// is consulted for shaped per-glyph hit-testing — this is what makes
-/// proportional fonts click correctly. `scroll_offset_override` stabilizes
-/// drag selection so the selection's anchor doesn't drift when auto-scroll
-/// changes `tv.scroll_offset` mid-drag.
-#[allow(clippy::too_many_arguments)]
-fn screen_to_char_pos(
-    screen_pos: Vec2,
-    rope: &Rope,
-    layout: Option<&DisplayLayout>,
-    current_scroll_offset: f32,
-    font: &FontConfig,
-    viewport: &TextViewViewport,
-    fold_state: &FoldState,
-    scroll_offset_override: Option<f32>,
-) -> usize {
-    let relative_x = screen_pos.x - viewport.text_area_left;
-    let scroll_offset = scroll_offset_override.unwrap_or(current_scroll_offset);
+/// `screen_pos` is viewport-local (0,0 at top-left). The layout in `ctx`,
+/// when present, is consulted for shaped per-glyph hit-testing — this is
+/// what makes proportional fonts click correctly.
+fn screen_to_char_pos(screen_pos: Vec2, ctx: &HitTestCtx<'_>) -> usize {
+    let relative_x = screen_pos.x - ctx.viewport.text_area_left;
+    let scroll_offset = ctx
+        .scroll_offset_override
+        .unwrap_or(ctx.current_scroll_offset);
     // scroll_offset is negative when scrolled down; subtracting flips it positive
     // so y=0 is the document origin (i.e. display row 0 is at relative_y == 0).
-    let relative_y = screen_pos.y - viewport.text_area_top - scroll_offset;
+    let relative_y = screen_pos.y - ctx.viewport.text_area_top - scroll_offset;
 
-    let display_row = (relative_y / font.line_height).max(0.0) as usize;
-    let buffer_line = fold_state.display_to_actual_line(display_row);
+    let display_row = (relative_y / ctx.font.line_height).max(0.0) as usize;
+    let buffer_line = ctx.fold_state.display_to_actual_line(display_row);
 
-    let line_count = rope.len_lines();
+    let line_count = ctx.rope.len_lines();
     if buffer_line >= line_count {
-        return rope.len_chars();
+        return ctx.rope.len_chars();
     }
 
-    let line_start_char = rope.line_to_char(buffer_line);
+    let line_start_char = ctx.rope.line_to_char(buffer_line);
 
     // Shaped path: ask the layout where pixel `relative_x` falls inside the
     // display row. With soft wrap, the row's `text` is a slice of the buffer
     // line starting at `buffer_byte_offset`; we translate the row-local byte
     // offset back to a buffer-line byte using that field.
-    if let Some(layout) = layout {
+    if let Some(layout) = ctx.layout {
         if let Some(byte_in_row) = layout.byte_at_x(display_row as u32, relative_x) {
             let row = layout
                 .lines
@@ -72,20 +79,20 @@ fn screen_to_char_pos(
                 .find(|l| l.display_row == display_row as u32);
             let row_buffer_line = row.map(|r| r.buffer_row as usize).unwrap_or(buffer_line);
             let buffer_byte_offset = row.map(|r| r.buffer_byte_offset).unwrap_or(0);
-            let line_start_byte = rope.line_to_byte(row_buffer_line);
+            let line_start_byte = ctx.rope.line_to_byte(row_buffer_line);
             let line_end_byte = if row_buffer_line + 1 < line_count {
-                rope.line_to_byte(row_buffer_line + 1)
+                ctx.rope.line_to_byte(row_buffer_line + 1)
             } else {
-                rope.len_bytes()
+                ctx.rope.len_bytes()
             };
             let abs_byte =
                 (line_start_byte + buffer_byte_offset + byte_in_row).min(line_end_byte);
-            return rope.byte_to_char(abs_byte);
+            return ctx.rope.byte_to_char(abs_byte);
         }
     }
 
-    let col = (relative_x / font.char_width).max(0.0) as usize;
-    let line_len = rope.line(buffer_line).len_chars().saturating_sub(1);
+    let col = (relative_x / ctx.font.char_width).max(0.0) as usize;
+    let line_len = ctx.rope.line(buffer_line).len_chars().saturating_sub(1);
     let char_in_line = col.min(line_len);
     line_start_char + char_in_line
 }
@@ -165,13 +172,15 @@ pub fn handle_mouse_input(
 
             Some(screen_to_char_pos(
                 viewport_local_pos,
-                &tv.rope,
-                layout.as_deref(),
-                tv.scroll_offset,
-                font,
-                viewport,
-                &fold_state,
-                None,
+                &HitTestCtx {
+                    rope: &tv.rope,
+                    layout: layout.as_deref(),
+                    font,
+                    viewport,
+                    fold_state: &fold_state,
+                    current_scroll_offset: tv.scroll_offset,
+                    scroll_offset_override: None,
+                },
             ))
         } else {
             None
@@ -378,13 +387,15 @@ pub fn handle_mouse_input(
                 // from affecting selection.
                 let current_pos = screen_to_char_pos(
                     viewport_local_pos,
-                    &tv.rope,
-                    layout.as_deref(),
-                    tv.scroll_offset,
-                    font,
-                    viewport,
-                    &fold_state,
-                    Some(drag_state.drag_start_scroll_offset),
+                    &HitTestCtx {
+                        rope: &tv.rope,
+                        layout: layout.as_deref(),
+                        font,
+                        viewport,
+                        fold_state: &fold_state,
+                        current_scroll_offset: tv.scroll_offset,
+                        scroll_offset_override: Some(drag_state.drag_start_scroll_offset),
+                    },
                 );
 
                 // Only update if position changed
