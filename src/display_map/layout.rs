@@ -8,18 +8,23 @@
 use bevy::prelude::*;
 use std::sync::Arc;
 
-use crate::settings::{FontSettings, PerformanceSettings};
+use crate::settings::{FontSettings, PerformanceSettings, SyntaxTheme};
 use crate::text_view::layout::DisplayLayout;
 use crate::text_view::snapshot::{ShapedLine, StyleRun};
 use crate::text_view::state::TextViewState;
 use crate::text_view::viewport::TextViewViewport;
 use crate::types::{FoldState, LineSegment};
 
-/// Build a `DisplayLayout` from the current legacy data shape.
+/// Build a `DisplayLayout` for the editor entity, with syntax highlighting
+/// resolved inline per visible line.
 ///
-/// Mirrors the visible-range and fold-skipping logic from `render_text_view`
-/// so that running `render_layout` against the result produces an equivalent
-/// instance buffer.
+/// The previous flow (legacy `update_gpu_text_instanced` → mutate
+/// `TextViewState.styled_lines` → bridge reads it) has been collapsed: the
+/// bridge now calls `syntax.highlight_range()` directly for the visible
+/// window, eliminating the per-buffer-line `Vec<Option<Vec<LineSegment>>>`
+/// materialization step. `TextViewState.styled_lines` is no longer read on
+/// the rendering path; it'll be deleted in step 11.
+#[allow(clippy::too_many_arguments)]
 pub fn build_display_layout(
     state: &TextViewState,
     viewport: &TextViewViewport,
@@ -27,6 +32,8 @@ pub fn build_display_layout(
     font: &FontSettings,
     performance: &PerformanceSettings,
     foreground_color: Color,
+    syntax: Option<&mut crate::plugin::SyntaxResource>,
+    syntax_theme: Option<&SyntaxTheme>,
 ) -> DisplayLayout {
     let line_height = font.line_height;
     let char_width = font.char_width;
@@ -62,6 +69,9 @@ pub fn build_display_layout(
     let mut shaped_lines: Vec<ShapedLine> = Vec::with_capacity(visible_count as usize);
     let visible_rows_start = current_display_row;
 
+    // Move the syntax + theme into a local Option so we can re-borrow per line.
+    let mut syntax_opt = syntax;
+
     for buffer_line in start_buffer_line..total_buffer_lines {
         if fold_state.is_line_hidden(buffer_line) {
             continue;
@@ -78,18 +88,27 @@ pub fn build_display_layout(
             .copied()
             .unwrap_or(0.0);
 
-        // Translate Vec<LineSegment> (positional) to Vec<StyleRun> (byte-range).
-        // Empty -> empty runs (renderer falls back to default fg).
-        let segs: &[LineSegment] = state
-            .styled_lines
-            .get(buffer_line)
-            .and_then(|opt| opt.as_deref())
-            .unwrap_or(&[]);
+        // Resolve styling for this line: syntax-highlight inline if available,
+        // otherwise fall back to plain (empty runs → renderer uses default_fg).
+        let segs: Vec<LineSegment> = match (syntax_opt.as_deref_mut(), syntax_theme) {
+            (Some(syntax), Some(theme)) => {
+                let mut hl = syntax.highlight_range(
+                    &line_text,
+                    buffer_line,
+                    buffer_line + 1,
+                    state.rope.line_to_byte(buffer_line),
+                    theme,
+                    foreground_color,
+                );
+                hl.pop().unwrap_or_default()
+            }
+            _ => Vec::new(),
+        };
         let line_bg = segs.iter().find_map(|s| s.background);
 
         let mut runs: Vec<StyleRun> = Vec::with_capacity(segs.len());
         let mut byte_cursor = 0usize;
-        for seg in segs {
+        for seg in &segs {
             let len = seg.text.len();
             if len == 0 {
                 continue;
@@ -106,11 +125,11 @@ pub fn build_display_layout(
         }
 
         // The text the renderer walks. When runs is non-empty, prefer the
-        // concatenation of run texts (identical to legacy behavior, which
-        // iterated `segment.text.chars()`). When runs is empty, use the rope line.
+        // concatenation of segment texts (matches the byte_range indexing).
+        // When runs is empty, fall back to the raw rope line.
         let render_text = if !runs.is_empty() {
             let mut s = String::with_capacity(byte_cursor);
-            for seg in segs {
+            for seg in &segs {
                 s.push_str(&seg.text);
             }
             s

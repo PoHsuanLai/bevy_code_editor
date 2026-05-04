@@ -72,87 +72,12 @@ pub(crate) fn update_gpu_text_instanced(
     #[cfg(not(feature = "folding"))]
     let fold_state = FoldState::default();
 
-    let line_height = font.line_height;
-    let buffer_lines = line_height * performance.viewport_buffer_lines as f32;
-    let scroll_dist = tv_state.scroll_offset.abs();
-    let start_pixels = scroll_dist - tv_viewport.text_area_top - buffer_lines;
-    let first_visible = (start_pixels / line_height).floor().max(0.0) as usize;
-    let visible_count =
-        ((tv_viewport.height as f32 + buffer_lines * 2.0) / line_height).ceil() as usize;
-    let last_visible = first_visible + visible_count;
-
-    let total_lines = tv_state.line_count();
-
-    // Populate styled lines from syntax highlighting for visible range
-    let has_folding = !fold_state.regions.is_empty();
-    let start_buffer_line = if has_folding {
-        let mut display_row = 0;
-        let mut buf_line = 0;
-        while buf_line < total_lines && display_row < first_visible {
-            if !fold_state.is_line_hidden(buf_line) {
-                display_row += 1;
-            }
-            buf_line += 1;
-        }
-        buf_line
-    } else {
-        first_visible.min(total_lines)
-    };
-
-    // Ensure styled_lines has capacity
-    tv_state.styled_lines.resize_with(total_lines, || None);
-
-    // Populate syntax highlighting for visible lines
-    let mut display_row = if has_folding {
-        let mut dr = 0;
-        let mut bl = 0;
-        while bl < start_buffer_line {
-            if !fold_state.is_line_hidden(bl) {
-                dr += 1;
-            }
-            bl += 1;
-        }
-        dr
-    } else {
-        start_buffer_line
-    };
-
-    for buffer_line in start_buffer_line..total_lines {
-        if fold_state.is_line_hidden(buffer_line) {
-            continue;
-        }
-        if display_row > last_visible {
-            break;
-        }
-
-        let rope_line = tv_state.rope.line(buffer_line);
-        let line_string = rope_line.to_string();
-
-        let segments_vec = syntax.highlight_range(
-            &line_string,
-            buffer_line,
-            buffer_line + 1,
-            tv_state.rope.line_to_byte(buffer_line),
-            &syntax_settings.theme,
-            theme.foreground,
-        );
-
-        if !segments_vec.is_empty() {
-            tv_state.styled_lines[buffer_line] = Some(segments_vec.into_iter().next().unwrap());
-        }
-
-        display_row += 1;
-    }
-
-    // Calculate content start X
     let content_start_x = tv_viewport
         .text_area_left
         .max(tv_viewport.gutter_width + ui_settings.code_margin_left);
 
-    // === Step 5b: render_layout is now the on-screen renderer ===
-    // Build a DisplayLayout snapshot and render through the new path. The legacy
-    // render_text_view stays alive only for the equivalence diagnostic in debug
-    // builds; both go away in step 9.
+    // Build a DisplayLayout snapshot. Syntax highlighting now happens inline
+    // inside the bridge per visible line — no more populate-styled_lines step.
     use crate::display_map::layout::build_display_layout;
     use crate::text_view::render::render_layout;
     let layout = build_display_layout(
@@ -162,6 +87,8 @@ pub(crate) fn update_gpu_text_instanced(
         &font,
         &performance,
         theme.foreground,
+        Some(&mut syntax),
+        Some(&syntax_settings.theme),
     );
     let instances = render_layout(
         &layout,
@@ -216,8 +143,8 @@ pub(crate) fn update_gpu_text_instanced(
             cmds.insert(TextViewBatch {
                 built_at_scroll: tv_state.scroll_offset,
                 built_at_horizontal_scroll: tv_state.horizontal_scroll_offset,
-                first_line: first_visible,
-                last_line: last_visible,
+                first_line: layout.visible_rows.start as usize,
+                last_line: layout.visible_rows.end as usize,
                 built_at_width: tv_viewport.width,
                 built_at_height: tv_viewport.height,
             });
@@ -243,8 +170,8 @@ pub(crate) fn update_gpu_text_instanced(
                 TextViewBatch {
                     built_at_scroll: tv_state.scroll_offset,
                     built_at_horizontal_scroll: tv_state.horizontal_scroll_offset,
-                    first_line: first_visible,
-                    last_line: last_visible,
+                    first_line: layout.visible_rows.start as usize,
+                    last_line: layout.visible_rows.end as usize,
                     built_at_width: tv_viewport.width,
                     built_at_height: tv_viewport.height,
                 },
