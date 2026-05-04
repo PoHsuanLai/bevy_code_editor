@@ -173,55 +173,12 @@ pub(crate) fn update_gpu_text_instanced(
         font.size,
     );
 
-    // Equivalence diagnostic: re-render through the legacy path WITHOUT overlays
-    // (since legacy has no overlay concept) and compare against a text-only render
-    // through the new path. Cursor + selection rects are intentionally excluded
-    // from this check — they're additive and have no legacy counterpart.
-    #[cfg(debug_assertions)]
-    {
-        let legacy = crate::text_view::render::render_text_view(
-            &tv_state,
-            tv_viewport,
-            Some(&fold_state),
-            &font,
-            &performance,
-            theme.foreground,
-            &mut atlas,
-            content_start_x,
-        );
-        let new_text_only = render_layout(
-            &layout,
-            None,
-            tv_viewport,
-            &mut atlas,
-            content_start_x,
-            tv_state.horizontal_scroll_offset,
-            font.size,
-        );
-        if legacy.len() != new_text_only.len() {
-            warn!(
-                "render_layout instance count mismatch: legacy={}, new={}",
-                legacy.len(),
-                new_text_only.len()
-            );
-        } else {
-            let mut mismatches = 0usize;
-            for (i, (a, b)) in legacy.iter().zip(new_text_only.iter()).enumerate() {
-                if (a.position - b.position).length_squared() > 0.01 {
-                    if mismatches < 3 {
-                        warn!(
-                            "render_layout pos mismatch [{}]: legacy={:?}, new={:?}",
-                            i, a.position, b.position
-                        );
-                    }
-                    mismatches += 1;
-                }
-            }
-            if mismatches > 0 {
-                warn!("render_layout total position mismatches: {}", mismatches);
-            }
-        }
-    }
+    // The equivalence diagnostic against `render_text_view` was removed: the
+    // new path uses a unified row-top coordinate convention, while the legacy
+    // path used row-center (with each component layering its own correction).
+    // The two paths are intentionally numerically different now, so comparing
+    // them only produces noise. `render_text_view` is dead code pending its
+    // deletion in step 9.
 
     // Update atlas texture
     atlas.update_texture(&mut images);
