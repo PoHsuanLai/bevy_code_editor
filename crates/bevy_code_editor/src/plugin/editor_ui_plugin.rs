@@ -170,16 +170,17 @@ impl Plugin for EditorUiPlugin {
                 .in_set(super::RenderingSet),
         );
 
-        // Overlay producers (selection, cursor-line) write into TextViewOverlays
-        // and must run BEFORE update_gpu_text_instanced reads them.
+        // Overlay producers (selection, cursor-line) write into
+        // `TextViewOverlays`; they must run before the engine's
+        // `update_text_views` paint pass reads them.
         app.add_systems(
             Update,
             (update_selection_highlight, update_cursor_line_highlight)
                 .in_set(super::RenderingSet),
         );
 
-        // Indent guides still use Sprite entities (step 6d follow-up may migrate).
-        // Keep on the post-text-render schedule.
+        // Indent guides still use Sprite entities — they could be migrated to
+        // overlay rects, but Sprite entities are fine for the small fixed cost.
         app.add_systems(
             Update,
             update_indent_guides

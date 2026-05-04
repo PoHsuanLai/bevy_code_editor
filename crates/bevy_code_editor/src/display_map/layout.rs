@@ -1,9 +1,11 @@
-//! Bridge: build a `DisplayLayout` from the legacy `(TextViewState, FoldState)` pair.
+//! Editor display-layout producer.
 //!
-//! This is intentionally a translation layer, not the real producer. The real
-//! `display_map` transform stack (FoldMap → WrapMap → TabMap) gets wired in
-//! step 9; this bridge exists so step 5 can run the new renderer in parallel
-//! with the legacy one and assert equivalence.
+//! Walks the visible window of `TextViewState.rope`, applies folding inline
+//! by skipping hidden buffer lines, runs syntax highlighting per row, shapes
+//! each row through cosmic-text, and (when soft wrap is enabled) splits long
+//! lines on a pixel-budget boundary into multiple `ShapedLine` rows. The
+//! result is the per-frame `DisplayLayout` consumed by the renderer and by
+//! cursor/selection/bracket overlay producers.
 
 use bevy::prelude::*;
 use bevy_text_engine::{FontConfig, GlyphAtlas};
@@ -22,12 +24,10 @@ use crate::types::{FoldState, LineSegment};
 /// Build a `DisplayLayout` for the editor entity, with syntax highlighting
 /// resolved inline per visible line.
 ///
-/// The previous flow (legacy `update_gpu_text_instanced` → mutate
-/// `TextViewState.styled_lines` → bridge reads it) has been collapsed: the
-/// bridge now calls `syntax.highlight_range()` directly for the visible
-/// window, eliminating the per-buffer-line `Vec<Option<Vec<LineSegment>>>`
-/// materialization step. `TextViewState.styled_lines` is no longer read on
-/// the rendering path; it'll be deleted in step 11.
+/// Calls `syntax.highlight_range()` directly for the visible window — there
+/// is no per-buffer-line `Vec<Option<Vec<LineSegment>>>` materialization
+/// step; styled-segment construction is done on the fly as we build each
+/// `ShapedLine`.
 #[allow(clippy::too_many_arguments)]
 pub fn build_display_layout(
     state: &mut TextViewState,

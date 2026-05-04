@@ -4,11 +4,9 @@
 //! ViewportRect, FoldState, syntax)`, writes `DisplayLayout` on the editor.
 //! `text_view::update_text_views` then renders that layout.
 //!
-//! As of step 9 this replaces `update_gpu_text_instanced`. The transform stack
-//! (`FoldMap`/`WrapMap`/`TabMap`) isn't yet wired here — the bridge in
-//! `display_map::layout::build_display_layout` still does inline fold-skipping
-//! and per-line syntax highlighting. A future refactor moves the transform
-//! stack in and emits incremental dirty patches.
+//! `update_display_map_snapshot` is the live producer for the editor; the
+//! `prewarm_atlas_for_layout` companion system rasterizes every glyph the
+//! freshly-built layout will need so the paint pass is a pure read.
 
 use bevy::prelude::*;
 use bevy_text_engine::FontConfig;
@@ -30,12 +28,6 @@ pub struct DisplayMapPlugin;
 
 impl Plugin for DisplayMapPlugin {
     fn build(&self, app: &mut App) {
-        app.register_type::<super::Point>()
-            .register_type::<super::point::BufferPoint>()
-            .register_type::<super::point::DisplayPoint>()
-            .register_type::<super::point::FoldPoint>()
-            .register_type::<super::point::WrapPoint>();
-
         app.configure_sets(
             Update,
             DisplayMapSet
@@ -57,10 +49,10 @@ impl Plugin for DisplayMapPlugin {
 /// global `SyntaxResource`/`FoldState`/settings, writes the resulting layout
 /// onto the entity. The renderer (`text_view::update_text_views`) reads it.
 ///
-/// W5 (skip-on-unchanged): tracks a fingerprint of the inputs in `Local` state.
-/// If nothing meaningful changed since last frame, skip rebuilding the layout;
-/// `Changed<DisplayLayout>` then stays false and the renderer can early-out
-/// without re-uploading the instance buffer.
+/// Tracks a fingerprint of the inputs in `Local` state and skips the rebuild
+/// when nothing meaningful changed since last frame; `Changed<DisplayLayout>`
+/// then stays false and the renderer early-outs without re-uploading the
+/// instance buffer.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn update_display_map_snapshot(
     mut editor_query: Query<
@@ -156,7 +148,8 @@ fn syntax_version(_syntax: &SyntaxResource) -> u64 {
 /// Runs in `DisplayMapSet` after `update_display_map_snapshot`, so by the time
 /// `text_view::update_text_views` reads the layout the atlas is fully
 /// populated. The renderer never triggers atlas mutation during the paint
-/// pass — eliminates first-encounter scroll stutter (W6).
+/// pass, which eliminates first-encounter scroll stutter on freshly-shaped
+/// glyphs.
 pub(crate) fn prewarm_atlas_for_layout(
     layouts: Query<Ref<DisplayLayout>>,
     mut atlas: ResMut<bevy_text_engine::gpu::GlyphAtlas>,

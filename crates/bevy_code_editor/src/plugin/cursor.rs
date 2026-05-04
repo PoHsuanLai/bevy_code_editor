@@ -1,8 +1,9 @@
-//! Cursor rendering and animation
+//! Cursor rendering and animation.
 //!
-//! As of step 6a, cursor carets are pushed into `TextViewOverlays` as `RectOverlay`s
-//! rather than spawned as separate `Sprite` entities. Blink folds into `update_cursor`
-//! (no separate `animate_cursor` system).
+//! Cursor carets are pushed into `TextViewOverlays` as `RectOverlay`s; the
+//! engine's renderer paints them with the rest of the layer. Blink animation
+//! lives inside `push_cursor_overlays` itself — no separate `animate_cursor`
+//! system.
 
 use crate::settings::{CursorLineSettings, CursorSettings, ThemeSettings};
 use crate::text_view::{
@@ -91,9 +92,8 @@ impl Plugin for CursorPlugin {
 
         app.add_systems(Update, track_cursor_movement.in_set(super::ApplyStateSet));
 
-        // update_cursor runs in OverlaySet (between RenderingSet's display map build
-        // and the actual render). For now we keep it in RenderingSet pending step 9's
-        // explicit OverlaySet introduction.
+        // Caret rects are pushed into `TextViewOverlays` during `RenderingSet`,
+        // which runs after the display-map build and before the actual paint.
         app.add_systems(Update, push_cursor_overlays.in_set(super::RenderingSet));
 
         // Note: update_cursor_line_highlight is registered by EditorUiPlugin
@@ -118,15 +118,13 @@ pub(crate) fn track_cursor_movement(
 
 /// Push caret rectangles into `TextViewOverlays` for each cursor.
 ///
-/// Replaces the previous `update_cursor` + `animate_cursor` pair: blink and
-/// position now collapse into one system that simply skips pushing during
-/// the off-phase of the blink cycle.
+/// Blink and position collapse into one system that skips pushing during the
+/// off-phase of the blink cycle.
 ///
-/// Note: this system is a *partial* writer of `TextViewOverlays` — it pushes
-/// caret rects without clearing first, since selection (step 6b) and other
-/// overlay producers also push. A future `OverlaySet` will introduce a single
-/// `clear_overlays` system that runs first; until then we drain previous
-/// caret rects ourselves.
+/// This is a *partial* writer of `TextViewOverlays` — selection and other
+/// overlay producers push too, so each producer drains only its own rects
+/// (identified by `z`: caret = +1, line-highlight = 0, selection = -1)
+/// before pushing fresh ones.
 pub(crate) fn push_cursor_overlays(
     mut editor_query: Query<
         (

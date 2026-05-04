@@ -1,7 +1,8 @@
-//! TextViewState — generic text view state component
+//! `TextViewState` — generic text view state component.
 //!
-//! Holds the text buffer, scroll offsets, dirty tracking, and pre-computed styled lines.
-//! This is the reusable core that both the code editor and other text views (chat, logs) share.
+//! Holds the rope buffer, scroll offsets, and a content-version counter.
+//! Reusable core shared by the code editor and any other scrollable text
+//! view (chat panel, log viewer, etc.).
 
 use bevy::prelude::*;
 use ropey::Rope;
@@ -9,11 +10,11 @@ use ropey::Rope;
 /// Generic text view state — holds the rope buffer and scroll state for a
 /// scrollable text-rendering entity.
 ///
-/// As of step 11 the dirty-tracking flags (`needs_update`, `dirty_lines`, etc.)
-/// and the legacy per-line styling cache (`styled_lines`) are gone. Rendering
-/// invalidation now flows through `display_map::LayoutFingerprint` (which
-/// reads `content_version` and scroll/viewport changes) and Bevy's
+/// Rendering invalidation flows through the editor's `LayoutFingerprint`
+/// (which reads `content_version` and scroll/viewport changes) and Bevy's
 /// `Changed<DisplayLayout>` / `Changed<TextViewOverlays>` change detection.
+/// There is no per-frame dirty-line bookkeeping here; mutators only need
+/// to bump `content_version`.
 #[derive(Component, Reflect)]
 #[reflect(Component)]
 pub struct TextViewState {
