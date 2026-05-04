@@ -71,6 +71,8 @@ use bevy::prelude::*;
 pub mod capabilities;
 pub mod client;
 pub mod components;
+#[cfg(feature = "egui-overlays")]
+pub mod egui_render;
 pub mod event_listeners;
 pub mod messages;
 pub mod render;
@@ -79,8 +81,6 @@ pub mod sync;
 pub mod systems;
 pub mod theme;
 pub mod ui;
-#[cfg(feature = "egui-overlays")]
-pub mod egui_render;
 
 /// System set for LSP UI synchronization (state -> marker components)
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]

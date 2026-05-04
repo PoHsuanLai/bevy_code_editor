@@ -247,23 +247,51 @@ pub struct SettingsBundle {
 impl SettingsBundle {
     /// Insert all settings as resources into the app
     pub fn insert_into(self, app: &mut App) {
-        if !app.world().contains_resource::<FontSettings>() { app.insert_resource(self.font); }
-        if !app.world().contains_resource::<ThemeSettings>() { app.insert_resource(self.theme); }
-        if !app.world().contains_resource::<UiSettings>() { app.insert_resource(self.ui); }
-        if !app.world().contains_resource::<IndentationSettings>() { app.insert_resource(self.indentation); }
-        if !app.world().contains_resource::<BracketSettings>() { app.insert_resource(self.brackets); }
-        if !app.world().contains_resource::<CursorSettings>() { app.insert_resource(self.cursor); }
-        if !app.world().contains_resource::<CursorLineSettings>() { app.insert_resource(self.cursor_line); }
-        if !app.world().contains_resource::<ScrollingSettings>() { app.insert_resource(self.scrolling); }
-        if !app.world().contains_resource::<SearchSettings>() { app.insert_resource(self.search); }
-        if !app.world().contains_resource::<SyntaxSettings>() { app.insert_resource(self.syntax); }
-        if !app.world().contains_resource::<PerformanceSettings>() { app.insert_resource(self.performance); }
-        if !app.world().contains_resource::<WrappingSettings>() { app.insert_resource(self.wrapping); }
+        if !app.world().contains_resource::<FontSettings>() {
+            app.insert_resource(self.font);
+        }
+        if !app.world().contains_resource::<ThemeSettings>() {
+            app.insert_resource(self.theme);
+        }
+        if !app.world().contains_resource::<UiSettings>() {
+            app.insert_resource(self.ui);
+        }
+        if !app.world().contains_resource::<IndentationSettings>() {
+            app.insert_resource(self.indentation);
+        }
+        if !app.world().contains_resource::<BracketSettings>() {
+            app.insert_resource(self.brackets);
+        }
+        if !app.world().contains_resource::<CursorSettings>() {
+            app.insert_resource(self.cursor);
+        }
+        if !app.world().contains_resource::<CursorLineSettings>() {
+            app.insert_resource(self.cursor_line);
+        }
+        if !app.world().contains_resource::<ScrollingSettings>() {
+            app.insert_resource(self.scrolling);
+        }
+        if !app.world().contains_resource::<SearchSettings>() {
+            app.insert_resource(self.search);
+        }
+        if !app.world().contains_resource::<SyntaxSettings>() {
+            app.insert_resource(self.syntax);
+        }
+        if !app.world().contains_resource::<PerformanceSettings>() {
+            app.insert_resource(self.performance);
+        }
+        if !app.world().contains_resource::<WrappingSettings>() {
+            app.insert_resource(self.wrapping);
+        }
 
         #[cfg(feature = "scrollbar")]
-        if !app.world().contains_resource::<ScrollbarSettings>() { app.insert_resource(self.scrollbar); }
+        if !app.world().contains_resource::<ScrollbarSettings>() {
+            app.insert_resource(self.scrollbar);
+        }
 
         #[cfg(feature = "lsp")]
-        if !app.world().contains_resource::<LspSettings>() { app.insert_resource(self.lsp); }
+        if !app.world().contains_resource::<LspSettings>() {
+            app.insert_resource(self.lsp);
+        }
     }
 }

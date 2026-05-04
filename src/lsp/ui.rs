@@ -49,13 +49,23 @@ pub struct RenameUI;
 pub fn update_completion_ui(
     mut commands: Commands,
     completion_state: Res<CompletionState>,
-    query: Query<(&CodeEditorState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    query: Query<
+        (
+            &CodeEditorState,
+            &CursorState,
+            &TextViewState,
+            &TextViewViewport,
+        ),
+        With<CodeEditor>,
+    >,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     lsp: Res<LspSettings>,
     ui_query: Query<Entity, With<CompletionUI>>,
 ) {
-    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else { return };
+    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else {
+        return;
+    };
     let filtered_items = completion_state.filtered_items();
 
     // If not visible or no filtered items, clear and return
@@ -84,8 +94,7 @@ pub fn update_completion_ui(
     let line_height = font.line_height;
 
     let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
-    let y_offset =
-        ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
+    let y_offset = ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
 
     let viewport_width = vp.width as f32;
     let viewport_height = vp.height as f32;
@@ -209,12 +218,22 @@ pub fn update_completion_ui(
 pub fn update_hover_ui(
     mut commands: Commands,
     hover_state: Res<HoverState>,
-    query: Query<(&CodeEditorState, &CursorState, Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
+    query: Query<
+        (
+            &CodeEditorState,
+            &CursorState,
+            Ref<TextViewState>,
+            Ref<TextViewViewport>,
+        ),
+        With<CodeEditor>,
+    >,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     ui_query: Query<Entity, With<HoverUI>>,
 ) {
-    let Ok((_editor_state, _cursor_state, tv, vp)) = query.single() else { return };
+    let Ok((_editor_state, _cursor_state, tv, vp)) = query.single() else {
+        return;
+    };
 
     if !hover_state.visible || hover_state.content.is_empty() {
         for entity in ui_query.iter() {
@@ -236,9 +255,7 @@ pub fn update_hover_ui(
         commands.entity(entity).despawn();
     }
 
-    let trigger_char_index = hover_state
-        .trigger_char_index
-        .min(tv.rope.len_chars());
+    let trigger_char_index = hover_state.trigger_char_index.min(tv.rope.len_chars());
     let line_index = tv.rope.char_to_line(trigger_char_index);
     let line_start = tv.rope.line_to_char(line_index);
     let col_index = trigger_char_index - line_start;
@@ -247,8 +264,7 @@ pub fn update_hover_ui(
     let line_height = font.line_height;
 
     let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
-    let y_offset =
-        ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
+    let y_offset = ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
 
     let viewport_width = vp.width as f32;
     let viewport_height = vp.height as f32;
@@ -309,12 +325,22 @@ pub fn update_hover_ui(
 pub fn update_signature_help_ui(
     mut commands: Commands,
     sig_state: Res<SignatureHelpState>,
-    query: Query<(&CodeEditorState, &CursorState, Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
+    query: Query<
+        (
+            &CodeEditorState,
+            &CursorState,
+            Ref<TextViewState>,
+            Ref<TextViewViewport>,
+        ),
+        With<CodeEditor>,
+    >,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     ui_query: Query<Entity, With<SignatureHelpUI>>,
 ) {
-    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else { return };
+    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else {
+        return;
+    };
 
     if !sig_state.visible || sig_state.signatures.is_empty() {
         for entity in ui_query.iter() {
@@ -351,8 +377,8 @@ pub fn update_signature_help_ui(
 
     let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
     // Position ABOVE the current line
-    let y_offset = ui.margin_top + tv.scroll_offset + (line_index as f32 * line_height)
-        - line_height;
+    let y_offset =
+        ui.margin_top + tv.scroll_offset + (line_index as f32 * line_height) - line_height;
 
     let viewport_width = vp.width as f32;
     let viewport_height = vp.height as f32;
@@ -425,12 +451,22 @@ pub fn update_signature_help_ui(
 pub fn update_code_action_ui(
     mut commands: Commands,
     action_state: Res<CodeActionState>,
-    query: Query<(&CodeEditorState, &CursorState, Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
+    query: Query<
+        (
+            &CodeEditorState,
+            &CursorState,
+            Ref<TextViewState>,
+            Ref<TextViewViewport>,
+        ),
+        With<CodeEditor>,
+    >,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     ui_query: Query<Entity, With<CodeActionUI>>,
 ) {
-    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else { return };
+    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else {
+        return;
+    };
 
     if !action_state.visible || action_state.actions.is_empty() {
         for entity in ui_query.iter() {
@@ -460,8 +496,7 @@ pub fn update_code_action_ui(
 
     // Position at line start (gutter area)
     let x_offset = ui.code_margin_left - 20.0;
-    let y_offset =
-        ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
+    let y_offset = ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
 
     let viewport_width = vp.width as f32;
     let viewport_height = vp.height as f32;
@@ -597,10 +632,8 @@ pub fn update_inlay_hints_ui(
         };
 
         let x_offset = ui.code_margin_left + (character as f32 * char_width);
-        let y_offset = ui.margin_top
-            + tv.scroll_offset
-            + (line as f32 * line_height)
-            + (line_height / 2.0);
+        let y_offset =
+            ui.margin_top + tv.scroll_offset + (line as f32 * line_height) + (line_height / 2.0);
 
         let pos = Vec3::new(
             -viewport_width / 2.0 + x_offset + vp.screen_position.x,
@@ -797,10 +830,8 @@ pub fn update_rename_ui(
 
     // Position the input box directly at the symbol location
     let x_offset = ui.code_margin_left + (character as f32 * char_width);
-    let y_offset = ui.margin_top
-        + tv.scroll_offset
-        + (line as f32 * line_height)
-        + (line_height / 2.0);
+    let y_offset =
+        ui.margin_top + tv.scroll_offset + (line as f32 * line_height) + (line_height / 2.0);
 
     let viewport_width = vp.width as f32;
     let viewport_height = vp.height as f32;

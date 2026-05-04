@@ -92,9 +92,7 @@ pub(crate) fn update_gpu_text_instanced(
     };
 
     // Ensure styled_lines has capacity
-    tv_state
-        .styled_lines
-        .resize_with(total_lines, || None);
+    tv_state.styled_lines.resize_with(total_lines, || None);
 
     // Populate syntax highlighting for visible lines
     let mut display_row = if has_folding {
@@ -161,7 +159,9 @@ pub(crate) fn update_gpu_text_instanced(
     // Extract render layer number from config
     let batch_render_layer: Option<u8> = render_config.as_ref().and_then(|config| {
         config.render_layers.as_ref().and_then(|layers| {
-            (0u8..=31).find(|&i| layers.intersects(&bevy_camera::visibility::RenderLayers::layer(i as usize)))
+            (0u8..=31).find(|&i| {
+                layers.intersects(&bevy_camera::visibility::RenderLayers::layer(i as usize))
+            })
         })
     });
 

@@ -67,7 +67,19 @@ const ALL_ACTIONS: [EditorAction; 45] = [
 ];
 
 pub fn handle_keyboard_input(
-    mut editor_query: Query<(&mut CodeEditorState, &mut SelectionState, &mut EditHistoryState, &mut SyntaxCacheState, &mut EditorDisplayState, &mut CursorState, &mut TextViewState, &TextViewViewport), With<CodeEditor>>,
+    mut editor_query: Query<
+        (
+            &mut CodeEditorState,
+            &mut SelectionState,
+            &mut EditHistoryState,
+            &mut SyntaxCacheState,
+            &mut EditorDisplayState,
+            &mut CursorState,
+            &mut TextViewState,
+            &TextViewViewport,
+        ),
+        With<CodeEditor>,
+    >,
     mut char_events: MessageReader<KeyboardInput>,
     action_query: Query<&ActionState<EditorAction>, With<EditorInputManager>>,
     cursor_settings: Res<CursorSettings>,
@@ -86,7 +98,11 @@ pub fn handle_keyboard_input(
     #[cfg(feature = "lsp")] mut rename_state: ResMut<crate::lsp::state::RenameState>,
     #[cfg(feature = "lsp")] mut lsp_sync: ResMut<crate::lsp::LspSyncState>,
 ) {
-    let Ok((mut state, mut sel, mut hist, mut syntax, mut display, mut cursor, mut tv, _viewport)) = editor_query.single_mut() else { return; };
+    let Ok((mut state, mut sel, mut hist, mut syntax, mut display, mut cursor, mut tv, _viewport)) =
+        editor_query.single_mut()
+    else {
+        return;
+    };
 
     if !state.is_focused {
         return;
@@ -228,14 +244,25 @@ pub fn handle_keyboard_input(
                             if brackets.auto_close {
                                 let is_closing_bracket =
                                     brackets.pairs.iter().any(|(_, close)| *close == c);
-                                if is_closing_bracket && should_skip_auto_close(&cursor, &tv.rope, c) {
+                                if is_closing_bracket
+                                    && should_skip_auto_close(&cursor, &tv.rope, c)
+                                {
                                     state.move_cursor(&mut cursor, &tv.rope, 1);
                                     tv.pending_update = true;
                                     continue;
                                 }
                             }
 
-                            insert_char(&mut state, &mut sel, &mut hist, &mut syntax, &mut display, &mut cursor, &mut tv, c);
+                            insert_char(
+                                &mut state,
+                                &mut sel,
+                                &mut hist,
+                                &mut syntax,
+                                &mut display,
+                                &mut cursor,
+                                &mut tv,
+                                c,
+                            );
 
                             if brackets.auto_close {
                                 if let Some(closing) = get_closing_bracket(c, &brackets.pairs) {
@@ -287,11 +314,8 @@ pub fn handle_keyboard_input(
                                         // Multi-character trigger (e.g. "::")
                                         if cursor_pos >= trigger.len() {
                                             let start = cursor_pos - trigger.len();
-                                            let recent_text: String = tv
-                                                .rope
-                                                .slice(start..cursor_pos)
-                                                .chars()
-                                                .collect();
+                                            let recent_text: String =
+                                                tv.rope.slice(start..cursor_pos).chars().collect();
                                             #[cfg(debug_assertions)]
                                             debug!("[LSP] Checking multi-char trigger '{}' against recent text '{}'", trigger, recent_text);
                                             if recent_text == *trigger {
@@ -318,10 +342,14 @@ pub fn handle_keyboard_input(
                                         &mut completion_state,
                                         &lsp_sync,
                                     );
-                                } else if c.is_alphanumeric() || c == '_'  {
+                                } else if c.is_alphanumeric() || c == '_' {
                                     if completion_state.visible {
                                         trace!("[LSP] Completion visible, updating filter for char '{}'", c);
-                                        update_completion_filter(&cursor, &tv.rope, &mut completion_state);
+                                        update_completion_filter(
+                                            &cursor,
+                                            &tv.rope,
+                                            &mut completion_state,
+                                        );
                                     } else {
                                         // Auto-trigger after min_word_length identifier chars
                                         let word_start =
@@ -349,7 +377,16 @@ pub fn handle_keyboard_input(
                         }
                     }
                     bevy::input::keyboard::Key::Space => {
-                        insert_char(&mut state, &mut sel, &mut hist, &mut syntax, &mut display, &mut cursor, &mut tv, ' ');
+                        insert_char(
+                            &mut state,
+                            &mut sel,
+                            &mut hist,
+                            &mut syntax,
+                            &mut display,
+                            &mut cursor,
+                            &mut tv,
+                            ' ',
+                        );
                         #[cfg(feature = "lsp")]
                         send_did_change(&tv.rope, &lsp_client, &mut lsp_sync);
                         #[cfg(feature = "lsp")]
@@ -394,7 +431,8 @@ pub fn handle_keyboard_input(
 
                     trace!(
                         "[Rename] Requesting prepare rename at line={}, char={}",
-                        position.line, position.character
+                        position.line,
+                        position.character
                     );
 
                     rename_state.start_prepare(position);
@@ -405,14 +443,26 @@ pub fn handle_keyboard_input(
         }
 
         execute_action(
-            &mut state, &mut sel, &mut hist, &mut syntax, &mut display,
-            &mut cursor, &mut tv, action, &indentation,
-            #[cfg(feature = "lsp")] &lsp,
+            &mut state,
+            &mut sel,
+            &mut hist,
+            &mut syntax,
+            &mut display,
+            &mut cursor,
+            &mut tv,
+            action,
+            &indentation,
+            #[cfg(feature = "lsp")]
+            &lsp,
             &mut goto_line_state,
-            #[cfg(feature = "folding")] &mut fold_state,
-            #[cfg(feature = "lsp")] &lsp_client,
-            #[cfg(feature = "lsp")] &mut completion_state,
-            #[cfg(feature = "lsp")] &mut lsp_sync,
+            #[cfg(feature = "folding")]
+            &mut fold_state,
+            #[cfg(feature = "lsp")]
+            &lsp_client,
+            #[cfg(feature = "lsp")]
+            &mut completion_state,
+            #[cfg(feature = "lsp")]
+            &mut lsp_sync,
         );
     }
 }

@@ -19,13 +19,23 @@ use super::state::*;
 pub fn sync_completion_popup(
     mut commands: Commands,
     completion_state: Res<CompletionState>,
-    query: Query<(&CodeEditorState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    query: Query<
+        (
+            &CodeEditorState,
+            &CursorState,
+            &TextViewState,
+            &TextViewViewport,
+        ),
+        With<CodeEditor>,
+    >,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     lsp: Res<LspSettings>,
     existing: Query<Entity, With<CompletionPopupData>>,
 ) {
-    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else { return };
+    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else {
+        return;
+    };
     let filtered_items = completion_state.filtered_items();
 
     // If not visible or no items, despawn existing
@@ -46,8 +56,7 @@ pub fn sync_completion_popup(
     let line_height = font.line_height;
 
     let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
-    let y_offset =
-        ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
+    let y_offset = ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
 
     // Calculate dynamic width
     let max_char_count = filtered_items
@@ -116,9 +125,7 @@ pub fn sync_hover_popup(
         return;
     }
 
-    let trigger_char_index = hover_state
-        .trigger_char_index
-        .min(tv.rope.len_chars());
+    let trigger_char_index = hover_state.trigger_char_index.min(tv.rope.len_chars());
     let line_index = tv.rope.char_to_line(trigger_char_index);
     let line_start = tv.rope.line_to_char(line_index);
     let col_index = trigger_char_index - line_start;
@@ -127,8 +134,7 @@ pub fn sync_hover_popup(
     let line_height = font.line_height;
 
     let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
-    let y_offset =
-        ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
+    let y_offset = ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
 
     let font_size = font.size * 0.9;
     let padding = 10.0;
@@ -169,12 +175,22 @@ pub fn sync_hover_popup(
 pub fn sync_signature_help_popup(
     mut commands: Commands,
     sig_state: Res<SignatureHelpState>,
-    query: Query<(&CodeEditorState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    query: Query<
+        (
+            &CodeEditorState,
+            &CursorState,
+            &TextViewState,
+            &TextViewViewport,
+        ),
+        With<CodeEditor>,
+    >,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     existing: Query<Entity, With<SignatureHelpPopupData>>,
 ) {
-    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else { return };
+    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else {
+        return;
+    };
 
     if !sig_state.visible || sig_state.signatures.is_empty() {
         for entity in existing.iter() {
@@ -199,8 +215,8 @@ pub fn sync_signature_help_popup(
     let line_height = font.line_height;
 
     let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
-    let y_offset = ui.margin_top + tv.scroll_offset + (line_index as f32 * line_height)
-        - line_height;
+    let y_offset =
+        ui.margin_top + tv.scroll_offset + (line_index as f32 * line_height) - line_height;
 
     let font_size = font.size * 0.9;
     let padding = 8.0;
@@ -256,12 +272,22 @@ pub fn sync_signature_help_popup(
 pub fn sync_code_actions_popup(
     mut commands: Commands,
     action_state: Res<CodeActionState>,
-    query: Query<(&CodeEditorState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    query: Query<
+        (
+            &CodeEditorState,
+            &CursorState,
+            &TextViewState,
+            &TextViewViewport,
+        ),
+        With<CodeEditor>,
+    >,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     existing: Query<Entity, With<CodeActionsPopupData>>,
 ) {
-    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else { return };
+    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else {
+        return;
+    };
 
     if !action_state.visible || action_state.actions.is_empty() {
         for entity in existing.iter() {
@@ -277,8 +303,7 @@ pub fn sync_code_actions_popup(
     let char_width = font.char_width;
 
     let x_offset = ui.code_margin_left - 20.0;
-    let y_offset =
-        ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
+    let y_offset = ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
 
     let max_label_len = action_state
         .actions
@@ -376,10 +401,8 @@ pub fn sync_rename_input(
     let line_height = font.line_height;
 
     let x_offset = ui.code_margin_left + (character as f32 * char_width);
-    let y_offset = ui.margin_top
-        + tv.scroll_offset
-        + (line as f32 * line_height)
-        + (line_height / 2.0);
+    let y_offset =
+        ui.margin_top + tv.scroll_offset + (line as f32 * line_height) + (line_height / 2.0);
 
     let padding_x = 4.0;
     let padding_y = 2.0;
@@ -465,10 +488,8 @@ pub fn sync_inlay_hints(
         };
 
         let x_offset = ui.code_margin_left + (character as f32 * char_width);
-        let y_offset = ui.margin_top
-            + tv.scroll_offset
-            + (line as f32 * line_height)
-            + (line_height / 2.0);
+        let y_offset =
+            ui.margin_top + tv.scroll_offset + (line as f32 * line_height) + (line_height / 2.0);
 
         let kind = match hint.kind {
             Some(lsp_types::InlayHintKind::TYPE) => InlayHintKind::Type,
@@ -582,7 +603,10 @@ pub fn sync_document_highlights(
 
                 commands.spawn((
                     DocumentHighlightData {
-                        position: Vec2::new(x_offset + vp.screen_position.x + width / 2.0, y_offset),
+                        position: Vec2::new(
+                            x_offset + vp.screen_position.x + width / 2.0,
+                            y_offset,
+                        ),
                         width,
                         height: line_height,
                         is_write,

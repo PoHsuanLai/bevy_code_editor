@@ -2,8 +2,8 @@
 
 mod actions;
 mod cursor;
-mod editor_ops;
 mod editing;
+mod editor_ops;
 mod keybindings;
 mod keyboard;
 mod mouse;

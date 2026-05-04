@@ -5,9 +5,9 @@
 use super::editor_ui_plugin::EditorRenderConfig;
 use crate::gpu_text::{GlyphAtlas, GlyphKey, GlyphRasterizer};
 use crate::settings::*;
+use crate::text_view::render::{GlyphBatchComponent, GlyphInstance};
 use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::*;
-use crate::text_view::render::{GlyphBatchComponent, GlyphInstance};
 use bevy::prelude::*;
 
 /// Marker component for the GPU line numbers batch entity
@@ -25,13 +25,20 @@ pub struct GpuLineNumbersBatch {
 /// GPU-accelerated line numbers rendering system
 pub(crate) fn update_gpu_line_numbers(
     mut commands: Commands,
-    editor_query: Query<(&CodeEditorState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    editor_query: Query<
+        (
+            &CodeEditorState,
+            &CursorState,
+            &TextViewState,
+            &TextViewViewport,
+        ),
+        With<CodeEditor>,
+    >,
     font: Res<FontSettings>,
     theme: Res<ThemeSettings>,
     ui: Res<UiSettings>,
     performance: Res<PerformanceSettings>,
-    #[cfg(feature = "folding")]
-    fold_state: Res<FoldState>,
+    #[cfg(feature = "folding")] fold_state: Res<FoldState>,
     mut atlas: ResMut<GlyphAtlas>,
     render_config: Res<EditorRenderConfig>,
     mut images: ResMut<Assets<Image>>,
@@ -58,10 +65,11 @@ pub(crate) fn update_gpu_line_numbers(
         // Check if existing batch is still valid
         if let Some((entity, batch)) = batch_query.iter().next() {
             let scroll_changed = (batch.built_at_scroll - tv.scroll_offset).abs() > 0.01;
-            let viewport_changed = batch.built_at_width != viewport.width
-                || batch.built_at_height != viewport.height;
+            let viewport_changed =
+                batch.built_at_width != viewport.width || batch.built_at_height != viewport.height;
 
-            if !scroll_changed && !viewport_changed && batch.built_at_version == tv.content_version {
+            if !scroll_changed && !viewport_changed && batch.built_at_version == tv.content_version
+            {
                 commands.entity(entity).insert(Visibility::Visible);
                 return;
             }
@@ -160,29 +168,37 @@ pub(crate) fn update_gpu_line_numbers(
             theme.line_numbers
         };
         let color_linear = line_color.to_linear();
-        let color_arr = [color_linear.red, color_linear.green, color_linear.blue, color_linear.alpha];
+        let color_arr = [
+            color_linear.red,
+            color_linear.green,
+            color_linear.blue,
+            color_linear.alpha,
+        ];
 
         // Calculate text width for right-alignment in gutter
         // Use exact metrics if available, otherwise approximation
         let mut estimated_width = 0.0;
         for ch in line_number_text.chars() {
-             if let Some(w) = atlas.measure_char_width(ch, font_size) {
-                 estimated_width += w;
-             } else {
-                 estimated_width += font.char_width;
-             }
+            if let Some(w) = atlas.measure_char_width(ch, font_size) {
+                estimated_width += w;
+            } else {
+                estimated_width += font.char_width;
+            }
         }
-        
+
         // Right-align: start X so that text ends near the right edge of gutter (with padding)
         let right_padding = 8.0;
-        let start_x = gutter_center_x + viewport.gutter_width / 2.0 - right_padding - estimated_width;
+        let start_x =
+            gutter_center_x + viewport.gutter_width / 2.0 - right_padding - estimated_width;
 
         let mut x = start_x;
 
         // Render each character
         for ch in line_number_text.chars() {
             let key = GlyphKey::new(ch, font_size);
-            if let Some(info) = atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, font_size)) {
+            if let Some(info) =
+                atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, font_size))
+            {
                 // Calculate screen position (same logic as main text)
                 let screen_y = base_y - info.offset.y;
 
@@ -202,7 +218,7 @@ pub(crate) fn update_gpu_line_numbers(
                     skew: 0.0,
                     _padding: 0.0,
                 };
-                
+
                 instances.push(instance);
                 x += info.advance;
             } else {
@@ -225,12 +241,15 @@ pub(crate) fn update_gpu_line_numbers(
 
     // Update or create batch entity
     if let Some((entity, _)) = batch_query.iter().next() {
-        commands.entity(entity)
+        commands
+            .entity(entity)
             .insert(GlyphBatchComponent {
                 instances,
                 atlas_texture: atlas.texture.clone(),
                 render_layer: render_config.render_layers.as_ref().and_then(|layers| {
-                    (0u8..=31).find(|&i| layers.intersects(&bevy_camera::visibility::RenderLayers::layer(i as usize)))
+                    (0u8..=31).find(|&i| {
+                        layers.intersects(&bevy_camera::visibility::RenderLayers::layer(i as usize))
+                    })
                 }),
             })
             .insert(GpuLineNumbersBatch {
@@ -240,7 +259,7 @@ pub(crate) fn update_gpu_line_numbers(
                 built_at_height: viewport.height,
             })
             .insert(Visibility::Visible);
-            
+
         // Despawn extras if any (shouldn't happen with single query)
         for (extra_entity, _) in batch_query.iter().skip(1) {
             commands.entity(extra_entity).despawn();
@@ -251,7 +270,9 @@ pub(crate) fn update_gpu_line_numbers(
                 instances,
                 atlas_texture: atlas.texture.clone(),
                 render_layer: render_config.render_layers.as_ref().and_then(|layers| {
-                    (0u8..=31).find(|&i| layers.intersects(&bevy_camera::visibility::RenderLayers::layer(i as usize)))
+                    (0u8..=31).find(|&i| {
+                        layers.intersects(&bevy_camera::visibility::RenderLayers::layer(i as usize))
+                    })
                 }),
             },
             Transform::default(),
@@ -267,7 +288,7 @@ pub(crate) fn update_gpu_line_numbers(
             InheritedVisibility::default(),
             ViewVisibility::default(),
         ));
-        
+
         if let Some(ref layers) = render_config.render_layers {
             entity_cmd.insert(layers.clone());
         }

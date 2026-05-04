@@ -23,8 +23,6 @@ fn main() {
 
 #[cfg(feature = "lsp")]
 fn run_with_lsp() {
-    
-
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
@@ -62,12 +60,24 @@ fn run_with_lsp() {
 
 #[cfg(feature = "lsp")]
 fn setup_editor(
-    mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState, &mut EditHistoryState, &mut SelectionState, &mut SyntaxCacheState), With<CodeEditor>>,
+    mut editor_query: Query<
+        (
+            &mut CodeEditorState,
+            &mut CursorState,
+            &mut TextViewState,
+            &mut EditHistoryState,
+            &mut SelectionState,
+            &mut SyntaxCacheState,
+        ),
+        With<CodeEditor>,
+    >,
     mut lsp_client: ResMut<bevy_code_editor::lsp::LspClient>,
     mut lsp_sync: ResMut<bevy_code_editor::lsp::LspSyncState>,
     #[cfg(feature = "tree-sitter")] mut syntax: ResMut<bevy_code_editor::plugin::SyntaxResource>,
 ) {
-    let Ok((_state, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) = editor_query.single_mut() else {
+    let Ok((_state, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
+        editor_query.single_mut()
+    else {
         return;
     };
 
@@ -77,7 +87,13 @@ fn setup_editor(
     let rust_code =
         std::fs::read_to_string(&example_file_path).expect("Failed to read example file");
 
-    hist.set_text(&mut sel, &mut syntax_cache, &mut cursor, &mut tv, &rust_code);
+    hist.set_text(
+        &mut sel,
+        &mut syntax_cache,
+        &mut cursor,
+        &mut tv,
+        &rust_code,
+    );
 
     // Define Rust language configuration
     let rust_lang = Language {
@@ -176,9 +192,7 @@ fn auto_request_completion(
     let line_start = tv.rope.line_to_char(line);
     let character = cursor_pos - line_start;
 
-    writer.write(bevy_code_editor::types::events::RequestCompletionEvent::new(
-        line, character,
-    ));
+    writer.write(bevy_code_editor::types::events::RequestCompletionEvent::new(line, character));
 }
 
 #[cfg(not(feature = "lsp"))]
@@ -198,8 +212,22 @@ fn run_without_lsp() {
 }
 
 #[cfg(not(feature = "lsp"))]
-fn show_lsp_message(mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState, &mut EditHistoryState, &mut SelectionState, &mut SyntaxCacheState), With<CodeEditor>>) {
-    let Ok((mut state, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) = editor_query.single_mut() else {
+fn show_lsp_message(
+    mut editor_query: Query<
+        (
+            &mut CodeEditorState,
+            &mut CursorState,
+            &mut TextViewState,
+            &mut EditHistoryState,
+            &mut SelectionState,
+            &mut SyntaxCacheState,
+        ),
+        With<CodeEditor>,
+    >,
+) {
+    let Ok((mut state, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
+        editor_query.single_mut()
+    else {
         return;
     };
 

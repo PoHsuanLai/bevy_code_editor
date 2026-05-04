@@ -1,5 +1,5 @@
-use bevy::prelude::*;
 use crate::types::*;
+use bevy::prelude::*;
 
 pub mod brackets;
 pub mod cursor;
@@ -7,12 +7,12 @@ pub mod editor_ui_plugin;
 pub mod folding;
 pub mod gpu_line_numbers;
 pub mod gpu_text_instanced;
+#[cfg(feature = "egui-overlays")]
+pub mod lsp_egui_ui_plugin;
 #[cfg(feature = "lsp")]
 pub mod lsp_plugin;
 #[cfg(feature = "lsp")]
 pub mod lsp_ui_plugin;
-#[cfg(feature = "egui-overlays")]
-pub mod lsp_egui_ui_plugin;
 pub mod scrollbar;
 pub mod syntax_highlighting;
 pub mod ui_elements;
@@ -23,33 +23,31 @@ pub use self::lsp_plugin::LspPlugin;
 pub use self::lsp_ui_plugin::LspUiPlugin;
 
 // Re-export plugins publicly
-pub use self::editor_ui_plugin::EditorUiPlugin as EditorUiPluginType;
 pub use self::brackets::BracketPlugin as BracketPluginType;
 pub use self::cursor::CursorPlugin as CursorPluginType;
+pub use self::editor_ui_plugin::EditorUiPlugin as EditorUiPluginType;
 pub use self::folding::FoldingPlugin as FoldingPluginType;
-pub use self::scrollbar::ScrollbarPlugin as ScrollbarPluginType;
 pub use self::scrollbar::Scrollbar;
+pub use self::scrollbar::ScrollbarPlugin as ScrollbarPluginType;
 // Fix visibility for lib.rs re-exports
 pub use self::brackets::BracketPlugin;
 pub use self::cursor::CursorPlugin;
-pub use self::folding::FoldingPlugin;
 pub use self::editor_ui_plugin::EditorUiPlugin;
+pub use self::folding::FoldingPlugin;
 pub use self::scrollbar::ScrollbarPlugin;
 
 // Re-export syntax highlighting resources publicly for external use
-pub use self::syntax_highlighting::{HighlightCache, SyntaxResource, SyntaxPlugin};
+pub use self::syntax_highlighting::{HighlightCache, SyntaxPlugin, SyntaxResource};
 
 // Re-export helper functions and systems for internal plugin use (crate-visible only)
-pub(crate) use self::cursor::update_cursor_line_highlight;
-pub(crate) use self::ui_elements::{
-    update_indent_guides, update_selection_highlight,
-};
 #[cfg(feature = "brackets")]
 pub(crate) use self::brackets::{update_bracket_highlight, update_bracket_match};
+pub(crate) use self::cursor::update_cursor_line_highlight;
 #[cfg(feature = "folding")]
 pub(crate) use self::folding::update_fold_indicators;
 pub(crate) use self::gpu_line_numbers::update_gpu_line_numbers;
 pub(crate) use self::gpu_text_instanced::update_gpu_text_instanced;
+pub(crate) use self::ui_elements::{update_indent_guides, update_selection_highlight};
 
 /// Marker component for the entity that handles editor input (InputManager)
 #[derive(Component)]
@@ -167,8 +165,7 @@ impl Plugin for CodeEditorPlugin {
             (
                 debounce_updates,
                 ui_elements::animate_smooth_scroll,
-                ui_elements::auto_scroll_to_cursor
-                    .run_if(ui_elements::should_auto_scroll),
+                ui_elements::auto_scroll_to_cursor.run_if(ui_elements::should_auto_scroll),
             )
                 .chain()
                 .in_set(ApplyStateSet),
@@ -198,7 +195,10 @@ impl Plugin for CodeEditorPlugin {
 
 /// Force initial render by promoting pending_update to needs_update
 fn force_initial_render(
-    mut editor_query: Query<(&mut CodeEditorState, &mut crate::text_view::TextViewState), With<CodeEditor>>,
+    mut editor_query: Query<
+        (&mut CodeEditorState, &mut crate::text_view::TextViewState),
+        With<CodeEditor>,
+    >,
 ) {
     let Ok((mut _state, mut tv)) = editor_query.single_mut() else {
         return;
@@ -212,7 +212,10 @@ fn force_initial_render(
 /// Debouncing system: Only promote pending_update to needs_update if enough time has passed
 /// This prevents excessive re-renders during rapid typing
 fn debounce_updates(
-    mut editor_query: Query<(&mut CodeEditorState, &mut crate::text_view::TextViewState), With<CodeEditor>>,
+    mut editor_query: Query<
+        (&mut CodeEditorState, &mut crate::text_view::TextViewState),
+        With<CodeEditor>,
+    >,
     time: Res<Time>,
 ) {
     let Ok((mut _state, mut tv)) = editor_query.single_mut() else {
@@ -247,4 +250,3 @@ fn spawn_editor_entity(mut commands: Commands) {
         Name::new("CodeEditor"),
     ));
 }
-

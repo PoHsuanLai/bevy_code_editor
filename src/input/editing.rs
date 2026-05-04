@@ -8,12 +8,29 @@ use ropey::Rope;
 
 impl EditHistoryState {
     /// Insert character at cursor position (with undo recording)
-    pub fn insert_char(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState, c: char) {
+    pub fn insert_char(
+        &mut self,
+        sel: &mut SelectionState,
+        syntax: &mut SyntaxCacheState,
+        display: &mut EditorDisplayState,
+        cursor: &mut CursorState,
+        tv: &mut TextViewState,
+    c: char,
+    ) {
         self.insert_char_with_history(sel, syntax, display, cursor, tv, c, true);
     }
 
     /// Insert character at cursor position with optional history recording
-    pub fn insert_char_with_history(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState, c: char, record_history: bool) {
+    pub fn insert_char_with_history(
+        &mut self,
+        sel: &mut SelectionState,
+        syntax: &mut SyntaxCacheState,
+        display: &mut EditorDisplayState,
+        cursor: &mut CursorState,
+        tv: &mut TextViewState,
+        c: char,
+        record_history: bool,
+    ) {
         let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
         let line_idx = tv.rope.char_to_line(cursor_pos);
         let cursor_before = cursor_pos;
@@ -33,11 +50,8 @@ impl EditHistoryState {
 
         #[cfg(feature = "tree-sitter")]
         {
-            syntax.pending_tree_sitter_edit = Some((
-                start_byte,
-                start_byte,
-                start_byte + char_byte_len,
-            ));
+            syntax.pending_tree_sitter_edit =
+                Some((start_byte, start_byte, start_byte + char_byte_len));
         }
 
         if record_history {
@@ -67,12 +81,27 @@ impl EditHistoryState {
     }
 
     /// Delete character before cursor (with undo recording)
-    pub fn delete_backward(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState) {
+    pub fn delete_backward(
+        &mut self,
+        sel: &mut SelectionState,
+        syntax: &mut SyntaxCacheState,
+        display: &mut EditorDisplayState,
+        cursor: &mut CursorState,
+        tv: &mut TextViewState,
+    ) {
         self.delete_backward_with_history(sel, syntax, display, cursor, tv, true);
     }
 
     /// Delete character before cursor with optional history recording
-    pub fn delete_backward_with_history(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState, record_history: bool) {
+    pub fn delete_backward_with_history(
+        &mut self,
+        sel: &mut SelectionState,
+        syntax: &mut SyntaxCacheState,
+        display: &mut EditorDisplayState,
+        cursor: &mut CursorState,
+        tv: &mut TextViewState,
+        record_history: bool,
+    ) {
         if cursor.cursor_pos > 0 && cursor.cursor_pos <= tv.rope.len_chars() {
             let cursor_before = cursor.cursor_pos;
             let line_idx = tv.rope.char_to_line(cursor.cursor_pos - 1);
@@ -117,12 +146,27 @@ impl EditHistoryState {
     }
 
     /// Delete character after cursor (with undo recording)
-    pub fn delete_forward(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState) {
+    pub fn delete_forward(
+        &mut self,
+        sel: &mut SelectionState,
+        syntax: &mut SyntaxCacheState,
+        display: &mut EditorDisplayState,
+        cursor: &mut CursorState,
+        tv: &mut TextViewState,
+    ) {
         self.delete_forward_with_history(sel, syntax, display, cursor, tv, true);
     }
 
     /// Delete character after cursor with optional history recording
-    pub fn delete_forward_with_history(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState, record_history: bool) {
+    pub fn delete_forward_with_history(
+        &mut self,
+        sel: &mut SelectionState,
+        syntax: &mut SyntaxCacheState,
+        display: &mut EditorDisplayState,
+        cursor: &mut CursorState,
+        tv: &mut TextViewState,
+        record_history: bool,
+    ) {
         if cursor.cursor_pos < tv.rope.len_chars() {
             let cursor_before = cursor.cursor_pos;
             let line_idx = tv.rope.char_to_line(cursor.cursor_pos);
@@ -166,7 +210,14 @@ impl EditHistoryState {
     }
 
     /// Insert text at a specific position (used for undo/redo)
-    pub fn insert_text_at(&mut self, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, tv: &mut TextViewState, pos: usize, text: &str) {
+    pub fn insert_text_at(
+        &mut self,
+        syntax: &mut SyntaxCacheState,
+        display: &mut EditorDisplayState,
+        tv: &mut TextViewState,
+        pos: usize,
+        text: &str,
+    ) {
         let pos = pos.min(tv.rope.len_chars());
         let text_char_len = text.chars().count();
         let line_idx = tv.rope.char_to_line(pos);
@@ -192,16 +243,20 @@ impl EditHistoryState {
 
         #[cfg(feature = "tree-sitter")]
         {
-            syntax.pending_tree_sitter_edit = Some((
-                start_byte,
-                start_byte,
-                start_byte + text_byte_len,
-            ));
+            syntax.pending_tree_sitter_edit =
+                Some((start_byte, start_byte, start_byte + text_byte_len));
         }
     }
 
     /// Remove text range (used for undo/redo)
-    pub fn remove_range(&mut self, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, tv: &mut TextViewState, start: usize, end: usize) {
+    pub fn remove_range(
+        &mut self,
+        syntax: &mut SyntaxCacheState,
+        display: &mut EditorDisplayState,
+        tv: &mut TextViewState,
+        start: usize,
+        end: usize,
+    ) {
         let start = start.min(tv.rope.len_chars());
         let end = end.min(tv.rope.len_chars());
         if start < end {
@@ -233,7 +288,13 @@ impl EditHistoryState {
     }
 
     /// Perform undo operation
-    pub fn undo(&mut self, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState) -> bool {
+    pub fn undo(
+        &mut self,
+        syntax: &mut SyntaxCacheState,
+        display: &mut EditorDisplayState,
+        cursor: &mut CursorState,
+        tv: &mut TextViewState,
+    ) -> bool {
         if let Some(transaction) = self.history.pop_undo() {
             for op in transaction.operations.iter().rev() {
                 if !op.inserted_text.is_empty() {
@@ -257,7 +318,13 @@ impl EditHistoryState {
     }
 
     /// Perform redo operation
-    pub fn redo(&mut self, syntax: &mut SyntaxCacheState, display: &mut EditorDisplayState, cursor: &mut CursorState, tv: &mut TextViewState) -> bool {
+    pub fn redo(
+        &mut self,
+        syntax: &mut SyntaxCacheState,
+        display: &mut EditorDisplayState,
+        cursor: &mut CursorState,
+        tv: &mut TextViewState,
+    ) -> bool {
         if let Some(transaction) = self.history.pop_redo() {
             for op in transaction.operations.iter() {
                 if !op.removed_text.is_empty() {
@@ -281,7 +348,14 @@ impl EditHistoryState {
     }
 
     /// Set text content
-    pub fn set_text(&mut self, sel: &mut SelectionState, syntax: &mut SyntaxCacheState, cursor: &mut CursorState, tv: &mut TextViewState, text: &str) {
+    pub fn set_text(
+        &mut self,
+        sel: &mut SelectionState,
+        syntax: &mut SyntaxCacheState,
+        cursor: &mut CursorState,
+        tv: &mut TextViewState,
+        text: &str,
+    ) {
         #[cfg(feature = "tree-sitter")]
         let old_byte_len = tv.rope.len_bytes();
         #[cfg(feature = "tree-sitter")]

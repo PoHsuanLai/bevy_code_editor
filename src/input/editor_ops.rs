@@ -69,7 +69,12 @@ impl CodeEditorState {
     }
 
     /// Find the next occurrence of text after a given position
-    pub fn find_next_occurrence(&self, rope: &Rope, text: &str, after_pos: usize) -> Option<(usize, usize)> {
+    pub fn find_next_occurrence(
+        &self,
+        rope: &Rope,
+        text: &str,
+        after_pos: usize,
+    ) -> Option<(usize, usize)> {
         if text.is_empty() {
             return None;
         }
@@ -114,7 +119,12 @@ impl CodeEditorState {
     }
 
     /// Add cursor at next occurrence of current selection/word (Ctrl+D behavior)
-    pub fn add_cursor_at_next_occurrence(&self, sel: &mut SelectionState, cursor: &mut CursorState, tv: &mut TextViewState) -> bool {
+    pub fn add_cursor_at_next_occurrence(
+        &self,
+        sel: &mut SelectionState,
+        cursor: &mut CursorState,
+        tv: &mut TextViewState,
+    ) -> bool {
         let search_text = if let Some(primary) = cursor.cursors.first() {
             if primary.has_selection() {
                 let (start, end) = (primary.selection_start(), primary.selection_end());

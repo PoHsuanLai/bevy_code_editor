@@ -46,14 +46,22 @@ pub(crate) fn track_cursor_movement(
 
 pub(crate) fn update_cursor(
     mut commands: Commands,
-    editor_query: Query<(&CodeEditorState, &EditorDisplayState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    editor_query: Query<
+        (
+            &CodeEditorState,
+            &EditorDisplayState,
+            &CursorState,
+            &TextViewState,
+            &TextViewViewport,
+        ),
+        With<CodeEditor>,
+    >,
     font: Res<FontSettings>,
     cursor_settings: Res<CursorSettings>,
     theme: Res<ThemeSettings>,
     wrapping: Res<WrappingSettings>,
     indentation: Res<IndentationSettings>,
-    #[cfg(feature = "folding")]
-    fold_state: Res<FoldState>,
+    #[cfg(feature = "folding")] fold_state: Res<FoldState>,
     render_config: Res<EditorRenderConfig>,
     mut cursor_query: Query<(Entity, &EditorCursor, &mut Transform, &mut Visibility)>,
 ) {
@@ -101,8 +109,7 @@ pub(crate) fn update_cursor(
         };
 
         let x_offset = vp.text_area_left + extra_indent + (display_col as f32 * char_width);
-        let y_offset =
-            vp.text_area_top + tv.scroll_offset + (display_row as f32 * line_height);
+        let y_offset = vp.text_area_top + tv.scroll_offset + (display_row as f32 * line_height);
 
         let h_scroll = if use_wrapping {
             0.0
@@ -192,14 +199,22 @@ pub(crate) fn animate_cursor(
 }
 pub(crate) fn update_cursor_line_highlight(
     mut commands: Commands,
-    editor_query: Query<(&CodeEditorState, &EditorDisplayState, &CursorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    editor_query: Query<
+        (
+            &CodeEditorState,
+            &EditorDisplayState,
+            &CursorState,
+            &TextViewState,
+            &TextViewViewport,
+        ),
+        With<CodeEditor>,
+    >,
     font: Res<FontSettings>,
     cursor_line: Res<CursorLineSettings>,
     theme: Res<ThemeSettings>,
     wrapping: Res<WrappingSettings>,
     _indentation: Res<IndentationSettings>,
-    #[cfg(feature = "folding")]
-    fold_state: Res<FoldState>,
+    #[cfg(feature = "folding")] fold_state: Res<FoldState>,
     render_config: Res<EditorRenderConfig>,
     mut border_query: Query<(
         Entity,
@@ -299,12 +314,10 @@ pub(crate) fn update_cursor_line_highlight(
             }
         };
 
-        let y_from_top =
-            vp.text_area_top + tv.scroll_offset + (display_row as f32 * line_height);
+        let y_from_top = vp.text_area_top + tv.scroll_offset + (display_row as f32 * line_height);
 
         if cursor_line.show_border {
-            let top_y = vp.world_top() - y_from_top + line_height / 2.0
-                - border_thickness / 2.0;
+            let top_y = vp.world_top() - y_from_top + line_height / 2.0 - border_thickness / 2.0;
             let top_translation = Vec3::new(border_center_x, top_y, -0.4);
 
             if let Some(&entity) = border_entities.get(&(idx, true)) {
@@ -337,8 +350,7 @@ pub(crate) fn update_cursor_line_highlight(
                 }
             }
 
-            let bottom_y = vp.world_top() - y_from_top - line_height / 2.0
-                + border_thickness / 2.0;
+            let bottom_y = vp.world_top() - y_from_top - line_height / 2.0 + border_thickness / 2.0;
             let bottom_translation = Vec3::new(border_center_x, bottom_y, -0.4);
 
             if let Some(&entity) = border_entities.get(&(idx, false)) {
@@ -425,8 +437,8 @@ pub(crate) fn update_cursor_line_highlight(
             let word_x_left = vp.text_area_left + (word_start as f32 * char_width);
 
             // Camera viewport handles panel positioning, so no offset_x here
-            let word_center_x = vp.world_left() + word_x_left + word_width / 2.0
-                - tv.horizontal_scroll_offset;
+            let word_center_x =
+                vp.world_left() + word_x_left + word_width / 2.0 - tv.horizontal_scroll_offset;
             let word_center_y = vp.world_top() - y_from_top;
 
             let word_translation = Vec3::new(word_center_x, word_center_y, -0.5);

@@ -31,10 +31,22 @@ fn main() {
 
 #[cfg(feature = "tree-sitter")]
 fn setup_editor(
-    mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState, &mut EditHistoryState, &mut SelectionState, &mut SyntaxCacheState), With<CodeEditor>>,
+    mut editor_query: Query<
+        (
+            &mut CodeEditorState,
+            &mut CursorState,
+            &mut TextViewState,
+            &mut EditHistoryState,
+            &mut SelectionState,
+            &mut SyntaxCacheState,
+        ),
+        With<CodeEditor>,
+    >,
     mut syntax: ResMut<SyntaxResource>,
 ) {
-    let Ok((mut state, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) = editor_query.single_mut() else {
+    let Ok((mut state, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
+        editor_query.single_mut()
+    else {
         return;
     };
 
@@ -83,9 +95,21 @@ fn setup_editor(
 
 #[cfg(not(feature = "tree-sitter"))]
 fn setup_editor(
-    mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState, &mut EditHistoryState, &mut SelectionState, &mut SyntaxCacheState), With<CodeEditor>>,
+    mut editor_query: Query<
+        (
+            &mut CodeEditorState,
+            &mut CursorState,
+            &mut TextViewState,
+            &mut EditHistoryState,
+            &mut SelectionState,
+            &mut SyntaxCacheState,
+        ),
+        With<CodeEditor>,
+    >,
 ) {
-    let Ok((mut state, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) = editor_query.single_mut() else {
+    let Ok((mut state, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
+        editor_query.single_mut()
+    else {
         return;
     };
 

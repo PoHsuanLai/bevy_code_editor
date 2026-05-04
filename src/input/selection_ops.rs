@@ -29,7 +29,12 @@ impl SelectionState {
     }
 
     /// Add a new cursor at the given position
-    pub fn add_cursor(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, position: usize) {
+    pub fn add_cursor(
+        &mut self,
+        cursor: &mut CursorState,
+        tv: &mut TextViewState,
+        position: usize,
+    ) {
         let position = position.min(tv.rope.len_chars());
         if !cursor.cursors.iter().any(|c| c.position == position) {
             cursor.cursors.push(Cursor::new(position));
@@ -39,10 +44,18 @@ impl SelectionState {
     }
 
     /// Add a new cursor with selection
-    pub fn add_cursor_with_selection(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, position: usize, anchor: usize) {
+    pub fn add_cursor_with_selection(
+        &mut self,
+        cursor: &mut CursorState,
+        tv: &mut TextViewState,
+        position: usize,
+        anchor: usize,
+    ) {
         let position = position.min(tv.rope.len_chars());
         let anchor = anchor.min(tv.rope.len_chars());
-        cursor.cursors.push(Cursor::with_selection(position, anchor));
+        cursor
+            .cursors
+            .push(Cursor::with_selection(position, anchor));
         self.sort_and_merge_cursors(cursor);
         tv.pending_update = true;
     }
@@ -147,7 +160,12 @@ impl SelectionState {
     }
 
     /// Add a new selection at the given position (cursor only)
-    pub fn add_selection(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, offset: usize) {
+    pub fn add_selection(
+        &mut self,
+        cursor: &mut CursorState,
+        tv: &mut TextViewState,
+        offset: usize,
+    ) {
         let offset = offset.min(tv.rope.len_chars());
         self.selections.add_cursor(offset);
         self.sync_from_selections(cursor);
@@ -155,7 +173,13 @@ impl SelectionState {
     }
 
     /// Add a new selection with a range
-    pub fn add_selection_range(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, head: usize, anchor: usize) {
+    pub fn add_selection_range(
+        &mut self,
+        cursor: &mut CursorState,
+        tv: &mut TextViewState,
+        head: usize,
+        anchor: usize,
+    ) {
         let head = head.min(tv.rope.len_chars());
         let anchor = anchor.min(tv.rope.len_chars());
         self.selections.add_selection_range(head, anchor);
@@ -164,14 +188,24 @@ impl SelectionState {
     }
 
     /// Clear all secondary selections, keeping only the primary
-    pub fn clear_secondary_selections_sel(&mut self, cursor: &mut CursorState, tv: &mut TextViewState) {
+    pub fn clear_secondary_selections_sel(
+        &mut self,
+        cursor: &mut CursorState,
+        tv: &mut TextViewState,
+    ) {
         self.selections.clear_secondary();
         self.sync_from_selections(cursor);
         tv.pending_update = true;
     }
 
     /// Move the primary selection to a new position
-    pub fn set_primary_selection(&mut self, cursor: &mut CursorState, tv: &mut TextViewState, head: usize, extend: bool) {
+    pub fn set_primary_selection(
+        &mut self,
+        cursor: &mut CursorState,
+        tv: &mut TextViewState,
+        head: usize,
+        extend: bool,
+    ) {
         let head = head.min(tv.rope.len_chars());
         self.selections.move_primary(head, extend);
         self.sync_from_selections(cursor);

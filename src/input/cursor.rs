@@ -174,16 +174,18 @@ pub fn move_cursor_word_right(cursor: &mut CursorState, rope: &Rope) {
     cursor.cursor_pos = find_word_boundary_right(rope, cursor.cursor_pos);
 }
 
-pub fn delete_word_backward(state: &mut CodeEditorState, _sel: &mut SelectionState, hist: &mut EditHistoryState, cursor: &mut CursorState, tv: &mut TextViewState) {
+pub fn delete_word_backward(
+    state: &mut CodeEditorState,
+    _sel: &mut SelectionState,
+    hist: &mut EditHistoryState,
+    cursor: &mut CursorState,
+    tv: &mut TextViewState,
+) {
     let cursor_before = cursor.cursor_pos;
     let word_start = find_word_boundary_left(&tv.rope, cursor.cursor_pos);
 
     if word_start < cursor_before {
-        let deleted_text: String = tv
-            .rope
-            .slice(word_start..cursor_before)
-            .chars()
-            .collect();
+        let deleted_text: String = tv.rope.slice(word_start..cursor_before).chars().collect();
 
         // Remove the text
         let start_byte = tv.rope.char_to_byte(word_start);
@@ -220,7 +222,13 @@ pub fn delete_word_backward(state: &mut CodeEditorState, _sel: &mut SelectionSta
 }
 
 /// Delete from cursor to next word boundary
-pub fn delete_word_forward(state: &mut CodeEditorState, _sel: &mut SelectionState, hist: &mut EditHistoryState, cursor: &mut CursorState, tv: &mut TextViewState) {
+pub fn delete_word_forward(
+    state: &mut CodeEditorState,
+    _sel: &mut SelectionState,
+    hist: &mut EditHistoryState,
+    cursor: &mut CursorState,
+    tv: &mut TextViewState,
+) {
     let cursor_before = cursor.cursor_pos;
     let word_end = find_word_boundary_right(&tv.rope, cursor.cursor_pos);
 

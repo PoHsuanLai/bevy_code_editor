@@ -178,7 +178,6 @@ fn update_text_views(
             continue;
         }
 
-
         // Calculate content start X (for text views without gutter, starts at text_area_left)
         let content_start_x = if viewport.gutter_width > 0.0 {
             viewport.text_area_left.max(viewport.gutter_width)
@@ -228,7 +227,9 @@ fn update_text_views(
         } else {
             let layer = render_layers.and_then(|l| {
                 // Extract the first set layer as a u8
-                (0u8..=31).find(|&i| l.intersects(&bevy_camera::visibility::RenderLayers::layer(i as usize)))
+                (0u8..=31).find(|&i| {
+                    l.intersects(&bevy_camera::visibility::RenderLayers::layer(i as usize))
+                })
             });
             let batch_comp = GlyphBatchComponent {
                 instances,

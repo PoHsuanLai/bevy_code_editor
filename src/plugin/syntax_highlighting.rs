@@ -5,7 +5,7 @@
 
 use crate::syntax::{SyntaxProvider, TreeSitterProvider};
 use crate::text_view::TextViewState;
-use crate::types::{CodeEditor, CodeEditorState, SyntaxCacheState, LineSegment};
+use crate::types::{CodeEditor, CodeEditorState, LineSegment, SyntaxCacheState};
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task};
 use std::collections::VecDeque;
@@ -329,7 +329,14 @@ pub struct ParseTask {
 #[cfg(feature = "tree-sitter")]
 pub(crate) fn update_syntax_tree(
     mut commands: Commands,
-    mut editor_query: Query<(&mut CodeEditorState, &mut SyntaxCacheState, &mut TextViewState), With<CodeEditor>>,
+    mut editor_query: Query<
+        (
+            &mut CodeEditorState,
+            &mut SyntaxCacheState,
+            &mut TextViewState,
+        ),
+        With<CodeEditor>,
+    >,
     mut syntax: ResMut<SyntaxResource>,
     mut highlight_cache: ResMut<HighlightCache>,
     mut parse_task_query: Query<(Entity, &mut ParseTask)>,
@@ -378,9 +385,8 @@ pub(crate) fn update_syntax_tree(
 
         // Spawn async parse task
         let task_pool = AsyncComputeTaskPool::get();
-        let task = task_pool.spawn(async move {
-            parse_tree_async(rope, parser, language, cached_tree)
-        });
+        let task =
+            task_pool.spawn(async move { parse_tree_async(rope, parser, language, cached_tree) });
 
         commands.spawn(ParseTask {
             task,
@@ -460,13 +466,18 @@ pub(crate) fn byte_to_point(rope: &ropey::Rope, byte_offset: usize) -> tree_sitt
 /// System that sends TextEditEvent when pending_tree_sitter_edit is set
 /// This runs before record_edits_for_incremental_parsing to ensure edits are recorded
 fn send_text_edit_events(
-    mut editor_query: Query<(&mut CodeEditorState, &mut SyntaxCacheState, &TextViewState), With<CodeEditor>>,
+    mut editor_query: Query<
+        (&mut CodeEditorState, &mut SyntaxCacheState, &TextViewState),
+        With<CodeEditor>,
+    >,
     mut writer: MessageWriter<crate::types::events::TextEditEvent>,
 ) {
     let Ok((_state, mut syntax_cache, tv)) = editor_query.single_mut() else {
         return;
     };
-    if let Some((start_byte, old_end_byte, new_end_byte)) = syntax_cache.pending_tree_sitter_edit.take() {
+    if let Some((start_byte, old_end_byte, new_end_byte)) =
+        syntax_cache.pending_tree_sitter_edit.take()
+    {
         writer.write(crate::types::events::TextEditEvent::new(
             start_byte,
             old_end_byte,

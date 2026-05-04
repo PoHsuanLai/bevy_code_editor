@@ -2,10 +2,6 @@
 //!
 //! These systems listen to editor events and translate them into LSP operations
 
-use crate::types::events::{
-    ApplyCompletionEvent, DismissCompletionEvent, RequestCompletionEvent, RequestHoverEvent,
-    RequestRenameEvent, RequestSignatureHelpEvent, TextEditEvent,
-};
 use crate::lsp::client::LspClient;
 use crate::lsp::messages::LspMessage;
 use crate::lsp::state::{
@@ -13,6 +9,10 @@ use crate::lsp::state::{
     SignatureHelpState,
 };
 use crate::text_view::TextViewState;
+use crate::types::events::{
+    ApplyCompletionEvent, DismissCompletionEvent, RequestCompletionEvent, RequestHoverEvent,
+    RequestRenameEvent, RequestSignatureHelpEvent, TextEditEvent,
+};
 use crate::types::{CodeEditor, CursorState};
 use bevy::prelude::*;
 
@@ -263,7 +263,9 @@ pub fn listen_apply_completion(
     mut query: Query<(&mut CursorState, &mut TextViewState), With<CodeEditor>>,
     mut completion_state: ResMut<CompletionState>,
 ) {
-    let Ok((mut cursor_state, mut tv)) = query.single_mut() else { return };
+    let Ok((mut cursor_state, mut tv)) = query.single_mut() else {
+        return;
+    };
     for event in events.read() {
         if event.item_index < completion_state.items.len() {
             let item = &completion_state.items[event.item_index];

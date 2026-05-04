@@ -53,34 +53,32 @@ pub mod lsp;
 
 pub mod prelude {
     //! Convenient re-exports for common usage
-    pub use crate::types::events::*;
     pub use crate::input::*;
     pub use crate::language::{Language, TreeSitterConfig};
     pub use crate::plugin::{
         ApplyStateSet, CodeEditorPlugin, EditorInputManager, EditorSetupSet, EditorUiPlugin,
-        InputSet, RenderingSet, SyntaxResource, SyntaxPlugin, HighlightCache,
+        HighlightCache, InputSet, RenderingSet, SyntaxPlugin, SyntaxResource,
     };
+    pub use crate::types::events::*;
 
     #[cfg(feature = "scrollbar")]
     pub use crate::plugin::{Scrollbar, ScrollbarPlugin};
     pub use crate::settings::*;
     pub use crate::text_view::{
-        TextView, TextViewBatchEntity, TextViewPlugin, TextViewRenderSet,
-        TextViewState, TextViewViewport, GlyphBatchComponent, GlyphInstance, TextViewBatch,
-        TextViewSelectionState, TextViewDragState, copy_selection, screen_to_char_pos,
+        copy_selection, screen_to_char_pos, GlyphBatchComponent, GlyphInstance, TextView,
+        TextViewBatch, TextViewBatchEntity, TextViewDragState, TextViewPlugin, TextViewRenderSet,
+        TextViewSelectionState, TextViewState, TextViewViewport,
     };
     // User-facing editor components
     pub use crate::types::editor::{
-        CodeEditor, CodeEditorState, CursorState, SelectionState, EditHistoryState,
-        SyntaxCacheState, EditorDisplayState,
-        ViewportConfig, ViewportDimensions,
-        EditorScrollControl, KeyRepeatState,
-        SaveRequested, OpenRequested,
+        CodeEditor, CodeEditorState, CursorState, EditHistoryState, EditorDisplayState,
+        EditorScrollControl, KeyRepeatState, OpenRequested, SaveRequested, SelectionState,
+        SyntaxCacheState, ViewportConfig, ViewportDimensions,
     };
     // User-facing data types
-    pub use crate::types::selection::Cursor;
     pub use crate::types::display_map::LineSegment;
     pub use crate::types::fold::{FoldState, GotoLineState};
+    pub use crate::types::selection::Cursor;
 
     // Selective re-exports from display_map to avoid name conflicts with types.rs
     pub use crate::display_map::{
@@ -97,7 +95,7 @@ pub mod prelude {
 
     // Re-export egui LSP UI plugin (feature-gated)
     #[cfg(feature = "egui-overlays")]
-    pub use crate::plugin::lsp_egui_ui_plugin::LspEguiUiPlugin;
-    #[cfg(feature = "egui-overlays")]
     pub use crate::lsp::egui_render::LspEguiViewportOffset;
+    #[cfg(feature = "egui-overlays")]
+    pub use crate::plugin::lsp_egui_ui_plugin::LspEguiUiPlugin;
 }

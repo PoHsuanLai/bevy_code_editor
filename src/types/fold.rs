@@ -2,8 +2,8 @@
 
 use bevy::prelude::*;
 
-use crate::text_view::TextViewState;
 use super::editor::{CursorState, SelectionState};
+use crate::text_view::TextViewState;
 
 /// State for "Go to line" functionality
 #[derive(Clone, Debug, Default, Resource)]
@@ -22,7 +22,12 @@ impl GotoLineState {
 
     /// Execute goto line: moves cursor to the specified line
     /// Returns true if the navigation was successful
-    pub fn goto(&self, sel: &mut SelectionState, cursor: &mut CursorState, tv: &mut TextViewState) -> bool {
+    pub fn goto(
+        &self,
+        sel: &mut SelectionState,
+        cursor: &mut CursorState,
+        tv: &mut TextViewState,
+    ) -> bool {
         if let Some(line_num) = self.parse_line_number() {
             let total_lines = tv.rope.len_lines();
             // Clamp line number to valid range (1-indexed input, convert to 0-indexed)

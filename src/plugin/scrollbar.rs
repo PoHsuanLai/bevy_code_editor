@@ -136,7 +136,15 @@ fn handle_scrollbar_mouse(
     windows: Query<&Window>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut drag_state: ResMut<ScrollbarDragState>,
-    mut editor_query: Query<(&mut crate::types::CodeEditorState, &mut crate::types::CursorState, &mut TextViewState, &TextViewViewport), With<CodeEditor>>,
+    mut editor_query: Query<
+        (
+            &mut crate::types::CodeEditorState,
+            &mut crate::types::CursorState,
+            &mut TextViewState,
+            &TextViewViewport,
+        ),
+        With<CodeEditor>,
+    >,
     scrollbar_query: Query<(Entity, &Scrollbar)>,
     _track_query: Query<(&ScrollbarTrack, &Transform, &Sprite)>,
     thumb_query: Query<(&ScrollbarThumb, &Transform, &Sprite)>,
@@ -161,7 +169,7 @@ fn handle_scrollbar_mouse(
     // We need to account for the camera position which centers the viewport
     let camera_x = viewport.world_left() + viewport.width as f32 / 2.0;
     let camera_y = viewport.world_top() - viewport.height as f32 / 2.0;
-    
+
     let cursor_y = camera_y + (window.height() / 2.0 - cursor_pos_window.y);
     let cursor_x = camera_x + (cursor_pos_window.x - window.width() / 2.0);
 
@@ -186,7 +194,8 @@ fn handle_scrollbar_mouse(
                 if let Ok((entity, _scrollbar)) = scrollbar_query.get(thumb.parent) {
                     trace!(
                         "[Scrollbar] DRAG STARTED at cursor_y={}, scroll_offset={}",
-                        cursor_y, tv.scroll_offset
+                        cursor_y,
+                        tv.scroll_offset
                     );
                     drag_state.is_dragging = true;
                     drag_state.dragging_entity = Some(entity);
@@ -218,7 +227,8 @@ fn handle_scrollbar_mouse(
                     let total_content_height = total_lines as f32 * line_height;
                     let viewport_height = viewport.height as f32;
                     // Account for text_area_top margin (matches mouse wheel calculation)
-                    let max_scroll = -(total_content_height - viewport_height + viewport.text_area_top).max(0.0);
+                    let max_scroll =
+                        -(total_content_height - viewport_height + viewport.text_area_top).max(0.0);
 
                     // Scale pixel delta to scroll offset
                     let scroll_delta = (delta_y / scrollable_range) * max_scroll;
@@ -245,7 +255,8 @@ fn handle_scrollbar_mouse(
         if drag_state.is_dragging {
             trace!(
                 "[Scrollbar] DRAG ENDED at scroll_offset={}, target={}",
-                tv.scroll_offset, tv.target_scroll_offset
+                tv.scroll_offset,
+                tv.target_scroll_offset
             );
             // Ensure target matches actual to prevent smooth scroll animation after release
             tv.target_scroll_offset = tv.scroll_offset;
@@ -279,7 +290,14 @@ fn update_scrollbars(
         ),
         Without<ScrollbarTrack>,
     >,
-    editor_query: Query<(&crate::types::CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    editor_query: Query<
+        (
+            &crate::types::CodeEditorState,
+            &TextViewState,
+            &TextViewViewport,
+        ),
+        With<CodeEditor>,
+    >,
     font: Res<crate::settings::FontSettings>,
     drag_state: Res<ScrollbarDragState>,
     render_config: Res<EditorRenderConfig>,
@@ -417,7 +435,14 @@ pub struct EditorScrollbar;
 /// Update the editor scrollbar based on editor state
 pub fn update_editor_scrollbar(
     mut commands: Commands,
-    editor_query: Query<(&crate::types::CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    editor_query: Query<
+        (
+            &crate::types::CodeEditorState,
+            &TextViewState,
+            &TextViewViewport,
+        ),
+        With<CodeEditor>,
+    >,
     font: Res<crate::settings::FontSettings>,
     scrollbar_settings: Res<crate::settings::ScrollbarSettings>,
     mut scrollbar_query: Query<&mut Scrollbar, With<EditorScrollbar>>,

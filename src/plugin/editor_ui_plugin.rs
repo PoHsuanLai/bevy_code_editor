@@ -28,8 +28,7 @@ use bevy_camera::Viewport;
 #[derive(Component)]
 pub struct EditorCamera;
 use super::{
-    to_bevy_coords_dynamic, to_bevy_coords_left_aligned,
-    update_cursor_line_highlight,
+    to_bevy_coords_dynamic, to_bevy_coords_left_aligned, update_cursor_line_highlight,
     update_gpu_line_numbers, update_gpu_text_instanced, update_indent_guides,
     update_selection_highlight, EditorSetupSet,
 };
@@ -40,7 +39,6 @@ use super::{update_bracket_highlight, update_bracket_match};
 
 #[cfg(feature = "folding")]
 use super::update_fold_indicators;
-
 
 #[cfg(feature = "scrollbar")]
 use super::scrollbar::update_editor_scrollbar;
@@ -145,13 +143,13 @@ impl Plugin for EditorUiPlugin {
 
         // Update viewport when window resizes (if auto_resize_to_window is true)
         // or sync from ViewportDimensions resource (if auto_resize_to_window is false)
-        app.add_systems(Update, (detect_viewport_resize, sync_viewport_from_resource));
-
-        // Update separator position when viewport changes
         app.add_systems(
             Update,
-            update_separator_on_resize.run_if(viewport_changed),
+            (detect_viewport_resize, sync_viewport_from_resource),
         );
+
+        // Update separator position when viewport changes
+        app.add_systems(Update, update_separator_on_resize.run_if(viewport_changed));
 
         // Update layout when UI settings change
         app.add_systems(
@@ -215,9 +213,11 @@ impl Plugin for EditorUiPlugin {
             Update,
             update_editor_scrollbar
                 .run_if(
-                    (|query: Query<(), (With<CodeEditor>, Changed<CodeEditorState>)>| !query.is_empty())
-                        .or(viewport_changed)
-                        .or(resource_changed::<ScrollbarSettings>),
+                    (|query: Query<(), (With<CodeEditor>, Changed<CodeEditorState>)>| {
+                        !query.is_empty()
+                    })
+                    .or(viewport_changed)
+                    .or(resource_changed::<ScrollbarSettings>),
                 )
                 .in_set(super::ApplyStateSet),
         );
@@ -533,28 +533,19 @@ fn update_separator_on_resize(
 
 /// Update font metrics (character width) based on actual loaded font
 
-fn update_font_metrics(
-
-    mut font: ResMut<FontSettings>,
-
-    mut atlas: ResMut<GlyphAtlas>,
-
-) {
-
+fn update_font_metrics(mut font: ResMut<FontSettings>, mut atlas: ResMut<GlyphAtlas>) {
     // Measure '0' for monospace width (standard for code)
 
     if let Some(width) = atlas.measure_char_width('0', font.size) {
-
         // Only update if difference is significant
 
         if (font.char_width - width).abs() > 0.01 {
-
-            info!("Updating font char_width from {:.3} to {:.3} (measured)", font.char_width, width);
+            info!(
+                "Updating font char_width from {:.3} to {:.3} (measured)",
+                font.char_width, width
+            );
 
             font.char_width = width;
-
         }
-
     }
-
 }

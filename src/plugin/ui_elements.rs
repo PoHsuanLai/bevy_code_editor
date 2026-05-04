@@ -9,13 +9,22 @@ use bevy::prelude::*;
 /// Update selection highlight rectangles for all cursors
 pub(crate) fn update_selection_highlight(
     mut commands: Commands,
-    editor_query: Query<(&TextViewState, &TextViewViewport, &CodeEditorState, &SelectionState, &EditorDisplayState, &CursorState), With<CodeEditor>>,
+    editor_query: Query<
+        (
+            &TextViewState,
+            &TextViewViewport,
+            &CodeEditorState,
+            &SelectionState,
+            &EditorDisplayState,
+            &CursorState,
+        ),
+        With<CodeEditor>,
+    >,
     font: Res<FontSettings>,
     theme: Res<ThemeSettings>,
     wrapping: Res<WrappingSettings>,
     indentation: Res<IndentationSettings>,
-    #[cfg(feature = "folding")]
-    fold_state: Res<FoldState>,
+    #[cfg(feature = "folding")] fold_state: Res<FoldState>,
     render_config: Res<EditorRenderConfig>,
     mut selection_query: Query<(
         Entity,
@@ -215,10 +224,8 @@ pub(crate) fn update_selection_highlight(
             0.0
         };
 
-        let x_left_edge =
-            vp.text_area_left + extra_indent + (sel_start_col as f32 * char_width);
-        let y_from_top =
-            vp.text_area_top + tv.scroll_offset + (row_idx as f32 * line_height);
+        let x_left_edge = vp.text_area_left + extra_indent + (sel_start_col as f32 * char_width);
+        let y_from_top = vp.text_area_top + tv.scroll_offset + (row_idx as f32 * line_height);
 
         let sprite_center_x = vp.world_left() + x_left_edge + selection_width / 2.0;
         let sprite_center_y = vp.world_top() - y_from_top;
@@ -272,8 +279,7 @@ pub(crate) fn update_indent_guides(
     ui: Res<UiSettings>,
     indentation: Res<IndentationSettings>,
     vp_query: Query<&TextViewViewport, With<CodeEditor>>,
-    #[cfg(feature = "folding")]
-    fold_state: Res<FoldState>,
+    #[cfg(feature = "folding")] fold_state: Res<FoldState>,
     render_config: Res<EditorRenderConfig>,
     mut guide_query: Query<(Entity, &mut Transform, &mut Visibility, &mut IndentGuide)>,
 ) {
@@ -408,8 +414,7 @@ pub(crate) fn update_indent_guides(
 
     for (display_row, level) in needed_guides.iter() {
         let x_offset = vp.text_area_left + (*level * indent_size) as f32 * char_width;
-        let y_offset =
-            vp.text_area_top + tv.scroll_offset + (*display_row as f32 * line_height);
+        let y_offset = vp.text_area_top + tv.scroll_offset + (*display_row as f32 * line_height);
 
         // Position the guide line (thin vertical line)
         // Camera viewport handles panel positioning, so no offset_x here
@@ -463,8 +468,7 @@ pub(crate) fn animate_smooth_scroll(
     scrolling: Res<ScrollingSettings>,
     _font: Res<crate::settings::FontSettings>,
     _viewport: Res<crate::types::ViewportDimensions>,
-    #[cfg(feature = "scrollbar")]
-    scrollbar_drag: Res<super::scrollbar::ScrollbarDragState>,
+    #[cfg(feature = "scrollbar")] scrollbar_drag: Res<super::scrollbar::ScrollbarDragState>,
 ) {
     let Ok(mut tv) = editor_query.single_mut() else {
         return;
@@ -523,8 +527,7 @@ pub(crate) fn animate_smooth_scroll(
 /// Run condition: only run auto_scroll_to_cursor when cursor has moved and not dragging scrollbar
 pub(crate) fn should_auto_scroll(
     editor_query: Query<(&TextViewState, &CursorState), With<CodeEditor>>,
-    #[cfg(feature = "scrollbar")]
-    scrollbar_drag: Res<super::scrollbar::ScrollbarDragState>,
+    #[cfg(feature = "scrollbar")] scrollbar_drag: Res<super::scrollbar::ScrollbarDragState>,
     mouse_drag: Res<crate::input::MouseDragState>,
 ) -> bool {
     // Don't run when dragging scrollbar
@@ -550,7 +553,10 @@ pub(crate) fn should_auto_scroll(
 /// Auto-scroll viewport to keep cursor visible
 /// Writes to target_scroll_offset, not scroll_offset (applied by animate_smooth_scroll)
 pub(crate) fn auto_scroll_to_cursor(
-    mut editor_query: Query<(&mut TextViewState, &mut CursorState, &TextViewViewport), With<CodeEditor>>,
+    mut editor_query: Query<
+        (&mut TextViewState, &mut CursorState, &TextViewViewport),
+        With<CodeEditor>,
+    >,
     font: Res<FontSettings>,
 ) {
     let Ok((mut tv, mut cursor, vp)) = editor_query.single_mut() else {
@@ -609,9 +615,8 @@ pub(crate) fn auto_scroll_to_cursor(
     // Define horizontal visible range (with some margin)
     let margin_horizontal = char_width * 5.0; // 5 characters of margin
     let visible_left = tv.horizontal_scroll_offset;
-    let visible_right = tv.horizontal_scroll_offset + viewport_width
-        - vp.text_area_left
-        - margin_horizontal;
+    let visible_right =
+        tv.horizontal_scroll_offset + viewport_width - vp.text_area_left - margin_horizontal;
 
     // Adjust horizontal target scroll if cursor is outside visible range
     if cursor_x < visible_left {

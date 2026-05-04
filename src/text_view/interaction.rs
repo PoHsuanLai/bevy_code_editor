@@ -95,17 +95,16 @@ pub fn copy_selection(sel: &TextViewSelectionState, tv: &TextViewState) -> bool 
 /// Mouse wheel scroll for all `TextView` entities.
 /// Hit-tests against each viewport to only scroll the hovered view.
 pub fn handle_text_view_scroll(
-    mut views: Query<
-        (&mut TextViewState, &TextViewViewport),
-        With<TextView>,
-    >,
+    mut views: Query<(&mut TextViewState, &TextViewViewport), With<TextView>>,
     mut mouse_wheel_events: MessageReader<MouseWheel>,
     font: Res<FontSettings>,
     scrolling: Res<ScrollingSettings>,
     windows: Query<&Window, With<PrimaryWindow>>,
 ) {
     let Ok(window) = windows.single() else { return };
-    let Some(cursor_pos) = window.cursor_position() else { return };
+    let Some(cursor_pos) = window.cursor_position() else {
+        return;
+    };
 
     // Collect events (can only iterate once)
     let events: Vec<_> = mouse_wheel_events.read().cloned().collect();
@@ -138,8 +137,7 @@ pub fn handle_text_view_scroll(
 
                 if scrolling.smooth {
                     tv.target_scroll_offset += scroll_delta;
-                    tv.target_scroll_offset =
-                        tv.target_scroll_offset.min(0.0).max(max_scroll);
+                    tv.target_scroll_offset = tv.target_scroll_offset.min(0.0).max(max_scroll);
                 } else {
                     tv.scroll_offset += scroll_delta;
                     tv.scroll_offset = tv.scroll_offset.min(0.0).max(max_scroll);
@@ -154,7 +152,11 @@ pub fn handle_text_view_scroll(
 /// Mouse click + drag selection for all `TextView` entities.
 pub fn handle_text_view_mouse(
     mut views: Query<
-        (&mut TextViewSelectionState, &TextViewState, &TextViewViewport),
+        (
+            &mut TextViewSelectionState,
+            &TextViewState,
+            &TextViewViewport,
+        ),
         With<TextView>,
     >,
     mut drag_state: ResMut<TextViewDragState>,
@@ -163,7 +165,9 @@ pub fn handle_text_view_mouse(
     font: Res<FontSettings>,
 ) {
     let Ok(window) = windows.single() else { return };
-    let Some(cursor_pos) = window.cursor_position() else { return };
+    let Some(cursor_pos) = window.cursor_position() else {
+        return;
+    };
 
     // Handle release
     if mouse_button.just_released(MouseButton::Left) {
@@ -187,14 +191,8 @@ pub fn handle_text_view_mouse(
             }
 
             let local_pos = Vec2::new(cursor_pos.x - vp_pos.x, cursor_pos.y - vp_pos.y);
-            let char_pos = screen_to_char_pos(
-                local_pos,
-                &tv.rope,
-                tv.scroll_offset,
-                &font,
-                viewport,
-                None,
-            );
+            let char_pos =
+                screen_to_char_pos(local_pos, &tv.rope, tv.scroll_offset, &font, viewport, None);
 
             sel.selection_start = Some(char_pos);
             sel.selection_end = None;
@@ -236,10 +234,7 @@ pub fn handle_text_view_mouse(
 
 /// Copy selection on Cmd/Ctrl+C for `TextView` entities.
 pub fn handle_text_view_copy(
-    views: Query<
-        (&TextViewSelectionState, &TextViewState),
-        With<TextView>,
-    >,
+    views: Query<(&TextViewSelectionState, &TextViewState), With<TextView>>,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     let ctrl = keyboard.pressed(KeyCode::SuperLeft)

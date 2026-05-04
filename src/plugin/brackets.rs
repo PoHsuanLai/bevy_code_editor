@@ -154,8 +154,7 @@ pub(crate) fn update_bracket_highlight(
     theme: Res<ThemeSettings>,
     brackets: Res<BracketSettings>,
     bracket_state: Res<BracketMatchState>,
-    #[cfg(feature = "folding")]
-    fold_state: Res<FoldState>,
+    #[cfg(feature = "folding")] fold_state: Res<FoldState>,
     render_config: Res<EditorRenderConfig>,
     mut highlight_query: Query<(
         Entity,
@@ -204,9 +203,8 @@ pub(crate) fn update_bracket_highlight(
                 let display_row = line_idx;
 
                 let x_offset = viewport.text_area_left + (col_idx as f32 * char_width);
-                let y_offset = viewport.text_area_top
-                    + tv.scroll_offset
-                    + (display_row as f32 * line_height);
+                let y_offset =
+                    viewport.text_area_top + tv.scroll_offset + (display_row as f32 * line_height);
 
                 // Calculate base position (center of the bracket character cell)
                 // Camera viewport handles panel positioning, so no offset_x here

@@ -14,9 +14,8 @@ use bevy::{
         extract_component::{ExtractComponent, ExtractComponentPlugin},
         render_asset::RenderAssets,
         render_phase::{
-            AddRenderCommand, DrawFunctions, PhaseItem, PhaseItemExtraIndex,
-            RenderCommand, RenderCommandResult, SetItemPipeline, TrackedRenderPass,
-            ViewSortedRenderPhases,
+            AddRenderCommand, DrawFunctions, PhaseItem, PhaseItemExtraIndex, RenderCommand,
+            RenderCommandResult, SetItemPipeline, TrackedRenderPass, ViewSortedRenderPhases,
         },
         render_resource::{binding_types::*, ShaderType, *},
         renderer::RenderDevice,
@@ -99,7 +98,6 @@ impl ExtractComponent for GlyphBatchComponent {
         })
     }
 }
-
 
 #[derive(Component, Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable, ShaderType)]
 #[repr(C)]
@@ -188,7 +186,9 @@ fn prepare_view_bind_group(
             }],
         );
 
-        commands.entity(entity).insert(TextViewBindGroup { bind_group });
+        commands
+            .entity(entity)
+            .insert(TextViewBindGroup { bind_group });
     }
 }
 
@@ -245,13 +245,12 @@ fn prepare_instance_buffers(
             let bind_group = render_device.create_bind_group(
                 "text_texture_bind_group",
                 &pipeline.texture_bind_group_layout,
-                &BindGroupEntries::sequential((
-                    &gpu_image.texture_view,
-                    &gpu_image.sampler,
-                )),
+                &BindGroupEntries::sequential((&gpu_image.texture_view, &gpu_image.sampler)),
             );
 
-            commands.entity(entity).insert(TextureBindGroup { bind_group });
+            commands
+                .entity(entity)
+                .insert(TextureBindGroup { bind_group });
         } else {
             warn!("Atlas texture not found in RenderAssets!");
         }
@@ -425,7 +424,9 @@ fn queue_instanced_text(
     mut transparent_render_phases: ResMut<ViewSortedRenderPhases<Transparent2d>>,
     views: Query<(Entity, &ExtractedView, Option<&RenderLayers>)>,
 ) {
-    let draw_function = transparent_2d_draw_functions.read().id::<DrawInstancedText>();
+    let draw_function = transparent_2d_draw_functions
+        .read()
+        .id::<DrawInstancedText>();
 
     for (_view_entity, view, view_layers) in &views {
         let view_render_layers = view_layers.cloned().unwrap_or(RenderLayers::layer(0));
@@ -463,7 +464,6 @@ fn queue_instanced_text(
                 indexed: false, // We use draw() not draw_indexed()
             });
         }
-
     }
 }
 

@@ -381,13 +381,8 @@ pub(crate) fn update_fold_indicators(
         let y_offset =
             viewport.text_area_top + tv.scroll_offset + (display_line as f32 * line_height);
 
-        let translation = to_bevy_coords_left_aligned(
-            x_offset,
-            y_offset,
-            viewport_width,
-            viewport_height,
-            0.0,
-        );
+        let translation =
+            to_bevy_coords_left_aligned(x_offset, y_offset, viewport_width, viewport_height, 0.0);
 
         // Choose indicator character based on fold state
         let indicator_char = if region.is_folded { "▶" } else { "▼" };

@@ -73,13 +73,18 @@ pub fn process_lsp_messages(
     mut hint_state: ResMut<InlayHintState>,
     mut highlight_state: ResMut<DocumentHighlightState>,
     mut rename_state: ResMut<RenameState>,
-    mut editor_query: Query<(&mut CodeEditorState, &mut CursorState, &mut TextViewState), With<CodeEditor>>,
+    mut editor_query: Query<
+        (&mut CodeEditorState, &mut CursorState, &mut TextViewState),
+        With<CodeEditor>,
+    >,
     lsp_sync: Res<LspSyncState>,
     mut navigate_events: MessageWriter<NavigateToFileEvent>,
     mut multi_location_events: MessageWriter<MultipleLocationsEvent>,
     mut workspace_edit_events: MessageWriter<WorkspaceEditEvent>,
 ) {
-    let Ok((mut editor_state, mut cursor_state, mut tv)) = editor_query.single_mut() else { return };
+    let Ok((mut editor_state, mut cursor_state, mut tv)) = editor_query.single_mut() else {
+        return;
+    };
     // Clean up timed out requests periodically
     lsp_client.cleanup_timeouts();
 
@@ -167,8 +172,7 @@ pub fn process_lsp_messages(
                     if line_num < tv.rope.len_lines() {
                         let line_start_char = tv.rope.line_to_char(line_num);
                         let target_char_pos = line_start_char + char_in_line;
-                        cursor_state.cursor_pos =
-                            target_char_pos.min(tv.rope.len_chars());
+                        cursor_state.cursor_pos = target_char_pos.min(tv.rope.len_chars());
                         tv.needs_update = true;
                     }
                 } else {
@@ -241,7 +245,8 @@ pub fn process_lsp_messages(
             LspResponse::PrepareRename { range, placeholder } => {
                 trace!(
                     "[LSP] PrepareRename: range={:?}, placeholder={:?}",
-                    range, placeholder
+                    range,
+                    placeholder
                 );
 
                 rename_state.on_prepare_response(range, placeholder);
@@ -271,7 +276,11 @@ pub fn process_lsp_messages(
 }
 
 /// Apply text edits from formatting
-fn apply_text_edits(editor_state: &mut CodeEditorState, tv: &mut TextViewState, edits: Vec<TextEdit>) {
+fn apply_text_edits(
+    editor_state: &mut CodeEditorState,
+    tv: &mut TextViewState,
+    edits: Vec<TextEdit>,
+) {
     // Sort edits in reverse order to preserve positions
     let mut edits_sorted = edits;
     edits_sorted.sort_by(|a, b| {
@@ -387,8 +396,7 @@ pub fn request_inlay_hints(
     // Calculate visible range with some buffer
     let visible_start_line = (tv.scroll_offset / font.line_height) as u32;
     let visible_lines = (vp.height as f32 / font.line_height) as u32 + 10;
-    let visible_end_line =
-        (visible_start_line + visible_lines).min(tv.rope.len_lines() as u32);
+    let visible_end_line = (visible_start_line + visible_lines).min(tv.rope.len_lines() as u32);
 
     let range = Range {
         start: Position {
@@ -486,7 +494,9 @@ pub fn request_document_highlights(
         return;
     }
 
-    let Ok((_editor_state, cursor_state, tv)) = query.single() else { return };
+    let Ok((_editor_state, cursor_state, tv)) = query.single() else {
+        return;
+    };
 
     let Some(uri) = &lsp_sync.document_uri else {
         return;

@@ -118,7 +118,9 @@ pub fn render_completion_egui(
         return;
     }
 
-    let Ok((cursor_state, tv)) = query.single() else { return };
+    let Ok((cursor_state, tv)) = query.single() else {
+        return;
+    };
 
     let ctx = match contexts.ctx_mut() {
         Ok(c) => c,
@@ -182,8 +184,7 @@ pub fn render_completion_egui(
                     ui.set_max_height(popup_height);
 
                     let scroll_offset = completion_state.scroll_offset;
-                    let visible_items =
-                        filtered_items.iter().skip(scroll_offset).take(max_visible);
+                    let visible_items = filtered_items.iter().skip(scroll_offset).take(max_visible);
 
                     for (i, item) in visible_items.enumerate() {
                         let absolute_index = scroll_offset + i;
@@ -209,7 +210,9 @@ pub fn render_completion_egui(
 
                         egui::Frame::NONE
                             .fill(bg)
-                            .corner_radius(egui::CornerRadius::same(theme.spacing.corner_radius_small))
+                            .corner_radius(egui::CornerRadius::same(
+                                theme.spacing.corner_radius_small,
+                            ))
                             .inner_margin(egui::Margin::symmetric(6, 2))
                             .show(ui, |ui| {
                                 ui.set_width(popup_width - 8.0);
@@ -337,7 +340,9 @@ pub fn render_signature_help_egui(
         return;
     };
 
-    let Ok((cursor_state, tv)) = query.single() else { return };
+    let Ok((cursor_state, tv)) = query.single() else {
+        return;
+    };
 
     let ctx = match contexts.ctx_mut() {
         Ok(c) => c,
@@ -381,7 +386,10 @@ pub fn render_signature_help_egui(
             }
             lsp_types::ParameterLabel::Simple(s) => {
                 // Find the substring in the signature label
-                signature.label.find(s.as_str()).map(|pos| (pos, pos + s.len()))
+                signature
+                    .label
+                    .find(s.as_str())
+                    .map(|pos| (pos, pos + s.len()))
             }
         });
 
@@ -465,7 +473,9 @@ pub fn render_code_actions_egui(
         return;
     }
 
-    let Ok((cursor_state, tv)) = query.single() else { return };
+    let Ok((cursor_state, tv)) = query.single() else {
+        return;
+    };
 
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
@@ -539,7 +549,9 @@ pub fn render_code_actions_egui(
 
                         egui::Frame::NONE
                             .fill(bg)
-                            .corner_radius(egui::CornerRadius::same(theme.spacing.corner_radius_small))
+                            .corner_radius(egui::CornerRadius::same(
+                                theme.spacing.corner_radius_small,
+                            ))
                             .inner_margin(egui::Margin::symmetric(8, 2))
                             .show(ui, |ui| {
                                 ui.set_height(item_height);
@@ -596,13 +608,8 @@ pub fn render_rename_egui(
         tv.rope.len_chars()
     };
 
-    let (cursor_x, cursor_y) = cursor_screen_pos(
-        char_index,
-        tv,
-        &font,
-        &viewport_offset,
-        &viewport,
-    );
+    let (cursor_x, cursor_y) =
+        cursor_screen_pos(char_index, tv, &font, &viewport_offset, &viewport);
 
     let theme = ctx.armas_theme();
     let rename_width = (rename_state.new_name.len() as f32 * font.char_width + 40.0).max(150.0);

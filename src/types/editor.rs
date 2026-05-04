@@ -156,9 +156,7 @@ pub struct CodeEditorState {
 
 impl Default for CodeEditorState {
     fn default() -> Self {
-        Self {
-            is_focused: false,
-        }
+        Self { is_focused: false }
     }
 }
 
@@ -260,9 +258,6 @@ impl Default for EditorDisplayState {
         }
     }
 }
-
-
-
 
 /// Component markers for editor entities
 
@@ -490,4 +485,3 @@ pub struct EditorScrollControl {
     /// Pending horizontal scroll delta (relative amount)
     pub pending_horizontal_scroll_delta: Option<f32>,
 }
-

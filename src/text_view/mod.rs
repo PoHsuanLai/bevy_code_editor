@@ -26,8 +26,10 @@ pub mod render;
 pub mod state;
 pub mod viewport;
 
+pub use interaction::{
+    copy_selection, screen_to_char_pos, TextViewDragState, TextViewSelectionState,
+};
 pub use plugin::{TextView, TextViewBatchEntity, TextViewPlugin, TextViewRenderSet};
 pub use render::{GlyphBatchComponent, GlyphInstance, TextViewBatch};
 pub use state::TextViewState;
 pub use viewport::TextViewViewport;
-pub use interaction::{TextViewSelectionState, TextViewDragState, copy_selection, screen_to_char_pos};

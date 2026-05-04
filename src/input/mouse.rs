@@ -75,7 +75,16 @@ fn screen_to_char_pos(
 
 /// System to handle mouse input
 pub fn handle_mouse_input(
-    mut editor_query: Query<(&mut CodeEditorState, &mut SelectionState, &mut CursorState, &mut TextViewState, &TextViewViewport), With<CodeEditor>>,
+    mut editor_query: Query<
+        (
+            &mut CodeEditorState,
+            &mut SelectionState,
+            &mut CursorState,
+            &mut TextViewState,
+            &TextViewViewport,
+        ),
+        With<CodeEditor>,
+    >,
     mut drag_state: ResMut<MouseDragState>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
@@ -88,7 +97,9 @@ pub fn handle_mouse_input(
     #[cfg(feature = "lsp")] mut hover_state: ResMut<crate::lsp::HoverState>,
     #[cfg(feature = "lsp")] hover_settings: Res<crate::settings::LspSettings>,
 ) {
-    let Ok((mut state, mut sel, mut cursor, mut tv, viewport)) = editor_query.single_mut() else { return; };
+    let Ok((mut state, mut sel, mut cursor, mut tv, viewport)) = editor_query.single_mut() else {
+        return;
+    };
 
     // Get cursor position
     let cursor_pos_screen = window_query
@@ -363,13 +374,24 @@ pub fn handle_mouse_input(
 
 /// System to handle mouse wheel scrolling
 pub fn handle_mouse_wheel(
-    mut editor_query: Query<(&mut CodeEditorState, &mut SelectionState, &mut CursorState, &mut TextViewState, &TextViewViewport), With<CodeEditor>>,
+    mut editor_query: Query<
+        (
+            &mut CodeEditorState,
+            &mut SelectionState,
+            &mut CursorState,
+            &mut TextViewState,
+            &TextViewViewport,
+        ),
+        With<CodeEditor>,
+    >,
     mut mouse_wheel_events: MessageReader<MouseWheel>,
     _keyboard: Res<ButtonInput<KeyCode>>,
     font: Res<FontSettings>,
     scrolling: Res<ScrollingSettings>,
 ) {
-    let Ok((_state, _sel, _cursor, mut tv, viewport)) = editor_query.single_mut() else { return; };
+    let Ok((_state, _sel, _cursor, mut tv, viewport)) = editor_query.single_mut() else {
+        return;
+    };
 
     for event in mouse_wheel_events.read() {
         let mut scrolled = false;
@@ -397,8 +419,7 @@ pub fn handle_mouse_wheel(
 
                 // Clamp horizontal scroll:
                 // Minimum is 0 (can't scroll left past column 0)
-                let max_horizontal_scroll =
-                    (tv.max_content_width - available_text_width).max(0.0);
+                let max_horizontal_scroll = (tv.max_content_width - available_text_width).max(0.0);
 
                 if use_smooth {
                     tv.target_horizontal_scroll_offset = tv
@@ -431,8 +452,7 @@ pub fn handle_mouse_wheel(
             if use_smooth {
                 // Update target for smooth scrolling
                 tv.target_scroll_offset += scroll_delta;
-                tv.target_scroll_offset =
-                    tv.target_scroll_offset.min(0.0).max(max_scroll.min(0.0));
+                tv.target_scroll_offset = tv.target_scroll_offset.min(0.0).max(max_scroll.min(0.0));
             } else {
                 // Direct update
                 tv.scroll_offset += scroll_delta;
