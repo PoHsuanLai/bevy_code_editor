@@ -117,6 +117,10 @@ pub fn build_display_layout(
                 font_scale: seg.font_scale,
                 skew: seg.skew,
                 corner_radius: seg.corner_radius,
+                font_weight: None,
+                font_family: None,
+                decoration: None,
+                link: None,
             });
             byte_cursor += len;
         }
@@ -153,6 +157,8 @@ pub fn build_display_layout(
             text: render_text,
             runs,
             line_bg,
+            line_height: None,
+            inline_objects: Vec::new(),
         });
 
         current_display_row += 1;

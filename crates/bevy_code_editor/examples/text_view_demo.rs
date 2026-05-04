@@ -167,14 +167,7 @@ fn handle_scroll(
 fn styled_line(text: &str, color: Color) -> (String, Vec<StyleRun>) {
     (
         text.to_string(),
-        vec![StyleRun {
-            byte_range: 0..text.len(),
-            fg: color,
-            bg: None,
-            font_scale: 0.0,
-            skew: 0.0,
-            corner_radius: 0.0,
-        }],
+        vec![StyleRun::fg_only(0..text.len(), color)],
     )
 }
 
@@ -189,14 +182,7 @@ fn multi_segment_line(segments: Vec<(&str, Color)>) -> (String, Vec<StyleRun>) {
     for (t, c) in segments {
         let len = t.len();
         text.push_str(t);
-        runs.push(StyleRun {
-            byte_range: byte_cursor..byte_cursor + len,
-            fg: c,
-            bg: None,
-            font_scale: 0.0,
-            skew: 0.0,
-            corner_radius: 0.0,
-        });
+        runs.push(StyleRun::fg_only(byte_cursor..byte_cursor + len, c));
         byte_cursor += len;
     }
     (text, runs)

@@ -71,7 +71,7 @@ pub fn render_layout(
     horizontal_scroll_offset: f32,
     font_size: f32,
 ) -> Vec<GlyphInstance> {
-    let line_height = layout.line_height;
+    let default_line_height = layout.line_height;
     let char_width = layout.char_width;
     let baseline_offset = layout.baseline_offset;
 
@@ -83,6 +83,8 @@ pub fn render_layout(
     //   - Glyph baseline = y_top + line_height/2 + baseline_offset (legacy ascent ratio).
     //   - Overlay full-line rect spans y_top..y_top+line_height.
     //   - Sub-line overlays (`y_range: Some(0..2)`) are y_top-relative.
+    // Per-row overrides: `ShapedLine.line_height = Some(h)` lets a row paint
+    // taller / shorter than the layout default (markdown headings, code blocks).
 
     let mut text_instances: Vec<GlyphInstance> = Vec::with_capacity(layout.lines.len() * 80);
     let mut below_instances: Vec<GlyphInstance> = Vec::new();
@@ -105,6 +107,7 @@ pub fn render_layout(
 
     // Glyphs and per-line/per-run backgrounds
     for line in layout.lines.iter() {
+        let line_height = line.line_height.unwrap_or(default_line_height);
         // Glyph baseline derived from row top.
         let base_y = line.y_top + line_height * 0.5 + baseline_offset;
         let line_x = line_start_x + line.x_offset;
@@ -337,7 +340,7 @@ fn push_overlay_quad(
     else {
         return;
     };
-    let line_height = layout.line_height;
+    let line_height = line.line_height.unwrap_or(layout.line_height);
     let baseline_offset = layout.baseline_offset;
     let x0 = rect.x_range.start.max(0.0);
     let x1 = if rect.x_range.end >= f32::MAX / 2.0 {
