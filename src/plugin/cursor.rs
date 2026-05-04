@@ -151,14 +151,13 @@ pub(crate) fn push_cursor_overlays(
     overlays.version = overlays.version.wrapping_add(1);
 }
 pub(crate) fn update_cursor_line_highlight(
-    mut commands: Commands,
     editor_query: Query<
         (
-            &CodeEditorState,
             &EditorDisplayState,
             &CursorState,
             &TextViewState,
             &TextViewViewport,
+            &mut TextViewOverlays,
         ),
         With<CodeEditor>,
     >,
@@ -166,53 +165,20 @@ pub(crate) fn update_cursor_line_highlight(
     cursor_line: Res<CursorLineSettings>,
     theme: Res<ThemeSettings>,
     wrapping: Res<WrappingSettings>,
-    _indentation: Res<IndentationSettings>,
     #[cfg(feature = "folding")] fold_state: Res<FoldState>,
-    render_config: Res<EditorRenderConfig>,
-    mut border_query: Query<(
-        Entity,
-        &CursorLineBorder,
-        &mut Transform,
-        &mut Sprite,
-        &mut Visibility,
-    )>,
-    mut word_query: Query<
-        (
-            Entity,
-            &CursorWordHighlight,
-            &mut Transform,
-            &mut Sprite,
-            &mut Visibility,
-        ),
-        Without<CursorLineBorder>,
-    >,
 ) {
-    if !cursor_line.enabled {
-        for (_, _, _, _, mut visibility) in border_query.iter_mut() {
-            *visibility = Visibility::Hidden;
-        }
-        for (_, _, _, _, mut visibility) in word_query.iter_mut() {
-            *visibility = Visibility::Hidden;
-        }
+    let mut iter = editor_query;
+    let Ok((display, cursor, tv, vp, mut overlays)) = iter.single_mut() else {
+        return;
+    };
+
+    // Drain previous-frame line-border / word rects (z = 0 reserved for cursor-line decoration).
+    overlays.rects.retain(|r| r.z != 0);
+
+    if !cursor_line.enabled || theme.line_highlight.is_none() {
+        overlays.version = overlays.version.wrapping_add(1);
         return;
     }
-
-    let _base_highlight_color = match theme.line_highlight {
-        Some(color) => color,
-        None => {
-            for (_, _, _, _, mut visibility) in border_query.iter_mut() {
-                *visibility = Visibility::Hidden;
-            }
-            for (_, _, _, _, mut visibility) in word_query.iter_mut() {
-                *visibility = Visibility::Hidden;
-            }
-            return;
-        }
-    };
-
-    let Ok((_editor, display, cursor, tv, vp)) = editor_query.single() else {
-        return;
-    };
 
     let line_height = font.line_height;
     let char_width = font.char_width;
@@ -222,24 +188,13 @@ pub(crate) fn update_cursor_line_highlight(
     let border_color = cursor_line.border_color;
     let word_highlight_color = cursor_line.word_highlight_color;
 
-    let mut border_entities: std::collections::HashMap<(usize, bool), Entity> =
-        std::collections::HashMap::new();
-    for (entity, border, _, _, _) in border_query.iter() {
-        border_entities.insert((border.cursor_index, border.is_top), entity);
-    }
+    // Full-line-width band, in pixels relative to the row's text origin.
+    // text_area_left is already the row's "x = 0" anchor in render_layout, so the
+    // band stretches from the negative gutter edge to the viewport's right edge.
+    let band_x_left = -vp.text_area_left;
+    let band_x_right = vp.width as f32 - vp.text_area_left;
 
-    let mut word_entities: std::collections::HashMap<usize, Entity> =
-        std::collections::HashMap::new();
-    for (entity, word_hl, _, _, _) in word_query.iter() {
-        word_entities.insert(word_hl.cursor_index, entity);
-    }
-
-    let code_area_start = vp.text_area_left;
-    let border_width = vp.width as f32 - code_area_start;
-    // Camera viewport handles panel positioning, so no offset_x here
-    let border_center_x = vp.world_left() + code_area_start + border_width / 2.0;
-
-    for (idx, c) in cursor.cursors.iter().enumerate() {
+    for c in cursor.cursors.iter() {
         let cursor_pos = c.position.min(tv.rope.len_chars());
         let line_index = tv.rope.char_to_line(cursor_pos);
 
@@ -267,177 +222,73 @@ pub(crate) fn update_cursor_line_highlight(
             }
         };
 
-        let y_from_top = vp.text_area_top + tv.scroll_offset + (display_row as f32 * line_height);
-
         if cursor_line.show_border {
-            let top_y = vp.world_top() - y_from_top + line_height / 2.0 - border_thickness / 2.0;
-            let top_translation = Vec3::new(border_center_x, top_y, -0.4);
-
-            if let Some(&entity) = border_entities.get(&(idx, true)) {
-                if let Ok((_, _, mut transform, mut sprite, mut visibility)) =
-                    border_query.get_mut(entity)
-                {
-                    transform.translation = top_translation;
-                    sprite.custom_size = Some(Vec2::new(border_width, border_thickness));
-                    sprite.color = border_color;
-                    *visibility = Visibility::Visible;
-                }
-                border_entities.remove(&(idx, true));
-            } else {
-                let mut entity_cmd = commands.spawn((
-                    Sprite {
-                        color: border_color,
-                        custom_size: Some(Vec2::new(border_width, border_thickness)),
-                        ..default()
-                    },
-                    Transform::from_translation(top_translation),
-                    Visibility::Visible,
-                    CursorLineBorder {
-                        cursor_index: idx,
-                        is_top: true,
-                    },
-                    Name::new(format!("CursorLineBorder_top_{}", idx)),
-                ));
-                if let Some(ref layers) = render_config.render_layers {
-                    entity_cmd.insert(layers.clone());
-                }
-            }
-
-            let bottom_y = vp.world_top() - y_from_top - line_height / 2.0 + border_thickness / 2.0;
-            let bottom_translation = Vec3::new(border_center_x, bottom_y, -0.4);
-
-            if let Some(&entity) = border_entities.get(&(idx, false)) {
-                if let Ok((_, _, mut transform, mut sprite, mut visibility)) =
-                    border_query.get_mut(entity)
-                {
-                    transform.translation = bottom_translation;
-                    sprite.custom_size = Some(Vec2::new(border_width, border_thickness));
-                    sprite.color = border_color;
-                    *visibility = Visibility::Visible;
-                }
-                border_entities.remove(&(idx, false));
-            } else {
-                let mut entity_cmd = commands.spawn((
-                    Sprite {
-                        color: border_color,
-                        custom_size: Some(Vec2::new(border_width, border_thickness)),
-                        ..default()
-                    },
-                    Transform::from_translation(bottom_translation),
-                    Visibility::Visible,
-                    CursorLineBorder {
-                        cursor_index: idx,
-                        is_top: false,
-                    },
-                    Name::new(format!("CursorLineBorder_bottom_{}", idx)),
-                ));
-                if let Some(ref layers) = render_config.render_layers {
-                    entity_cmd.insert(layers.clone());
-                }
-            }
+            // Top border: thin band from y=0 to y=border_thickness.
+            overlays.rects.push(RectOverlay {
+                display_row: display_row as u32,
+                x_range: band_x_left..band_x_right,
+                y_range: Some(0.0..border_thickness),
+                color: border_color,
+                z: 0,
+                corner_radius: 0.0,
+            });
+            // Bottom border: thin band at the bottom of the row.
+            overlays.rects.push(RectOverlay {
+                display_row: display_row as u32,
+                x_range: band_x_left..band_x_right,
+                y_range: Some((line_height - border_thickness)..line_height),
+                color: border_color,
+                z: 0,
+                corner_radius: 0.0,
+            });
         }
 
-        // === WORD HIGHLIGHT ===
         if !cursor_line.highlight_word {
             continue;
         }
-        // Find word boundaries at cursor position
+
         let line_start = tv.rope.line_to_char(line_index);
         let col = cursor_pos - line_start;
-
-        // Get the line text
         let line = tv.rope.line(line_index);
         let line_chars: Vec<char> = line.chars().collect();
-
-        // Check if cursor is on a word character (also check char before cursor if cursor is at end)
         let is_word_char = |ch: char| ch.is_alphanumeric() || ch == '_';
-
         let on_word = if col < line_chars.len() && is_word_char(line_chars[col]) {
             true
         } else {
             col > 0 && col <= line_chars.len() && is_word_char(line_chars[col - 1])
         };
-
-        // Find word start and end
         let (word_start, word_end) = if on_word {
-            // Find a valid starting position
             let start_col = if col < line_chars.len() && is_word_char(line_chars[col]) {
                 col
             } else {
                 col - 1
             };
-
-            // Scan backwards for word start
             let mut ws = start_col;
             while ws > 0 && is_word_char(line_chars[ws - 1]) {
                 ws -= 1;
             }
-
-            // Scan forwards for word end
             let mut we = start_col;
             while we < line_chars.len() && is_word_char(line_chars[we]) {
                 we += 1;
             }
-
             (ws, we)
         } else {
             (col, col)
         };
 
-        // Only show word highlight if we found a word
         if word_end > word_start {
-            let word_width = (word_end - word_start) as f32 * char_width;
-            let word_x_left = vp.text_area_left + (word_start as f32 * char_width);
-
-            // Camera viewport handles panel positioning, so no offset_x here
-            let word_center_x =
-                vp.world_left() + word_x_left + word_width / 2.0 - tv.horizontal_scroll_offset;
-            let word_center_y = vp.world_top() - y_from_top;
-
-            let word_translation = Vec3::new(word_center_x, word_center_y, -0.5);
-
-            if let Some(&entity) = word_entities.get(&idx) {
-                if let Ok((_, _, mut transform, mut sprite, mut visibility)) =
-                    word_query.get_mut(entity)
-                {
-                    transform.translation = word_translation;
-                    sprite.custom_size = Some(Vec2::new(word_width, line_height));
-                    sprite.color = word_highlight_color;
-                    *visibility = Visibility::Visible;
-                }
-                word_entities.remove(&idx);
-            } else {
-                let mut entity_cmd = commands.spawn((
-                    Sprite {
-                        color: word_highlight_color,
-                        custom_size: Some(Vec2::new(word_width, line_height)),
-                        ..default()
-                    },
-                    Transform::from_translation(word_translation),
-                    Visibility::Visible,
-                    CursorWordHighlight { cursor_index: idx },
-                    Name::new(format!("CursorWordHighlight_{}", idx)),
-                ));
-                if let Some(ref layers) = render_config.render_layers {
-                    entity_cmd.insert(layers.clone());
-                }
-            }
-        } else {
-            // No word under cursor, hide word highlight
-            if let Some(&entity) = word_entities.get(&idx) {
-                if let Ok((_, _, _, _, mut visibility)) = word_query.get_mut(entity) {
-                    *visibility = Visibility::Hidden;
-                }
-                word_entities.remove(&idx);
-            }
+            let x_left = word_start as f32 * char_width;
+            let x_right = word_end as f32 * char_width;
+            overlays.rects.push(RectOverlay {
+                display_row: display_row as u32,
+                x_range: x_left..x_right,
+                y_range: None,
+                color: word_highlight_color,
+                z: 0,
+                corner_radius: 0.0,
+            });
         }
     }
 
-    // Despawn excess entities
-    for (_, entity) in border_entities {
-        commands.entity(entity).despawn();
-    }
-    for (_, entity) in word_entities {
-        commands.entity(entity).despawn();
-    }
+    overlays.version = overlays.version.wrapping_add(1);
 }

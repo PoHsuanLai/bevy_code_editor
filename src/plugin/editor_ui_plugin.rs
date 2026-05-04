@@ -169,22 +169,19 @@ impl Plugin for EditorUiPlugin {
                 .in_set(super::RenderingSet),
         );
 
-        // Selection writes into TextViewOverlays — must run BEFORE
-        // update_gpu_text_instanced reads them. The previous ordering
-        // (after gpu_line_numbers) was needed when selection was a Sprite
-        // entity that layered over text; now it's a paint-time overlay
-        // consumed by the same render call.
+        // Overlay producers (selection, cursor-line) write into TextViewOverlays
+        // and must run BEFORE update_gpu_text_instanced reads them.
         app.add_systems(
             Update,
-            update_selection_highlight.in_set(super::RenderingSet),
+            (update_selection_highlight, update_cursor_line_highlight)
+                .in_set(super::RenderingSet),
         );
 
-        // Cursor-line highlight + indent guides still use Sprite entities
-        // (step 6c will migrate them). Keep their existing post-text ordering.
+        // Indent guides still use Sprite entities (step 6d follow-up may migrate).
+        // Keep on the post-text-render schedule.
         app.add_systems(
             Update,
-            (update_cursor_line_highlight, update_indent_guides)
-                .chain()
+            update_indent_guides
                 .after(update_gpu_line_numbers)
                 .in_set(super::RenderingSet),
         );
