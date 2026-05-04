@@ -1,16 +1,16 @@
 //! Display map — produces the editor's per-frame `DisplayLayout`.
 //!
-//! `build_display_layout` walks the visible window of the rope, applies
-//! folding inline, shapes each row through cosmic-text, and (when soft
-//! wrap is enabled) splits long lines into multiple rows on pixel-budget
-//! boundaries. The output is a flat `Vec<ShapedLine>` consumed by the
+//! The wrap-aware layout walker now lives engine-side in
+//! [`bevy_text_engine::view::layout_builder`]. This module is the editor's
+//! adapter on top of it: [`build_display_layout`] resolves the editor's
+//! settings (wrapping, indentation, performance budget) and captures the
+//! editor's fold state + syntax highlighter into closures, then defers to
+//! the engine. Output is the same flat `Vec<ShapedLine>` consumed by the
 //! renderer and by overlay producers (cursor, selection, brackets).
 //!
-//! There is no separate transform-stack abstraction (`FoldMap` /
-//! `WrapMap` / `TabMap`) — that scaffolding was removed once the
-//! producer landed in its current shape. Cursor/selection systems map
-//! buffer positions to display rows via `DisplayLayout::buffer_to_display`,
-//! which scans the visible window's rows directly.
+//! Cursor/selection systems map buffer positions to display rows via
+//! `DisplayLayout::buffer_to_display`, which scans the visible window's
+//! rows directly — there is no separate transform-stack abstraction.
 
 pub mod layout;
 pub mod plugin;

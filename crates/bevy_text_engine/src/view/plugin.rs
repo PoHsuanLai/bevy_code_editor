@@ -85,6 +85,9 @@ impl Plugin for TextEnginePlugin {
             Update,
             (
                 animate_text_view_scroll,
+                prewarm_atlas_for_layout
+                    .run_if(atlas_ready)
+                    .before(update_text_views),
                 update_text_views
                     .run_if(atlas_ready)
                     .in_set(TextViewRenderSet),
@@ -257,5 +260,34 @@ pub(crate) fn update_text_views(
                 .entity(tv_entity)
                 .insert(TextViewBatchEntity(batch_entity));
         }
+    }
+}
+
+/// Pre-rasterize every glyph the freshly-built `DisplayLayout` will need.
+///
+/// Runs before `update_text_views`, so by the time the renderer reads the
+/// layout the atlas is fully populated. The renderer never triggers atlas
+/// mutation during the paint pass, which eliminates first-encounter scroll
+/// stutter on freshly-shaped glyphs.
+pub(crate) fn prewarm_atlas_for_layout(
+    layouts: Query<Ref<DisplayLayout>, With<TextView>>,
+    mut atlas: ResMut<GlyphAtlas>,
+) {
+    for layout in &layouts {
+        if !layout.is_changed() {
+            continue;
+        }
+        // Each `ShapedLine.shape` already carries cache_keys from the
+        // producer's shaping. Pre-rasterize them so the renderer's paint
+        // pass is a pure read. Per-run `font_scale` overrides re-shape on
+        // demand at paint time (rare enough that mid-paint rasterization
+        // is acceptable).
+        atlas.ensure_glyphs(layout.lines.iter().flat_map(|l| {
+            l.shape
+                .as_ref()
+                .map(|s| s.glyphs.iter().map(|g| g.cache_key))
+                .into_iter()
+                .flatten()
+        }));
     }
 }

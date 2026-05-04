@@ -2,6 +2,7 @@
 
 pub mod font;
 pub mod layout;
+pub mod layout_builder;
 pub mod overlay;
 pub mod plugin;
 pub mod render;
@@ -11,6 +12,10 @@ pub mod viewport;
 
 pub use font::FontConfig;
 pub use layout::DisplayLayout;
+pub use layout_builder::{
+    approx_display_rows_for_line, build_display_layout, slice_runs, wrap_into_rows, LayoutInputs,
+    RunWithText, WrapRow,
+};
 pub use overlay::{RectOverlay, RowVertical, TextViewOverlays};
 pub use plugin::{TextEnginePlugin, TextEnginePlugins, TextView, TextViewBatchEntity, TextViewRenderSet};
 pub use render::{render_layout, GlyphBatchComponent, GlyphInstance, TextViewBatch};

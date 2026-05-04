@@ -33,7 +33,6 @@ impl Plugin for CursorPlugin {
             .register_type::<CursorWordHighlight>()
             .register_type::<crate::types::events::DismissCompletionEvent>()
             .register_type::<EditorCursor>()
-            .register_type::<EditorScrollControl>()
             .register_type::<EditorText>()
             .register_type::<FindHighlight>()
             .register_type::<GpuMinimapMesh>()

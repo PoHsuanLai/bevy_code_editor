@@ -4,9 +4,9 @@
 //! ViewportRect, FoldState, syntax)`, writes `DisplayLayout` on the editor.
 //! `text_view::update_text_views` then renders that layout.
 //!
-//! `update_display_map_snapshot` is the live producer for the editor; the
-//! `prewarm_atlas_for_layout` companion system rasterizes every glyph the
-//! freshly-built layout will need so the paint pass is a pure read.
+//! `update_display_map_snapshot` is the live producer for the editor;
+//! atlas pre-warming is handled engine-side by
+//! `bevy_text_engine::view::plugin::prewarm_atlas_for_layout`.
 
 use bevy::prelude::*;
 use bevy_text_engine::FontConfig;
@@ -34,12 +34,7 @@ impl Plugin for DisplayMapPlugin {
                 .after(crate::plugin::ApplyStateSet)
                 .before(crate::plugin::RenderingSet),
         );
-        app.add_systems(
-            Update,
-            (update_display_map_snapshot, prewarm_atlas_for_layout)
-                .chain()
-                .in_set(DisplayMapSet),
-        );
+        app.add_systems(Update, update_display_map_snapshot.in_set(DisplayMapSet));
     }
 }
 
@@ -145,32 +140,3 @@ fn syntax_version(_syntax: &SyntaxResource) -> u64 {
     0
 }
 
-/// Pre-rasterize every glyph the freshly-built `DisplayLayout` will need.
-///
-/// Runs in `DisplayMapSet` after `update_display_map_snapshot`, so by the time
-/// `text_view::update_text_views` reads the layout the atlas is fully
-/// populated. The renderer never triggers atlas mutation during the paint
-/// pass, which eliminates first-encounter scroll stutter on freshly-shaped
-/// glyphs.
-pub(crate) fn prewarm_atlas_for_layout(
-    layouts: Query<Ref<DisplayLayout>>,
-    mut atlas: ResMut<bevy_text_engine::gpu::GlyphAtlas>,
-) {
-    for layout in &layouts {
-        if !layout.is_changed() {
-            continue;
-        }
-        // Each `ShapedLine.shape` already carries cache_keys from the
-        // producer's shaping. Pre-rasterize them so the renderer's paint
-        // pass is a pure read. Per-run `font_scale` overrides re-shape on
-        // demand at paint time (rare enough that mid-paint rasterization
-        // is acceptable).
-        atlas.ensure_glyphs(layout.lines.iter().flat_map(|l| {
-            l.shape
-                .as_ref()
-                .map(|s| s.glyphs.iter().map(|g| g.cache_key))
-                .into_iter()
-                .flatten()
-        }));
-    }
-}
