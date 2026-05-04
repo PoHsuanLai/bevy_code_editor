@@ -82,6 +82,30 @@ impl DisplayLayout {
         let line = self.lines.iter().find(|l| l.display_row == display_row)?;
         Some(line_byte_at_x(line, x, self.char_width))
     }
+
+    /// Map a `(buffer_row, byte_in_buffer_line)` position to the display row
+    /// and the byte offset within that row's `text`. Walks all rows sharing
+    /// the buffer line to find the one whose `[buffer_byte_offset .. + text.len()]`
+    /// covers the byte. Returns `None` if no row in the visible window matches.
+    pub fn buffer_to_display(&self, buffer_row: u32, byte_in_line: usize) -> Option<(u32, usize)> {
+        // Rows are emitted in display order; rows sharing a buffer_row are in
+        // ascending buffer_byte_offset. We pick the row with the largest
+        // buffer_byte_offset that's <= byte_in_line.
+        let mut best: Option<&ShapedLine> = None;
+        for line in self.lines.iter() {
+            if line.buffer_row != buffer_row {
+                continue;
+            }
+            if line.buffer_byte_offset <= byte_in_line {
+                best = Some(line);
+            } else {
+                break;
+            }
+        }
+        let line = best?;
+        let local = byte_in_line.saturating_sub(line.buffer_byte_offset);
+        Some((line.display_row, local.min(line.text.len())))
+    }
 }
 
 /// Line-local pixel x for a byte offset inside `line.text`. Public-in-crate so

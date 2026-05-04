@@ -16,12 +16,11 @@
 use armas::prelude::*;
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
-use bevy_code_editor::lsp::{
-    CodeActionState, CompletionState, HoverState, LspClient, LspMessage, LspSyncState,
-    RenameState, SignatureHelpState,
-};
 use bevy_code_editor::lsp_ui::components::{
     DocumentHighlightData, InlayHintData, InlayHintKind, LspUiVisual,
+};
+use bevy_code_editor::lsp_ui::state::{
+    LspCodeActionsPopup, LspCompletionPopup, LspHoverPopup, LspRenamePopup, LspSignatureHelpPopup,
 };
 use bevy_code_editor::plugin::editor_ui_plugin::EditorRenderConfig;
 use bevy_code_editor::prelude::*;
@@ -32,6 +31,7 @@ use bevy_code_editor::types::editor::{
 };
 use bevy_code_editor::types::{CodeEditor, ViewportDimensions};
 use bevy_egui::{egui, EguiContexts};
+use bevy_lsp::{LspClient, LspDocument, LspMessage};
 #[cfg(feature = "tree-sitter")]
 use bevy_tree_sitter::Language;
 
@@ -340,20 +340,18 @@ fn position_popup(
 /// Render the completion popup as an egui overlay using armas styling.
 fn render_completion_egui(
     mut contexts: EguiContexts,
-    completion_state: Res<CompletionState>,
-    query: Query<(&CursorState, &TextViewState), With<CodeEditor>>,
+    query: Query<(&LspCompletionPopup, &CursorState, &TextViewState), With<CodeEditor>>,
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Res<ViewportDimensions>,
 ) {
+    let Ok((completion_state, cursor_state, tv)) = query.single() else {
+        return;
+    };
     let filtered_items = completion_state.filtered_items();
     if !completion_state.visible || filtered_items.is_empty() {
         return;
     }
-
-    let Ok((cursor_state, tv)) = query.single() else {
-        return;
-    };
 
     let ctx = match contexts.ctx_mut() {
         Ok(c) => c,
@@ -481,18 +479,17 @@ fn render_completion_egui(
 /// Render the hover popup as an egui overlay.
 fn render_hover_egui(
     mut contexts: EguiContexts,
-    hover_state: Res<HoverState>,
-    completion_state: Res<CompletionState>,
-    query: Query<&TextViewState, With<CodeEditor>>,
+    query: Query<(&LspHoverPopup, &LspCompletionPopup, &TextViewState), With<CodeEditor>>,
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Res<ViewportDimensions>,
 ) {
+    let Ok((hover_state, completion_state, tv)) = query.single() else {
+        return;
+    };
     if !hover_state.visible || hover_state.content.is_empty() {
         return;
     }
-
-    let Ok(tv) = query.single() else { return };
 
     let ctx = match contexts.ctx_mut() {
         Ok(c) => c,
@@ -552,21 +549,19 @@ fn render_hover_egui(
 /// Render the signature help popup as an egui overlay.
 fn render_signature_help_egui(
     mut contexts: EguiContexts,
-    sig_state: Res<SignatureHelpState>,
-    query: Query<(&CursorState, &TextViewState), With<CodeEditor>>,
+    query: Query<(&LspSignatureHelpPopup, &CursorState, &TextViewState), With<CodeEditor>>,
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Res<ViewportDimensions>,
 ) {
+    let Ok((sig_state, cursor_state, tv)) = query.single() else {
+        return;
+    };
     if !sig_state.visible || sig_state.signatures.is_empty() {
         return;
     }
 
     let Some(signature) = sig_state.current_signature() else {
-        return;
-    };
-
-    let Ok((cursor_state, tv)) = query.single() else {
         return;
     };
 
@@ -683,19 +678,17 @@ fn render_signature_help_egui(
 /// Render the code actions popup as an egui overlay.
 fn render_code_actions_egui(
     mut contexts: EguiContexts,
-    action_state: Res<CodeActionState>,
-    query: Query<(&CursorState, &TextViewState), With<CodeEditor>>,
+    query: Query<(&LspCodeActionsPopup, &CursorState, &TextViewState), With<CodeEditor>>,
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Res<ViewportDimensions>,
 ) {
+    let Ok((action_state, cursor_state, tv)) = query.single() else {
+        return;
+    };
     if !action_state.visible || action_state.actions.is_empty() {
         return;
     }
-
-    let Ok((cursor_state, tv)) = query.single() else {
-        return;
-    };
 
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
@@ -794,14 +787,22 @@ fn render_code_actions_egui(
 /// Render the rename input as an interactive egui overlay.
 fn render_rename_egui(
     mut contexts: EguiContexts,
-    mut rename_state: ResMut<RenameState>,
-    query: Query<&TextViewState, With<CodeEditor>>,
+    mut query: Query<
+        (
+            &mut LspRenamePopup,
+            &TextViewState,
+            &LspClient,
+            Option<&LspDocument>,
+        ),
+        With<CodeEditor>,
+    >,
     font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Res<ViewportDimensions>,
-    lsp_client: Res<LspClient>,
-    lsp_sync: Res<LspSyncState>,
 ) {
+    let Ok((mut rename_state, tv, lsp_client, lsp_document)) = query.single_mut() else {
+        return;
+    };
     if !rename_state.visible {
         return;
     }
@@ -810,8 +811,6 @@ fn render_rename_egui(
         Some(r) => r,
         None => return,
     };
-
-    let Ok(tv) = query.single() else { return };
 
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
@@ -873,9 +872,9 @@ fn render_rename_egui(
     if cancel {
         rename_state.reset();
     } else if submit && rename_state.can_submit() {
-        if let Some(uri) = &lsp_sync.document_uri {
+        if let Some(doc) = lsp_document {
             lsp_client.send(LspMessage::Rename {
-                uri: uri.clone(),
+                uri: doc.uri.clone(),
                 position: range.start,
                 new_name: rename_state.new_name.clone(),
             });
@@ -884,21 +883,30 @@ fn render_rename_egui(
 }
 
 fn setup_editor(
+    mut commands: Commands,
     mut editor_query: Query<
         (
+            Entity,
             &mut CursorState,
             &mut TextViewState,
             &mut EditHistoryState,
             &mut SelectionState,
             &mut SyntaxCacheState,
+            &mut LspClient,
         ),
         With<CodeEditor>,
     >,
-    mut lsp_client: ResMut<LspClient>,
-    mut lsp_sync: ResMut<LspSyncState>,
     #[cfg(feature = "tree-sitter")] mut syntax: ResMut<bevy_code_editor::plugin::SyntaxResource>,
 ) {
-    let Ok((mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) = editor_query.single_mut()
+    let Ok((
+        editor_entity,
+        mut cursor,
+        mut tv,
+        mut hist,
+        mut sel,
+        mut syntax_cache,
+        mut lsp_client,
+    )) = editor_query.single_mut()
     else {
         return;
     };
@@ -969,13 +977,19 @@ fn setup_editor(
         text: rust_code.to_string(),
     });
 
-    lsp_sync.document_uri = Some(doc_uri);
+    // Insert per-document state on the editor entity. Other LSP-side
+    // Components (capabilities, popups, debounce, sync extra) are already on
+    // the entity via `CodeEditor`'s `#[require]` cascade; only `LspDocument`
+    // requires a URI which the host supplies here.
+    commands
+        .entity(editor_entity)
+        .insert(LspDocument::new(doc_uri, "rust"));
 
     info!("LSP started for file: {:?}", example_file_path);
 }
 
-fn display_lsp_info(lsp_client: Res<LspClient>) {
-    if lsp_client.is_changed() {
+fn display_lsp_info(query: Query<&LspClient, (With<CodeEditor>, Changed<LspClient>)>) {
+    if !query.is_empty() {
         info!("LSP client state changed");
     }
 }

@@ -1,9 +1,10 @@
-//! Systems that sync LSP state resources to marker component entities.
+//! Systems that sync per-editor LSP state Components into render-data Components.
 //!
-//! These systems create and update entities with `*PopupData` components
-//! based on the current state of LSP resources (CompletionState, HoverState, etc.).
-//!
-//! The render systems then query these marker components to spawn visual elements.
+//! Each system queries the editor entity for one popup-state Component
+//! (e.g. [`LspCompletionPopup`]) plus the editor's text view, and produces /
+//! updates an entity with the matching `*PopupData` Component (e.g.
+//! [`CompletionPopupData`]). Hosts query the `*Data` Components and render
+//! however they want.
 
 use bevy::prelude::*;
 
@@ -12,17 +13,18 @@ use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::{CodeEditor, CursorState};
 
 use super::components::*;
-use bevy_lsp::{
-    CodeActionOrCommand, CodeActionState, CompletionState, DocumentHighlightState, HoverState,
-    InlayHintState, RenameState, SignatureHelpState,
+use super::state::{
+    LspCodeActionsPopup, LspCompletionPopup, LspDocumentHighlights, LspHoverPopup, LspInlayHints,
+    LspRenamePopup, LspSignatureHelpPopup,
 };
+use bevy_lsp::CodeActionOrCommand;
 
 /// Sync completion state to marker entity
 pub fn sync_completion_popup(
     mut commands: Commands,
-    completion_state: Res<CompletionState>,
     query: Query<
         (
+            &LspCompletionPopup,
             &CursorState,
             &TextViewState,
             &TextViewViewport,
@@ -34,7 +36,7 @@ pub fn sync_completion_popup(
     lsp: Res<LspSettings>,
     existing: Query<Entity, With<CompletionPopupData>>,
 ) {
-    let Ok((cursor_state, tv, _vp)) = query.single() else {
+    let Ok((completion_state, cursor_state, tv, _vp)) = query.single() else {
         return;
     };
     let filtered_items = completion_state.filtered_items();
@@ -111,13 +113,14 @@ pub fn sync_completion_popup(
 /// Sync hover state to marker entity
 pub fn sync_hover_popup(
     mut commands: Commands,
-    hover_state: Res<HoverState>,
-    query: Query<(&TextViewState, &TextViewViewport), With<CodeEditor>>,
+    query: Query<(&LspHoverPopup, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     existing: Query<Entity, With<HoverPopupData>>,
 ) {
-    let Ok((tv, _vp)) = query.single() else { return };
+    let Ok((hover_state, tv, _vp)) = query.single() else {
+        return;
+    };
 
     if !hover_state.visible || hover_state.content.is_empty() {
         for entity in existing.iter() {
@@ -175,9 +178,9 @@ pub fn sync_hover_popup(
 /// Sync signature help state to marker entity
 pub fn sync_signature_help_popup(
     mut commands: Commands,
-    sig_state: Res<SignatureHelpState>,
     query: Query<
         (
+            &LspSignatureHelpPopup,
             &CursorState,
             &TextViewState,
             &TextViewViewport,
@@ -188,7 +191,7 @@ pub fn sync_signature_help_popup(
     ui: Res<UiSettings>,
     existing: Query<Entity, With<SignatureHelpPopupData>>,
 ) {
-    let Ok((cursor_state, tv, _vp)) = query.single() else {
+    let Ok((sig_state, cursor_state, tv, _vp)) = query.single() else {
         return;
     };
 
@@ -270,9 +273,9 @@ pub fn sync_signature_help_popup(
 /// Sync code action state to marker entity
 pub fn sync_code_actions_popup(
     mut commands: Commands,
-    action_state: Res<CodeActionState>,
     query: Query<
         (
+            &LspCodeActionsPopup,
             &CursorState,
             &TextViewState,
             &TextViewViewport,
@@ -283,7 +286,7 @@ pub fn sync_code_actions_popup(
     ui: Res<UiSettings>,
     existing: Query<Entity, With<CodeActionsPopupData>>,
 ) {
-    let Ok((cursor_state, tv, _vp)) = query.single() else {
+    let Ok((action_state, cursor_state, tv, _vp)) = query.single() else {
         return;
     };
 
@@ -368,13 +371,14 @@ pub fn sync_code_actions_popup(
 /// Sync rename state to marker entity
 pub fn sync_rename_input(
     mut commands: Commands,
-    rename_state: Res<RenameState>,
-    query: Query<(&TextViewState, &TextViewViewport), With<CodeEditor>>,
+    query: Query<(&LspRenamePopup, &TextViewState, &TextViewViewport), With<CodeEditor>>,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     existing: Query<Entity, With<RenameInputData>>,
 ) {
-    let Ok((tv, _vp)) = query.single() else { return };
+    let Ok((rename_state, tv, _vp)) = query.single() else {
+        return;
+    };
 
     if !rename_state.visible {
         for entity in existing.iter() {
@@ -437,13 +441,17 @@ pub fn sync_rename_input(
 /// Sync inlay hints to marker entities
 pub fn sync_inlay_hints(
     mut commands: Commands,
-    hint_state: Res<InlayHintState>,
-    query: Query<(Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
+    query: Query<
+        (Ref<LspInlayHints>, Ref<TextViewState>, Ref<TextViewViewport>),
+        With<CodeEditor>,
+    >,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     existing: Query<Entity, With<InlayHintData>>,
 ) {
-    let Ok((tv, vp)) = query.single() else { return };
+    let Ok((hint_state, tv, vp)) = query.single() else {
+        return;
+    };
 
     // Only update if something changed
     if !hint_state.is_changed() && !tv.is_changed() && !vp.is_changed() {
@@ -510,13 +518,21 @@ pub fn sync_inlay_hints(
 /// Sync document highlights to marker entities
 pub fn sync_document_highlights(
     mut commands: Commands,
-    highlight_state: Res<DocumentHighlightState>,
-    query: Query<(Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
+    query: Query<
+        (
+            Ref<LspDocumentHighlights>,
+            Ref<TextViewState>,
+            Ref<TextViewViewport>,
+        ),
+        With<CodeEditor>,
+    >,
     font: Res<FontSettings>,
     ui: Res<UiSettings>,
     existing: Query<Entity, With<DocumentHighlightData>>,
 ) {
-    let Ok((tv, vp)) = query.single() else { return };
+    let Ok((highlight_state, tv, vp)) = query.single() else {
+        return;
+    };
 
     if !highlight_state.is_changed() && !tv.is_changed() && !vp.is_changed() {
         return;
@@ -599,10 +615,7 @@ pub fn sync_document_highlights(
 
                 commands.spawn((
                     DocumentHighlightData {
-                        position: Vec2::new(
-                            x_offset + width / 2.0,
-                            y_offset,
-                        ),
+                        position: Vec2::new(x_offset + width / 2.0, y_offset),
                         width,
                         height: line_height,
                         is_write,

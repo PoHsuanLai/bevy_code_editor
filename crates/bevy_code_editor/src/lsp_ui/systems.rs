@@ -1,4 +1,9 @@
-//! Bevy systems for LSP integration
+//! Bevy systems for LSP integration.
+//!
+//! Drains [`bevy_lsp::LspResponse`]s into per-editor state Components, drives
+//! debounced `did_change` notifications, and emits editor-side messages
+//! (navigate, multiple-locations, workspace-edit) when the response flow
+//! requires host action.
 
 use bevy::prelude::*;
 use lsp_types::*;
@@ -7,10 +12,12 @@ use crate::settings::*;
 use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::{CodeEditor, CursorState};
 
+use super::state::{
+    LspCodeActionsPopup, LspCompletionPopup, LspDocumentHighlights, LspHoverPopup, LspInlayHints,
+    LspRenamePopup, LspSignatureHelpPopup, LspSyncStateExtra,
+};
 use bevy_lsp::{
-    CodeActionOrCommand, CodeActionState, CompletionState, DocumentHighlightState, HoverState,
-    InlayHintState, LspClient, LspMessage, LspResponse, LspSyncState, RenameState,
-    SignatureHelpState,
+    CodeActionOrCommand, LspClient, LspDocument, LspMessage, LspResponse, ServerCapabilities,
 };
 
 /// Diagnostic marker for rendering in editor
@@ -60,28 +67,47 @@ pub struct WorkspaceEditEvent {
     pub edit: WorkspaceEdit,
 }
 
-/// System to process LSP messages and update Bevy resources
+/// System to process LSP messages and update per-editor Components.
+#[allow(clippy::too_many_arguments)]
 pub fn process_lsp_messages(
-    mut lsp_client: ResMut<LspClient>,
     mut commands: Commands,
     diagnostics_query: Query<Entity, With<DiagnosticMarker>>,
-    mut completion_state: ResMut<CompletionState>,
-    mut hover_state: ResMut<HoverState>,
-    mut sig_state: ResMut<SignatureHelpState>,
-    mut action_state: ResMut<CodeActionState>,
-    mut hint_state: ResMut<InlayHintState>,
-    mut highlight_state: ResMut<DocumentHighlightState>,
-    mut rename_state: ResMut<RenameState>,
     mut editor_query: Query<
-        (&mut CursorState, &mut TextViewState),
+        (
+            &mut LspClient,
+            &mut ServerCapabilities,
+            &mut CursorState,
+            &mut TextViewState,
+            Option<&LspDocument>,
+            &mut LspCompletionPopup,
+            &mut LspHoverPopup,
+            &mut LspSignatureHelpPopup,
+            &mut LspCodeActionsPopup,
+            &mut LspInlayHints,
+            &mut LspDocumentHighlights,
+            &mut LspRenamePopup,
+        ),
         With<CodeEditor>,
     >,
-    lsp_sync: Res<LspSyncState>,
     mut navigate_events: MessageWriter<NavigateToFileEvent>,
     mut multi_location_events: MessageWriter<MultipleLocationsEvent>,
     mut workspace_edit_events: MessageWriter<WorkspaceEditEvent>,
 ) {
-    let Ok((mut cursor_state, mut tv)) = editor_query.single_mut() else {
+    let Ok((
+        mut lsp_client,
+        mut capabilities,
+        mut cursor_state,
+        mut tv,
+        lsp_document,
+        mut completion_state,
+        mut hover_state,
+        mut sig_state,
+        mut action_state,
+        mut hint_state,
+        mut highlight_state,
+        mut rename_state,
+    )) = editor_query.single_mut()
+    else {
         return;
     };
     // Clean up timed out requests periodically
@@ -89,8 +115,11 @@ pub fn process_lsp_messages(
 
     while let Some(response) = lsp_client.try_recv() {
         match response {
-            LspResponse::Initialized { capabilities: _ } => {
+            LspResponse::Initialized {
+                capabilities: caps,
+            } => {
                 lsp_client.initialized = true;
+                capabilities.set(caps);
                 #[cfg(debug_assertions)]
                 debug!("[LSP] Server initialized");
             }
@@ -161,7 +190,7 @@ pub fn process_lsp_messages(
                 }
 
                 let location = &locations[0];
-                let current_uri = lsp_sync.document_uri.as_ref();
+                let current_uri = lsp_document.map(|d| &d.uri);
                 let is_same_file = current_uri.is_some_and(|uri| uri == &location.uri);
 
                 if is_same_file {
@@ -256,8 +285,8 @@ pub fn process_lsp_messages(
 
                 // Apply edits to current document if present
                 if let Some(changes) = &edit.changes {
-                    if let Some(uri) = &lsp_sync.document_uri {
-                        if let Some(edits) = changes.get(uri) {
+                    if let Some(doc) = lsp_document {
+                        if let Some(edits) = changes.get(&doc.uri) {
                             apply_text_edits(&mut tv, edits.clone());
                         }
                     }
@@ -316,41 +345,52 @@ fn apply_text_edits(tv: &mut TextViewState, edits: Vec<TextEdit>) {
     tv.content_version += 1;
 }
 
-/// System to sync document with LSP (debounced)
+/// System to sync document with LSP (debounced).
+///
+/// Drives `did_change` from `LspSyncStateExtra::dirty` (set by editor input
+/// when text changes); the LSP-side version counter lives on `LspDocument`.
 pub fn sync_lsp_document(
     time: Res<Time>,
-    mut sync_state: ResMut<LspSyncState>,
-    query: Query<&TextViewState, With<CodeEditor>>,
-    lsp_client: Res<LspClient>,
+    mut query: Query<
+        (
+            &TextViewState,
+            &LspClient,
+            Option<&mut LspDocument>,
+            &mut LspSyncStateExtra,
+        ),
+        With<CodeEditor>,
+    >,
 ) {
+    let Ok((tv, lsp_client, lsp_document, mut sync_state)) = query.single_mut() else {
+        return;
+    };
     if !sync_state.dirty {
         return;
     }
-
-    let Ok(tv) = query.single() else { return };
+    let Some(mut lsp_document) = lsp_document else {
+        return;
+    };
 
     sync_state.timer.tick(time.delta());
 
     if sync_state.timer.is_finished() {
-        if let Some(uri) = &sync_state.document_uri {
-            let version = sync_state.document_version;
+        let version = lsp_document.bump_version();
 
-            // OPTIMIZATION: Use rope chunks instead of full to_string() conversion
-            let change = TextDocumentContentChangeEvent {
-                range: None,
-                range_length: None,
-                text: tv.rope.chunks().collect(),
-            };
+        // OPTIMIZATION: Use rope chunks instead of full to_string() conversion
+        let change = TextDocumentContentChangeEvent {
+            range: None,
+            range_length: None,
+            text: tv.rope.chunks().collect(),
+        };
 
-            lsp_client.send(LspMessage::DidChange {
-                uri: uri.clone(),
-                version,
-                changes: vec![change],
-            });
+        lsp_client.send(LspMessage::DidChange {
+            uri: lsp_document.uri.clone(),
+            version,
+            changes: vec![change],
+        });
 
-            #[cfg(debug_assertions)]
-            debug!("[LSP] Debounced sync sent, version={}", version);
-        }
+        #[cfg(debug_assertions)]
+        debug!("[LSP] Debounced sync sent, version={}", version);
 
         sync_state.dirty = false;
         sync_state.timer.reset();
@@ -359,23 +399,32 @@ pub fn sync_lsp_document(
 
 /// System to request inlay hints for visible range
 pub fn request_inlay_hints(
-    lsp_client: Res<LspClient>,
-    query: Query<(Ref<TextViewState>, Ref<TextViewViewport>), With<CodeEditor>>,
-    lsp_sync: Res<LspSyncState>,
-    mut hint_state: ResMut<InlayHintState>,
+    mut query: Query<
+        (
+            &LspClient,
+            &ServerCapabilities,
+            Ref<TextViewState>,
+            Ref<TextViewViewport>,
+            Option<&LspDocument>,
+            &mut LspInlayHints,
+        ),
+        With<CodeEditor>,
+    >,
     font: Res<FontSettings>,
 ) {
-    if !lsp_client.is_ready() || !lsp_client.capabilities.supports_inlay_hints() {
+    let Ok((lsp_client, capabilities, tv, vp, lsp_document, mut hint_state)) = query.single_mut()
+    else {
+        return;
+    };
+    if !lsp_client.is_ready() || !capabilities.supports_inlay_hints() {
         return;
     }
-
-    let Ok((tv, vp)) = query.single() else { return };
 
     if !hint_state.needs_refresh && !tv.is_changed() && !vp.is_changed() {
         return;
     }
 
-    let Some(uri) = &lsp_sync.document_uri else {
+    let Some(lsp_document) = lsp_document else {
         return;
     };
 
@@ -401,7 +450,7 @@ pub fn request_inlay_hints(
     }
 
     lsp_client.send(LspMessage::InlayHint {
-        uri: uri.clone(),
+        uri: lsp_document.uri.clone(),
         range,
     });
 
@@ -410,13 +459,20 @@ pub fn request_inlay_hints(
 }
 
 /// System to clean up LSP timeout requests
-pub fn cleanup_lsp_timeouts(lsp_client: Res<LspClient>) {
-    lsp_client.cleanup_timeouts();
+pub fn cleanup_lsp_timeouts(query: Query<&LspClient, With<CodeEditor>>) {
+    for lsp_client in query.iter() {
+        lsp_client.cleanup_timeouts();
+    }
 }
 
 /// Helper to send signature help request
-pub fn request_signature_help(lsp_client: &LspClient, uri: &Url, position: Position) {
-    if lsp_client.capabilities.supports_signature_help() {
+pub fn request_signature_help(
+    lsp_client: &LspClient,
+    capabilities: &ServerCapabilities,
+    uri: &Url,
+    position: Position,
+) {
+    if capabilities.supports_signature_help() {
         lsp_client.send(LspMessage::SignatureHelp {
             uri: uri.clone(),
             position,
@@ -427,11 +483,12 @@ pub fn request_signature_help(lsp_client: &LspClient, uri: &Url, position: Posit
 /// Helper to send code action request
 pub fn request_code_actions(
     lsp_client: &LspClient,
+    capabilities: &ServerCapabilities,
     uri: &Url,
     range: Range,
     diagnostics: Vec<Diagnostic>,
 ) {
-    if lsp_client.capabilities.supports_code_actions() {
+    if capabilities.supports_code_actions() {
         lsp_client.send(LspMessage::CodeAction {
             uri: uri.clone(),
             range,
@@ -471,20 +528,28 @@ pub fn execute_code_action(lsp_client: &LspClient, action: &CodeActionOrCommand)
 /// System to request document highlights when cursor moves
 pub fn request_document_highlights(
     time: Res<Time>,
-    lsp_client: Res<LspClient>,
-    query: Query<(&CursorState, &TextViewState), With<CodeEditor>>,
-    lsp_sync: Res<LspSyncState>,
-    mut highlight_state: ResMut<DocumentHighlightState>,
+    mut query: Query<
+        (
+            &LspClient,
+            &ServerCapabilities,
+            &CursorState,
+            &TextViewState,
+            Option<&LspDocument>,
+            &mut LspDocumentHighlights,
+        ),
+        With<CodeEditor>,
+    >,
 ) {
-    if !lsp_client.is_ready() || !lsp_client.capabilities.supports_document_highlight() {
+    let Ok((lsp_client, capabilities, cursor_state, tv, lsp_document, mut highlight_state)) =
+        query.single_mut()
+    else {
+        return;
+    };
+    if !lsp_client.is_ready() || !capabilities.supports_document_highlight() {
         return;
     }
 
-    let Ok((cursor_state, tv)) = query.single() else {
-        return;
-    };
-
-    let Some(uri) = &lsp_sync.document_uri else {
+    let Some(lsp_document) = lsp_document else {
         return;
     };
 
@@ -517,7 +582,7 @@ pub fn request_document_highlights(
     let character = cursor_pos - line_start;
 
     lsp_client.send(LspMessage::DocumentHighlight {
-        uri: uri.clone(),
+        uri: lsp_document.uri.clone(),
         position: Position {
             line: line as u32,
             character: character as u32,
@@ -526,8 +591,13 @@ pub fn request_document_highlights(
 }
 
 /// Helper to request prepare rename
-pub fn request_prepare_rename(lsp_client: &LspClient, uri: &Url, position: Position) {
-    if lsp_client.capabilities.supports_prepare_rename() {
+pub fn request_prepare_rename(
+    lsp_client: &LspClient,
+    capabilities: &ServerCapabilities,
+    uri: &Url,
+    position: Position,
+) {
+    if capabilities.supports_prepare_rename() {
         lsp_client.send(LspMessage::PrepareRename {
             uri: uri.clone(),
             position,
@@ -538,8 +608,14 @@ pub fn request_prepare_rename(lsp_client: &LspClient, uri: &Url, position: Posit
 }
 
 /// Helper to execute rename
-pub fn execute_rename(lsp_client: &LspClient, uri: &Url, position: Position, new_name: String) {
-    if lsp_client.capabilities.supports_rename() {
+pub fn execute_rename(
+    lsp_client: &LspClient,
+    capabilities: &ServerCapabilities,
+    uri: &Url,
+    position: Position,
+    new_name: String,
+) {
+    if capabilities.supports_rename() {
         lsp_client.send(LspMessage::Rename {
             uri: uri.clone(),
             position,

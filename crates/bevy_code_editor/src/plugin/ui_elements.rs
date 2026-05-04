@@ -21,7 +21,6 @@ pub(crate) fn update_selection_highlight(
             &TextViewState,
             &TextViewViewport,
             &SelectionState,
-            &EditorDisplayState,
             &CursorState,
             &mut TextViewOverlays,
             &FoldState,
@@ -31,10 +30,8 @@ pub(crate) fn update_selection_highlight(
         With<CodeEditor>,
     >,
     theme: Res<ThemeSettings>,
-    wrapping: Res<WrappingSettings>,
-    indentation: Res<IndentationSettings>,
 ) {
-    for (tv, _vp, sel, display, cursor, mut overlays, fold_state, font, layout) in
+    for (tv, _vp, sel, cursor, mut overlays, fold_state, font, layout) in
         editor_query.iter_mut()
     {
     // Drain any selection rects from the previous frame (z = -1 marks selection;
@@ -44,204 +41,172 @@ pub(crate) fn update_selection_highlight(
     let char_width = font.char_width;
     let _ = font.line_height;
 
-    // Check if we're using soft line wrapping
-    let use_wrapping = wrapping.enabled && display.display_map.wrap_width > 0;
+    // Collect (start_char, end_char) for every active selection range. The
+    // legacy `(cursor_idx, ...)` tuple is no longer needed — we emit rects
+    // directly from char ranges.
+    let mut selections: Vec<(usize, usize)> = Vec::new();
+    for cur in cursor.cursors.iter() {
+        if let Some((s, e)) = cur.selection_range() {
+            if s != e {
+                selections.push((s, e));
+            }
+        }
+    }
+    if selections.is_empty() && cursor.cursors.len() <= 1 {
+        if let (Some(s), Some(e)) = (sel.selection_start, sel.selection_end) {
+            let (lo, hi) = if s <= e { (s, e) } else { (e, s) };
+            if lo != hi {
+                selections.push((lo, hi));
+            }
+        }
+    }
 
-    // Collect all selection ranges from all cursors
-    // (cursor_idx, display_row, buffer_line, start_col, end_col, is_continuation)
-    let mut selection_rects: Vec<(usize, usize, usize, usize, usize, bool)> = Vec::new();
+    for (start, end) in selections {
+        let start_line = tv.rope.char_to_line(start);
+        let end_line = tv.rope.char_to_line(end);
 
-    for (cursor_idx, cur) in cursor.cursors.iter().enumerate() {
-        if let Some((start, end)) = cur.selection_range() {
-            if start == end {
+        for line_idx in start_line..=end_line {
+            if fold_state.is_line_hidden(line_idx) {
                 continue;
             }
 
-            let start_line = tv.rope.char_to_line(start);
-            let end_line = tv.rope.char_to_line(end);
+            let line_start_char = tv.rope.line_to_char(line_idx);
+            let line = tv.rope.line(line_idx);
+            let line_chars = line.len_chars();
 
-            for line_idx in start_line..=end_line {
-                // Skip hidden lines
-                if fold_state.is_line_hidden(line_idx) {
-                    continue;
-                }
-
-                let line_start_char = tv.rope.line_to_char(line_idx);
-                let line = tv.rope.line(line_idx);
-
-                let sel_start_in_line = if line_idx == start_line {
-                    start - line_start_char
-                } else {
-                    0
-                };
-
-                let sel_end_in_line = if line_idx == end_line {
-                    end - line_start_char
-                } else {
-                    line.len_chars()
-                };
-
-                if sel_start_in_line < sel_end_in_line {
-                    if use_wrapping {
-                        // For wrapped mode, split selection across display rows
-                        for (row_idx, row) in display.display_map.rows.iter().enumerate() {
-                            if row.buffer_line != line_idx {
-                                continue;
-                            }
-                            // Calculate overlap between selection and this row
-                            let row_sel_start = sel_start_in_line.max(row.start_offset);
-                            let row_sel_end = sel_end_in_line.min(row.end_offset);
-
-                            if row_sel_start < row_sel_end {
-                                // Convert to display column (relative to row start)
-                                let display_start = row_sel_start - row.start_offset;
-                                let display_end = row_sel_end - row.start_offset;
-                                selection_rects.push((
-                                    cursor_idx,
-                                    row_idx,
-                                    line_idx,
-                                    display_start,
-                                    display_end,
-                                    row.is_continuation,
-                                ));
-                            }
-                        }
-                    } else {
-                        // Convert buffer line to display row
-                        let display_row = fold_state.actual_to_display_line(line_idx);
-                        selection_rects.push((
-                            cursor_idx,
-                            display_row,
-                            line_idx,
-                            sel_start_in_line,
-                            sel_end_in_line,
-                            false,
-                        ));
-                    }
-                }
-            }
-        }
-    }
-
-    // Also handle backward-compatible selection_start/selection_end if cursors is empty/mismatched
-    if cursor.cursors.is_empty() || (cursor.cursors.len() == 1 && sel.selection_start.is_some()) {
-        if let (Some(sel_start), Some(sel_end)) = (sel.selection_start, sel.selection_end) {
-            let (start, end) = if sel_start <= sel_end {
-                (sel_start, sel_end)
+            let sel_start_col = if line_idx == start_line {
+                start - line_start_char
             } else {
-                (sel_end, sel_start)
+                0
             };
-
-            if start != end && selection_rects.is_empty() {
-                let start_line = tv.rope.char_to_line(start);
-                let end_line = tv.rope.char_to_line(end);
-
-                for line_idx in start_line..=end_line {
-                    // Skip hidden lines
-                    if fold_state.is_line_hidden(line_idx) {
-                        continue;
-                    }
-
-                    let line_start_char = tv.rope.line_to_char(line_idx);
-                    let line = tv.rope.line(line_idx);
-
-                    let sel_start_in_line = if line_idx == start_line {
-                        start - line_start_char
-                    } else {
-                        0
-                    };
-
-                    let sel_end_in_line = if line_idx == end_line {
-                        end - line_start_char
-                    } else {
-                        line.len_chars()
-                    };
-
-                    if sel_start_in_line < sel_end_in_line {
-                        if use_wrapping {
-                            for (row_idx, row) in display.display_map.rows.iter().enumerate() {
-                                if row.buffer_line != line_idx {
-                                    continue;
-                                }
-                                let row_sel_start = sel_start_in_line.max(row.start_offset);
-                                let row_sel_end = sel_end_in_line.min(row.end_offset);
-
-                                if row_sel_start < row_sel_end {
-                                    let display_start = row_sel_start - row.start_offset;
-                                    let display_end = row_sel_end - row.start_offset;
-                                    selection_rects.push((
-                                        0,
-                                        row_idx,
-                                        line_idx,
-                                        display_start,
-                                        display_end,
-                                        row.is_continuation,
-                                    ));
-                                }
-                            }
-                        } else {
-                            // Convert buffer line to display row
-                            let display_row = fold_state.actual_to_display_line(line_idx);
-                            selection_rects.push((
-                                0,
-                                display_row,
-                                line_idx,
-                                sel_start_in_line,
-                                sel_end_in_line,
-                                false,
-                            ));
-                        }
-                    }
-                }
+            let sel_end_col = if line_idx == end_line {
+                end - line_start_char
+            } else {
+                line_chars
+            };
+            if sel_start_col >= sel_end_col {
+                continue;
             }
-        }
-    }
 
-    // Push selection rects into TextViewOverlays. Done after draining any
-    // previous-frame selection rects above; an empty `selection_rects` is
-    // equivalent to "no selections this frame".
-    for (_cursor_idx, row_idx, buffer_line, sel_start_col, sel_end_col, is_continuation) in
-        selection_rects
-    {
-        let extra_indent = if use_wrapping && is_continuation && wrapping.indent_wrapped_lines {
-            indentation.indent_size as f32 * char_width
-        } else {
-            0.0
-        };
-        // Pixel x: prefer shaped advance from the layout for the unwrapped path;
-        // wrapped-mode display rows aren't aligned with the new layout yet.
-        let (x_left, x_right) = if !use_wrapping {
-            let line = tv.rope.line(buffer_line);
-            let s = sel_start_col.min(line.len_chars());
-            let e = sel_end_col.min(line.len_chars());
-            let s_byte = line.slice(..s).len_bytes();
-            let e_byte = line.slice(..e).len_bytes();
-            let row = row_idx as u32;
-            let xl = layout
-                .and_then(|l| l.x_at_byte(row, s_byte))
-                .unwrap_or(sel_start_col as f32 * char_width);
-            let xr = layout
-                .and_then(|l| l.x_at_byte(row, e_byte))
-                .unwrap_or(sel_end_col as f32 * char_width);
-            (xl, xr)
-        } else {
-            (
-                sel_start_col as f32 * char_width,
-                sel_end_col as f32 * char_width,
-            )
-        };
-        overlays.rects.push(RectOverlay {
-            display_row: row_idx as u32,
-            x_range: (extra_indent + x_left)..(extra_indent + x_right),
-            vertical: RowVertical::Full,
-            color: theme.selection_background,
-            z: -1, // below text
-            corner_radius: 0.0,
-        });
+            let s_byte = line.slice(..sel_start_col.min(line_chars)).len_bytes();
+            let e_byte = line.slice(..sel_end_col.min(line_chars)).len_bytes();
+
+            push_selection_for_buffer_range(
+                line_idx as u32,
+                s_byte,
+                e_byte,
+                sel_start_col,
+                sel_end_col,
+                line_idx == end_line,
+                layout,
+                fold_state,
+                line_idx,
+                char_width,
+                theme.selection_background,
+                &mut overlays.rects,
+            );
+        }
     }
 
     overlays.version = overlays.version.wrapping_add(1);
     }
+}
+
+/// Push selection rects for a `[s_byte..e_byte]` slice of `buffer_row`. With
+/// wrap on, the slice may span multiple display rows; emit one rect per row,
+/// extending continuation rows to the row's right edge except the last row.
+#[allow(clippy::too_many_arguments)]
+fn push_selection_for_buffer_range(
+    buffer_row: u32,
+    s_byte: usize,
+    e_byte: usize,
+    sel_start_col: usize,
+    sel_end_col: usize,
+    is_last_buffer_line: bool,
+    layout: Option<&DisplayLayout>,
+    fold_state: &FoldState,
+    line_idx: usize,
+    char_width: f32,
+    color: Color,
+    out: &mut Vec<RectOverlay>,
+) {
+    // Map start and end bytes to display rows + local bytes. With no layout
+    // (off-viewport row, no shaping), fall back to char-width math on the
+    // fold-derived display row.
+    let (start_row, start_byte_in_row) = layout
+        .and_then(|l| l.buffer_to_display(buffer_row, s_byte))
+        .unwrap_or_else(|| {
+            (fold_state.actual_to_display_line(line_idx) as u32, s_byte)
+        });
+    let (end_row, end_byte_in_row) = layout
+        .and_then(|l| l.buffer_to_display(buffer_row, e_byte))
+        .unwrap_or_else(|| {
+            (fold_state.actual_to_display_line(line_idx) as u32, e_byte)
+        });
+
+    if start_row == end_row {
+        // Single row — exact pixel range. For non-final selection rows on a
+        // multi-line selection, paint to the right edge so the band looks
+        // continuous (legacy behavior).
+        let xl = layout
+            .and_then(|l| l.x_at_byte(start_row, start_byte_in_row))
+            .unwrap_or(sel_start_col as f32 * char_width);
+        let xr = if is_last_buffer_line {
+            layout
+                .and_then(|l| l.x_at_byte(end_row, end_byte_in_row))
+                .unwrap_or(sel_end_col as f32 * char_width)
+        } else {
+            f32::MAX
+        };
+        out.push(RectOverlay {
+            display_row: start_row,
+            x_range: xl..xr,
+            vertical: RowVertical::Full,
+            color,
+            z: -1,
+            corner_radius: 0.0,
+        });
+        return;
+    }
+
+    // Multi-row span (selection crossed a soft-wrap break). First row: from
+    // start_x to right edge. Middle rows: full width. Last row: 0 to end_x.
+    let xl = layout
+        .and_then(|l| l.x_at_byte(start_row, start_byte_in_row))
+        .unwrap_or(sel_start_col as f32 * char_width);
+    out.push(RectOverlay {
+        display_row: start_row,
+        x_range: xl..f32::MAX,
+        vertical: RowVertical::Full,
+        color,
+        z: -1,
+        corner_radius: 0.0,
+    });
+    for r in (start_row + 1)..end_row {
+        out.push(RectOverlay {
+            display_row: r,
+            x_range: 0.0..f32::MAX,
+            vertical: RowVertical::Full,
+            color,
+            z: -1,
+            corner_radius: 0.0,
+        });
+    }
+    let xr = if is_last_buffer_line {
+        layout
+            .and_then(|l| l.x_at_byte(end_row, end_byte_in_row))
+            .unwrap_or(sel_end_col as f32 * char_width)
+    } else {
+        f32::MAX
+    };
+    out.push(RectOverlay {
+        display_row: end_row,
+        x_range: 0.0..xr,
+        vertical: RowVertical::Full,
+        color,
+        z: -1,
+        corner_radius: 0.0,
+    });
 }
 
 /// Update indent guide rendering

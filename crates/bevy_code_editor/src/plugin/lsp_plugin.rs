@@ -74,11 +74,10 @@ impl LspPlugin {
 
 impl Plugin for LspPlugin {
     fn build(&self, app: &mut App) {
-        // The transport layer (LspClient + state resources) lives in `bevy_lsp`.
-        // Add it idempotently so that hosts that wire `CodeEditorPlugin` (which
-        // auto-adds *this* plugin under the `lsp` feature) get a working
-        // setup out of the box. Hosts that prefer to compose explicitly can
-        // add `bevy_lsp::LspPlugin` themselves first; this no-ops in that case.
+        // The transport layer lives in `bevy_lsp` (per-entity Components, not
+        // Resources). `bevy_lsp::LspPlugin` is currently a no-op stable API
+        // anchor; we still add it idempotently so future additions there
+        // propagate to hosts that wire only this editor plugin.
         if !app.is_plugin_added::<bevy_lsp::LspPlugin>() {
             app.add_plugins(bevy_lsp::LspPlugin);
         }
@@ -99,9 +98,9 @@ impl Plugin for LspPlugin {
         app.add_message::<crate::types::events::DismissCompletionEvent>();
         app.add_message::<crate::types::events::ApplyCompletionEvent>();
 
-        // Core LSP-driven systems. These need both the editor entity (to read
-        // CursorState / TextViewState / apply edits) and the bevy_lsp resources
-        // (LspClient, LspSyncState, etc.) — so they're editor-side adapters.
+        // Core LSP-driven systems. These query each editor entity for both
+        // editor state (CursorState, TextViewState) and per-editor LSP
+        // Components (LspClient, LspDocument, popup state, debounce timers).
         app.add_systems(
             Update,
             (

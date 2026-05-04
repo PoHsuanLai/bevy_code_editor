@@ -1,22 +1,32 @@
-//! Data-only LSP UI adapter.
+//! Editor-coupled LSP UI adapter.
 //!
-//! The transport layer (JSON-RPC client, request/response routing, server
-//! capability cache, document-sync state) lives in the peer crate
-//! [`bevy_lsp`]. This module is the editor-coupled adapter that materializes
-//! that transport state into per-popup data components and bridges editor
-//! events to LSP requests. No rendering happens here — hosts read the marker
-//! components from [`components`] and draw them however they prefer; see
-//! `examples/lsp.rs` for an `egui` + `armas` reference renderer that also
-//! handles inline decorations (inlay hints, document highlights) on the
-//! sprite path.
+//! The transport layer (JSON-RPC client, server capabilities, document URI /
+//! version) lives in the peer crate [`bevy_lsp`] as per-entity Components. This
+//! module is the editor-coupled adapter on top:
 //!
-//! Hosts that want completion / hover / etc. data must add **both**:
-//! - `bevy_lsp::LspPlugin` — the transport.
-//! - `bevy_code_editor::plugin::LspPlugin` (this crate's editor-side plugin) —
-//!   wires the sync + event-listener systems.
+//! - [`state`] — popup-state Components (completion popup, hover, signature
+//!   help, code actions, rename, inlay hints, document highlights), plus
+//!   debounce timers and the editor's `did_change` driver state. All Components
+//!   on the editor entity, all populated by the editor's `#[require]` cascade.
+//! - [`components`] — *render-data* Components materialized by the sync
+//!   systems (e.g. `CompletionPopupData`). Hosts query these and draw them
+//!   however they want; see `examples/lsp.rs` for an `egui` + `armas`
+//!   reference renderer.
+//! - [`sync`] — systems that translate the popup-state Components into the
+//!   render-data Components above.
+//! - [`event_listeners`] — systems that translate editor events
+//!   ([`crate::types::events::TextEditEvent`], request events) into LSP
+//!   `LspMessage` sends through the entity's [`bevy_lsp::LspClient`].
+//! - [`systems`] — `process_lsp_messages` (drain `LspResponse`s into editor
+//!   state) plus a few capability-aware request fanouts (inlay hints,
+//!   document highlights).
+//!
+//! Hosts that want completion / hover / etc. data must add this crate's
+//! `plugin::LspPlugin`; the editor cascade handles the rest.
 
 pub mod components;
 pub mod event_listeners;
+pub mod state;
 pub mod sync;
 pub mod systems;
 
@@ -25,14 +35,19 @@ pub mod prelude {
     // Transport-side surface — re-exported from bevy_lsp so consumers don't
     // have to know that's a separate crate at the import-line level.
     pub use bevy_lsp::{
-        CodeActionOrCommand, CodeActionState, CompletionState, DocumentHighlightState, HoverState,
-        InlayHintState, LspClient, LspDebounceTimers, LspMessage, LspResponse, LspSyncState,
-        PendingCodeActionRequest, PendingLspRequest, RenameState, RequestType,
-        ServerCapabilitiesCache, SignatureHelpState, UnifiedCompletionItem, WordCompletionItem,
-        COMPLETION_MAX_VISIBLE_DEFAULT, DEFAULT_REQUEST_TIMEOUT_SECS,
+        CodeActionOrCommand, LspClient, LspDocument, LspMessage, LspResponse, RequestType,
+        ServerCapabilities, DEFAULT_REQUEST_TIMEOUT_SECS,
     };
 
-    // Editor-coupled UI surface (data-only).
+    // Per-editor LSP UI state Components.
+    pub use super::state::{
+        LspCodeActionsPopup, LspCompletionPopup, LspDebounceTimers, LspDocumentHighlights,
+        LspHoverPopup, LspInlayHints, LspRenamePopup, LspSignatureHelpPopup, LspSyncStateExtra,
+        PendingCodeActionRequest, PendingLspRequest, UnifiedCompletionItem, WordCompletionItem,
+        COMPLETION_MAX_VISIBLE_DEFAULT,
+    };
+
+    // Editor-coupled UI render-data Components.
     pub use super::components::{
         CodeActionItemData, CodeActionsPopupData, CompletionItemData, CompletionPopupData,
         DocumentHighlightData, HoverPopupData, InlayHintData, InlayHintKind, LspUiElement,
@@ -57,17 +72,21 @@ pub mod prelude {
 // Re-export commonly used types at module level for backward compatibility.
 // Transport types come from bevy_lsp; UI types are local.
 pub use bevy_lsp::{
-    CodeActionOrCommand, CodeActionState, CompletionState, DocumentHighlightState, HoverState,
-    InlayHintState, LspClient, LspDebounceTimers, LspMessage, LspResponse, LspSyncState,
-    PendingCodeActionRequest, PendingLspRequest, RenameState, RequestType, ServerCapabilitiesCache,
-    SignatureHelpState, UnifiedCompletionItem, WordCompletionItem, COMPLETION_MAX_VISIBLE_DEFAULT,
+    CodeActionOrCommand, LspClient, LspDocument, LspMessage, LspResponse, RequestType,
+    ServerCapabilities,
+};
+pub use state::{
+    LspCodeActionsPopup, LspCompletionPopup, LspDebounceTimers, LspDocumentHighlights,
+    LspHoverPopup, LspInlayHints, LspRenamePopup, LspSignatureHelpPopup, LspSyncStateExtra,
+    PendingCodeActionRequest, PendingLspRequest, UnifiedCompletionItem, WordCompletionItem,
+    COMPLETION_MAX_VISIBLE_DEFAULT,
 };
 pub use systems::{
     process_lsp_messages, sync_lsp_document, DiagnosticMarker, LocationType,
     MultipleLocationsEvent, NavigateToFileEvent,
 };
 
-/// Reset hover state helper (for backward compatibility)
-pub fn reset_hover_state(hover_state: &mut bevy_lsp::HoverState) {
+/// Reset hover state helper (operates on the per-entity Component).
+pub fn reset_hover_state(hover_state: &mut state::LspHoverPopup) {
     hover_state.reset();
 }

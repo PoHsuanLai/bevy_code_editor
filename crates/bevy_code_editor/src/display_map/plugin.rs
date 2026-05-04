@@ -15,7 +15,9 @@ use bevy_text_engine::FontConfig;
 
 use super::layout::build_display_layout;
 use crate::plugin::syntax_highlighting::SyntaxResource;
-use crate::settings::{PerformanceSettings, SyntaxSettings, ThemeSettings};
+use crate::settings::{
+    IndentationSettings, PerformanceSettings, SyntaxSettings, ThemeSettings, WrappingSettings,
+};
 use crate::text_view::{DisplayLayout, TextViewState, TextViewViewport};
 use crate::types::{CodeEditor, FoldState};
 
@@ -74,6 +76,8 @@ pub(crate) fn update_display_map_snapshot(
     theme: Res<ThemeSettings>,
     performance: Res<PerformanceSettings>,
     syntax_settings: Res<SyntaxSettings>,
+    wrapping: Res<WrappingSettings>,
+    indentation: Res<IndentationSettings>,
     mut syntax: ResMut<SyntaxResource>,
     mut atlas: ResMut<bevy_text_engine::GlyphAtlas>,
     mut last_fingerprint: Local<Option<LayoutFingerprint>>,
@@ -90,6 +94,8 @@ pub(crate) fn update_display_map_snapshot(
             line_height_tenths: (font.line_height * 10.0) as u32,
             syntax_version: syntax_version(&syntax),
             fold_count: fold_state.regions.len(),
+            wrap_enabled: wrapping.enabled,
+            wrap_column: wrapping.wrap_column,
         };
 
         if last_fingerprint.as_ref() == Some(&fingerprint) {
@@ -102,6 +108,8 @@ pub(crate) fn update_display_map_snapshot(
             fold_state,
             font,
             &performance,
+            &wrapping,
+            &indentation,
             theme.foreground,
             Some(&mut syntax),
             Some(&syntax_settings.theme),
@@ -129,6 +137,8 @@ pub(crate) struct LayoutFingerprint {
     line_height_tenths: u32,
     syntax_version: u64,
     fold_count: usize,
+    wrap_enabled: bool,
+    wrap_column: Option<usize>,
 }
 
 #[cfg(feature = "tree-sitter")]

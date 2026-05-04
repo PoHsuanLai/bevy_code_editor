@@ -1,42 +1,37 @@
 //! # bevy_lsp
 //!
-//! Text-rendering-agnostic Language Server Protocol integration for Bevy.
+//! What LSP does in Bevy, nothing more, nothing less.
 //!
-//! This crate provides the LSP transport layer + per-document state resources,
-//! independent of any text-rendering or editor UI. Suitable for:
-//!
-//! - Code editors (see `bevy_code_editor`'s `lsp_ui` adapter for a worked
-//!   example).
-//! - Debugger UIs that want to query symbols / hover info from a running LSP.
-//! - Hot-reload tooling that watches diagnostics on save.
-//! - AI chat panels that consult an LSP for completions / type info.
-//! - Code-search tools that consume `workspace/symbol` results.
+//! This crate is the protocol layer: JSON-RPC over stdio, request/response ID
+//! routing, server-capability querying, per-document URI/version tracking. All
+//! of it lives as **per-entity Components** rather than global Resources, so a
+//! host application can have many editors / many servers at once just by
+//! spawning entities.
 //!
 //! ## What's in the box
 //!
-//! - [`LspClient`] — JSON-RPC over stdio with channel-based async I/O,
-//!   reader / writer threads, capability-aware send-gating.
+//! - [`LspClient`] — Component owning the transport (writer/reader threads,
+//!   pending-request map). One per server connection.
+//! - [`LspDocument`] — Component identifying one open document on that server
+//!   by URI + monotonically incrementing version + language id.
+//! - [`ServerCapabilities`] — Component holding the parsed capabilities from
+//!   the `initialize` response. Populated by the editor adapter (or any
+//!   consumer) when it observes [`LspResponse::Initialized`].
 //! - [`LspMessage`] / [`LspResponse`] / [`RequestType`] — typed wrappers over
 //!   the LSP wire protocol.
-//! - [`ServerCapabilitiesCache`] — query helpers for the
-//!   `serverInfo.capabilities` returned at `initialize` time.
-//! - State resources tracking per-document sync, completion, hover, signature
-//!   help, code-action, document-highlight, rename, and inlay-hint state.
-//! - [`LspPlugin`] — registers the resources above. Drives nothing; consumers
-//!   add their own systems that translate input to `LspMessage` sends and
-//!   drain `LspResponse`s into state.
+//! - [`LspPlugin`] — empty plugin kept as a stable API anchor.
 //!
 //! ## What's NOT in the box
 //!
+//! - No popup state, no "what's currently selected", no fuzzy matching, no
+//!   completion filtering / debouncing / word-fallback. Those are UI choices
+//!   that belong to the editor (or whatever host owns a UI).
 //! - No rendering: this crate has no `bevy_render` / `bevy_text_engine`
-//!   dependency. Editor-coupled bits (popup rendering, theme, marker
-//!   components) live in the editor crate.
+//!   dependency.
 //! - No event types tied to a specific text-buffer representation: hosts that
 //!   want to bridge their own `TextEdit`-like events into LSP `did_change`
-//!   notifications do so by calling
-//!   [`LspClient::send`][LspClient#method.send] from their own adapter
-//!   systems.
-//! - No auto-add of unrelated plugins (tree-sitter, etc.). Single concern.
+//!   notifications do so by calling [`LspClient::send`] from their own
+//!   adapter systems.
 //!
 //! ## Usage sketch
 //!
@@ -44,31 +39,30 @@
 //! use bevy::prelude::*;
 //! use bevy_lsp::prelude::*;
 //!
-//! App::new()
-//!     .add_plugins(MinimalPlugins)
-//!     .add_plugins(LspPlugin)
-//!     .add_systems(Startup, |mut client: ResMut<LspClient>| {
-//!         client.start("rust-analyzer", &[]).unwrap();
-//!     })
-//!     .run();
+//! fn setup(mut commands: Commands) {
+//!     let uri = lsp_types::Url::parse("file:///tmp/foo.rs").unwrap();
+//!     let mut client = LspClient::new();
+//!     client.start("rust-analyzer", &[]).unwrap();
+//!     commands.spawn((
+//!         client,
+//!         LspDocument::new(uri, "rust"),
+//!         ServerCapabilities::default(),
+//!     ));
+//! }
 //! ```
 
 pub mod capabilities;
 pub mod client;
+pub mod document;
 pub mod messages;
 pub mod plugin;
 pub mod prelude;
-pub mod state;
 
-pub use crate::capabilities::ServerCapabilitiesCache;
+pub use crate::capabilities::ServerCapabilities;
 pub use crate::client::{LspClient, DEFAULT_REQUEST_TIMEOUT_SECS};
+pub use crate::document::LspDocument;
 pub use crate::messages::{CodeActionOrCommand, LspMessage, LspResponse, RequestType};
 pub use crate::plugin::LspPlugin;
-pub use crate::state::{
-    CodeActionState, CompletionState, DocumentHighlightState, HoverState, InlayHintState,
-    LspDebounceTimers, LspSyncState, PendingCodeActionRequest, PendingLspRequest, RenameState,
-    SignatureHelpState, UnifiedCompletionItem, WordCompletionItem, COMPLETION_MAX_VISIBLE_DEFAULT,
-};
 
 // Re-export the underlying lsp-types crate so consumers can name
 // `lsp_types::Url`, `lsp_types::Position`, etc. without taking a direct dep.

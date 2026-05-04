@@ -8,7 +8,9 @@ use bevy_text_interaction::ScrollConfig;
 use ropey::Rope;
 
 #[cfg(feature = "lsp")]
-use crate::lsp::{reset_hover_state, LspMessage};
+use crate::lsp_ui::reset_hover_state;
+#[cfg(feature = "lsp")]
+use bevy_lsp::LspMessage;
 
 /// Mouse drag state for selection
 #[derive(Resource, Default, Reflect)]
@@ -59,17 +61,25 @@ fn screen_to_char_pos(
     let line_start_char = rope.line_to_char(buffer_line);
 
     // Shaped path: ask the layout where pixel `relative_x` falls inside the
-    // display row. The layout indexes by display_row, so the fold-mapped
-    // buffer_line is only used for the rope byte/char conversion.
+    // display row. With soft wrap, the row's `text` is a slice of the buffer
+    // line starting at `buffer_byte_offset`; we translate the row-local byte
+    // offset back to a buffer-line byte using that field.
     if let Some(layout) = layout {
-        if let Some(byte_in_line) = layout.byte_at_x(display_row as u32, relative_x) {
-            let line_start_byte = rope.line_to_byte(buffer_line);
-            let line_end_byte = if buffer_line + 1 < line_count {
-                rope.line_to_byte(buffer_line + 1)
+        if let Some(byte_in_row) = layout.byte_at_x(display_row as u32, relative_x) {
+            let row = layout
+                .lines
+                .iter()
+                .find(|l| l.display_row == display_row as u32);
+            let row_buffer_line = row.map(|r| r.buffer_row as usize).unwrap_or(buffer_line);
+            let buffer_byte_offset = row.map(|r| r.buffer_byte_offset).unwrap_or(0);
+            let line_start_byte = rope.line_to_byte(row_buffer_line);
+            let line_end_byte = if row_buffer_line + 1 < line_count {
+                rope.line_to_byte(row_buffer_line + 1)
             } else {
                 rope.len_bytes()
             };
-            let abs_byte = (line_start_byte + byte_in_line).min(line_end_byte);
+            let abs_byte =
+                (line_start_byte + buffer_byte_offset + byte_in_row).min(line_end_byte);
             return rope.byte_to_char(abs_byte);
         }
     }
@@ -81,6 +91,7 @@ fn screen_to_char_pos(
 }
 
 /// System to handle mouse input
+#[allow(clippy::too_many_arguments)]
 pub fn handle_mouse_input(
     mut editor_query: Query<
         (
@@ -95,15 +106,21 @@ pub fn handle_mouse_input(
         ),
         With<CodeEditor>,
     >,
+    #[cfg(feature = "lsp")] mut lsp_query: Query<
+        (
+            Entity,
+            &bevy_lsp::LspClient,
+            Option<&bevy_lsp::LspDocument>,
+            &mut crate::lsp_ui::state::LspHoverPopup,
+        ),
+        With<CodeEditor>,
+    >,
     mut input_focus: ResMut<bevy::input_focus::InputFocus>,
     mut drag_state: ResMut<MouseDragState>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     #[cfg(feature = "lsp")] time: Res<Time>,
-    #[cfg(feature = "lsp")] lsp_client: Res<crate::lsp::LspClient>,
-    #[cfg(feature = "lsp")] lsp_sync: Res<crate::lsp::LspSyncState>,
-    #[cfg(feature = "lsp")] mut hover_state: ResMut<crate::lsp::HoverState>,
     #[cfg(feature = "lsp")] hover_settings: Res<crate::settings::LspSettings>,
 ) {
     // Get cursor position
@@ -115,6 +132,15 @@ pub fn handle_mouse_input(
     for (editor_entity, mut sel, mut cursor, mut tv, viewport, mut fold_state, font, layout) in
         editor_query.iter_mut()
     {
+        // LSP-side state for this editor (separate query because the main
+        // editor_query already exceeds Bevy's filter tuple size with the
+        // LSP feature on).
+        #[cfg(feature = "lsp")]
+        let Ok((_, lsp_client, lsp_document, mut hover_state)) =
+            lsp_query.get_mut(editor_entity)
+        else {
+            continue;
+        };
 
     // Calculate char position if mouse is over the editor
     let char_pos = if let Some(cursor_pos_screen) = cursor_pos_screen {
@@ -157,7 +183,6 @@ pub fn handle_mouse_input(
     // --- LSP Hover logic ---
     #[cfg(feature = "lsp")]
     {
-        use crate::lsp::reset_hover_state;
         use lsp_types::Position;
 
         // Only process hover if enabled in settings
@@ -191,9 +216,9 @@ pub fn handle_mouse_input(
                             character: char_in_line_index as u32,
                         };
 
-                        if let Some(uri) = &lsp_sync.document_uri {
+                        if let Some(doc) = lsp_document {
                             lsp_client.send(LspMessage::Hover {
-                                uri: uri.clone(),
+                                uri: doc.uri.clone(),
                                 position: lsp_position,
                             });
                             hover_state.request_sent = true;
@@ -276,9 +301,9 @@ pub fn handle_mouse_input(
                         character: char_in_line_index as u32,
                     };
 
-                    if let Some(uri) = &lsp_sync.document_uri {
+                    if let Some(doc) = lsp_document {
                         lsp_client.send(LspMessage::GotoDefinition {
-                            uri: uri.clone(),
+                            uri: doc.uri.clone(),
                             position: lsp_position,
                         });
                     }

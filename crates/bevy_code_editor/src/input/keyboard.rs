@@ -115,17 +115,36 @@ pub fn on_focused_keyboard(
         ),
         With<CodeEditor>,
     >,
+    #[cfg(feature = "lsp")] mut lsp_query: Query<
+        (
+            &bevy_lsp::LspClient,
+            Option<&mut bevy_lsp::LspDocument>,
+            &bevy_lsp::ServerCapabilities,
+            &mut crate::lsp_ui::state::LspCompletionPopup,
+            &mut crate::lsp_ui::state::LspRenamePopup,
+        ),
+        With<CodeEditor>,
+    >,
     keyboard: Res<ButtonInput<KeyCode>>,
     brackets: Res<BracketSettings>,
     #[cfg(feature = "lsp")] lsp: Res<LspSettings>,
-    #[cfg(feature = "lsp")] lsp_client: Res<crate::lsp::LspClient>,
-    #[cfg(feature = "lsp")] mut completion_state: ResMut<crate::lsp::CompletionState>,
-    #[cfg(feature = "lsp")] mut rename_state: ResMut<crate::lsp::RenameState>,
-    #[cfg(feature = "lsp")] mut lsp_sync: ResMut<crate::lsp::LspSyncState>,
 ) {
     let entity = trigger.event().focused_entity;
+
     let Ok((mut sel, mut hist, mut syntax, mut display, mut cursor, mut tv)) =
         editor_query.get_mut(entity)
+    else {
+        return;
+    };
+
+    #[cfg(feature = "lsp")]
+    let Ok((
+        lsp_client,
+        mut lsp_document,
+        _capabilities,
+        mut completion_state,
+        mut rename_state,
+    )) = lsp_query.get_mut(entity)
     else {
         return;
     };
@@ -152,12 +171,13 @@ pub fn on_focused_keyboard(
             }
             Key::Enter => {
                 if rename_state.can_submit() {
-                    if let (Some(position), Some(uri)) =
-                        (rename_state.position, lsp_sync.document_uri.as_ref())
+                    if let (Some(position), Some(doc)) =
+                        (rename_state.position, lsp_document.as_deref())
                     {
-                        crate::lsp::systems::execute_rename(
-                            &lsp_client,
-                            uri,
+                        crate::lsp_ui::systems::execute_rename(
+                            lsp_client,
+                            _capabilities,
+                            &doc.uri,
                             position,
                             rename_state.new_name.clone(),
                         );
@@ -195,11 +215,11 @@ pub fn on_focused_keyboard(
                     #[cfg(feature = "lsp")]
                     &lsp,
                     #[cfg(feature = "lsp")]
-                    &lsp_client,
+                    lsp_client,
                     #[cfg(feature = "lsp")]
                     &mut completion_state,
                     #[cfg(feature = "lsp")]
-                    &mut lsp_sync,
+                    lsp_document.as_deref_mut(),
                 );
             }
         }
@@ -215,7 +235,7 @@ pub fn on_focused_keyboard(
             );
             #[cfg(feature = "lsp")]
             {
-                send_did_change(&tv.rope, &lsp_client, &mut lsp_sync);
+                send_did_change(&tv.rope, lsp_client, lsp_document.as_deref_mut());
                 completion_state.visible = false;
             }
         }
@@ -237,9 +257,9 @@ fn insert_typed_char(
     tv: &mut TextViewState,
     brackets: &BracketSettings,
     #[cfg(feature = "lsp")] lsp: &LspSettings,
-    #[cfg(feature = "lsp")] lsp_client: &crate::lsp::LspClient,
-    #[cfg(feature = "lsp")] completion_state: &mut crate::lsp::CompletionState,
-    #[cfg(feature = "lsp")] lsp_sync: &mut crate::lsp::LspSyncState,
+    #[cfg(feature = "lsp")] lsp_client: &bevy_lsp::LspClient,
+    #[cfg(feature = "lsp")] completion_state: &mut crate::lsp_ui::state::LspCompletionPopup,
+    #[cfg(feature = "lsp")] mut lsp_document: Option<&mut bevy_lsp::LspDocument>,
 ) {
     // Skip over an existing matching close char rather than inserting a duplicate.
     if brackets.auto_close_quotes
@@ -285,7 +305,7 @@ fn insert_typed_char(
 
     #[cfg(feature = "lsp")]
     {
-        send_did_change(&tv.rope, lsp_client, lsp_sync);
+        send_did_change(&tv.rope, lsp_client, lsp_document.as_deref_mut());
 
         if lsp.completion.enabled {
             let mut is_trigger = false;
@@ -310,7 +330,13 @@ fn insert_typed_char(
 
             if is_trigger {
                 completion_state.visible = false;
-                request_completion(cursor, &tv.rope, lsp_client, completion_state, lsp_sync);
+                request_completion(
+                    cursor,
+                    &tv.rope,
+                    lsp_client,
+                    completion_state,
+                    lsp_document.as_deref(),
+                );
             } else if c.is_alphanumeric() || c == '_' {
                 if completion_state.visible {
                     update_completion_filter(cursor, &tv.rope, completion_state);
@@ -324,7 +350,7 @@ fn insert_typed_char(
                             &tv.rope,
                             lsp_client,
                             completion_state,
-                            lsp_sync,
+                            lsp_document.as_deref(),
                         );
                     }
                 }
@@ -357,6 +383,16 @@ pub fn process_editor_actions(
         ),
         With<CodeEditor>,
     >,
+    #[cfg(feature = "lsp")] mut lsp_query: Query<
+        (
+            &bevy_lsp::LspClient,
+            Option<&mut bevy_lsp::LspDocument>,
+            &bevy_lsp::ServerCapabilities,
+            &mut crate::lsp_ui::state::LspCompletionPopup,
+            &mut crate::lsp_ui::state::LspRenamePopup,
+        ),
+        With<CodeEditor>,
+    >,
     input_focus: Res<InputFocus>,
     action_query: Query<&ActionState<EditorAction>, With<EditorInputManager>>,
     cursor_settings: Res<CursorSettings>,
@@ -365,10 +401,6 @@ pub fn process_editor_actions(
     mut key_repeat_state: ResMut<KeyRepeatState>,
     mut save_events: MessageWriter<crate::types::SaveRequested>,
     mut open_events: MessageWriter<crate::types::OpenRequested>,
-    #[cfg(feature = "lsp")] lsp_client: Res<crate::lsp::LspClient>,
-    #[cfg(feature = "lsp")] mut completion_state: ResMut<crate::lsp::CompletionState>,
-    #[cfg(feature = "lsp")] mut rename_state: ResMut<crate::lsp::RenameState>,
-    #[cfg(feature = "lsp")] mut lsp_sync: ResMut<crate::lsp::LspSyncState>,
 ) {
     let Some(focused) = input_focus.get() else {
         return;
@@ -377,13 +409,6 @@ pub fn process_editor_actions(
         warn!("No EditorInputManager entity found with ActionState");
         return;
     };
-
-    #[cfg(feature = "lsp")]
-    if rename_state.visible {
-        // Rename modal owns input; the observer routes char events into the
-        // modal's buffer. Skip action processing entirely.
-        return;
-    }
 
     let Ok((
         mut sel,
@@ -399,6 +424,20 @@ pub fn process_editor_actions(
     else {
         return;
     };
+
+    #[cfg(feature = "lsp")]
+    let Ok((lsp_client, mut lsp_document, capabilities, mut completion_state, mut rename_state)) =
+        lsp_query.get_mut(focused)
+    else {
+        return;
+    };
+
+    #[cfg(feature = "lsp")]
+    if rename_state.visible {
+        // Rename modal owns input; the observer routes char events into the
+        // modal's buffer. Skip action processing entirely.
+        return;
+    }
 
     let mut action_to_execute: Option<EditorAction> = None;
     let now = Instant::now();
@@ -479,8 +518,8 @@ pub fn process_editor_actions(
 
     #[cfg(feature = "lsp")]
     if action == EditorAction::RenameSymbol {
-        if lsp_client.capabilities.supports_rename() {
-            if let Some(uri) = &lsp_sync.document_uri {
+        if capabilities.supports_rename() {
+            if let Some(doc) = lsp_document.as_deref() {
                 let cp = cursor.cursor_pos.min(tv.rope.len_chars());
                 let line = tv.rope.char_to_line(cp);
                 let line_start = tv.rope.line_to_char(line);
@@ -490,7 +529,12 @@ pub fn process_editor_actions(
                     character: character as u32,
                 };
                 rename_state.start_prepare(position);
-                crate::lsp::systems::request_prepare_rename(&lsp_client, uri, position);
+                crate::lsp_ui::systems::request_prepare_rename(
+                    lsp_client,
+                    capabilities,
+                    &doc.uri,
+                    position,
+                );
             }
         }
         return;
@@ -512,9 +556,9 @@ pub fn process_editor_actions(
         #[cfg(feature = "lsp")]
         crate::input::actions::LspBuf {
             settings: &lsp,
-            client: &lsp_client,
+            client: lsp_client,
             completion: &mut completion_state,
-            sync: &mut lsp_sync,
+            document: lsp_document.as_deref_mut(),
         },
     );
 }

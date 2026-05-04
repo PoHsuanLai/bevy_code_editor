@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use std::time::Instant;
 
 use super::anchor::AnchorSet;
-use super::display_map::{DisplayMap, HighlightedToken, LineSegment};
+use super::display_map::{HighlightedToken, LineSegment};
 use super::history::EditHistory;
 use super::selection::{Cursor, SelectionCollection};
 
@@ -112,20 +112,54 @@ impl Default for ViewportDimensions {
 /// don't pay for them.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
-#[require(
-    bevy_text_engine::TextView,
-    SelectionState,
-    EditHistoryState,
-    SyntaxCacheState,
-    EditorDisplayState,
-    CursorState,
-    BracketMatchState,
-    bevy_text_interaction::ScrollConfig,
-    crate::types::fold::GotoLineState,
-    crate::types::fold::FoldState,
-    crate::plugin::scrollbar::ScrollbarDragState,
-    bevy_text_interaction::TextViewDragState,
-    bevy_text_interaction::TextViewSelectionState,
+#[cfg_attr(
+    not(feature = "lsp"),
+    require(
+        bevy_text_engine::TextView,
+        SelectionState,
+        EditHistoryState,
+        SyntaxCacheState,
+        EditorDisplayState,
+        CursorState,
+        BracketMatchState,
+        bevy_text_interaction::ScrollConfig,
+        crate::types::fold::GotoLineState,
+        crate::types::fold::FoldState,
+        crate::plugin::scrollbar::ScrollbarDragState,
+        bevy_text_interaction::TextViewDragState,
+        bevy_text_interaction::TextViewSelectionState,
+    )
+)]
+#[cfg_attr(
+    feature = "lsp",
+    require(
+        bevy_text_engine::TextView,
+        SelectionState,
+        EditHistoryState,
+        SyntaxCacheState,
+        EditorDisplayState,
+        CursorState,
+        BracketMatchState,
+        bevy_text_interaction::ScrollConfig,
+        crate::types::fold::GotoLineState,
+        crate::types::fold::FoldState,
+        crate::plugin::scrollbar::ScrollbarDragState,
+        bevy_text_interaction::TextViewDragState,
+        bevy_text_interaction::TextViewSelectionState,
+        // LSP-side state. `LspDocument` is NOT in this cascade because it
+        // requires a URI which the host must supply.
+        bevy_lsp::LspClient,
+        bevy_lsp::ServerCapabilities,
+        crate::lsp_ui::state::LspCompletionPopup,
+        crate::lsp_ui::state::LspHoverPopup,
+        crate::lsp_ui::state::LspSignatureHelpPopup,
+        crate::lsp_ui::state::LspCodeActionsPopup,
+        crate::lsp_ui::state::LspInlayHints,
+        crate::lsp_ui::state::LspDocumentHighlights,
+        crate::lsp_ui::state::LspRenamePopup,
+        crate::lsp_ui::state::LspDebounceTimers,
+        crate::lsp_ui::state::LspSyncStateExtra,
+    )
 )]
 pub struct CodeEditor;
 
@@ -227,11 +261,13 @@ impl Default for SyntaxCacheState {
     }
 }
 
-/// Editor display state component — entity pools, display map, line invalidation.
+/// Editor display state component — entity pools and line invalidation.
+///
+/// Soft-wrap and fold information now lives on the entity's `DisplayLayout`
+/// produced by `display_map::build_display_layout`; this component only
+/// holds entity-pool bookkeeping.
 #[derive(Component, Default)]
 pub struct EditorDisplayState {
-    /// Display map for soft line wrapping
-    pub display_map: DisplayMap,
     /// Pool of reusable text entities (PERFORMANCE)
     pub entity_pool: Vec<Entity>,
     /// Pool of reusable line number entities (PERFORMANCE)

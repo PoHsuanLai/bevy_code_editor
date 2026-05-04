@@ -1,6 +1,9 @@
-//! LSP client for communication with language servers
+//! LSP client for communication with language servers.
 //!
 //! Handles process spawning, JSON-RPC protocol, and message routing.
+//! [`LspClient`] is a per-entity Component; pair it with [`crate::LspDocument`]
+//! and [`crate::ServerCapabilities`] on the same entity to model a single
+//! editor-document-server triple.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -15,7 +18,7 @@ use bevy::prelude::*;
 use lsp_types::*;
 use serde_json::{json, Value};
 
-use super::capabilities::ServerCapabilitiesCache;
+use super::capabilities::ServerCapabilities;
 use super::messages::{CodeActionOrCommand, LspMessage, LspResponse, RequestType};
 
 /// Global ID counter for LSP requests
@@ -31,8 +34,13 @@ struct PendingRequest {
     timeout: Duration,
 }
 
-/// LSP client resource
-#[derive(Resource)]
+/// LSP client Component.
+///
+/// Owns the transport (writer/reader/stderr threads, JSON-RPC ID tracking) for
+/// one server. Pair with [`crate::LspDocument`] (per-document URI/version) and
+/// [`crate::ServerCapabilities`] (populated from `Initialize` response) on the
+/// same entity.
+#[derive(Component)]
 pub struct LspClient {
     /// Send messages to language server
     tx: Sender<(LspMessage, Option<(i64, RequestType)>)>,
@@ -40,9 +48,13 @@ pub struct LspClient {
     rx: Mutex<Receiver<LspResponse>>,
     /// Track pending requests: ID -> (RequestType, sent_at, timeout)
     pending_requests: Arc<Mutex<HashMap<i64, PendingRequest>>>,
-    /// Server capabilities cache
-    pub capabilities: ServerCapabilitiesCache,
-    /// Whether the server is initialized
+    /// Whether the server is initialized.
+    ///
+    /// Flipped to `true` by consumers when they observe the
+    /// [`LspResponse::Initialized`] response (the editor adapter does this in
+    /// `process_lsp_messages`). Used to gate cosmetic-but-not-required logic
+    /// (e.g. "is the server ready?"); capability-aware send gating is the
+    /// caller's job — see [`LspClient::send_if_supported`].
     pub initialized: bool,
     /// Child process handle (for cleanup)
     child_process: Option<Arc<Mutex<Child>>>,
@@ -64,7 +76,6 @@ impl LspClient {
             tx,
             rx: Mutex::new(rx),
             pending_requests: Arc::new(Mutex::new(HashMap::new())),
-            capabilities: ServerCapabilitiesCache::new(),
             initialized: false,
             child_process: None,
         }
@@ -99,7 +110,6 @@ impl LspClient {
 
         // Share pending_requests with reader thread
         let pending_requests = self.pending_requests.clone();
-        let capabilities = self.capabilities.clone();
 
         // Writer Thread
         thread::spawn(move || {
@@ -109,7 +119,7 @@ impl LspClient {
         // Reader Thread
         let tx_to_bevy_clone = tx_to_bevy.clone();
         thread::spawn(move || {
-            Self::reader_thread(stdout, tx_to_bevy_clone, pending_requests, capabilities);
+            Self::reader_thread(stdout, tx_to_bevy_clone, pending_requests);
         });
 
         // Stderr Logger Thread
@@ -149,7 +159,6 @@ impl LspClient {
         stdout: std::process::ChildStdout,
         tx: Sender<LspResponse>,
         pending_requests: Arc<Mutex<HashMap<i64, PendingRequest>>>,
-        capabilities: ServerCapabilitiesCache,
     ) {
         let mut reader = BufReader::new(stdout);
         let mut buffer = String::new();
@@ -195,9 +204,7 @@ impl LspClient {
                                 None
                             };
 
-                            if let Some(response) =
-                                parse_lsp_response(&json, request_type, &capabilities)
-                            {
+                            if let Some(response) = parse_lsp_response(&json, request_type) {
                                 let _ = tx.send(response);
                             }
                         }
@@ -215,17 +222,11 @@ impl LspClient {
         }
     }
 
-    /// Send a message to the language server
+    /// Send a message to the language server unconditionally.
+    ///
+    /// Capability-aware gating is the caller's responsibility — see
+    /// [`Self::send_if_supported`] for a check-then-send convenience.
     pub fn send(&self, message: LspMessage) {
-        // Check capabilities before sending (skip for Initialize and notifications)
-        if !self.should_send(&message) {
-            trace!(
-                "[LSP] Skipping unsupported request: {:?}",
-                std::mem::discriminant(&message)
-            );
-            return;
-        }
-
         let id_info = match &message {
             LspMessage::Initialize { .. } => {
                 let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
@@ -308,28 +309,42 @@ impl LspClient {
         let _ = self.tx.send((message, id_info));
     }
 
-    /// Check if a message should be sent based on server capabilities
-    fn should_send(&self, message: &LspMessage) -> bool {
-        match message {
-            // Always allow initialize and notifications
-            LspMessage::Initialize { .. } => true,
-            LspMessage::Initialized => true,
-            LspMessage::DidOpen { .. } => true,
-            LspMessage::DidChange { .. } => true,
-            LspMessage::ExecuteCommand { .. } => true,
+    /// Send a message only if the server's capabilities permit it.
+    ///
+    /// Initialization handshake messages (`Initialize`, `Initialized`) and
+    /// notifications (`DidOpen`, `DidChange`, `ExecuteCommand`) are always
+    /// permitted; everything else is gated on the matching `supports_*`
+    /// predicate from `caps`. Returns `true` if the message was queued.
+    pub fn send_if_supported(&self, message: LspMessage, caps: &ServerCapabilities) -> bool {
+        let allowed = match &message {
+            LspMessage::Initialize { .. }
+            | LspMessage::Initialized
+            | LspMessage::DidOpen { .. }
+            | LspMessage::DidChange { .. }
+            | LspMessage::ExecuteCommand { .. } => true,
 
-            // Check capabilities for requests
-            LspMessage::Completion { .. } => self.capabilities.supports_completion(),
-            LspMessage::Hover { .. } => self.capabilities.supports_hover(),
-            LspMessage::GotoDefinition { .. } => self.capabilities.supports_definition(),
-            LspMessage::References { .. } => self.capabilities.supports_references(),
-            LspMessage::Format { .. } => self.capabilities.supports_formatting(),
-            LspMessage::SignatureHelp { .. } => self.capabilities.supports_signature_help(),
-            LspMessage::CodeAction { .. } => self.capabilities.supports_code_actions(),
-            LspMessage::InlayHint { .. } => self.capabilities.supports_inlay_hints(),
-            LspMessage::DocumentHighlight { .. } => self.capabilities.supports_document_highlight(),
-            LspMessage::PrepareRename { .. } => self.capabilities.supports_prepare_rename(),
-            LspMessage::Rename { .. } => self.capabilities.supports_rename(),
+            LspMessage::Completion { .. } => caps.supports_completion(),
+            LspMessage::Hover { .. } => caps.supports_hover(),
+            LspMessage::GotoDefinition { .. } => caps.supports_definition(),
+            LspMessage::References { .. } => caps.supports_references(),
+            LspMessage::Format { .. } => caps.supports_formatting(),
+            LspMessage::SignatureHelp { .. } => caps.supports_signature_help(),
+            LspMessage::CodeAction { .. } => caps.supports_code_actions(),
+            LspMessage::InlayHint { .. } => caps.supports_inlay_hints(),
+            LspMessage::DocumentHighlight { .. } => caps.supports_document_highlight(),
+            LspMessage::PrepareRename { .. } => caps.supports_prepare_rename(),
+            LspMessage::Rename { .. } => caps.supports_rename(),
+        };
+
+        if allowed {
+            self.send(message);
+            true
+        } else {
+            trace!(
+                "[LSP] Skipping unsupported request: {:?}",
+                std::mem::discriminant(&message)
+            );
+            false
         }
     }
 
@@ -357,19 +372,9 @@ impl LspClient {
         }
     }
 
-    /// Check if the server is ready (initialized with capabilities)
+    /// Check if the server is ready (initialized).
     pub fn is_ready(&self) -> bool {
         self.initialized
-    }
-
-    /// Get completion trigger characters
-    pub fn completion_triggers(&self) -> Vec<String> {
-        self.capabilities.completion_triggers()
-    }
-
-    /// Get signature help trigger characters
-    pub fn signature_help_triggers(&self) -> Vec<String> {
-        self.capabilities.signature_help_triggers()
     }
 }
 
@@ -562,12 +567,12 @@ fn msg_to_json(msg: &LspMessage, id: Option<i64>) -> serde_json::Result<String> 
     serde_json::to_string(&rpc)
 }
 
-/// Parse JSON-RPC response to LspResponse
-fn parse_lsp_response(
-    json: &Value,
-    request_type: Option<RequestType>,
-    capabilities: &ServerCapabilitiesCache,
-) -> Option<LspResponse> {
+/// Parse JSON-RPC response to LspResponse.
+///
+/// `LspResponse::Initialized` is emitted with the raw `ServerCapabilities`
+/// payload; consumers (typically a small editor-side system) write it onto the
+/// entity's [`ServerCapabilities`] Component.
+fn parse_lsp_response(json: &Value, request_type: Option<RequestType>) -> Option<LspResponse> {
     // Check for notifications (no id, has method)
     if let Some(method) = json.get("method").and_then(|m| m.as_str()) {
         return parse_notification(json, method);
@@ -589,7 +594,6 @@ fn parse_lsp_response(
     match request_type {
         Some(RequestType::Initialize) => {
             if let Ok(init_result) = serde_json::from_value::<InitializeResult>(result.clone()) {
-                capabilities.set(init_result.capabilities.clone());
                 return Some(LspResponse::Initialized {
                     capabilities: init_result.capabilities,
                 });

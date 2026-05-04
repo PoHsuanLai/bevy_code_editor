@@ -139,6 +139,12 @@ pub struct ShapedLine {
     pub display_row: u32,
     /// Source buffer line. Multiple display rows may share a buffer row when wrapped.
     pub buffer_row: u32,
+    /// Byte offset within the buffer line where this row's `text` begins.
+    /// Always 0 for non-wrapped rows; for soft-wrap continuations it's the
+    /// byte index in the source line at which this row picks up. Lets
+    /// consumers convert `(buffer_byte) → (display_row, byte_in_row)` without
+    /// re-deriving from row text lengths.
+    pub buffer_byte_offset: usize,
     /// True when this row is a soft-wrap continuation of the previous row.
     pub is_wrap_continuation: bool,
     /// Pre-computed Y position in pixels relative to the layout origin. The
@@ -210,6 +216,7 @@ pub fn trivial_layout(
         .map(|(i, (text, runs))| ShapedLine {
             display_row: i as u32,
             buffer_row: i as u32,
+            buffer_byte_offset: 0,
             is_wrap_continuation: false,
             // y_top is the row's visual top in screen-Y. Caller's render system
             // adds the viewport's text_area_top + scroll_offset on top if needed;

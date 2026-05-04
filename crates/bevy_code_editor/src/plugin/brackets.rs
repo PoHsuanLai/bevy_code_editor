@@ -202,27 +202,39 @@ pub(crate) fn update_bracket_highlight(
                 let line_start = tv.rope.line_to_char(line_idx);
                 let col_idx = bracket_pos - line_start;
 
-                let display_row = fold_state.actual_to_display_line(line_idx);
-
-                // Pixel x of the bracket glyph and its visual width. Prefer
-                // shaped advances; fall back to column math when the layout
-                // doesn't cover this row (off-screen, or trivial layout).
+                // Pixel x of the bracket glyph and its visual width. With wrap
+                // on, the bracket might be on a soft-wrap continuation row, so
+                // resolve (display_row, byte_in_row) via the layout. Falls
+                // back to fold-state + char_width math when off-viewport.
                 let line = tv.rope.line(line_idx);
                 let col_clamped = col_idx.min(line.len_chars());
                 let next_col = (col_idx + 1).min(line.len_chars());
                 let start_byte = line.slice(..col_clamped).len_bytes();
                 let end_byte = line.slice(..next_col).len_bytes();
-                let row = display_row as u32;
+                let (start_row, start_byte_in_row) = layout
+                    .and_then(|l| l.buffer_to_display(line_idx as u32, start_byte))
+                    .unwrap_or_else(|| (fold_state.actual_to_display_line(line_idx) as u32, start_byte));
+                let (end_row, end_byte_in_row) = layout
+                    .and_then(|l| l.buffer_to_display(line_idx as u32, end_byte))
+                    .unwrap_or((start_row, end_byte));
+                let display_row = start_row as usize;
                 let glyph_x = layout
-                    .and_then(|l| l.x_at_byte(row, start_byte))
+                    .and_then(|l| l.x_at_byte(start_row, start_byte_in_row))
                     .unwrap_or(col_idx as f32 * char_width);
-                let glyph_width = layout
-                    .and_then(|l| {
-                        let s = l.x_at_byte(row, start_byte)?;
-                        let e = l.x_at_byte(row, end_byte)?;
-                        Some((e - s).max(0.0))
-                    })
-                    .unwrap_or(char_width);
+                // If the bracket happens to be the last glyph before a soft
+                // break, end_row may differ — use start-row width as the
+                // fallback.
+                let glyph_width = if start_row == end_row {
+                    layout
+                        .and_then(|l| {
+                            let s = l.x_at_byte(start_row, start_byte_in_row)?;
+                            let e = l.x_at_byte(end_row, end_byte_in_row)?;
+                            Some((e - s).max(0.0))
+                        })
+                        .unwrap_or(char_width)
+                } else {
+                    char_width
+                };
 
                 let x_offset = viewport.text_area_left + glyph_x;
                 let y_offset =

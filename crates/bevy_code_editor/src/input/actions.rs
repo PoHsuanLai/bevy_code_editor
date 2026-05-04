@@ -10,9 +10,11 @@ use arboard::Clipboard;
 use ropey::Rope;
 
 #[cfg(feature = "lsp")]
-use crate::lsp;
+use crate::lsp_ui::state::LspCompletionPopup;
 #[cfg(feature = "lsp")]
 use bevy::log::trace;
+#[cfg(feature = "lsp")]
+use bevy_lsp::{LspClient, LspDocument, LspMessage};
 
 /// Result of executing an action
 pub struct ActionResult {
@@ -23,15 +25,17 @@ pub struct ActionResult {
 }
 
 /// Bundled refs to the four LSP pieces that co-travel through `execute_action`:
-/// settings, transport client, completion popup state, and document-sync state.
-/// Mirrors `EditorBuf` but for LSP-specific borrows; only constructed when the
-/// `lsp` feature is enabled.
+/// settings, transport client, completion popup state, and the per-editor
+/// LspDocument (URI / version). Mirrors `EditorBuf` but for LSP-specific
+/// borrows; only constructed when the `lsp` feature is enabled. `document` is
+/// `Option` because a freshly spawned editor may not have an `LspDocument`
+/// inserted yet.
 #[cfg(feature = "lsp")]
 pub struct LspBuf<'a> {
     pub settings: &'a LspSettings,
-    pub client: &'a lsp::LspClient,
-    pub completion: &'a mut lsp::CompletionState,
-    pub sync: &'a mut lsp::LspSyncState,
+    pub client: &'a LspClient,
+    pub completion: &'a mut LspCompletionPopup,
+    pub document: Option<&'a mut LspDocument>,
 }
 
 /// Insert a character at cursor position
@@ -160,7 +164,7 @@ fn delete_selection_with_history(
 pub fn apply_completion(
     cursor: &mut CursorState,
     tv: &mut TextViewState,
-    completion_state: &mut lsp::CompletionState,
+    completion_state: &mut LspCompletionPopup,
 ) {
     // Get filtered items and select from that list
     let filtered = completion_state.filtered_items();
@@ -212,7 +216,7 @@ pub fn find_word_start(rope: &ropey::Rope, cursor_pos: usize) -> usize {
 pub fn update_completion_filter(
     cursor: &CursorState,
     rope: &Rope,
-    completion_state: &mut lsp::CompletionState,
+    completion_state: &mut LspCompletionPopup,
 ) {
     let cursor_pos = cursor.cursor_pos.min(rope.len_chars());
     let start = completion_state.start_char_index;
@@ -237,11 +241,10 @@ pub fn update_completion_filter(
 pub fn request_completion(
     cursor: &CursorState,
     rope: &Rope,
-    lsp_client: &lsp::LspClient,
-    completion_state: &mut lsp::CompletionState,
-    lsp_sync: &lsp::LspSyncState,
+    lsp_client: &LspClient,
+    completion_state: &mut LspCompletionPopup,
+    lsp_document: Option<&LspDocument>,
 ) {
-    use crate::lsp::LspMessage;
     use lsp_types::Position;
 
     let cursor_pos = cursor.cursor_pos.min(rope.len_chars());
@@ -253,7 +256,7 @@ pub fn request_completion(
         character: char_in_line_index as u32,
     };
 
-    if let Some(uri) = &lsp_sync.document_uri {
+    if let Some(doc) = lsp_document {
         trace!(
             "[LSP] Requesting completion at line={}, char={}, visible={}, start_idx={}",
             lsp_position.line,
@@ -263,7 +266,7 @@ pub fn request_completion(
         );
 
         lsp_client.send(LspMessage::Completion {
-            uri: uri.clone(),
+            uri: doc.uri.clone(),
             position: lsp_position,
         });
 
@@ -301,30 +304,28 @@ pub fn request_completion(
 
 /// Send textDocument/didChange notification to LSP
 #[cfg(feature = "lsp")]
-pub fn send_did_change(rope: &Rope, lsp_client: &lsp::LspClient, lsp_sync: &mut lsp::LspSyncState) {
-    use crate::lsp::LspMessage;
+pub fn send_did_change(rope: &Rope, lsp_client: &LspClient, lsp_document: Option<&mut LspDocument>) {
+    let Some(doc) = lsp_document else {
+        return;
+    };
+    // Increment version for each change
+    let version = doc.bump_version();
 
-    if let Some(uri) = &lsp_sync.document_uri {
-        // Increment version for each change
-        lsp_sync.document_version += 1;
-        let version = lsp_sync.document_version;
+    // Full text sync for simplicity
+    // OPTIMIZATION: Use rope chunks instead of full to_string() conversion
+    let change = lsp_types::TextDocumentContentChangeEvent {
+        range: None,
+        range_length: None,
+        text: rope.chunks().collect(),
+    };
 
-        // Full text sync for simplicity
-        // OPTIMIZATION: Use rope chunks instead of full to_string() conversion
-        let change = lsp_types::TextDocumentContentChangeEvent {
-            range: None,
-            range_length: None,
-            text: rope.chunks().collect(),
-        };
+    lsp_client.send(LspMessage::DidChange {
+        uri: doc.uri.clone(),
+        version,
+        changes: vec![change],
+    });
 
-        lsp_client.send(LspMessage::DidChange {
-            uri: uri.clone(),
-            version,
-            changes: vec![change],
-        });
-
-        trace!("[LSP] DidChange sent, version={}", version);
-    }
+    trace!("[LSP] DidChange sent, version={}", version);
 }
 
 /// Core action execution - shared between LSP and non-LSP builds.
@@ -794,7 +795,7 @@ pub fn execute_action(
         settings: lsp,
         client: lsp_client,
         completion: completion_state,
-        sync: lsp_sync,
+        document: mut lsp_document,
     } = lsp_buf;
     if action == EditorAction::ClearSelection {
         if sel.has_multiple_cursors(cursor) {
@@ -835,7 +836,7 @@ pub fn execute_action(
                 }
                 EditorAction::InsertNewline | EditorAction::InsertTab => {
                     apply_completion(cursor, tv, completion_state);
-                    send_did_change(&tv.rope, lsp_client, lsp_sync);
+                    send_did_change(&tv.rope, lsp_client, lsp_document.as_deref_mut());
                     return;
                 }
                 EditorAction::ClearSelection => {
@@ -849,7 +850,13 @@ pub fn execute_action(
         }
 
         if action == EditorAction::RequestCompletion {
-            request_completion(cursor, &tv.rope, lsp_client, completion_state, lsp_sync);
+            request_completion(
+                cursor,
+                &tv.rope,
+                lsp_client,
+                completion_state,
+                lsp_document.as_deref(),
+            );
             return;
         }
     }
@@ -888,7 +895,7 @@ pub fn execute_action(
         }
 
         if result.text_changed {
-            send_did_change(&tv.rope, lsp_client, lsp_sync);
+            send_did_change(&tv.rope, lsp_client, lsp_document.as_deref_mut());
         }
     }
 

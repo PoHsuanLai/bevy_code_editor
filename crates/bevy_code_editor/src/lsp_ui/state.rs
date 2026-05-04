@@ -1,4 +1,14 @@
-//! LSP-related state resources for Bevy
+//! Per-editor LSP UI state Components.
+//!
+//! These were Resources living in `bevy_lsp::state` until the protocol/UI split;
+//! they're popups, debounce timers, and filter state that belong to *the
+//! editor's UI layer*, not the LSP protocol. Each is a Component on the editor
+//! entity (the same entity that carries [`bevy_lsp::LspClient`] and
+//! [`bevy_lsp::LspDocument`]).
+//!
+//! Consumers query them as `Query<&mut LspCompletionPopup, With<CodeEditor>>`
+//! etc. The `#[require]` cascade on [`crate::types::CodeEditor`] inserts them
+//! all with `Default`, so a freshly spawned `CodeEditor` is fully usable.
 
 use bevy::prelude::*;
 use lsp_types::*;
@@ -75,9 +85,11 @@ impl UnifiedCompletionItem {
     }
 }
 
-/// State for the auto-completion UI
-#[derive(Resource, Default)]
-pub struct CompletionState {
+/// Per-editor completion popup state.
+///
+/// Was `bevy_lsp::CompletionState` (Resource).
+#[derive(Component, Default)]
+pub struct LspCompletionPopup {
     /// Whether the completion box is currently visible
     pub visible: bool,
     /// Current list of completion items (unfiltered from LSP)
@@ -96,7 +108,7 @@ pub struct CompletionState {
     pub is_incomplete: bool,
 }
 
-impl CompletionState {
+impl LspCompletionPopup {
     /// Ensure the selected item is visible by adjusting scroll_offset
     pub fn ensure_selected_visible(&mut self) {
         self.ensure_selected_visible_with_max(COMPLETION_MAX_VISIBLE_DEFAULT);
@@ -290,9 +302,11 @@ fn get_word_at_position(rope: &ropey::Rope, char_pos: usize) -> Option<String> {
     }
 }
 
-/// State for hover popups
-#[derive(Resource, Default)]
-pub struct HoverState {
+/// Per-editor hover popup state.
+///
+/// Was `bevy_lsp::HoverState` (Resource).
+#[derive(Component, Default)]
+pub struct LspHoverPopup {
     /// Whether the hover box is currently visible
     pub visible: bool,
     /// Content to display in the hover box (markdown)
@@ -309,7 +323,7 @@ pub struct HoverState {
     pub request_sent: bool,
 }
 
-impl HoverState {
+impl LspHoverPopup {
     /// Reset hover state
     pub fn reset(&mut self) {
         self.visible = false;
@@ -321,9 +335,11 @@ impl HoverState {
     }
 }
 
-/// State for signature help
-#[derive(Resource, Default)]
-pub struct SignatureHelpState {
+/// Per-editor signature help popup state.
+///
+/// Was `bevy_lsp::SignatureHelpState` (Resource).
+#[derive(Component, Default)]
+pub struct LspSignatureHelpPopup {
     /// Whether the signature help is currently visible
     pub visible: bool,
     /// Available signatures
@@ -336,7 +352,7 @@ pub struct SignatureHelpState {
     pub trigger_position: usize,
 }
 
-impl SignatureHelpState {
+impl LspSignatureHelpPopup {
     /// Get the currently active signature
     pub fn current_signature(&self) -> Option<&SignatureInformation> {
         self.signatures.get(self.active_signature)
@@ -351,20 +367,22 @@ impl SignatureHelpState {
     }
 }
 
-/// State for code actions
-#[derive(Resource, Default)]
-pub struct CodeActionState {
+/// Per-editor code actions popup state.
+///
+/// Was `bevy_lsp::CodeActionState` (Resource).
+#[derive(Component, Default)]
+pub struct LspCodeActionsPopup {
     /// Whether the code action menu is visible
     pub visible: bool,
     /// Available code actions
-    pub actions: Vec<super::messages::CodeActionOrCommand>,
+    pub actions: Vec<bevy_lsp::CodeActionOrCommand>,
     /// Selected action index
     pub selected_index: usize,
     /// The range for which actions were requested
     pub range: Option<Range>,
 }
 
-impl CodeActionState {
+impl LspCodeActionsPopup {
     /// Reset state
     pub fn reset(&mut self) {
         self.visible = false;
@@ -374,9 +392,11 @@ impl CodeActionState {
     }
 }
 
-/// State for inlay hints
-#[derive(Resource, Default)]
-pub struct InlayHintState {
+/// Per-editor inlay hints state.
+///
+/// Was `bevy_lsp::InlayHintState` (Resource).
+#[derive(Component, Default)]
+pub struct LspInlayHints {
     /// Cached inlay hints for current view
     pub hints: Vec<InlayHint>,
     /// The range for which hints are cached
@@ -385,7 +405,7 @@ pub struct InlayHintState {
     pub needs_refresh: bool,
 }
 
-impl InlayHintState {
+impl LspInlayHints {
     /// Check if a range is covered by the cache
     pub fn is_range_cached(&self, range: &Range) -> bool {
         if let Some(cached) = &self.cached_range {
@@ -403,12 +423,25 @@ impl InlayHintState {
     }
 }
 
-/// Per-feature LSP debounce timers (Zed-style tiered debouncing)
+/// A pending LSP request (position-based)
+#[derive(Clone, Debug)]
+pub struct PendingLspRequest {
+    pub uri: Url,
+    pub line: u32,
+    pub character: u32,
+}
+
+/// A pending code action request (range-based)
+#[derive(Clone, Debug)]
+pub struct PendingCodeActionRequest {
+    pub uri: Url,
+    pub range: Range,
+}
+
+/// Per-feature LSP debounce timers (Zed-style tiered debouncing).
 ///
-/// Instead of sending LSP requests immediately on every event, we buffer
-/// the latest request params and only send after a feature-specific delay.
-/// Signature help is NOT debounced (trigger chars are intentional).
-#[derive(Resource)]
+/// Was `bevy_lsp::LspDebounceTimers` (Resource). Per-editor Component.
+#[derive(Component)]
 pub struct LspDebounceTimers {
     /// Completion: 50ms after last keystroke
     pub completion_timer: Timer,
@@ -427,21 +460,6 @@ pub struct LspDebounceTimers {
     pub pending_highlight: Option<PendingLspRequest>,
 }
 
-/// A pending LSP request (position-based)
-#[derive(Clone, Debug)]
-pub struct PendingLspRequest {
-    pub uri: Url,
-    pub line: u32,
-    pub character: u32,
-}
-
-/// A pending code action request (range-based)
-#[derive(Clone, Debug)]
-pub struct PendingCodeActionRequest {
-    pub uri: Url,
-    pub range: Range,
-}
-
 impl Default for LspDebounceTimers {
     fn default() -> Self {
         Self {
@@ -457,33 +475,33 @@ impl Default for LspDebounceTimers {
     }
 }
 
-/// State for LSP document synchronization
-#[derive(Resource)]
-pub struct LspSyncState {
+/// Per-editor "extra" LSP sync state — the bits of `LspSyncState` that didn't
+/// move into [`bevy_lsp::LspDocument`].
+///
+/// `LspDocument` already owns `uri` and `version`; this Component owns the
+/// debounced did_change driver state (dirty flag + timer).
+#[derive(Component)]
+pub struct LspSyncStateExtra {
     /// Whether the document has changed since last sync
     pub dirty: bool,
     /// Timer to debounce sync requests
     pub timer: Timer,
-    /// Document URI
-    pub document_uri: Option<Url>,
-    /// Document version counter
-    pub document_version: i32,
 }
 
-impl Default for LspSyncState {
+impl Default for LspSyncStateExtra {
     fn default() -> Self {
         Self {
             dirty: false,
             timer: Timer::from_seconds(0.2, TimerMode::Once),
-            document_uri: None,
-            document_version: 0,
         }
     }
 }
 
-/// State for document highlights (all occurrences of symbol under cursor)
-#[derive(Resource, Default)]
-pub struct DocumentHighlightState {
+/// Per-editor document highlight state (all occurrences of symbol under cursor).
+///
+/// Was `bevy_lsp::DocumentHighlightState` (Resource).
+#[derive(Component, Default)]
+pub struct LspDocumentHighlights {
     /// Current highlights
     pub highlights: Vec<DocumentHighlight>,
     /// The cursor position for which highlights were requested
@@ -494,7 +512,7 @@ pub struct DocumentHighlightState {
     pub debounce_timer: Option<Timer>,
 }
 
-impl DocumentHighlightState {
+impl LspDocumentHighlights {
     /// Reset state
     pub fn reset(&mut self) {
         self.highlights.clear();
@@ -509,9 +527,11 @@ impl DocumentHighlightState {
     }
 }
 
-/// State for rename operation
-#[derive(Resource, Default)]
-pub struct RenameState {
+/// Per-editor rename popup state.
+///
+/// Was `bevy_lsp::RenameState` (Resource).
+#[derive(Component, Default)]
+pub struct LspRenamePopup {
     /// Whether rename dialog is visible
     pub visible: bool,
     /// The range being renamed
@@ -528,7 +548,7 @@ pub struct RenameState {
     pub error: Option<String>,
 }
 
-impl RenameState {
+impl LspRenamePopup {
     /// Reset state
     pub fn reset(&mut self) {
         self.visible = false;

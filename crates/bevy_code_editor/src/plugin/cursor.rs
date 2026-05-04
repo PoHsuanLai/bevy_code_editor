@@ -4,9 +4,7 @@
 //! rather than spawned as separate `Sprite` entities. Blink folds into `update_cursor`
 //! (no separate `animate_cursor` system).
 
-use crate::settings::{
-    CursorLineSettings, CursorSettings, IndentationSettings, ThemeSettings, WrappingSettings,
-};
+use crate::settings::{CursorLineSettings, CursorSettings, ThemeSettings};
 use crate::text_view::{
     DisplayLayout, RectOverlay, RowVertical, TextViewOverlays, TextViewState, TextViewViewport,
 };
@@ -145,11 +143,9 @@ pub(crate) fn push_cursor_overlays(
     >,
     cursor_settings: Res<CursorSettings>,
     theme: Res<ThemeSettings>,
-    wrapping: Res<WrappingSettings>,
-    indentation: Res<IndentationSettings>,
     time: Res<Time>,
 ) {
-    for (display, cursor, tv, _vp, mut overlays, fold_state, font, layout) in
+    for (_display, cursor, tv, _vp, mut overlays, fold_state, font, layout) in
         editor_query.iter_mut()
     {
         // Drain any caret rects from the previous frame. We mark them with z=+1 so
@@ -177,7 +173,6 @@ pub(crate) fn push_cursor_overlays(
         }
 
         let char_width = font.char_width;
-        let use_wrapping = wrapping.enabled && display.display_map.wrap_width > 0;
 
         for c in cursor.cursors.iter() {
             let cursor_pos = c.position.min(tv.rope.len_chars());
@@ -185,35 +180,21 @@ pub(crate) fn push_cursor_overlays(
             let line_start = tv.rope.line_to_char(line_index);
             let col_index = cursor_pos - line_start;
 
-            let (display_row, display_col) = if use_wrapping {
-                display.display_map.buffer_to_display(line_index, col_index)
-            } else {
-                let display_row = fold_state.actual_to_display_line(line_index);
-                (display_row, col_index)
-            };
+            // Convert to display coordinates via the layout. With wrap on,
+            // multiple display rows may share a buffer line; the layout's
+            // `buffer_to_display` walks them. With wrap off, fold-state still
+            // gives the right answer for off-viewport rows.
+            let line = tv.rope.line(line_index);
+            let col_clamped = col_index.min(line.len_chars());
+            let byte_in_line = line.slice(..col_clamped).len_bytes();
+            let (display_row, byte_in_row) = layout
+                .and_then(|l| l.buffer_to_display(line_index as u32, byte_in_line))
+                .map(|(r, b)| (r as usize, b))
+                .unwrap_or_else(|| (fold_state.actual_to_display_line(line_index), byte_in_line));
 
-            let extra_indent = if use_wrapping && wrapping.indent_wrapped_lines {
-                if display.display_map.is_continuation(display_row) {
-                    indentation.indent_size as f32 * char_width
-                } else {
-                    0.0
-                }
-            } else {
-                0.0
-            };
-
-            // Pixel x: prefer shaped advance from the display layout for the
-            // unwrapped path; the wrapped path's display rows aren't aligned
-            // with the new layout yet, so it stays on char_width.
-            let glyph_x = if !use_wrapping {
-                let line = tv.rope.line(line_index);
-                let col_clamped = display_col.min(line.len_chars());
-                let byte = line.slice(..col_clamped).len_bytes();
-                layout.and_then(|l| l.x_at_byte(display_row as u32, byte))
-            } else {
-                None
-            };
-            let x_left = extra_indent + glyph_x.unwrap_or(display_col as f32 * char_width);
+            let glyph_x = layout
+                .and_then(|l| l.x_at_byte(display_row as u32, byte_in_row));
+            let x_left = glyph_x.unwrap_or(col_index as f32 * char_width);
             let x_right = x_left + cursor_settings.width;
 
             overlays.rects.push(RectOverlay {
@@ -247,9 +228,8 @@ pub(crate) fn update_cursor_line_highlight(
     >,
     cursor_line: Res<CursorLineSettings>,
     theme: Res<ThemeSettings>,
-    wrapping: Res<WrappingSettings>,
 ) {
-    for (display, cursor, tv, vp, mut overlays, fold_state, font, layout) in
+    for (_display, cursor, tv, vp, mut overlays, fold_state, font, layout) in
         editor_query.iter_mut()
     {
         // Drain previous-frame line-border / word rects (z = 0 reserved for cursor-line decoration).
@@ -261,7 +241,6 @@ pub(crate) fn update_cursor_line_highlight(
         }
 
         let char_width = font.char_width;
-        let use_wrapping = wrapping.enabled && display.display_map.wrap_width > 0;
 
         let border_thickness = cursor_line.border_thickness;
         let border_color = cursor_line.border_color;
@@ -281,17 +260,15 @@ pub(crate) fn update_cursor_line_highlight(
                 continue;
             }
 
-            let display_row = if use_wrapping {
-                display.display_map.buffer_to_display(line_index, 0).0
-            } else {
-                let mut visible_row = line_index;
-                for i in 0..line_index {
-                    if fold_state.is_line_hidden(i) {
-                        visible_row = visible_row.saturating_sub(1);
-                    }
-                }
-                visible_row
-            };
+            let line_start = tv.rope.line_to_char(line_index);
+            let col_in_line = cursor_pos - line_start;
+            let line_for_byte = tv.rope.line(line_index);
+            let col_clamped = col_in_line.min(line_for_byte.len_chars());
+            let cursor_byte = line_for_byte.slice(..col_clamped).len_bytes();
+            let display_row = layout
+                .and_then(|l| l.buffer_to_display(line_index as u32, cursor_byte))
+                .map(|(r, _)| r as usize)
+                .unwrap_or_else(|| fold_state.actual_to_display_line(line_index));
 
             if cursor_line.show_border {
                 overlays.rects.push(RectOverlay {
@@ -350,34 +327,50 @@ pub(crate) fn update_cursor_line_highlight(
             };
 
             if word_end > word_start {
-                let (x_left, x_right) = if !use_wrapping {
-                    let line_for_byte = tv.rope.line(line_index);
-                    let ws_clamped = word_start.min(line_for_byte.len_chars());
-                    let we_clamped = word_end.min(line_for_byte.len_chars());
-                    let ws_byte = line_for_byte.slice(..ws_clamped).len_bytes();
-                    let we_byte = line_for_byte.slice(..we_clamped).len_bytes();
-                    let row = display_row as u32;
+                // Translate the word's char-range to bytes, then to (display_row,
+                // byte_in_row) for each endpoint. With wrap on, a word spanning
+                // a soft break lands on different rows; emit one rect per row.
+                let ws_clamped = word_start.min(line_for_byte.len_chars());
+                let we_clamped = word_end.min(line_for_byte.len_chars());
+                let ws_byte = line_for_byte.slice(..ws_clamped).len_bytes();
+                let we_byte = line_for_byte.slice(..we_clamped).len_bytes();
+                let (start_row, start_byte) = layout
+                    .and_then(|l| l.buffer_to_display(line_index as u32, ws_byte))
+                    .unwrap_or((display_row as u32, ws_byte));
+                let (end_row, end_byte) = layout
+                    .and_then(|l| l.buffer_to_display(line_index as u32, we_byte))
+                    .unwrap_or((display_row as u32, we_byte));
+                if start_row == end_row {
                     let xl = layout
-                        .and_then(|l| l.x_at_byte(row, ws_byte))
+                        .and_then(|l| l.x_at_byte(start_row, start_byte))
                         .unwrap_or(word_start as f32 * char_width);
                     let xr = layout
-                        .and_then(|l| l.x_at_byte(row, we_byte))
+                        .and_then(|l| l.x_at_byte(end_row, end_byte))
                         .unwrap_or(word_end as f32 * char_width);
-                    (xl, xr)
+                    overlays.rects.push(RectOverlay {
+                        display_row: start_row,
+                        x_range: xl..xr,
+                        vertical: RowVertical::Full,
+                        color: word_highlight_color,
+                        z: 0,
+                        corner_radius: 0.0,
+                    });
                 } else {
-                    (
-                        word_start as f32 * char_width,
-                        word_end as f32 * char_width,
-                    )
-                };
-                overlays.rects.push(RectOverlay {
-                    display_row: display_row as u32,
-                    x_range: x_left..x_right,
-                    vertical: RowVertical::Full,
-                    color: word_highlight_color,
-                    z: 0,
-                    corner_radius: 0.0,
-                });
+                    // Multi-row word (rare in practice — only happens if a wrap
+                    // break lands inside a word). Highlight just the start-row
+                    // portion to its right edge; skip continuation rows.
+                    let xl = layout
+                        .and_then(|l| l.x_at_byte(start_row, start_byte))
+                        .unwrap_or(word_start as f32 * char_width);
+                    overlays.rects.push(RectOverlay {
+                        display_row: start_row,
+                        x_range: xl..f32::MAX,
+                        vertical: RowVertical::Full,
+                        color: word_highlight_color,
+                        z: 0,
+                        corner_radius: 0.0,
+                    });
+                }
             }
         }
 
