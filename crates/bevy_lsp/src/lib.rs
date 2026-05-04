@@ -38,11 +38,12 @@
 //! ```no_run
 //! use bevy::prelude::*;
 //! use bevy_lsp::prelude::*;
+//! use bevy_tokio_tasks::TokioTasksRuntime;
 //!
-//! fn setup(mut commands: Commands) {
+//! fn setup(mut commands: Commands, runtime: ResMut<TokioTasksRuntime>) {
 //!     let uri = lsp_types::Url::parse("file:///tmp/foo.rs").unwrap();
 //!     let mut client = LspClient::new();
-//!     client.start("rust-analyzer", &[]).unwrap();
+//!     client.start(&runtime, "rust-analyzer", &[]).unwrap();
 //!     commands.spawn((
 //!         client,
 //!         LspDocument::new(uri, "rust"),
@@ -67,3 +68,8 @@ pub use crate::plugin::LspPlugin;
 // Re-export the underlying lsp-types crate so consumers can name
 // `lsp_types::Url`, `lsp_types::Position`, etc. without taking a direct dep.
 pub use ::lsp_types;
+
+// Re-export the tokio-tasks integration so callers of `LspClient::start` can
+// name `TokioTasksRuntime` without taking a direct dep on the integration
+// crate.
+pub use ::bevy_tokio_tasks;

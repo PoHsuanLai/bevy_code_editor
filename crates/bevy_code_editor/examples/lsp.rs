@@ -897,6 +897,7 @@ fn setup_editor(
         With<CodeEditor>,
     >,
     #[cfg(feature = "tree-sitter")] mut syntax: ResMut<bevy_code_editor::plugin::SyntaxResource>,
+    runtime: Res<bevy_lsp::bevy_tokio_tasks::TokioTasksRuntime>,
 ) {
     let Ok((
         editor_entity,
@@ -952,7 +953,7 @@ fn setup_editor(
     let doc_uri = lsp_types::Url::parse(&file_uri_str).expect("Failed to parse URI");
 
     // Make sure 'rust-analyzer' is in your PATH (rustup component add rust-analyzer)
-    if let Err(e) = lsp_client.start("rust-analyzer", &[]) {
+    if let Err(e) = lsp_client.start(&runtime, "rust-analyzer", &[]) {
         error!("Failed to start rust-analyzer: {:?}", e);
         return;
     }

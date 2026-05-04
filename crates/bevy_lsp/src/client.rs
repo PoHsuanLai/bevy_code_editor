@@ -1,63 +1,75 @@
-//! LSP client for communication with language servers.
+//! LSP client transport over `async-lsp` driven by a shared tokio runtime.
 //!
-//! Handles process spawning, JSON-RPC protocol, and message routing.
-//! [`LspClient`] is a per-entity Component; pair it with [`crate::LspDocument`]
-//! and [`crate::ServerCapabilities`] on the same entity to model a single
-//! editor-document-server triple.
+//! [`LspClient`] is a per-entity Component owning a handle to the running
+//! [`async_lsp::ServerSocket`] (the request-sending side of the language-server
+//! peer) plus an mpsc bridge that drains server-pushed notifications and
+//! awaited request results into Bevy ECS via [`LspClient::try_recv`].
+//!
+//! ## Threading model
+//!
+//! The async-lsp `MainLoop` runs as a tokio task on the shared
+//! [`bevy_tokio_tasks::TokioTasksRuntime`] resource. Outgoing requests issued
+//! via [`LspClient::send`] are also spawned on the same runtime; the resulting
+//! `LspResponse` (typed result for a request, or notification-payload variant
+//! pushed by the Router) is forwarded into the bridge `mpsc::UnboundedReceiver`
+//! that [`LspClient::try_recv`] drains.
+//!
+//! ## Pair with
+//! - [`crate::LspDocument`] — per-document URI/version.
+//! - [`crate::ServerCapabilities`] — populated from `Initialize` response.
 
-use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
-use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::ops::ControlFlow;
+use std::process::Stdio;
 use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::{Duration, Instant};
 
+use async_lsp::concurrency::ConcurrencyLayer;
+use async_lsp::panic::CatchUnwindLayer;
+use async_lsp::router::Router;
+use async_lsp::tracing::TracingLayer;
+use async_lsp::{LanguageServer, ServerSocket};
 use bevy::prelude::*;
+use bevy_tokio_tasks::TokioTasksRuntime;
+use lsp_types::notification::PublishDiagnostics;
 use lsp_types::*;
-use serde_json::{json, Value};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+use tower::ServiceBuilder;
 
 use super::capabilities::ServerCapabilities;
-use super::messages::{CodeActionOrCommand, LspMessage, LspResponse, RequestType};
+use super::messages::{CodeActionOrCommand, LspMessage, LspResponse};
 
-/// Global ID counter for LSP requests
-static NEXT_REQUEST_ID: AtomicI64 = AtomicI64::new(1);
-
-/// Default request timeout in seconds
+/// Default request timeout in seconds.
+///
+/// Kept for API parity. async-lsp drives the request future on the runtime
+/// without a per-request deadline; servers handle long-running work via
+/// cancel/progress reporting. Public so existing callers can still reference
+/// the constant.
 pub const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 30;
-
-/// Pending request info
-struct PendingRequest {
-    request_type: RequestType,
-    sent_at: Instant,
-    timeout: Duration,
-}
 
 /// LSP client Component.
 ///
-/// Owns the transport (writer/reader/stderr threads, JSON-RPC ID tracking) for
-/// one server. Pair with [`crate::LspDocument`] (per-document URI/version) and
-/// [`crate::ServerCapabilities`] (populated from `Initialize` response) on the
-/// same entity.
+/// Pair with [`crate::LspDocument`] and [`crate::ServerCapabilities`] on the
+/// same entity to model a single editor-document-server triple.
 #[derive(Component)]
 pub struct LspClient {
-    /// Send messages to language server
-    tx: Sender<(LspMessage, Option<(i64, RequestType)>)>,
-    /// Receive responses from language server
-    rx: Mutex<Receiver<LspResponse>>,
-    /// Track pending requests: ID -> (RequestType, sent_at, timeout)
-    pending_requests: Arc<Mutex<HashMap<i64, PendingRequest>>>,
+    /// Send handle for the running language-server peer. `None` until
+    /// [`LspClient::start`] succeeds.
+    server: Option<ServerSocket>,
+    /// Sender given to the async-lsp Router so notification handlers can push
+    /// `LspResponse` variants into the bridge. Cloned for each spawned request
+    /// future to push the typed response in.
+    response_tx: UnboundedSender<LspResponse>,
+    /// Bridge receiver drained by [`LspClient::try_recv`].
+    response_rx: Mutex<UnboundedReceiver<LspResponse>>,
     /// Whether the server is initialized.
     ///
     /// Flipped to `true` by consumers when they observe the
-    /// [`LspResponse::Initialized`] response (the editor adapter does this in
-    /// `process_lsp_messages`). Used to gate cosmetic-but-not-required logic
-    /// (e.g. "is the server ready?"); capability-aware send gating is the
-    /// caller's job — see [`LspClient::send_if_supported`].
+    /// [`LspResponse::Initialized`] response. Capability-aware send gating is
+    /// the caller's job — see [`LspClient::send_if_supported`].
     pub initialized: bool,
-    /// Child process handle (for cleanup)
-    child_process: Option<Arc<Mutex<Child>>>,
+    /// Abort handle for the spawned MainLoop task; on drop the language server
+    /// process exits via stdio close (and `kill_on_drop`).
+    mainloop_abort: Option<Arc<tokio::task::AbortHandle>>,
 }
 
 impl Default for LspClient {
@@ -67,246 +79,125 @@ impl Default for LspClient {
 }
 
 impl LspClient {
-    /// Create a new LSP client (not yet connected)
+    /// Construct a not-yet-started client.
+    ///
+    /// Call [`LspClient::start`] with a [`TokioTasksRuntime`] to spawn the
+    /// language server process and wire up the async-lsp main loop.
     pub fn new() -> Self {
-        let (tx, _rx_server) = channel();
-        let (_tx_client, rx) = channel();
-
+        let (response_tx, response_rx) = unbounded_channel();
         Self {
-            tx,
-            rx: Mutex::new(rx),
-            pending_requests: Arc::new(Mutex::new(HashMap::new())),
+            server: None,
+            response_tx,
+            response_rx: Mutex::new(response_rx),
             initialized: false,
-            child_process: None,
+            mainloop_abort: None,
         }
     }
 
-    /// Start the language server process
-    pub fn start(&mut self, command: &str, args: &[&str]) -> std::io::Result<()> {
+    /// Spawn the language server and start the async-lsp main loop on the
+    /// shared tokio runtime.
+    ///
+    /// Returns `Err` only on synchronous spawn failure (binary not on PATH,
+    /// permissions, ...). Async errors (transport closed, server exited
+    /// mid-session) are logged via `warn!` and surface as the bridge channel
+    /// stops yielding.
+    pub fn start(
+        &mut self,
+        runtime: &TokioTasksRuntime,
+        command: &str,
+        args: &[&str],
+    ) -> std::io::Result<()> {
         #[cfg(debug_assertions)]
         debug!("[LSP] Starting server: {} {:?}", command, args);
 
-        let mut child = Command::new(command)
+        // Synchronously spawn the child so the caller learns of immediate
+        // failures. The async main loop is launched afterwards and given the
+        // live child.
+        let mut child = tokio::process::Command::new(command)
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .kill_on_drop(true)
             .spawn()?;
 
         let stdin = child.stdin.take().expect("Failed to open stdin");
         let stdout = child.stdout.take().expect("Failed to open stdout");
         let stderr = child.stderr.take().expect("Failed to open stderr");
 
-        // Store child process handle
-        self.child_process = Some(Arc::new(Mutex::new(child)));
+        // Build the async-lsp router with notification handlers that funnel
+        // server-pushed events into the ECS-side bridge. Router state is `()`
+        // because notification handlers move their captures by-value.
+        let bridge_tx = self.response_tx.clone();
+        let (mainloop, server) = async_lsp::MainLoop::new_client(move |_server| {
+            let mut router: Router<()> = Router::new(());
+            let diag_tx = bridge_tx.clone();
+            router
+                .notification::<PublishDiagnostics>(move |_, params| {
+                    let _ = diag_tx.send(LspResponse::Diagnostics {
+                        uri: params.uri,
+                        diagnostics: params.diagnostics,
+                    });
+                    ControlFlow::Continue(())
+                })
+                // Swallow other notifications (window/showMessage, $/progress)
+                // without breaking the main loop.
+                .unhandled_notification(|_, _| ControlFlow::Continue(()));
 
-        // Channel for Bevy -> Server
-        let (tx_to_server, rx_from_bevy) = channel::<(LspMessage, Option<(i64, RequestType)>)>();
-        self.tx = tx_to_server;
-
-        // Channel for Server -> Bevy
-        let (tx_to_bevy, rx_from_server) = channel::<LspResponse>();
-        self.rx = Mutex::new(rx_from_server);
-
-        // Share pending_requests with reader thread
-        let pending_requests = self.pending_requests.clone();
-
-        // Writer Thread
-        thread::spawn(move || {
-            Self::writer_thread(stdin, rx_from_bevy);
+            ServiceBuilder::new()
+                .layer(TracingLayer::default())
+                .layer(CatchUnwindLayer::default())
+                .layer(ConcurrencyLayer::default())
+                .service(router)
         });
 
-        // Reader Thread
-        let tx_to_bevy_clone = tx_to_bevy.clone();
-        thread::spawn(move || {
-            Self::reader_thread(stdout, tx_to_bevy_clone, pending_requests);
+        self.server = Some(server);
+
+        // Stderr logger.
+        runtime.spawn_background_task(move |_ctx| async move {
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            let mut reader = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                warn!("[LSP stderr] {}", line);
+            }
         });
 
-        // Stderr Logger Thread
-        thread::spawn(move || {
-            Self::stderr_thread(stderr);
+        // Main loop. tokio↔futures I/O bridge: async-lsp's `run_buffered`
+        // accepts `futures::AsyncRead/Write`, but `tokio::process::ChildStd*`
+        // implement only the tokio variants. `tokio_util::compat` adapts.
+        let join = runtime.spawn_background_task(move |_ctx| async move {
+            let stdout = stdout.compat();
+            let stdin = stdin.compat_write();
+            if let Err(err) = mainloop.run_buffered(stdout, stdin).await {
+                warn!("[LSP] main loop exited with error: {err}");
+            }
+            // Reap the child to avoid zombies.
+            let _ = child.wait().await;
         });
+
+        self.mainloop_abort = Some(Arc::new(join.abort_handle()));
 
         Ok(())
     }
 
-    /// Writer thread: sends messages to LSP stdin
-    fn writer_thread(
-        mut stdin: std::process::ChildStdin,
-        rx: Receiver<(LspMessage, Option<(i64, RequestType)>)>,
-    ) {
-        while let Ok((msg, id_info)) = rx.recv() {
-            let id = id_info.map(|(id, _)| id);
-            let json_str = match msg_to_json(&msg, id) {
-                Ok(s) => s,
-                Err(e) => {
-                    warn!("[LSP] Failed to serialize message: {:?}", e);
-                    continue;
-                }
-            };
-
-            let content = format!("Content-Length: {}\r\n\r\n{}", json_str.len(), json_str);
-            if let Err(e) = stdin.write_all(content.as_bytes()) {
-                warn!("[LSP] Failed to write to stdin: {:?}", e);
-                break;
-            }
-            let _ = stdin.flush();
-        }
-    }
-
-    /// Reader thread: receives messages from LSP stdout
-    fn reader_thread(
-        stdout: std::process::ChildStdout,
-        tx: Sender<LspResponse>,
-        pending_requests: Arc<Mutex<HashMap<i64, PendingRequest>>>,
-    ) {
-        let mut reader = BufReader::new(stdout);
-        let mut buffer = String::new();
-
-        loop {
-            buffer.clear();
-            if reader.read_line(&mut buffer).unwrap_or(0) == 0 {
-                break;
-            }
-
-            let mut content_len = 0;
-            if buffer.starts_with("Content-Length: ") {
-                if let Ok(len) = buffer
-                    .trim_start_matches("Content-Length: ")
-                    .trim()
-                    .parse::<usize>()
-                {
-                    content_len = len;
-                }
-            }
-
-            // Read empty line
-            buffer.clear();
-            if reader.read_line(&mut buffer).unwrap_or(0) == 0 {
-                break;
-            }
-
-            // Read body
-            if content_len > 0 {
-                let mut body_buf = vec![0u8; content_len];
-                if reader.read_exact(&mut body_buf).is_ok() {
-                    if let Ok(body_str) = String::from_utf8(body_buf) {
-                        if let Ok(json) = serde_json::from_str::<Value>(&body_str) {
-                            // Get request type from pending_requests
-                            let response_id = json.get("id").and_then(|v| v.as_i64());
-                            let request_type = if let Some(id) = response_id {
-                                if let Ok(mut pending) = pending_requests.lock() {
-                                    pending.remove(&id).map(|p| p.request_type)
-                                } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            };
-
-                            if let Some(response) = parse_lsp_response(&json, request_type) {
-                                let _ = tx.send(response);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// Stderr logger thread
-    fn stderr_thread(stderr: std::process::ChildStderr) {
-        let reader = BufReader::new(stderr);
-        for line in reader.lines().flatten() {
-            warn!("[LSP stderr] {}", line);
-        }
+    /// Has the server process been started?
+    pub fn started(&self) -> bool {
+        self.server.is_some()
     }
 
     /// Send a message to the language server unconditionally.
     ///
     /// Capability-aware gating is the caller's responsibility — see
     /// [`Self::send_if_supported`] for a check-then-send convenience.
+    /// For requests, the response is delivered asynchronously via the bridge
+    /// channel and surfaces from [`Self::try_recv`].
     pub fn send(&self, message: LspMessage) {
-        let id_info = match &message {
-            LspMessage::Initialize { .. } => {
-                let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
-                Some((id, RequestType::Initialize))
-            }
-            LspMessage::Completion { .. } => {
-                let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
-                Some((id, RequestType::Completion))
-            }
-            LspMessage::Hover { .. } => {
-                let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
-                Some((id, RequestType::Hover))
-            }
-            LspMessage::GotoDefinition { .. } => {
-                let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
-                Some((id, RequestType::GotoDefinition))
-            }
-            LspMessage::References { .. } => {
-                let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
-                Some((id, RequestType::References))
-            }
-            LspMessage::Format { .. } => {
-                let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
-                Some((id, RequestType::Format))
-            }
-            LspMessage::SignatureHelp { .. } => {
-                let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
-                Some((id, RequestType::SignatureHelp))
-            }
-            LspMessage::CodeAction { .. } => {
-                let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
-                Some((id, RequestType::CodeAction))
-            }
-            LspMessage::InlayHint { .. } => {
-                let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
-                Some((id, RequestType::InlayHint))
-            }
-            LspMessage::ExecuteCommand { .. } => {
-                let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
-                // Reuse CodeAction type for execute command responses
-                Some((id, RequestType::CodeAction))
-            }
-            LspMessage::DocumentHighlight { .. } => {
-                let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
-                Some((id, RequestType::DocumentHighlight))
-            }
-            LspMessage::PrepareRename { .. } => {
-                let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
-                Some((id, RequestType::PrepareRename))
-            }
-            LspMessage::Rename { .. } => {
-                let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
-                Some((id, RequestType::Rename))
-            }
-            // Notifications don't have IDs
-            LspMessage::Initialized | LspMessage::DidOpen { .. } | LspMessage::DidChange { .. } => {
-                None
-            }
+        let Some(server) = self.server.as_ref() else {
+            #[cfg(debug_assertions)]
+            debug!("[LSP] send() called before start(); dropping message");
+            return;
         };
-
-        // Track the request
-        if let Some((id, request_type)) = id_info {
-            if let Ok(mut pending) = self.pending_requests.lock() {
-                pending.insert(
-                    id,
-                    PendingRequest {
-                        request_type,
-                        sent_at: Instant::now(),
-                        timeout: Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECS),
-                    },
-                );
-            }
-            trace!(
-                "[LSP] Sending request (id={}): {:?}",
-                id,
-                std::mem::discriminant(&message)
-            );
-        }
-
-        let _ = self.tx.send((message, id_info));
+        dispatch(server, &self.response_tx, message);
     }
 
     /// Send a message only if the server's capabilities permit it.
@@ -348,29 +239,19 @@ impl LspClient {
         }
     }
 
-    /// Try to receive a response from the language server
+    /// Try to receive a response from the language server.
     pub fn try_recv(&self) -> Option<LspResponse> {
-        if let Ok(rx) = self.rx.try_lock() {
+        if let Ok(mut rx) = self.response_rx.try_lock() {
             rx.try_recv().ok()
         } else {
             None
         }
     }
 
-    /// Clean up timed out requests
-    pub fn cleanup_timeouts(&self) {
-        if let Ok(mut pending) = self.pending_requests.lock() {
-            let now = Instant::now();
-            pending.retain(|id, req| {
-                let timed_out = now.duration_since(req.sent_at) > req.timeout;
-                if timed_out {
-                    #[cfg(debug_assertions)]
-                    debug!("[LSP] Request {} timed out ({:?})", id, req.request_type);
-                }
-                !timed_out
-            });
-        }
-    }
+    /// No-op kept for API parity. async-lsp manages outgoing-request lifetime
+    /// internally; orphaned futures are reclaimed when the bridge channel is
+    /// dropped.
+    pub fn cleanup_timeouts(&self) {}
 
     /// Check if the server is ready (initialized).
     pub fn is_ready(&self) -> bool {
@@ -380,413 +261,407 @@ impl LspClient {
 
 impl Drop for LspClient {
     fn drop(&mut self) {
-        // Try to gracefully shut down the child process
-        if let Some(child) = &self.child_process {
-            if let Ok(mut child) = child.lock() {
-                let _ = child.kill();
-            }
+        // Aborting the JoinHandle drops the main loop's `tokio::process::Child`
+        // wrapper. Combined with `kill_on_drop(true)` set during spawn, this
+        // ensures the language-server process exits when the entity is
+        // despawned.
+        if let Some(abort) = self.mainloop_abort.take() {
+            abort.abort();
         }
     }
 }
 
-/// Convert LspMessage to JSON-RPC string
-fn msg_to_json(msg: &LspMessage, id: Option<i64>) -> serde_json::Result<String> {
-    let (method, params, is_notification) = match msg {
+/// Build a [`TextDocumentPositionParams`] from a URI + position.
+fn text_pos(uri: Url, position: Position) -> TextDocumentPositionParams {
+    TextDocumentPositionParams {
+        text_document: TextDocumentIdentifier { uri },
+        position,
+    }
+}
+
+/// Spawn an async-lsp request future on the current tokio runtime, mapping
+/// `Ok(value)` → bridge-channel send via `map`, `Err` → `warn!`.
+///
+/// The macro keeps each `LspMessage` arm in [`dispatch`] to its essence:
+/// the parameter struct construction and the response decoding. It's a
+/// macro rather than a generic function because the per-method
+/// `LanguageServer::xxx(&mut self, ...)` call cannot be uniformly named via
+/// trait bounds (`R::Result` differs per method).
+macro_rules! spawn_request {
+    ($server:expr, $tx:expr, $name:literal, $call:expr, |$ok:ident| $map:expr) => {{
+        let mut server = $server.clone();
+        let tx = $tx.clone();
+        tokio::spawn(async move {
+            match $call(&mut server).await {
+                Ok($ok) => $map(&tx),
+                Err(err) => warn!("[LSP] {} failed: {err}", $name),
+            }
+        });
+    }};
+}
+
+/// Translate an `LspMessage` into the corresponding `async-lsp` request /
+/// notification submission. For requests, spawn the result future on the
+/// runtime and forward the typed response into the bridge.
+///
+/// `LanguageServer` trait methods (`did_open`, `hover`, ...) take `&mut self`,
+/// so each arm rebinds a clone of the [`ServerSocket`] as `mut`. The clone is
+/// cheap — it's an mpsc::UnboundedSender to the main-loop event queue.
+#[allow(clippy::too_many_lines)]
+fn dispatch(server: &ServerSocket, bridge_tx: &UnboundedSender<LspResponse>, message: LspMessage) {
+    match message {
         LspMessage::Initialize {
             root_uri,
             capabilities,
-        } => (
-            "initialize",
-            json!({
-                "processId": std::process::id(),
-                "rootUri": root_uri,
-                "capabilities": capabilities,
-                "clientInfo": {
-                    "name": "bevy_code_editor",
-                    "version": env!("CARGO_PKG_VERSION")
+        } => {
+            #[allow(deprecated)]
+            let params = InitializeParams {
+                process_id: Some(std::process::id()),
+                root_uri: Some(root_uri),
+                capabilities,
+                client_info: Some(ClientInfo {
+                    name: "bevy_code_editor".into(),
+                    version: Some(env!("CARGO_PKG_VERSION").into()),
+                }),
+                ..InitializeParams::default()
+            };
+            spawn_request!(
+                server,
+                bridge_tx,
+                "initialize",
+                move |s: &mut ServerSocket| s.initialize(params),
+                |result| |tx: &UnboundedSender<_>| {
+                    let _ = tx.send(LspResponse::Initialized {
+                        capabilities: result.capabilities,
+                    });
                 }
-            }),
-            false,
-        ),
-        LspMessage::Initialized => ("initialized", json!({}), true),
+            );
+        }
+        LspMessage::Initialized => {
+            let mut server = server.clone();
+            if let Err(err) = server.initialized(InitializedParams {}) {
+                warn!("[LSP] initialized notification failed: {err}");
+            }
+        }
         LspMessage::DidOpen {
             uri,
             language_id,
             version,
             text,
-        } => (
-            "textDocument/didOpen",
-            json!({
-                "textDocument": {
-                    "uri": uri,
-                    "languageId": language_id,
-                    "version": version,
-                    "text": text
-                }
-            }),
-            true,
-        ),
+        } => {
+            let mut server = server.clone();
+            let params = DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri,
+                    language_id,
+                    version,
+                    text,
+                },
+            };
+            if let Err(err) = server.did_open(params) {
+                warn!("[LSP] did_open failed: {err}");
+            }
+        }
         LspMessage::DidChange {
             uri,
             version,
             changes,
-        } => (
-            "textDocument/didChange",
-            json!({
-                "textDocument": { "uri": uri, "version": version },
-                "contentChanges": changes
-            }),
-            true,
-        ),
-        LspMessage::Completion { uri, position } => (
-            "textDocument/completion",
-            json!({
-                "textDocument": { "uri": uri },
-                "position": position
-            }),
-            false,
-        ),
-        LspMessage::Hover { uri, position } => (
-            "textDocument/hover",
-            json!({
-                "textDocument": { "uri": uri },
-                "position": position
-            }),
-            false,
-        ),
-        LspMessage::GotoDefinition { uri, position } => (
-            "textDocument/definition",
-            json!({
-                "textDocument": { "uri": uri },
-                "position": position
-            }),
-            false,
-        ),
-        LspMessage::References { uri, position } => (
-            "textDocument/references",
-            json!({
-                "textDocument": { "uri": uri },
-                "position": position,
-                "context": { "includeDeclaration": true }
-            }),
-            false,
-        ),
-        LspMessage::Format { uri, options } => (
-            "textDocument/formatting",
-            json!({
-                "textDocument": { "uri": uri },
-                "options": options
-            }),
-            false,
-        ),
-        LspMessage::SignatureHelp { uri, position } => (
-            "textDocument/signatureHelp",
-            json!({
-                "textDocument": { "uri": uri },
-                "position": position
-            }),
-            false,
-        ),
+        } => {
+            let mut server = server.clone();
+            let params = DidChangeTextDocumentParams {
+                text_document: VersionedTextDocumentIdentifier { uri, version },
+                content_changes: changes,
+            };
+            if let Err(err) = server.did_change(params) {
+                warn!("[LSP] did_change failed: {err}");
+            }
+        }
+        LspMessage::Completion { uri, position } => {
+            let params = CompletionParams {
+                text_document_position: text_pos(uri, position),
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+                context: None,
+            };
+            spawn_request!(
+                server,
+                bridge_tx,
+                "completion",
+                move |s: &mut ServerSocket| s.completion(params),
+                |result| |tx: &UnboundedSender<_>| match result {
+                    Some(CompletionResponse::Array(items)) => {
+                        let _ = tx.send(LspResponse::Completion {
+                            items,
+                            is_incomplete: false,
+                        });
+                    }
+                    Some(CompletionResponse::List(list)) => {
+                        let _ = tx.send(LspResponse::Completion {
+                            items: list.items,
+                            is_incomplete: list.is_incomplete,
+                        });
+                    }
+                    None => {}
+                }
+            );
+        }
+        LspMessage::Hover { uri, position } => {
+            let params = HoverParams {
+                text_document_position_params: text_pos(uri, position),
+                work_done_progress_params: Default::default(),
+            };
+            spawn_request!(
+                server,
+                bridge_tx,
+                "hover",
+                move |s: &mut ServerSocket| s.hover(params),
+                |result| |tx: &UnboundedSender<_>| {
+                    if let Some(hover) = result {
+                        let _ = tx.send(LspResponse::Hover {
+                            content: extract_hover_content(&hover.contents),
+                            range: hover.range,
+                        });
+                    }
+                }
+            );
+        }
+        LspMessage::GotoDefinition { uri, position } => {
+            let params = GotoDefinitionParams {
+                text_document_position_params: text_pos(uri, position),
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            };
+            spawn_request!(
+                server,
+                bridge_tx,
+                "definition",
+                move |s: &mut ServerSocket| s.definition(params),
+                |result| |tx: &UnboundedSender<_>| {
+                    let locations = match result {
+                        Some(GotoDefinitionResponse::Scalar(loc)) => vec![loc],
+                        Some(GotoDefinitionResponse::Array(locs)) => locs,
+                        Some(GotoDefinitionResponse::Link(links)) => links
+                            .into_iter()
+                            .map(|link| Location {
+                                uri: link.target_uri,
+                                range: link.target_selection_range,
+                            })
+                            .collect(),
+                        None => return,
+                    };
+                    if !locations.is_empty() {
+                        let _ = tx.send(LspResponse::Definition { locations });
+                    }
+                }
+            );
+        }
+        LspMessage::References { uri, position } => {
+            let params = ReferenceParams {
+                text_document_position: text_pos(uri, position),
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+                context: ReferenceContext {
+                    include_declaration: true,
+                },
+            };
+            spawn_request!(
+                server,
+                bridge_tx,
+                "references",
+                move |s: &mut ServerSocket| s.references(params),
+                |result| |tx: &UnboundedSender<_>| {
+                    if let Some(locations) = result {
+                        let _ = tx.send(LspResponse::References { locations });
+                    }
+                }
+            );
+        }
+        LspMessage::Format { uri, options } => {
+            let params = DocumentFormattingParams {
+                text_document: TextDocumentIdentifier { uri },
+                options,
+                work_done_progress_params: Default::default(),
+            };
+            spawn_request!(
+                server,
+                bridge_tx,
+                "formatting",
+                move |s: &mut ServerSocket| s.formatting(params),
+                |result| |tx: &UnboundedSender<_>| {
+                    if let Some(edits) = result {
+                        let _ = tx.send(LspResponse::Format { edits });
+                    }
+                }
+            );
+        }
+        LspMessage::SignatureHelp { uri, position } => {
+            let params = SignatureHelpParams {
+                text_document_position_params: text_pos(uri, position),
+                work_done_progress_params: Default::default(),
+                context: None,
+            };
+            spawn_request!(
+                server,
+                bridge_tx,
+                "signature_help",
+                move |s: &mut ServerSocket| s.signature_help(params),
+                |result| |tx: &UnboundedSender<_>| {
+                    if let Some(sig) = result {
+                        let _ = tx.send(LspResponse::SignatureHelp {
+                            signatures: sig.signatures,
+                            active_signature: sig.active_signature,
+                            active_parameter: sig.active_parameter,
+                        });
+                    }
+                }
+            );
+        }
         LspMessage::CodeAction {
             uri,
             range,
             diagnostics,
-        } => (
-            "textDocument/codeAction",
-            json!({
-                "textDocument": { "uri": uri },
-                "range": range,
-                "context": {
-                    "diagnostics": diagnostics
+        } => {
+            let params = CodeActionParams {
+                text_document: TextDocumentIdentifier { uri },
+                range,
+                context: CodeActionContext {
+                    diagnostics,
+                    only: None,
+                    trigger_kind: None,
+                },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            };
+            spawn_request!(
+                server,
+                bridge_tx,
+                "code_action",
+                move |s: &mut ServerSocket| s.code_action(params),
+                |result| |tx: &UnboundedSender<_>| {
+                    if let Some(actions) = result {
+                        let actions = actions
+                            .into_iter()
+                            .map(|a| match a {
+                                lsp_types::CodeActionOrCommand::CodeAction(a) => {
+                                    CodeActionOrCommand::Action(a)
+                                }
+                                lsp_types::CodeActionOrCommand::Command(c) => {
+                                    CodeActionOrCommand::Command(c)
+                                }
+                            })
+                            .collect();
+                        let _ = tx.send(LspResponse::CodeActions { actions });
+                    }
                 }
-            }),
-            false,
-        ),
-        LspMessage::InlayHint { uri, range } => (
-            "textDocument/inlayHint",
-            json!({
-                "textDocument": { "uri": uri },
-                "range": range
-            }),
-            false,
-        ),
-        LspMessage::ExecuteCommand { command, arguments } => (
-            "workspace/executeCommand",
-            json!({
-                "command": command,
-                "arguments": arguments
-            }),
-            false,
-        ),
-        LspMessage::DocumentHighlight { uri, position } => (
-            "textDocument/documentHighlight",
-            json!({
-                "textDocument": { "uri": uri },
-                "position": position
-            }),
-            false,
-        ),
-        LspMessage::PrepareRename { uri, position } => (
-            "textDocument/prepareRename",
-            json!({
-                "textDocument": { "uri": uri },
-                "position": position
-            }),
-            false,
-        ),
-        LspMessage::Rename {
-            uri,
-            position,
-            new_name,
-        } => (
-            "textDocument/rename",
-            json!({
-                "textDocument": { "uri": uri },
-                "position": position,
-                "newName": new_name
-            }),
-            false,
-        ),
-    };
-
-    let rpc = if is_notification {
-        json!({
-            "jsonrpc": "2.0",
-            "method": method,
-            "params": params
-        })
-    } else {
-        json!({
-            "jsonrpc": "2.0",
-            "id": id.unwrap_or(1),
-            "method": method,
-            "params": params
-        })
-    };
-
-    serde_json::to_string(&rpc)
-}
-
-/// Parse JSON-RPC response to LspResponse.
-///
-/// `LspResponse::Initialized` is emitted with the raw `ServerCapabilities`
-/// payload; consumers (typically a small editor-side system) write it onto the
-/// entity's [`ServerCapabilities`] Component.
-fn parse_lsp_response(json: &Value, request_type: Option<RequestType>) -> Option<LspResponse> {
-    // Check for notifications (no id, has method)
-    if let Some(method) = json.get("method").and_then(|m| m.as_str()) {
-        return parse_notification(json, method);
-    }
-
-    // For responses, use the request_type to determine how to parse
-    let result = json.get("result")?;
-
-    // Handle null results
-    if result.is_null() {
-        // Log null results for debugging
-        #[cfg(debug_assertions)]
-        if let Some(ref rt) = request_type {
-            debug!("[LSP] Received null result for request type: {:?}", rt);
+            );
         }
-        return None;
-    }
-
-    match request_type {
-        Some(RequestType::Initialize) => {
-            if let Ok(init_result) = serde_json::from_value::<InitializeResult>(result.clone()) {
-                return Some(LspResponse::Initialized {
-                    capabilities: init_result.capabilities,
-                });
-            }
-            None
-        }
-        Some(RequestType::Completion) => {
-            // Result can be CompletionList or Vec<CompletionItem>
-            if let Ok(items) = serde_json::from_value::<Vec<CompletionItem>>(result.clone()) {
-                return Some(LspResponse::Completion {
-                    items,
-                    is_incomplete: false,
-                });
-            }
-            if let Ok(list) = serde_json::from_value::<CompletionList>(result.clone()) {
-                return Some(LspResponse::Completion {
-                    items: list.items,
-                    is_incomplete: list.is_incomplete,
-                });
-            }
-            None
-        }
-        Some(RequestType::Hover) => {
-            if let Ok(hover) = serde_json::from_value::<Hover>(result.clone()) {
-                let content = extract_hover_content(&hover.contents);
-                return Some(LspResponse::Hover {
-                    content,
-                    range: hover.range,
-                });
-            }
-            None
-        }
-        Some(RequestType::GotoDefinition) => {
-            // Can be Location, Vec<Location>, or Vec<LocationLink>
-            if let Ok(location) = serde_json::from_value::<Location>(result.clone()) {
-                return Some(LspResponse::Definition {
-                    locations: vec![location],
-                });
-            }
-            if let Ok(locations) = serde_json::from_value::<Vec<Location>>(result.clone()) {
-                if !locations.is_empty() {
-                    return Some(LspResponse::Definition { locations });
+        LspMessage::InlayHint { uri, range } => {
+            let params = InlayHintParams {
+                text_document: TextDocumentIdentifier { uri },
+                range,
+                work_done_progress_params: Default::default(),
+            };
+            spawn_request!(
+                server,
+                bridge_tx,
+                "inlay_hint",
+                move |s: &mut ServerSocket| s.inlay_hint(params),
+                |result| |tx: &UnboundedSender<_>| {
+                    if let Some(hints) = result {
+                        let _ = tx.send(LspResponse::InlayHints { hints });
+                    }
                 }
-            }
-            if let Ok(links) = serde_json::from_value::<Vec<LocationLink>>(result.clone()) {
-                let locations: Vec<Location> = links
-                    .into_iter()
-                    .map(|link| Location {
-                        uri: link.target_uri,
-                        range: link.target_selection_range,
-                    })
-                    .collect();
-                if !locations.is_empty() {
-                    return Some(LspResponse::Definition { locations });
+            );
+        }
+        LspMessage::ExecuteCommand { command, arguments } => {
+            let params = ExecuteCommandParams {
+                command,
+                arguments: arguments.unwrap_or_default(),
+                work_done_progress_params: Default::default(),
+            };
+            // Reuse `LspResponse::CodeActions { actions: vec![] }` as the
+            // round-trip ack; the editor adapter doesn't read the payload
+            // for executeCommand, it only listens for the response.
+            spawn_request!(
+                server,
+                bridge_tx,
+                "execute_command",
+                move |s: &mut ServerSocket| s.execute_command(params),
+                |_result| |tx: &UnboundedSender<_>| {
+                    let _ = tx.send(LspResponse::CodeActions { actions: vec![] });
                 }
-            }
-            None
+            );
         }
-        Some(RequestType::References) => {
-            if let Ok(locations) = serde_json::from_value::<Vec<Location>>(result.clone()) {
-                return Some(LspResponse::References { locations });
-            }
-            None
+        LspMessage::DocumentHighlight { uri, position } => {
+            let params = DocumentHighlightParams {
+                text_document_position_params: text_pos(uri, position),
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            };
+            spawn_request!(
+                server,
+                bridge_tx,
+                "document_highlight",
+                move |s: &mut ServerSocket| s.document_highlight(params),
+                |result| |tx: &UnboundedSender<_>| {
+                    if let Some(highlights) = result {
+                        let _ = tx.send(LspResponse::DocumentHighlights { highlights });
+                    }
+                }
+            );
         }
-        Some(RequestType::Format) => {
-            if let Ok(edits) = serde_json::from_value::<Vec<TextEdit>>(result.clone()) {
-                return Some(LspResponse::Format { edits });
-            }
-            None
-        }
-        Some(RequestType::SignatureHelp) => {
-            if let Ok(sig_help) = serde_json::from_value::<SignatureHelp>(result.clone()) {
-                return Some(LspResponse::SignatureHelp {
-                    signatures: sig_help.signatures,
-                    active_signature: sig_help.active_signature,
-                    active_parameter: sig_help.active_parameter,
-                });
-            }
-            None
-        }
-        Some(RequestType::CodeAction) => {
-            if let Ok(actions) = serde_json::from_value::<Vec<CodeActionOrCommand>>(result.clone())
-            {
-                return Some(LspResponse::CodeActions { actions });
-            }
-            // Try parsing as lsp_types::CodeActionOrCommand
-            if let Ok(lsp_actions) =
-                serde_json::from_value::<Vec<lsp_types::CodeActionOrCommand>>(result.clone())
-            {
-                let actions: Vec<CodeActionOrCommand> = lsp_actions
-                    .into_iter()
-                    .map(|a| match a {
-                        lsp_types::CodeActionOrCommand::CodeAction(action) => {
-                            CodeActionOrCommand::Action(action)
-                        }
-                        lsp_types::CodeActionOrCommand::Command(cmd) => {
-                            CodeActionOrCommand::Command(cmd)
-                        }
-                    })
-                    .collect();
-                return Some(LspResponse::CodeActions { actions });
-            }
-            None
-        }
-        Some(RequestType::InlayHint) => {
-            if let Ok(hints) = serde_json::from_value::<Vec<InlayHint>>(result.clone()) {
-                return Some(LspResponse::InlayHints { hints });
-            }
-            None
-        }
-        Some(RequestType::DocumentHighlight) => {
-            if let Ok(highlights) = serde_json::from_value::<Vec<DocumentHighlight>>(result.clone())
-            {
-                return Some(LspResponse::DocumentHighlights { highlights });
-            }
-            None
-        }
-        Some(RequestType::PrepareRename) => {
-            #[cfg(debug_assertions)]
-            debug!("[LSP] PrepareRename result: {}", result);
-
-            // Can be Range or { range, placeholder }
-            if let Ok(range) = serde_json::from_value::<Range>(result.clone()) {
-                #[cfg(debug_assertions)]
-                debug!("[LSP] Parsed PrepareRename as Range: {:?}", range);
-                return Some(LspResponse::PrepareRename {
-                    range,
-                    placeholder: None,
-                });
-            }
-            if let Ok(prepare) = serde_json::from_value::<PrepareRenameResponse>(result.clone()) {
-                #[cfg(debug_assertions)]
-                debug!("[LSP] Parsed PrepareRename as PrepareRenameResponse");
-                match prepare {
-                    PrepareRenameResponse::Range(range) => {
-                        return Some(LspResponse::PrepareRename {
+        LspMessage::PrepareRename { uri, position } => {
+            let params = text_pos(uri, position);
+            spawn_request!(
+                server,
+                bridge_tx,
+                "prepare_rename",
+                move |s: &mut ServerSocket| s.prepare_rename(params),
+                |result| |tx: &UnboundedSender<_>| match result {
+                    Some(PrepareRenameResponse::Range(range)) => {
+                        let _ = tx.send(LspResponse::PrepareRename {
                             range,
                             placeholder: None,
                         });
                     }
-                    PrepareRenameResponse::RangeWithPlaceholder { range, placeholder } => {
-                        return Some(LspResponse::PrepareRename {
+                    Some(PrepareRenameResponse::RangeWithPlaceholder { range, placeholder }) => {
+                        let _ = tx.send(LspResponse::PrepareRename {
                             range,
                             placeholder: Some(placeholder),
                         });
                     }
-                    PrepareRenameResponse::DefaultBehavior { .. } => {
-                        // Server uses default behavior, we need to extract word at position
-                        #[cfg(debug_assertions)]
-                        debug!("[LSP] PrepareRename DefaultBehavior - not supported yet");
-                        return None;
+                    // DefaultBehavior asks us to fall back to identifier-at-cursor,
+                    // which the protocol layer doesn't have visibility into.
+                    Some(PrepareRenameResponse::DefaultBehavior { .. }) | None => {}
+                }
+            );
+        }
+        LspMessage::Rename {
+            uri,
+            position,
+            new_name,
+        } => {
+            let params = RenameParams {
+                text_document_position: text_pos(uri, position),
+                new_name,
+                work_done_progress_params: Default::default(),
+            };
+            spawn_request!(
+                server,
+                bridge_tx,
+                "rename",
+                move |s: &mut ServerSocket| s.rename(params),
+                |result| |tx: &UnboundedSender<_>| {
+                    if let Some(edit) = result {
+                        let _ = tx.send(LspResponse::Rename { edit });
                     }
                 }
-            }
-            #[cfg(debug_assertions)]
-            debug!("[LSP] Failed to parse PrepareRename result");
-            None
-        }
-        Some(RequestType::Rename) => {
-            if let Ok(edit) = serde_json::from_value::<WorkspaceEdit>(result.clone()) {
-                return Some(LspResponse::Rename { edit });
-            }
-            None
-        }
-        None => None,
-    }
-}
-
-/// Parse LSP notification
-fn parse_notification(json: &Value, method: &str) -> Option<LspResponse> {
-    match method {
-        "textDocument/publishDiagnostics" => {
-            if let Some(params) = json.get("params") {
-                if let Ok(diag_params) =
-                    serde_json::from_value::<PublishDiagnosticsParams>(params.clone())
-                {
-                    return Some(LspResponse::Diagnostics {
-                        uri: diag_params.uri,
-                        diagnostics: diag_params.diagnostics,
-                    });
-                }
-            }
-            None
-        }
-        _ => {
-            #[cfg(debug_assertions)]
-            debug!("[LSP] Unhandled notification: {}", method);
-            None
+            );
         }
     }
 }
 
-/// Extract text content from HoverContents
+/// Extract text content from `HoverContents`.
 fn extract_hover_content(contents: &HoverContents) -> String {
     match contents {
         HoverContents::Markup(markup) => markup.value.clone(),

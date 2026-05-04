@@ -4,21 +4,47 @@ version = "0.1.0"
 edition = "2021"
 authors = ["PoHsuanLai"]
 license = "MIT OR Apache-2.0"
-description = "Per-entity Language Server Protocol transport for Bevy: JSON-RPC over stdio, request/response routing, server-capability querying, per-document URI/version tracking. Just the protocol — UI state (popups, completion filtering, debouncing) lives in the consumer."
+description = "Per-entity Language Server Protocol transport for Bevy: async-lsp over a shared tokio runtime, request/response routing, server-capability querying, per-document URI/version tracking. Just the protocol — UI state (popups, completion filtering, debouncing) lives in the consumer."
 repository = "https://github.com/PoHsuanLai/bevy_code_editor"
 keywords = ["bevy", "lsp", "language-server"]
 categories = ["game-development", "development-tools"]
 
 [dependencies]
-# Engine-tier crate: ECS + log only. No rendering, no async runtime — the
-# transport uses std::thread + std::sync::mpsc.
+# Engine-tier crate: ECS + log only. Async I/O lives on a shared tokio runtime
+# exposed via `bevy-tokio-tasks`; the transport is `async-lsp`.
 bevy = { version = "0.17", default-features = false, features = [
     "bevy_log",
 ] }
 
-# LSP protocol types
+# LSP protocol types (re-exported)
 lsp-types = "0.95"
 
-# JSON-RPC serialization
+# `serde` derives are still used by `messages::CodeActionOrCommand` (the
+# `#[serde(untagged)]` flatten so we can decode either shape).
 serde = { version = "1.0", features = ["derive"] }
+
+# Tower-based async LSP transport: stdio framing, Router for request /
+# notification dispatch, typed request submission via `lsp_types::request::*`.
+async-lsp = { version = "0.2", features = ["client-monitor", "stdio", "tokio"] }
+
+# Tokio runtime — minimal feature set for async-lsp + child stdio. `io-util`
+# is needed for `BufReader::lines()` on the child stderr stream.
+tokio = { version = "1", features = ["rt-multi-thread", "process", "io-std", "io-util", "macros", "sync"] }
+
+# Tokio AsyncRead/AsyncWrite ↔ futures AsyncRead/AsyncWrite adapter.
+# async-lsp's `MainLoop::run_buffered` takes `futures::AsyncRead/Write`, but
+# `tokio::process::ChildStd{in,out}` only implement the tokio variants.
+tokio-util = { version = "0.7", features = ["compat"] }
+
+# Shared tokio runtime exposed as a Bevy Resource.
+bevy-tokio-tasks = "0.17"
+
+# Future combinators used to drive `tower::Service` calls.
+futures = "0.3"
+
+# Tower-the-crate is what async-lsp's middleware Layers compose over; we need
+# `ServiceBuilder` to wrap the Router with Concurrency + monitor layers.
+tower = "0.4"
+
+# JSON values still used for `LspMessage::ExecuteCommand { arguments }`.
 serde_json = "1.0"

@@ -1,24 +1,27 @@
-//! `LspPlugin` — stable API anchor for the LSP transport layer.
+//! `LspPlugin` — installs the shared tokio runtime that the async-lsp
+//! transport drives its main loop on.
 //!
-//! Currently a no-op: the protocol-level state ([`crate::LspClient`],
-//! [`crate::LspDocument`], [`crate::ServerCapabilities`]) is per-entity and
-//! inserted by the host (or via the editor's `#[require]` cascade), so no
-//! global Resources need registering. The plugin is kept as a zero-overhead
-//! anchor for future additions (server registry, multi-document indexing, etc.)
-//! and as a stable composition point for hosts that want to "add the LSP
-//! transport" symbolically.
+//! Per-document state ([`crate::LspClient`], [`crate::LspDocument`],
+//! [`crate::ServerCapabilities`]) is per-entity and inserted by the host (or
+//! via the editor's `#[require]` cascade), so this plugin only registers the
+//! [`bevy_tokio_tasks::TokioTasksPlugin`] resource. If the host already added
+//! it, the redundant insert is a no-op (the resource is keyed by type).
 
 use bevy::prelude::*;
+use bevy_tokio_tasks::{TokioTasksPlugin, TokioTasksRuntime};
 
 /// LSP transport plugin.
 ///
-/// Empty by design — see module docs.
+/// Adds [`TokioTasksPlugin`] iff no [`TokioTasksRuntime`] resource is present.
+/// This lets a host that runs its own tokio integration share the runtime; a
+/// host that doesn't gets the default multi-threaded runtime.
 #[derive(Default)]
 pub struct LspPlugin;
 
 impl Plugin for LspPlugin {
-    fn build(&self, _app: &mut App) {
-        // No-op: per-document state is Components, not Resources, so there is
-        // nothing to register at the App level.
+    fn build(&self, app: &mut App) {
+        if !app.world().contains_resource::<TokioTasksRuntime>() {
+            app.add_plugins(TokioTasksPlugin::default());
+        }
     }
 }
