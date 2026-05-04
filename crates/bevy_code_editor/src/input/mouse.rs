@@ -3,7 +3,7 @@ use crate::types::*;
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use bevy_text_engine::FontConfig;
+use bevy_text_engine::{DisplayLayout, FontConfig};
 use bevy_text_interaction::ScrollConfig;
 use ropey::Rope;
 
@@ -23,51 +23,59 @@ pub struct MouseDragState {
     pub last_screen_pos: Option<Vec2>,
 }
 
-/// Convert screen coordinates to character position in the editor
-/// screen_pos should already be in viewport-local coordinates (0,0 at top-left of viewport)
-/// scroll_offset_override: if provided, use this instead of current scroll_offset (for stable drag selection)
+/// Convert screen coordinates to character position in the editor.
+///
+/// `screen_pos` is viewport-local (0,0 at top-left). `layout`, when present,
+/// is consulted for shaped per-glyph hit-testing — this is what makes
+/// proportional fonts click correctly. `scroll_offset_override` stabilizes
+/// drag selection so the selection's anchor doesn't drift when auto-scroll
+/// changes `tv.scroll_offset` mid-drag.
+#[allow(clippy::too_many_arguments)]
 fn screen_to_char_pos(
     screen_pos: Vec2,
     rope: &Rope,
+    layout: Option<&DisplayLayout>,
     current_scroll_offset: f32,
     font: &FontConfig,
     viewport: &TextViewViewport,
     fold_state: &FoldState,
     scroll_offset_override: Option<f32>,
 ) -> usize {
-    // Calculate the clicked position relative to code start
-    // Note: screen_pos is already viewport-local, so no offset_x needed
-    // scroll_offset is negative when scrolled down
     let relative_x = screen_pos.x - viewport.text_area_left;
-
-    // Use override if provided (for drag operations), otherwise use current scroll
     let scroll_offset = scroll_offset_override.unwrap_or(current_scroll_offset);
-
-    // scroll_offset is negative when scrolled, so -scroll_offset gives how many pixels we've scrolled
-    // screen_pos.y starts at 0 at top of viewport
+    // scroll_offset is negative when scrolled down; subtracting flips it positive
+    // so y=0 is the document origin (i.e. display row 0 is at relative_y == 0).
     let relative_y = screen_pos.y - viewport.text_area_top - scroll_offset;
 
-    // Calculate line and column from pixel position
-    let line_height = font.line_height;
-    let char_width = font.char_width;
-
-    let display_row = (relative_y / line_height).max(0.0) as usize;
-    let col = (relative_x / char_width).max(0.0) as usize;
-
-    // Convert display row to buffer line (accounting for folds)
+    let display_row = (relative_y / font.line_height).max(0.0) as usize;
     let buffer_line = fold_state.display_to_actual_line(display_row);
 
-    // Convert line/col to character position
     let line_count = rope.len_lines();
     if buffer_line >= line_count {
-        // Click below last line - go to end of document
         return rope.len_chars();
     }
 
     let line_start_char = rope.line_to_char(buffer_line);
-    let line_len = rope.line(buffer_line).len_chars().saturating_sub(1); // Exclude newline
-    let char_in_line = col.min(line_len);
 
+    // Shaped path: ask the layout where pixel `relative_x` falls inside the
+    // display row. The layout indexes by display_row, so the fold-mapped
+    // buffer_line is only used for the rope byte/char conversion.
+    if let Some(layout) = layout {
+        if let Some(byte_in_line) = layout.byte_at_x(display_row as u32, relative_x) {
+            let line_start_byte = rope.line_to_byte(buffer_line);
+            let line_end_byte = if buffer_line + 1 < line_count {
+                rope.line_to_byte(buffer_line + 1)
+            } else {
+                rope.len_bytes()
+            };
+            let abs_byte = (line_start_byte + byte_in_line).min(line_end_byte);
+            return rope.byte_to_char(abs_byte);
+        }
+    }
+
+    let col = (relative_x / font.char_width).max(0.0) as usize;
+    let line_len = rope.line(buffer_line).len_chars().saturating_sub(1);
+    let char_in_line = col.min(line_len);
     line_start_char + char_in_line
 }
 
@@ -82,6 +90,7 @@ pub fn handle_mouse_input(
             &TextViewViewport,
             &mut FoldState,
             &FontConfig,
+            Option<&DisplayLayout>,
         ),
         With<CodeEditor>,
     >,
@@ -102,7 +111,7 @@ pub fn handle_mouse_input(
         .next()
         .and_then(|window| window.cursor_position());
 
-    for (editor_entity, mut sel, mut cursor, mut tv, viewport, mut fold_state, font) in
+    for (editor_entity, mut sel, mut cursor, mut tv, viewport, mut fold_state, font, layout) in
         editor_query.iter_mut()
     {
 
@@ -130,11 +139,12 @@ pub fn handle_mouse_input(
             Some(screen_to_char_pos(
                 viewport_local_pos,
                 &tv.rope,
+                layout.as_deref(),
                 tv.scroll_offset,
                 font,
                 viewport,
                 &fold_state,
-                None, // Use current scroll offset for initial position calculation
+                None,
             ))
         } else {
             None
@@ -345,10 +355,12 @@ pub fn handle_mouse_input(
                     cursor_pos_screen.y - viewport.hit_test_position.y,
                 );
 
-                // Use the scroll offset from drag start to prevent auto-scroll from affecting selection
+                // Use the scroll offset from drag start to prevent auto-scroll
+                // from affecting selection.
                 let current_pos = screen_to_char_pos(
                     viewport_local_pos,
                     &tv.rope,
+                    layout.as_deref(),
                     tv.scroll_offset,
                     font,
                     viewport,
