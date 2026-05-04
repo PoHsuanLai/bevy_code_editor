@@ -1,7 +1,7 @@
 //! Editor component types — pure data definitions, no logic.
 //!
-//! Operational methods live in `input/`:
-//! - `input/editor_ops.rs` — impl CodeEditorState (search, cursor movement)
+//! Operational helpers live in `input/`:
+//! - `input/editor_ops.rs` — free fns for search and cursor movement
 //! - `input/selection_ops.rs` — impl SelectionState (multi-cursor, selection sync)
 //! - `input/editing.rs` — impl EditHistoryState (insert, delete, undo/redo, anchors)
 
@@ -108,7 +108,6 @@ impl Default for ViewportDimensions {
 #[derive(Component, Default)]
 #[require(
     crate::text_view::TextView,
-    CodeEditorState,
     SelectionState,
     EditHistoryState,
     SyntaxCacheState,
@@ -153,21 +152,6 @@ impl Default for CursorState {
             cursors: vec![Cursor::new(0)],
         }
     }
-}
-
-/// Main editor state — focus tracking and marker.
-///
-/// Most fields have been extracted into focused components:
-/// - `SelectionState` — selection_start, selection_end, selections
-/// - `EditHistoryState` — history, anchors
-/// - `SyntaxCacheState` — tokens, lines, last_highlighted_version, last_lines_version, tree-sitter state
-/// - `EditorDisplayState` — display_map, entity_pool, line_number_pool, invalidate_lines_from
-/// - `CursorState` — cursor_pos, cursors, etc.
-/// - `TextViewState` — rope, scroll, rendering state
-#[derive(Component, Default)]
-pub struct CodeEditorState {
-    /// Is editor focused
-    pub is_focused: bool,
 }
 
 /// Selection state component — tracks selection positions and the SelectionCollection.

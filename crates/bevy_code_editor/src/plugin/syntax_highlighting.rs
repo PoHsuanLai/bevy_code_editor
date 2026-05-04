@@ -5,7 +5,7 @@
 
 use crate::syntax::{SyntaxProvider, TreeSitterProvider};
 use crate::text_view::TextViewState;
-use crate::types::{CodeEditor, CodeEditorState, LineSegment, SyntaxCacheState};
+use crate::types::{CodeEditor, LineSegment, SyntaxCacheState};
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task};
 use std::collections::VecDeque;
@@ -331,7 +331,6 @@ pub(crate) fn update_syntax_tree(
     mut commands: Commands,
     mut editor_query: Query<
         (
-            &mut CodeEditorState,
             &mut SyntaxCacheState,
             &mut TextViewState,
         ),
@@ -341,7 +340,7 @@ pub(crate) fn update_syntax_tree(
     mut highlight_cache: ResMut<HighlightCache>,
     mut parse_task_query: Query<(Entity, &mut ParseTask)>,
 ) {
-    for (_state, mut syntax_cache, mut tv) in editor_query.iter_mut() {
+    for (mut syntax_cache, mut tv) in editor_query.iter_mut() {
         // Check if there's a completed parse task
         if let Some((entity, mut parse_task)) = parse_task_query.iter_mut().next() {
             // Poll the task without blocking
@@ -463,12 +462,12 @@ pub(crate) fn byte_to_point(rope: &ropey::Rope, byte_offset: usize) -> tree_sitt
 /// This runs before record_edits_for_incremental_parsing to ensure edits are recorded
 fn send_text_edit_events(
     mut editor_query: Query<
-        (&mut CodeEditorState, &mut SyntaxCacheState, &TextViewState),
+        (&mut SyntaxCacheState, &TextViewState),
         With<CodeEditor>,
     >,
     mut writer: MessageWriter<crate::types::events::TextEditEvent>,
 ) {
-    for (_state, mut syntax_cache, tv) in editor_query.iter_mut() {
+    for (mut syntax_cache, tv) in editor_query.iter_mut() {
         if let Some((start_byte, old_end_byte, new_end_byte)) =
             syntax_cache.pending_tree_sitter_edit.take()
         {
@@ -489,12 +488,12 @@ fn send_text_edit_events(
 /// thread, the tree stays valid for highlighting queries while the async re-parse
 /// runs in the background — eliminating the color flash on keystroke.
 fn record_edits_for_incremental_parsing(
-    editor_query: Query<(&CodeEditorState, &SyntaxCacheState, &TextViewState), With<CodeEditor>>,
+    editor_query: Query<(&SyntaxCacheState, &TextViewState), With<CodeEditor>>,
     mut syntax: ResMut<SyntaxResource>,
     mut events: MessageReader<crate::types::events::TextEditEvent>,
 ) {
     let collected_events: Vec<_> = events.read().cloned().collect();
-    for (_state, _syntax_cache, tv) in editor_query.iter() {
+    for (_syntax_cache, tv) in editor_query.iter() {
         for event in collected_events.iter() {
             // Compute Points on main thread — these are sub-μs O(log n) rope lookups
             let start_position = byte_to_point(&tv.rope, event.start_byte);

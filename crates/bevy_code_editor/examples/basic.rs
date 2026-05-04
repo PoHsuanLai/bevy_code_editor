@@ -37,7 +37,7 @@ fn main() {
 fn setup_editor(
     mut editor_query: Query<
         (
-            &mut CodeEditorState,
+            Entity,
             &mut CursorState,
             &mut TextViewState,
             &mut EditHistoryState,
@@ -46,15 +46,16 @@ fn setup_editor(
         ),
         With<CodeEditor>,
     >,
+    mut input_focus: ResMut<bevy::input_focus::InputFocus>,
 ) {
-    let Ok((mut state, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
+    let Ok((entity, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
         editor_query.single_mut()
     else {
         return;
     };
 
     // Always focused in basic editor (no UI competing for input)
-    state.is_focused = true;
+    input_focus.set(entity);
 
     // Set initial Python code
     let initial_text = r#"#!/usr/bin/env python3
@@ -116,11 +117,12 @@ if __name__ == "__main__":
 }
 
 fn update_cursor_icon(
-    editor_query: Query<(&CodeEditorState, &TextViewViewport), With<CodeEditor>>,
+    editor_query: Query<(Entity, &TextViewViewport), With<CodeEditor>>,
+    input_focus: Res<bevy::input_focus::InputFocus>,
     mut commands: Commands,
     windows: Query<(Entity, &Window), With<Window>>,
 ) {
-    let Ok((state, viewport)) = editor_query.single() else {
+    let Ok((editor_entity, viewport)) = editor_query.single() else {
         return;
     };
 
@@ -138,7 +140,8 @@ fn update_cursor_icon(
 
         // Show text cursor only over code area when focused
         let over_code = cursor_x < code_area_right;
-        let icon = if state.is_focused && over_code {
+        let is_focused = input_focus.get() == Some(editor_entity);
+        let icon = if is_focused && over_code {
             CursorIcon::System(SystemCursorIcon::Text)
         } else {
             CursorIcon::System(SystemCursorIcon::Default)

@@ -117,6 +117,11 @@ impl Plugin for CodeEditorPlugin {
         app.add_plugins(bevy_text_engine::gpu::GpuTextPlugin);
         app.add_plugins(bevy_text_engine::gpu::InstancedTextRenderPlugin);
 
+        // Per-entity keyboard focus, idempotent if the host already added it.
+        if !app.is_plugin_added::<bevy::input_focus::InputDispatchPlugin>() {
+            app.add_plugins(bevy::input_focus::InputDispatchPlugin);
+        }
+
         // Add input manager plugin for action-based input
         app.add_plugins(leafwing_input_manager::plugin::InputManagerPlugin::<
             crate::input::EditorAction,

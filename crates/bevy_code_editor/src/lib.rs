@@ -69,7 +69,7 @@ pub mod prelude {
     };
     // User-facing editor components
     pub use crate::types::editor::{
-        CodeEditor, CodeEditorState, CursorState, EditHistoryState, EditorDisplayState,
+        CodeEditor, CursorState, EditHistoryState, EditorDisplayState,
         EditorScrollControl, KeyRepeatState, OpenRequested, SaveRequested, SelectionState,
         SyntaxCacheState, ViewportConfig, ViewportDimensions,
     };

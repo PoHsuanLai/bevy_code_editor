@@ -26,7 +26,6 @@ fn main() {
 fn setup_editor_with_treesitter(
     mut editor_query: Query<
         (
-            &mut CodeEditorState,
             &mut CursorState,
             &mut TextViewState,
             &mut EditHistoryState,
@@ -37,7 +36,7 @@ fn setup_editor_with_treesitter(
     >,
     mut syntax: ResMut<SyntaxResource>,
 ) {
-    let Ok((_state, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
+    let Ok((mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
         editor_query.single_mut()
     else {
         return;
@@ -131,7 +130,6 @@ fn main() {
 fn setup_editor_with_treesitter(
     mut editor_query: Query<
         (
-            &mut CodeEditorState,
             &mut CursorState,
             &mut TextViewState,
             &mut EditHistoryState,
@@ -141,7 +139,7 @@ fn setup_editor_with_treesitter(
         With<CodeEditor>,
     >,
 ) {
-    let Ok((mut state, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
+    let Ok((mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
         editor_query.single_mut()
     else {
         return;

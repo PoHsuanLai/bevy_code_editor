@@ -1,4 +1,5 @@
 use super::cursor::*;
+use super::editor_ops::{add_cursor_at_next_occurrence, move_cursor};
 use super::keybindings::EditorAction;
 use crate::settings::IndentationSettings;
 #[cfg(feature = "lsp")]
@@ -23,7 +24,6 @@ pub struct ActionResult {
 
 /// Insert a character at cursor position
 pub fn insert_char(
-    state: &mut CodeEditorState,
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
     syntax: &mut SyntaxCacheState,
@@ -34,7 +34,7 @@ pub fn insert_char(
 ) {
     // Delete selection if exists
     if sel.selection_start.is_some() && sel.selection_end.is_some() {
-        delete_selection(state, sel, hist, syntax, display, cursor, tv);
+        delete_selection(sel, hist, syntax, display, cursor, tv);
     }
 
     hist.insert_char(sel, syntax, display, cursor, tv, c);
@@ -43,20 +43,11 @@ pub fn insert_char(
 /// Insert a closing character at cursor position without moving the cursor
 /// Used for bracket/quote auto-close
 pub fn insert_closing_char(
-    state: &mut CodeEditorState,
     cursor: &CursorState,
     tv: &mut TextViewState,
     c: char,
 ) {
     let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
-
-    // Record for incremental parsing
-    #[cfg(feature = "tree-sitter")]
-    {
-        let start_byte = tv.rope.char_to_byte(cursor_pos);
-        let char_len = c.len_utf8();
-        state.record_edit(start_byte, start_byte, start_byte + char_len);
-    }
 
     // Insert at cursor position
     tv.rope.insert_char(cursor_pos, c);
@@ -91,7 +82,6 @@ pub fn should_skip_auto_close(cursor: &CursorState, rope: &Rope, closing: char) 
 
 /// Delete selected text (with undo recording)
 pub fn delete_selection(
-    state: &mut CodeEditorState,
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
     syntax: &mut SyntaxCacheState,
@@ -99,12 +89,11 @@ pub fn delete_selection(
     cursor: &mut CursorState,
     tv: &mut TextViewState,
 ) {
-    delete_selection_with_history(state, sel, hist, syntax, display, cursor, tv, true);
+    delete_selection_with_history(sel, hist, syntax, display, cursor, tv, true);
 }
 
 /// Delete selected text with optional history recording
 fn delete_selection_with_history(
-    state: &mut CodeEditorState,
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
     _syntax: &mut SyntaxCacheState,
@@ -128,10 +117,6 @@ fn delete_selection_with_history(
         // Remove selected text
         let start_byte = tv.rope.char_to_byte(start);
         let end_byte = tv.rope.char_to_byte(end);
-
-        // Record edit for incremental parsing
-        #[cfg(feature = "tree-sitter")]
-        state.record_edit(start_byte, end_byte, start_byte);
 
         tv.rope.remove(start_byte..end_byte);
 
@@ -161,7 +146,6 @@ fn delete_selection_with_history(
 /// Apply selected completion item
 #[cfg(feature = "lsp")]
 pub fn apply_completion(
-    state: &mut CodeEditorState,
     cursor: &mut CursorState,
     tv: &mut TextViewState,
     completion_state: &mut lsp::CompletionState,
@@ -177,10 +161,6 @@ pub fn apply_completion(
         if start <= end && end <= tv.rope.len_chars() {
             let start_byte = tv.rope.char_to_byte(start);
             let end_byte = tv.rope.char_to_byte(end);
-            let new_end_byte = start_byte + insert_text.len();
-
-            // Record edit for incremental parsing (remove + insert = replace)
-            state.record_edit(start_byte, end_byte, new_end_byte);
 
             tv.rope.remove(start_byte..end_byte);
             tv.rope.insert(start, &insert_text);
@@ -337,7 +317,6 @@ pub fn send_did_change(rope: &Rope, lsp_client: &lsp::LspClient, lsp_sync: &mut 
 
 /// Core action execution - shared between LSP and non-LSP builds
 fn execute_action_core(
-    state: &mut CodeEditorState,
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
     syntax: &mut SyntaxCacheState,
@@ -356,19 +335,19 @@ fn execute_action_core(
 
     match action {
         EditorAction::InsertNewline => {
-            insert_char(state, sel, hist, syntax, display, cursor, tv, '\n');
+            insert_char(sel, hist, syntax, display, cursor, tv, '\n');
             result.text_changed = true;
         }
         EditorAction::InsertTab => {
             for _ in 0..indentation.tab_width {
-                insert_char(state, sel, hist, syntax, display, cursor, tv, ' ');
+                insert_char(sel, hist, syntax, display, cursor, tv, ' ');
             }
             result.text_changed = true;
         }
 
         EditorAction::DeleteBackward => {
             if sel.selection_start.is_some() {
-                delete_selection(state, sel, hist, syntax, display, cursor, tv);
+                delete_selection(sel, hist, syntax, display, cursor, tv);
             } else {
                 hist.delete_backward(sel, syntax, display, cursor, tv);
             }
@@ -376,7 +355,7 @@ fn execute_action_core(
         }
         EditorAction::DeleteForward => {
             if sel.selection_start.is_some() {
-                delete_selection(state, sel, hist, syntax, display, cursor, tv);
+                delete_selection(sel, hist, syntax, display, cursor, tv);
             } else {
                 hist.delete_forward(sel, syntax, display, cursor, tv);
             }
@@ -384,17 +363,17 @@ fn execute_action_core(
         }
         EditorAction::DeleteWordBackward => {
             if sel.selection_start.is_some() {
-                delete_selection(state, sel, hist, syntax, display, cursor, tv);
+                delete_selection(sel, hist, syntax, display, cursor, tv);
             } else {
-                delete_word_backward(state, sel, hist, cursor, tv);
+                delete_word_backward(sel, hist, cursor, tv);
             }
             result.text_changed = true;
         }
         EditorAction::DeleteWordForward => {
             if sel.selection_start.is_some() {
-                delete_selection(state, sel, hist, syntax, display, cursor, tv);
+                delete_selection(sel, hist, syntax, display, cursor, tv);
             } else {
-                delete_word_forward(state, sel, hist, cursor, tv);
+                delete_word_forward(sel, hist, cursor, tv);
             }
             result.text_changed = true;
         }
@@ -405,14 +384,14 @@ fn execute_action_core(
         EditorAction::MoveCursorLeft => {
             sel.selection_start = None;
             sel.selection_end = None;
-            state.move_cursor(cursor, &tv.rope, -1);
+            move_cursor(cursor, &tv.rope, -1);
             sel.sync_cursors_from_primary(cursor);
             result.horizontal_move = true;
         }
         EditorAction::MoveCursorRight => {
             sel.selection_start = None;
             sel.selection_end = None;
-            state.move_cursor(cursor, &tv.rope, 1);
+            move_cursor(cursor, &tv.rope, 1);
             sel.sync_cursors_from_primary(cursor);
             result.horizontal_move = true;
         }
@@ -481,13 +460,13 @@ fn execute_action_core(
 
         EditorAction::SelectLeft => {
             init_selection(sel, cursor);
-            state.move_cursor(cursor, &tv.rope, -1);
+            move_cursor(cursor, &tv.rope, -1);
             sel.selection_end = Some(cursor.cursor_pos);
             sel.sync_cursors_from_primary(cursor);
         }
         EditorAction::SelectRight => {
             init_selection(sel, cursor);
-            state.move_cursor(cursor, &tv.rope, 1);
+            move_cursor(cursor, &tv.rope, 1);
             sel.selection_end = Some(cursor.cursor_pos);
             sel.sync_cursors_from_primary(cursor);
         }
@@ -567,10 +546,6 @@ fn execute_action_core(
                 let start_byte = tv.rope.char_to_byte(start);
                 let end_byte = tv.rope.char_to_byte(end);
 
-                // Record edit for incremental parsing
-                #[cfg(feature = "tree-sitter")]
-                state.record_edit(start_byte, end_byte, start_byte);
-
                 tv.rope.remove(start_byte..end_byte);
                 cursor.cursor_pos = start;
 
@@ -614,11 +589,6 @@ fn execute_action_core(
 
                             let start_byte = tv.rope.char_to_byte(start);
                             let end_byte = tv.rope.char_to_byte(end);
-                            let new_end_byte = start_byte + text.len();
-
-                            // Record combined edit for incremental parsing (delete + insert)
-                            #[cfg(feature = "tree-sitter")]
-                            state.record_edit(start_byte, end_byte, new_end_byte);
 
                             tv.rope.remove(start_byte..end_byte);
                             cursor.cursor_pos = start;
@@ -627,13 +597,6 @@ fn execute_action_core(
                             paste_position = start;
                         } else {
                             paste_position = cursor.cursor_pos.min(tv.rope.len_chars());
-
-                            // Record insert-only edit for incremental parsing
-                            #[cfg(feature = "tree-sitter")]
-                            {
-                                let start_byte = tv.rope.char_to_byte(paste_position);
-                                state.record_edit(start_byte, start_byte, start_byte + text.len());
-                            }
                         }
 
                         // Insert pasted text
@@ -694,7 +657,7 @@ fn execute_action_core(
         EditorAction::AddCursorAtNextOccurrence => {
             // Sync the cursors from primary first
             sel.sync_cursors_from_primary(cursor);
-            state.add_cursor_at_next_occurrence(sel, cursor, tv);
+            add_cursor_at_next_occurrence(sel, cursor, tv);
         }
         EditorAction::AddCursorAbove => {
             // Add cursor on the line above
@@ -791,7 +754,6 @@ fn add_cursor_below(sel: &mut SelectionState, cursor: &mut CursorState, tv: &mut
 
 /// Execute an editor action — unified entry point for all feature combinations.
 pub fn execute_action(
-    state: &mut CodeEditorState,
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
     syntax: &mut SyntaxCacheState,
@@ -845,7 +807,7 @@ pub fn execute_action(
                     return;
                 }
                 EditorAction::InsertNewline | EditorAction::InsertTab => {
-                    apply_completion(state, cursor, tv, completion_state);
+                    apply_completion(cursor, tv, completion_state);
                     send_did_change(&tv.rope, lsp_client, lsp_sync);
                     return;
                 }
@@ -866,7 +828,6 @@ pub fn execute_action(
     }
 
     let result = execute_action_core(
-        state,
         sel,
         hist,
         syntax,

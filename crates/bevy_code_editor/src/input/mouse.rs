@@ -74,7 +74,7 @@ fn screen_to_char_pos(
 pub fn handle_mouse_input(
     mut editor_query: Query<
         (
-            &mut CodeEditorState,
+            Entity,
             &mut SelectionState,
             &mut CursorState,
             &mut TextViewState,
@@ -83,6 +83,7 @@ pub fn handle_mouse_input(
         ),
         With<CodeEditor>,
     >,
+    mut input_focus: ResMut<bevy::input_focus::InputFocus>,
     mut drag_state: ResMut<MouseDragState>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
@@ -100,7 +101,7 @@ pub fn handle_mouse_input(
         .next()
         .and_then(|window| window.cursor_position());
 
-    for (mut state, mut sel, mut cursor, mut tv, viewport, mut fold_state) in
+    for (editor_entity, mut sel, mut cursor, mut tv, viewport, mut fold_state) in
         editor_query.iter_mut()
     {
 
@@ -231,7 +232,7 @@ pub fn handle_mouse_input(
                     // Check if there's a foldable region starting at this line
                     if fold_state.is_foldable_line(buffer_line) {
                         fold_state.toggle_fold_at_line(buffer_line);
-                        state.is_focused = true;
+                        input_focus.set(editor_entity);
 
                         // Hide hover on click
                         #[cfg(feature = "lsp")]
@@ -245,7 +246,7 @@ pub fn handle_mouse_input(
 
         if let Some(char_pos) = char_pos {
             // Focus editor on click
-            state.is_focused = true;
+            input_focus.set(editor_entity);
 
             #[cfg(feature = "lsp")]
             {
@@ -308,8 +309,10 @@ pub fn handle_mouse_input(
             #[cfg(feature = "lsp")]
             reset_hover_state(&mut hover_state);
         } else {
-            // Clicked outside editor, lose focus
-            state.is_focused = false;
+            // Clicked outside any editor, lose focus only if this editor was the focused one.
+            if input_focus.get() == Some(editor_entity) {
+                input_focus.clear();
+            }
         }
     }
 
@@ -368,7 +371,6 @@ pub fn handle_mouse_input(
 pub fn handle_mouse_wheel(
     mut editor_query: Query<
         (
-            &mut CodeEditorState,
             &mut SelectionState,
             &mut CursorState,
             &mut TextViewState,
@@ -382,7 +384,7 @@ pub fn handle_mouse_wheel(
     scrolling: Res<ScrollingSettings>,
 ) {
     let events: Vec<_> = mouse_wheel_events.read().copied().collect();
-    for (_state, _sel, _cursor, mut tv, viewport) in editor_query.iter_mut() {
+    for (_sel, _cursor, mut tv, viewport) in editor_query.iter_mut() {
     for event in events.iter() {
         let mut scrolled = false;
         let use_smooth = scrolling.smooth;

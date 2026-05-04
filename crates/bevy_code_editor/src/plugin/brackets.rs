@@ -130,12 +130,12 @@ pub(crate) fn find_opening_bracket(
 
 pub(crate) fn update_bracket_match(
     mut editor_query: Query<
-        (&CodeEditorState, &CursorState, &TextViewState, &mut BracketMatchState),
+        (&CursorState, &TextViewState, &mut BracketMatchState),
         With<CodeEditor>,
     >,
     brackets: Res<BracketSettings>,
 ) {
-    for (_state, cursor, tv, mut bracket_state) in editor_query.iter_mut() {
+    for (cursor, tv, mut bracket_state) in editor_query.iter_mut() {
         if !brackets.enabled {
             bracket_state.current_match = None;
             continue;
@@ -150,7 +150,6 @@ pub(crate) fn update_bracket_highlight(
     mut commands: Commands,
     editor_query: Query<
         (
-            &CodeEditorState,
             &TextViewState,
             &TextViewViewport,
             &BracketMatchState,
@@ -174,7 +173,7 @@ pub(crate) fn update_bracket_highlight(
     let mut entity_index_global: usize = 0;
     let mut any_match = false;
 
-    for (_state, tv, viewport, bracket_state, fold_state) in editor_query.iter() {
+    for (tv, viewport, bracket_state, fold_state) in editor_query.iter() {
     match &bracket_state.current_match {
         Some(bracket_match) => {
             any_match = true;

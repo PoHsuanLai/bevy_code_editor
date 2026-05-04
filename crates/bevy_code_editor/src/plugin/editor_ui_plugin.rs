@@ -18,9 +18,9 @@ use bevy::prelude::*;
 use bevy_camera::visibility::RenderLayers;
 
 use crate::settings::*;
-use crate::text_view::TextViewViewport;
+use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::{
-    CodeEditor, CodeEditorState, Separator, ViewportConfig, ViewportDimensions,
+    CodeEditor, Separator, ViewportConfig, ViewportDimensions,
 };
 use bevy_camera::Viewport;
 
@@ -79,7 +79,7 @@ pub struct EditorRenderConfig {
 ///
 /// # Custom UI
 /// If you want to implement your own UI, simply don't add this plugin
-/// and query CodeEditorState and other resources directly.
+/// and query the editor's components and resources directly.
 #[derive(Default)]
 pub struct EditorUiPlugin {
     /// Optional render layer for editor entities
@@ -193,11 +193,14 @@ impl Plugin for EditorUiPlugin {
         );
 
         // Editor scrollbar config update (feature-gated)
+        // Run when scroll/content changes, viewport resizes, or scrollbar settings change.
+        // Replaces the previous `Changed<CodeEditorState>` filter (now removed —
+        // `TextViewState` is the actual mutable scroll/content carrier).
         app.add_systems(
             Update,
             update_editor_scrollbar
                 .run_if(
-                    (|query: Query<(), (With<CodeEditor>, Changed<CodeEditorState>)>| {
+                    (|query: Query<(), (With<CodeEditor>, Changed<TextViewState>)>| {
                         !query.is_empty()
                     })
                     .or(viewport_changed)

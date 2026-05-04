@@ -1,7 +1,7 @@
 //! Generic Scrollbar UI Component
 //!
 //! A reusable scrollbar that works with any scrollable content.
-//! Not tied to CodeEditorState - uses a generic ScrollState component.
+//! Not tied to the editor — uses a generic ScrollState component.
 //!
 //! # Usage
 //!

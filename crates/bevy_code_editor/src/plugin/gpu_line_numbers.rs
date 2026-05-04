@@ -30,7 +30,6 @@ pub(crate) fn update_gpu_line_numbers(
     editor_query: Query<
         (
             Entity,
-            &CodeEditorState,
             &CursorState,
             &TextViewState,
             &TextViewViewport,
@@ -55,7 +54,7 @@ pub(crate) fn update_gpu_line_numbers(
         return;
     }
 
-    for (editor_entity, _state, cursor, tv, viewport, fold_state) in editor_query.iter() {
+    for (editor_entity, cursor, tv, viewport, fold_state) in editor_query.iter() {
     // Check if we need to update
     let fold_changed = fold_state.is_changed();
 

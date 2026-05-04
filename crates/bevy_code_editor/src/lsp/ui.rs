@@ -5,7 +5,7 @@ use bevy::sprite::Anchor;
 
 use crate::settings::*;
 use crate::text_view::{TextViewState, TextViewViewport};
-use crate::types::{CodeEditor, CodeEditorState, CursorState};
+use crate::types::{CodeEditor, CursorState};
 
 use super::state::{
     CodeActionState, CompletionState, DocumentHighlightState, HoverState, InlayHintState,
@@ -51,7 +51,6 @@ pub fn update_completion_ui(
     completion_state: Res<CompletionState>,
     query: Query<
         (
-            &CodeEditorState,
             &CursorState,
             &TextViewState,
             &TextViewViewport,
@@ -63,7 +62,7 @@ pub fn update_completion_ui(
     lsp: Res<LspSettings>,
     ui_query: Query<Entity, With<CompletionUI>>,
 ) {
-    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else {
+    let Ok((cursor_state, tv, vp)) = query.single() else {
         return;
     };
     let filtered_items = completion_state.filtered_items();
@@ -217,7 +216,6 @@ pub fn update_hover_ui(
     hover_state: Res<HoverState>,
     query: Query<
         (
-            &CodeEditorState,
             &CursorState,
             Ref<TextViewState>,
             Ref<TextViewViewport>,
@@ -228,7 +226,7 @@ pub fn update_hover_ui(
     ui: Res<UiSettings>,
     ui_query: Query<Entity, With<HoverUI>>,
 ) {
-    let Ok((_editor_state, _cursor_state, tv, vp)) = query.single() else {
+    let Ok((_cursor_state, tv, vp)) = query.single() else {
         return;
     };
 
@@ -321,7 +319,6 @@ pub fn update_signature_help_ui(
     sig_state: Res<SignatureHelpState>,
     query: Query<
         (
-            &CodeEditorState,
             &CursorState,
             Ref<TextViewState>,
             Ref<TextViewViewport>,
@@ -332,7 +329,7 @@ pub fn update_signature_help_ui(
     ui: Res<UiSettings>,
     ui_query: Query<Entity, With<SignatureHelpUI>>,
 ) {
-    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else {
+    let Ok((cursor_state, tv, vp)) = query.single() else {
         return;
     };
 
@@ -443,7 +440,6 @@ pub fn update_code_action_ui(
     action_state: Res<CodeActionState>,
     query: Query<
         (
-            &CodeEditorState,
             &CursorState,
             Ref<TextViewState>,
             Ref<TextViewViewport>,
@@ -454,7 +450,7 @@ pub fn update_code_action_ui(
     ui: Res<UiSettings>,
     ui_query: Query<Entity, With<CodeActionUI>>,
 ) {
-    let Ok((_editor_state, cursor_state, tv, vp)) = query.single() else {
+    let Ok((cursor_state, tv, vp)) = query.single() else {
         return;
     };
 

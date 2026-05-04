@@ -5,7 +5,7 @@ use lsp_types::*;
 
 use crate::settings::*;
 use crate::text_view::{TextViewState, TextViewViewport};
-use crate::types::{CodeEditor, CodeEditorState, CursorState};
+use crate::types::{CodeEditor, CursorState};
 
 use super::client::LspClient;
 use super::messages::{CodeActionOrCommand, LspMessage, LspResponse};
@@ -74,7 +74,7 @@ pub fn process_lsp_messages(
     mut highlight_state: ResMut<DocumentHighlightState>,
     mut rename_state: ResMut<RenameState>,
     mut editor_query: Query<
-        (&mut CodeEditorState, &mut CursorState, &mut TextViewState),
+        (&mut CursorState, &mut TextViewState),
         With<CodeEditor>,
     >,
     lsp_sync: Res<LspSyncState>,
@@ -82,7 +82,7 @@ pub fn process_lsp_messages(
     mut multi_location_events: MessageWriter<MultipleLocationsEvent>,
     mut workspace_edit_events: MessageWriter<WorkspaceEditEvent>,
 ) {
-    let Ok((mut editor_state, mut cursor_state, mut tv)) = editor_query.single_mut() else {
+    let Ok((mut cursor_state, mut tv)) = editor_query.single_mut() else {
         return;
     };
     // Clean up timed out requests periodically
@@ -197,7 +197,7 @@ pub fn process_lsp_messages(
 
             LspResponse::Format { edits } => {
                 trace!("[LSP] Format: {} edit(s)", edits.len());
-                apply_text_edits(&mut editor_state, &mut tv, edits);
+                apply_text_edits(&mut tv, edits);
             }
 
             LspResponse::SignatureHelp {
@@ -259,7 +259,7 @@ pub fn process_lsp_messages(
                 if let Some(changes) = &edit.changes {
                     if let Some(uri) = &lsp_sync.document_uri {
                         if let Some(edits) = changes.get(uri) {
-                            apply_text_edits(&mut editor_state, &mut tv, edits.clone());
+                            apply_text_edits(&mut tv, edits.clone());
                         }
                     }
                 }
@@ -275,11 +275,7 @@ pub fn process_lsp_messages(
 }
 
 /// Apply text edits from formatting
-fn apply_text_edits(
-    editor_state: &mut CodeEditorState,
-    tv: &mut TextViewState,
-    edits: Vec<TextEdit>,
-) {
+fn apply_text_edits(tv: &mut TextViewState, edits: Vec<TextEdit>) {
     // Sort edits in reverse order to preserve positions
     let mut edits_sorted = edits;
     edits_sorted.sort_by(|a, b| {
@@ -311,10 +307,6 @@ fn apply_text_edits(
             if start_pos <= end_pos {
                 let start_byte = tv.rope.char_to_byte(start_pos);
                 let end_byte = tv.rope.char_to_byte(end_pos);
-                let new_end_byte = start_byte + edit.new_text.len();
-
-                #[cfg(feature = "tree-sitter")]
-                editor_state.record_edit(start_byte, end_byte, new_end_byte);
 
                 tv.rope.remove(start_byte..end_byte);
                 tv.rope.insert(start_pos, &edit.new_text);
@@ -481,7 +473,7 @@ pub fn execute_code_action(lsp_client: &LspClient, action: &CodeActionOrCommand)
 pub fn request_document_highlights(
     time: Res<Time>,
     lsp_client: Res<LspClient>,
-    query: Query<(&CodeEditorState, &CursorState, &TextViewState), With<CodeEditor>>,
+    query: Query<(&CursorState, &TextViewState), With<CodeEditor>>,
     lsp_sync: Res<LspSyncState>,
     mut highlight_state: ResMut<DocumentHighlightState>,
 ) {
@@ -489,7 +481,7 @@ pub fn request_document_highlights(
         return;
     }
 
-    let Ok((_editor_state, cursor_state, tv)) = query.single() else {
+    let Ok((cursor_state, tv)) = query.single() else {
         return;
     };
 

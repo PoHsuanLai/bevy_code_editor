@@ -125,7 +125,7 @@ fn setup(
     mut commands: Commands,
     mut editor_query: Query<
         (
-            &mut CodeEditorState,
+            Entity,
             &mut CursorState,
             &mut TextViewState,
             &mut TextViewViewport,
@@ -136,8 +136,9 @@ fn setup(
         With<CodeEditor>,
     >,
     panel: Res<EditorPanel>,
+    mut input_focus: ResMut<bevy::input_focus::InputFocus>,
 ) {
-    let Ok((mut state, mut cursor, mut tv, mut viewport, mut hist, mut sel, mut syntax_cache)) =
+    let Ok((entity, mut cursor, mut tv, mut viewport, mut hist, mut sel, mut syntax_cache)) =
         editor_query.single_mut()
     else {
         return;
@@ -214,7 +215,7 @@ fn setup(
     ));
 
     // Set initial content
-    state.is_focused = true;
+    input_focus.set(entity);
     hist.set_text(
         &mut sel,
         &mut syntax_cache,

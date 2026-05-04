@@ -18,7 +18,6 @@ pub(crate) fn update_selection_highlight(
         (
             &TextViewState,
             &TextViewViewport,
-            &CodeEditorState,
             &SelectionState,
             &EditorDisplayState,
             &CursorState,
@@ -32,7 +31,7 @@ pub(crate) fn update_selection_highlight(
     wrapping: Res<WrappingSettings>,
     indentation: Res<IndentationSettings>,
 ) {
-    for (tv, _vp, _editor, sel, display, cursor, mut overlays, fold_state) in
+    for (tv, _vp, sel, display, cursor, mut overlays, fold_state) in
         editor_query.iter_mut()
     {
     // Drain any selection rects from the previous frame (z = -1 marks selection;

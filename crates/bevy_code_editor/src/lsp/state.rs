@@ -464,9 +464,9 @@ pub struct LspSyncState {
     pub dirty: bool,
     /// Timer to debounce sync requests
     pub timer: Timer,
-    /// Document URI (moved from CodeEditorState for decoupling)
+    /// Document URI
     pub document_uri: Option<Url>,
-    /// Document version counter (moved from CodeEditorState for decoupling)
+    /// Document version counter
     pub document_version: i32,
 }
 

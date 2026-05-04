@@ -136,7 +136,6 @@ fn handle_scrollbar_mouse(
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut editor_query: Query<
         (
-            &mut crate::types::CodeEditorState,
             &mut crate::types::CursorState,
             &mut TextViewState,
             &TextViewViewport,
@@ -154,7 +153,7 @@ fn handle_scrollbar_mouse(
     };
     let cursor_pos_window_opt = window.cursor_position();
 
-    for (_state, mut cursor_state, mut tv, viewport, mut drag_state) in editor_query.iter_mut() {
+    for (mut cursor_state, mut tv, viewport, mut drag_state) in editor_query.iter_mut() {
     let Some(cursor_pos_window) = cursor_pos_window_opt else {
         // No cursor, release drag if active
         if mouse_button.just_released(MouseButton::Left) {
@@ -291,7 +290,6 @@ fn update_scrollbars(
     >,
     editor_query: Query<
         (
-            &crate::types::CodeEditorState,
             &TextViewState,
             &TextViewViewport,
             &ScrollbarDragState,
@@ -302,7 +300,7 @@ fn update_scrollbars(
     render_config: Res<EditorRenderConfig>,
     mut last_scroll: Local<f32>,
 ) {
-    for (_state, tv, viewport, drag_state) in editor_query.iter() {
+    for (tv, viewport, drag_state) in editor_query.iter() {
     // Only update if scroll offset changed (but always update during drag for smooth thumb movement)
     let scroll_changed = (*last_scroll - tv.scroll_offset).abs() >= 0.01;
     if !scroll_changed && !drag_state.is_dragging {
@@ -435,7 +433,6 @@ pub fn update_editor_scrollbar(
     mut commands: Commands,
     editor_query: Query<
         (
-            &crate::types::CodeEditorState,
             &TextViewState,
             &TextViewViewport,
         ),
@@ -453,7 +450,7 @@ pub fn update_editor_scrollbar(
         return;
     }
 
-    for (_state, tv, viewport) in editor_query.iter() {
+    for (tv, viewport) in editor_query.iter() {
         let viewport_height = viewport.height as f32;
         let viewport_width = viewport.width as f32;
         let line_height = font.line_height;

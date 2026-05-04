@@ -175,7 +175,6 @@ pub fn move_cursor_word_right(cursor: &mut CursorState, rope: &Rope) {
 }
 
 pub fn delete_word_backward(
-    state: &mut CodeEditorState,
     _sel: &mut SelectionState,
     hist: &mut EditHistoryState,
     cursor: &mut CursorState,
@@ -190,10 +189,6 @@ pub fn delete_word_backward(
         // Remove the text
         let start_byte = tv.rope.char_to_byte(word_start);
         let end_byte = tv.rope.char_to_byte(cursor_before);
-
-        // Record edit for incremental parsing
-        #[cfg(feature = "tree-sitter")]
-        state.record_edit(start_byte, end_byte, start_byte);
 
         tv.rope.remove(start_byte..end_byte);
 
@@ -217,7 +212,6 @@ pub fn delete_word_backward(
 
 /// Delete from cursor to next word boundary
 pub fn delete_word_forward(
-    state: &mut CodeEditorState,
     _sel: &mut SelectionState,
     hist: &mut EditHistoryState,
     cursor: &mut CursorState,
@@ -233,10 +227,6 @@ pub fn delete_word_forward(
         // Remove the text
         let start_byte = tv.rope.char_to_byte(cursor_before);
         let end_byte = tv.rope.char_to_byte(word_end);
-
-        // Record edit for incremental parsing
-        #[cfg(feature = "tree-sitter")]
-        state.record_edit(start_byte, end_byte, start_byte);
 
         tv.rope.remove(start_byte..end_byte);
 

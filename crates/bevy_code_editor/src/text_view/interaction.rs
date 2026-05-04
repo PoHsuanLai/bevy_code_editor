@@ -151,10 +151,12 @@ pub fn handle_text_view_scroll(
 /// Mouse click + drag selection for all `TextView` entities.
 ///
 /// Drag state is per-view; each entity tracks its own selection drag so two
-/// text views can be interacted with independently.
+/// text views can be interacted with independently. On press, the hit view
+/// becomes the [`InputFocus`] target so keyboard input routes to it.
 pub fn handle_text_view_mouse(
     mut views: Query<
         (
+            Entity,
             &mut TextViewSelectionState,
             &mut TextViewDragState,
             &TextViewState,
@@ -162,6 +164,7 @@ pub fn handle_text_view_mouse(
         ),
         With<TextView>,
     >,
+    mut input_focus: ResMut<bevy::input_focus::InputFocus>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
     font: Res<FontSettings>,
@@ -173,15 +176,16 @@ pub fn handle_text_view_mouse(
 
     // Handle release: clear drag flag on every view that thought it was dragging.
     if mouse_button.just_released(MouseButton::Left) {
-        for (_, mut drag_state, _, _) in views.iter_mut() {
+        for (_, _, mut drag_state, _, _) in views.iter_mut() {
             drag_state.is_dragging = false;
         }
         return;
     }
 
-    // Handle press: hit-test each view; the one under the cursor begins a drag.
+    // Handle press: hit-test each view; the one under the cursor begins a drag
+    // and acquires keyboard focus.
     if mouse_button.just_pressed(MouseButton::Left) {
-        for (mut sel, mut drag_state, tv, viewport) in views.iter_mut() {
+        for (entity, mut sel, mut drag_state, tv, viewport) in views.iter_mut() {
             let vp_pos = viewport.hit_test_position;
             let vp_rect = bevy::math::Rect::new(
                 vp_pos.x,
@@ -204,13 +208,14 @@ pub fn handle_text_view_mouse(
             drag_state.drag_start_pos = Some(char_pos);
             drag_state.drag_start_scroll_offset = tv.scroll_offset;
             drag_state.last_screen_pos = Some(cursor_pos);
+            input_focus.set(entity);
         }
         return;
     }
 
     // Handle drag — only the view that started the drag extends its selection.
     if mouse_button.pressed(MouseButton::Left) {
-        for (mut sel, mut drag_state, tv, viewport) in views.iter_mut() {
+        for (_, mut sel, mut drag_state, tv, viewport) in views.iter_mut() {
             if !drag_state.is_dragging {
                 continue;
             }

@@ -9,10 +9,10 @@ use crate::types::*;
 use bevy::prelude::*;
 
 pub(crate) fn detect_foldable_regions(
-    mut editor_query: Query<(&CodeEditorState, &TextViewState, &mut FoldState), With<CodeEditor>>,
+    mut editor_query: Query<(&TextViewState, &mut FoldState), With<CodeEditor>>,
     syntax: Res<super::SyntaxResource>,
 ) {
-    for (_state, tv, mut fold_state) in editor_query.iter_mut() {
+    for (tv, mut fold_state) in editor_query.iter_mut() {
         // Only update when content changes
         if fold_state.content_version == tv.content_version as usize {
             continue;
@@ -201,9 +201,9 @@ pub(crate) fn node_to_fold_region(
 /// Fallback for when tree-sitter is not enabled
 #[cfg(not(feature = "tree-sitter"))]
 pub(crate) fn detect_foldable_regions(
-    mut editor_query: Query<(&CodeEditorState, &TextViewState, &mut FoldState), With<CodeEditor>>,
+    mut editor_query: Query<(&TextViewState, &mut FoldState), With<CodeEditor>>,
 ) {
-    for (_state, tv, mut fold_state) in editor_query.iter_mut() {
+    for (tv, mut fold_state) in editor_query.iter_mut() {
         // Only update when content changes
         if fold_state.content_version == tv.content_version as usize {
             continue;
@@ -293,7 +293,7 @@ impl Plugin for FoldingPlugin {
 pub(crate) fn update_fold_indicators(
     mut commands: Commands,
     editor_query: Query<
-        (&CodeEditorState, &TextViewState, &TextViewViewport, &FoldState),
+        (&TextViewState, &TextViewViewport, &FoldState),
         With<CodeEditor>,
     >,
     font: Res<FontSettings>,
@@ -317,7 +317,7 @@ pub(crate) fn update_fold_indicators(
     let mut used_indices: std::collections::HashSet<usize> = std::collections::HashSet::new();
     let mut any_disabled_only = true;
 
-    for (_state, tv, viewport, fold_state) in editor_query.iter() {
+    for (tv, viewport, fold_state) in editor_query.iter() {
         if !fold_state.enabled || !ui.show_line_numbers {
             continue;
         }

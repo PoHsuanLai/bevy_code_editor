@@ -9,7 +9,7 @@ use bevy::prelude::*;
 
 use crate::settings::*;
 use crate::text_view::{TextViewState, TextViewViewport};
-use crate::types::{CodeEditor, CodeEditorState, CursorState};
+use crate::types::{CodeEditor, CursorState};
 
 use super::components::*;
 use super::messages::CodeActionOrCommand;
@@ -21,7 +21,6 @@ pub fn sync_completion_popup(
     completion_state: Res<CompletionState>,
     query: Query<
         (
-            &CodeEditorState,
             &CursorState,
             &TextViewState,
             &TextViewViewport,
@@ -33,7 +32,7 @@ pub fn sync_completion_popup(
     lsp: Res<LspSettings>,
     existing: Query<Entity, With<CompletionPopupData>>,
 ) {
-    let Ok((_editor_state, cursor_state, tv, _vp)) = query.single() else {
+    let Ok((cursor_state, tv, _vp)) = query.single() else {
         return;
     };
     let filtered_items = completion_state.filtered_items();
@@ -177,7 +176,6 @@ pub fn sync_signature_help_popup(
     sig_state: Res<SignatureHelpState>,
     query: Query<
         (
-            &CodeEditorState,
             &CursorState,
             &TextViewState,
             &TextViewViewport,
@@ -188,7 +186,7 @@ pub fn sync_signature_help_popup(
     ui: Res<UiSettings>,
     existing: Query<Entity, With<SignatureHelpPopupData>>,
 ) {
-    let Ok((_editor_state, cursor_state, tv, _vp)) = query.single() else {
+    let Ok((cursor_state, tv, _vp)) = query.single() else {
         return;
     };
 
@@ -273,7 +271,6 @@ pub fn sync_code_actions_popup(
     action_state: Res<CodeActionState>,
     query: Query<
         (
-            &CodeEditorState,
             &CursorState,
             &TextViewState,
             &TextViewViewport,
@@ -284,7 +281,7 @@ pub fn sync_code_actions_popup(
     ui: Res<UiSettings>,
     existing: Query<Entity, With<CodeActionsPopupData>>,
 ) {
-    let Ok((_editor_state, cursor_state, tv, _vp)) = query.single() else {
+    let Ok((cursor_state, tv, _vp)) = query.single() else {
         return;
     };
 

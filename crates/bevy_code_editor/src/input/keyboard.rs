@@ -6,6 +6,7 @@ use super::actions::{
 use super::actions::{
     find_word_start, request_completion, send_did_change, update_completion_filter,
 };
+use super::editor_ops::move_cursor;
 use super::keybindings::EditorAction;
 use crate::plugin::EditorInputManager;
 #[cfg(feature = "lsp")]
@@ -69,7 +70,7 @@ const ALL_ACTIONS: [EditorAction; 45] = [
 pub fn handle_keyboard_input(
     mut editor_query: Query<
         (
-            &mut CodeEditorState,
+            Entity,
             &mut SelectionState,
             &mut EditHistoryState,
             &mut SyntaxCacheState,
@@ -82,6 +83,7 @@ pub fn handle_keyboard_input(
         ),
         With<CodeEditor>,
     >,
+    input_focus: Res<bevy::input_focus::InputFocus>,
     mut char_events: MessageReader<KeyboardInput>,
     action_query: Query<&ActionState<EditorAction>, With<EditorInputManager>>,
     cursor_settings: Res<CursorSettings>,
@@ -107,7 +109,7 @@ pub fn handle_keyboard_input(
     let collected_char_events: Vec<KeyboardInput> = char_events.read().cloned().collect();
 
     for (
-        mut state,
+        entity,
         mut sel,
         mut hist,
         mut syntax,
@@ -119,7 +121,7 @@ pub fn handle_keyboard_input(
         mut fold_state,
     ) in editor_query.iter_mut()
     {
-    if !state.is_focused {
+    if input_focus.get() != Some(entity) {
         continue;
     }
 
@@ -245,7 +247,7 @@ pub fn handle_keyboard_input(
                                 && get_closing_quote(c).is_some()
                                 && should_skip_auto_close(&cursor, &tv.rope, c)
                             {
-                                state.move_cursor(&mut cursor, &tv.rope, 1);
+                                move_cursor(&mut cursor, &tv.rope, 1);
                                 continue;
                             }
 
@@ -256,13 +258,12 @@ pub fn handle_keyboard_input(
                                 if is_closing_bracket
                                     && should_skip_auto_close(&cursor, &tv.rope, c)
                                 {
-                                    state.move_cursor(&mut cursor, &tv.rope, 1);
+                                    move_cursor(&mut cursor, &tv.rope, 1);
                                     continue;
                                 }
                             }
 
                             insert_char(
-                                &mut state,
                                 &mut sel,
                                 &mut hist,
                                 &mut syntax,
@@ -274,7 +275,7 @@ pub fn handle_keyboard_input(
 
                             if brackets.auto_close {
                                 if let Some(closing) = get_closing_bracket(c, &brackets.pairs) {
-                                    insert_closing_char(&mut state, &cursor, &mut tv, closing);
+                                    insert_closing_char(&cursor, &mut tv, closing);
                                 }
                             }
 
@@ -294,7 +295,7 @@ pub fn handle_keyboard_input(
                                     };
 
                                     if should_close {
-                                        insert_closing_char(&mut state, &cursor, &mut tv, closing);
+                                        insert_closing_char(&cursor, &mut tv, closing);
                                     }
                                 }
                             }
@@ -386,7 +387,6 @@ pub fn handle_keyboard_input(
                     }
                     bevy::input::keyboard::Key::Space => {
                         insert_char(
-                            &mut state,
                             &mut sel,
                             &mut hist,
                             &mut syntax,
@@ -448,7 +448,6 @@ pub fn handle_keyboard_input(
         }
 
         execute_action(
-            &mut state,
             &mut sel,
             &mut hist,
             &mut syntax,

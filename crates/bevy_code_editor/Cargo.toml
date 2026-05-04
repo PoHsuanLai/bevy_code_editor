@@ -25,6 +25,7 @@ bevy = { version = "0.17", default-features = false, features = [
     "bevy_color",
     "bevy_mesh",           # For Mesh2d
     "bevy_camera",         # For RenderLayers (render-to-texture support)
+    "bevy_input_focus",    # Per-entity keyboard focus tracking
 ] }
 
 # Bevy camera for RenderLayers

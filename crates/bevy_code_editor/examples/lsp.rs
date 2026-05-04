@@ -62,7 +62,6 @@ fn run_with_lsp() {
 fn setup_editor(
     mut editor_query: Query<
         (
-            &mut CodeEditorState,
             &mut CursorState,
             &mut TextViewState,
             &mut EditHistoryState,
@@ -75,7 +74,7 @@ fn setup_editor(
     mut lsp_sync: ResMut<bevy_code_editor::lsp::LspSyncState>,
     #[cfg(feature = "tree-sitter")] mut syntax: ResMut<bevy_code_editor::plugin::SyntaxResource>,
 ) {
-    let Ok((_state, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
+    let Ok((mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
         editor_query.single_mut()
     else {
         return;
@@ -173,12 +172,12 @@ fn display_lsp_info(lsp_client: Res<LspClient>) {
 #[cfg(feature = "lsp")]
 fn auto_request_completion(
     editor_query: Query<
-        (&CodeEditorState, &CursorState, Ref<TextViewState>),
+        (&CursorState, Ref<TextViewState>),
         With<CodeEditor>,
     >,
     mut writer: MessageWriter<bevy_code_editor::types::events::RequestCompletionEvent>,
 ) {
-    let Ok((_state, cursor, tv)) = editor_query.single() else {
+    let Ok((cursor, tv)) = editor_query.single() else {
         return;
     };
 
@@ -221,7 +220,6 @@ fn run_without_lsp() {
 fn show_lsp_message(
     mut editor_query: Query<
         (
-            &mut CodeEditorState,
             &mut CursorState,
             &mut TextViewState,
             &mut EditHistoryState,
@@ -231,7 +229,7 @@ fn show_lsp_message(
         With<CodeEditor>,
     >,
 ) {
-    let Ok((mut state, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
+    let Ok((mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
         editor_query.single_mut()
     else {
         return;
