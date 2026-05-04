@@ -3,13 +3,13 @@
 //! Demonstrates that TextViewPlugin can render styled text independently,
 //! without CodeEditorPlugin, cursor, selection, syntax highlighting, or keybindings.
 //!
-//! This is the foundation for building chat panels, log viewers, etc.
+//! As of step 7 the demo builds a `DisplayLayout` directly via `trivial_layout`
+//! rather than going through `TextViewState.styled_lines`.
 
 use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
 use bevy_code_editor::settings::EditorSettingsBuilder;
 use bevy_code_editor::text_view::*;
-use bevy_code_editor::types::LineSegment;
 
 fn main() {
     let mut app = App::new();
@@ -22,7 +22,6 @@ fn main() {
         ..default()
     }));
 
-    // Insert minimal settings (font, theme, performance) needed by TextViewPlugin
     EditorSettingsBuilder::default()
         .build()
         .insert_into(&mut app);
@@ -42,19 +41,13 @@ fn setup_text_view(mut commands: Commands, windows: Query<&Window>) {
         return;
     };
 
-    // Create styled text content — simulating a chat conversation
-    let mut state = TextViewState::with_text("");
-
-    // Build chat-like content with styled lines
     let lines = vec![
-        // User message
         styled_line("You:", Color::srgb(0.4, 0.7, 1.0)),
         styled_line(
             "  Can you explain how GPU instanced rendering works?",
             Color::srgb(0.9, 0.9, 0.9),
         ),
         plain_line(""),
-        // Assistant message
         styled_line("Assistant:", Color::srgb(0.5, 1.0, 0.5)),
         styled_line(
             "  GPU instanced rendering draws many copies of geometry",
@@ -83,7 +76,6 @@ fn setup_text_view(mut commands: Commands, windows: Query<&Window>) {
             Color::srgb(0.85, 0.85, 0.85),
         ),
         plain_line(""),
-        // Code block with different colors
         styled_line("  ```rust", Color::srgb(0.6, 0.6, 0.6)),
         multi_segment_line(vec![
             ("  fn ", Color::srgb(0.8, 0.5, 0.8)),
@@ -101,7 +93,6 @@ fn setup_text_view(mut commands: Commands, windows: Query<&Window>) {
         styled_line("  }", Color::srgb(0.9, 0.9, 0.9)),
         styled_line("  ```", Color::srgb(0.6, 0.6, 0.6)),
         plain_line(""),
-        // More conversation
         styled_line("You:", Color::srgb(0.4, 0.7, 1.0)),
         styled_line(
             "  That makes sense! How does the atlas work?",
@@ -127,7 +118,7 @@ fn setup_text_view(mut commands: Commands, windows: Query<&Window>) {
         ),
     ];
 
-    // Build the rope text and styled lines
+    // Plain rope text for hit-testing / copy.
     let mut full_text = String::new();
     for (i, (text, _)) in lines.iter().enumerate() {
         full_text.push_str(text);
@@ -135,15 +126,20 @@ fn setup_text_view(mut commands: Commands, windows: Query<&Window>) {
             full_text.push('\n');
         }
     }
+    let state = TextViewState::with_text(&full_text);
 
-    state.set_text(&full_text);
-
-    // Set styled lines
-    for (i, (_, segments)) in lines.iter().enumerate() {
-        if !segments.is_empty() {
-            state.set_styled_line(i, segments.clone());
-        }
-    }
+    // Build the display layout directly. Match the editor's font defaults so
+    // the demo's metrics line up with what TextViewPlugin's render system uses.
+    let line_height = 24.0;
+    let char_width = 10.0;
+    let baseline_offset = 18.0 * 0.32;
+    let layout = trivial_layout(
+        &lines,
+        line_height,
+        char_width,
+        baseline_offset,
+        Color::srgb(0.85, 0.85, 0.85),
+    );
 
     commands.spawn((
         TextView,
@@ -155,6 +151,7 @@ fn setup_text_view(mut commands: Commands, windows: Query<&Window>) {
             text_area_top: 16.0,
             ..default()
         },
+        layout,
     ));
 }
 
@@ -167,46 +164,46 @@ fn handle_scroll(
     for event in mouse_wheel.read() {
         for mut state in text_views.iter_mut() {
             state.target_scroll_offset += event.y * scroll_speed;
-            // Clamp scroll to not go below content
             state.target_scroll_offset = state.target_scroll_offset.min(0.0);
             state.needs_scroll_update = true;
         }
     }
 }
 
-// Helper to create a single-color styled line
-fn styled_line(text: &str, color: Color) -> (String, Vec<LineSegment>) {
+fn styled_line(text: &str, color: Color) -> (String, Vec<StyleRun>) {
     (
         text.to_string(),
-        vec![LineSegment {
-            text: text.to_string(),
-            color,
-            background: None,
-            corner_radius: 0.0,
+        vec![StyleRun {
+            byte_range: 0..text.len(),
+            fg: color,
+            bg: None,
             font_scale: 0.0,
             skew: 0.0,
+            corner_radius: 0.0,
         }],
     )
 }
 
-// Helper to create a plain (unstyled) line
-fn plain_line(text: &str) -> (String, Vec<LineSegment>) {
+fn plain_line(text: &str) -> (String, Vec<StyleRun>) {
     (text.to_string(), vec![])
 }
 
-// Helper to create a multi-segment styled line
-fn multi_segment_line(segments: Vec<(&str, Color)>) -> (String, Vec<LineSegment>) {
-    let text: String = segments.iter().map(|(t, _)| *t).collect();
-    let line_segments = segments
-        .into_iter()
-        .map(|(t, c)| LineSegment {
-            text: t.to_string(),
-            color: c,
-            background: None,
-            corner_radius: 0.0,
+fn multi_segment_line(segments: Vec<(&str, Color)>) -> (String, Vec<StyleRun>) {
+    let mut text = String::new();
+    let mut runs = Vec::with_capacity(segments.len());
+    let mut byte_cursor = 0;
+    for (t, c) in segments {
+        let len = t.len();
+        text.push_str(t);
+        runs.push(StyleRun {
+            byte_range: byte_cursor..byte_cursor + len,
+            fg: c,
+            bg: None,
             font_scale: 0.0,
             skew: 0.0,
-        })
-        .collect();
-    (text, line_segments)
+            corner_radius: 0.0,
+        });
+        byte_cursor += len;
+    }
+    (text, runs)
 }

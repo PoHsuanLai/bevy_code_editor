@@ -69,3 +69,50 @@ impl SimpleTheme {
         }
     }
 }
+
+/// Build a `DisplayLayout` from plain text + per-line styling, suitable for
+/// standalone consumers that don't have an editor / display map.
+///
+/// `lines` is a list of `(text, runs)` pairs — one entry per buffer line, in
+/// order. `runs` is the styling for that line (empty = use `default_fg`).
+/// No folding, no soft-wrap, no viewport culling — every line is included.
+pub fn trivial_layout(
+    lines: &[(String, Vec<StyleRun>)],
+    line_height: f32,
+    char_width: f32,
+    baseline_offset: f32,
+    default_fg: bevy::prelude::Color,
+) -> super::layout::DisplayLayout {
+    use super::layout::DisplayLayout;
+    use std::sync::Arc;
+
+    let shaped: Vec<ShapedLine> = lines
+        .iter()
+        .enumerate()
+        .map(|(i, (text, runs))| ShapedLine {
+            display_row: i as u32,
+            buffer_row: i as u32,
+            is_wrap_continuation: false,
+            // y_top is the glyph baseline screen-Y. Caller's render system adds
+            // the viewport's text_area_top + scroll_offset on top of this if
+            // needed; for a static demo we just stack rows from y=0.
+            y_top: i as f32 * line_height + baseline_offset,
+            x_offset: 0.0,
+            text: text.clone(),
+            runs: runs.clone(),
+            line_bg: None,
+        })
+        .collect();
+    let total = shaped.len() as u32;
+    DisplayLayout {
+        lines: Arc::new(shaped),
+        visible_rows: 0..total,
+        total_display_rows: total,
+        line_height,
+        char_width,
+        baseline_offset,
+        default_fg,
+        version: 1,
+        scroll_version: 0,
+    }
+}

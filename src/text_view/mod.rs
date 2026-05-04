@@ -36,6 +36,6 @@ pub use layout::DisplayLayout;
 pub use overlay::{RectOverlay, TextViewOverlays};
 pub use plugin::{TextView, TextViewBatchEntity, TextViewPlugin, TextViewRenderSet};
 pub use render::{GlyphBatchComponent, GlyphInstance, TextViewBatch};
-pub use snapshot::{ShapedLine, SimpleTheme, StyleRun};
+pub use snapshot::{trivial_layout, ShapedLine, SimpleTheme, StyleRun};
 pub use state::TextViewState;
 pub use viewport::TextViewViewport;
