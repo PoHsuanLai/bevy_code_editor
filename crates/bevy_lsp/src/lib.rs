@@ -65,11 +65,6 @@ pub use crate::document::LspDocument;
 pub use crate::messages::{CodeActionOrCommand, LspMessage, LspResponse, RequestType};
 pub use crate::plugin::LspPlugin;
 
-// Re-export the underlying lsp-types crate so consumers can name
-// `lsp_types::Url`, `lsp_types::Position`, etc. without taking a direct dep.
-pub use ::lsp_types;
-
-// Re-export the tokio-tasks integration so callers of `LspClient::start` can
-// name `TokioTasksRuntime` without taking a direct dep on the integration
-// crate.
+// Re-exports so consumers don't need direct deps for these names.
 pub use ::bevy_tokio_tasks;
+pub use ::lsp_types;
