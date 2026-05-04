@@ -135,17 +135,15 @@ pub(crate) fn update_bracket_match(
     >,
     brackets: Res<BracketSettings>,
 ) {
-    let Ok((_state, cursor, tv, mut bracket_state)) = editor_query.single_mut() else {
-        return;
-    };
+    for (_state, cursor, tv, mut bracket_state) in editor_query.iter_mut() {
+        if !brackets.enabled {
+            bracket_state.current_match = None;
+            continue;
+        }
 
-    if !brackets.enabled {
-        bracket_state.current_match = None;
-        return;
+        let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
+        bracket_state.current_match = find_matching_bracket(&tv.rope, cursor_pos, &brackets.pairs);
     }
-
-    let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
-    bracket_state.current_match = find_matching_bracket(&tv.rope, cursor_pos, &brackets.pairs);
 }
 
 pub(crate) fn update_bracket_highlight(
@@ -172,13 +170,14 @@ pub(crate) fn update_bracket_highlight(
         &mut Visibility,
     )>,
 ) {
-    let Ok((_state, tv, viewport, bracket_state, fold_state)) = editor_query.single() else {
-        return;
-    };
     let mut highlights: Vec<_> = highlight_query.iter_mut().collect();
+    let mut entity_index_global: usize = 0;
+    let mut any_match = false;
 
+    for (_state, tv, viewport, bracket_state, fold_state) in editor_query.iter() {
     match &bracket_state.current_match {
         Some(bracket_match) => {
+            any_match = true;
             let char_width = font.char_width;
             let line_height = font.line_height;
             let _viewport_width = viewport.width as f32;
@@ -191,8 +190,6 @@ pub(crate) fn update_bracket_highlight(
                 bracket_match.cursor_bracket_pos,
                 bracket_match.matching_bracket_pos,
             ];
-
-            let mut entity_index = 0;
 
             for (bracket_idx, &bracket_pos) in positions.iter().enumerate() {
                 let line_idx = tv.rope.char_to_line(bracket_pos);
@@ -254,9 +251,9 @@ pub(crate) fn update_bracket_highlight(
                         let translation = Vec3::new(base_x + dx, base_y + dy, 0.4);
                         let size = Vec2::new(*w, *h);
 
-                        if entity_index < highlights.len() {
+                        if entity_index_global < highlights.len() {
                             let (_, _, ref mut transform, ref mut sprite, ref mut visibility) =
-                                &mut highlights[entity_index];
+                                &mut highlights[entity_index_global];
                             transform.translation = translation;
                             sprite.custom_size = Some(size);
                             sprite.color = theme.bracket_match;
@@ -280,16 +277,16 @@ pub(crate) fn update_bracket_highlight(
                                 entity_cmd.insert(layers.clone());
                             }
                         }
-                        entity_index += 1;
+                        entity_index_global += 1;
                     }
                 } else {
                     // Filled style: single sprite per bracket
                     let translation = Vec3::new(base_x, base_y, 0.4);
                     let size = Vec2::new(char_width, line_height);
 
-                    if entity_index < highlights.len() {
+                    if entity_index_global < highlights.len() {
                         let (_, _, ref mut transform, ref mut sprite, ref mut visibility) =
-                            &mut highlights[entity_index];
+                            &mut highlights[entity_index_global];
                         transform.translation = translation;
                         sprite.custom_size = Some(size);
                         sprite.color = theme.bracket_match;
@@ -313,19 +310,23 @@ pub(crate) fn update_bracket_highlight(
                             entity_cmd.insert(layers.clone());
                         }
                     }
-                    entity_index += 1;
+                    entity_index_global += 1;
                 }
             }
-
-            for i in entity_index..highlights.len() {
-                let (_, _, _, _, ref mut visibility) = &mut highlights[i];
-                **visibility = Visibility::Hidden;
-            }
         }
-        None => {
-            for (_, _, _, _, mut visibility) in highlight_query.iter_mut() {
-                *visibility = Visibility::Hidden;
-            }
+        None => {}
+    }
+    }
+
+    // After processing all editors, hide any leftover highlights
+    if any_match {
+        for i in entity_index_global..highlights.len() {
+            let (_, _, _, _, ref mut visibility) = &mut highlights[i];
+            **visibility = Visibility::Hidden;
+        }
+    } else {
+        for (_, _, _, _, ref mut visibility) in highlights.iter_mut() {
+            **visibility = Visibility::Hidden;
         }
     }
 }

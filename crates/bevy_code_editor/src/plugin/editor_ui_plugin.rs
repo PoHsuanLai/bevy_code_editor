@@ -229,9 +229,6 @@ fn update_camera_viewport(
     windows: Query<&Window>,
     mut camera_query: Query<(&mut Camera, &mut Transform), With<EditorCamera>>,
 ) {
-    let Ok(viewport) = viewport_query.single() else {
-        return;
-    };
     // Only set camera viewport when NOT auto-resizing (manual viewport control)
     if config.auto_resize_to_window {
         // Clear any existing viewport restriction and reset camera position
@@ -248,44 +245,46 @@ fn update_camera_viewport(
         return;
     };
 
-    // Convert from center-origin viewport coordinates to top-left origin window coordinates.
-    // - ViewportOrigin::ScreenAbsolute(p) → p is the panel's LEFT/TOP world-space edges.
-    // - ViewportOrigin::CenteredOrtho → panel is centered at world (0,0).
-    // viewport.width/height are the panel dimensions.
-    let window_width = window.width();
-    let window_height = window.height();
-    let scale_factor = window.scale_factor();
+    for viewport in viewport_query.iter() {
+        // Convert from center-origin viewport coordinates to top-left origin window coordinates.
+        // - ViewportOrigin::ScreenAbsolute(p) → p is the panel's LEFT/TOP world-space edges.
+        // - ViewportOrigin::CenteredOrtho → panel is centered at world (0,0).
+        // viewport.width/height are the panel dimensions.
+        let window_width = window.width();
+        let window_height = window.height();
+        let scale_factor = window.scale_factor();
 
-    // Calculate top-left corner of panel in window coordinates
-    // When offset is (0,0), panel is centered in window (auto-resize mode)
-    // When offset is non-zero, it represents the panel's left/top edges (resizable mode)
-    let panel_left_world = viewport.world_left();
-    let panel_top_world = viewport.world_top();
+        // Calculate top-left corner of panel in window coordinates
+        // When offset is (0,0), panel is centered in window (auto-resize mode)
+        // When offset is non-zero, it represents the panel's left/top edges (resizable mode)
+        let panel_left_world = viewport.world_left();
+        let panel_top_world = viewport.world_top();
 
-    // Convert world coords to window coords (window: 0,0 = top-left, Y down)
-    // Then scale to physical pixels (Viewport uses physical coordinates)
-    // Window X = world X + window_width/2
-    // Window Y = window_height/2 - world Y
-    let window_x = ((panel_left_world + window_width / 2.0).max(0.0) * scale_factor) as u32;
-    let window_y = (((window_height / 2.0 - panel_top_world).max(0.0)) * scale_factor) as u32;
-    let physical_width = (viewport.width as f32 * scale_factor) as u32;
-    let physical_height = (viewport.height as f32 * scale_factor) as u32;
+        // Convert world coords to window coords (window: 0,0 = top-left, Y down)
+        // Then scale to physical pixels (Viewport uses physical coordinates)
+        // Window X = world X + window_width/2
+        // Window Y = window_height/2 - world Y
+        let window_x = ((panel_left_world + window_width / 2.0).max(0.0) * scale_factor) as u32;
+        let window_y = (((window_height / 2.0 - panel_top_world).max(0.0)) * scale_factor) as u32;
+        let physical_width = (viewport.width as f32 * scale_factor) as u32;
+        let physical_height = (viewport.height as f32 * scale_factor) as u32;
 
-    // Calculate camera position (center of panel)
-    let camera_x = panel_left_world + viewport.width as f32 / 2.0;
-    let camera_y = panel_top_world - viewport.height as f32 / 2.0;
+        // Calculate camera position (center of panel)
+        let camera_x = panel_left_world + viewport.width as f32 / 2.0;
+        let camera_y = panel_top_world - viewport.height as f32 / 2.0;
 
-    for (mut camera, mut transform) in camera_query.iter_mut() {
-        // Set the camera viewport to restrict which window pixels to render to
-        camera.viewport = Some(Viewport {
-            physical_position: UVec2::new(window_x, window_y),
-            physical_size: UVec2::new(physical_width, physical_height),
-            ..default()
-        });
+        for (mut camera, mut transform) in camera_query.iter_mut() {
+            // Set the camera viewport to restrict which window pixels to render to
+            camera.viewport = Some(Viewport {
+                physical_position: UVec2::new(window_x, window_y),
+                physical_size: UVec2::new(physical_width, physical_height),
+                ..default()
+            });
 
-        // Move the camera to the panel center
-        // Content is positioned relative to camera at (0,0)
-        transform.translation = Vec3::new(camera_x, camera_y, transform.translation.z);
+            // Move the camera to the panel center
+            // Content is positioned relative to camera at (0,0)
+            transform.translation = Vec3::new(camera_x, camera_y, transform.translation.z);
+        }
     }
 }
 
@@ -295,26 +294,25 @@ fn compute_viewport_layout(
     ui: Res<UiSettings>,
     font: Res<FontSettings>,
 ) {
-    let Ok(mut viewport) = viewport_query.single_mut() else {
-        return;
-    };
-    // Compute gutter width based on line number display
-    viewport.gutter_width = if ui.show_line_numbers {
-        ui.gutter_padding_left + ui.gutter_padding_right
-            // Reserve space for at least 4 digits (9999 lines)
-            + (font.char_width * 4.0)
-    } else {
-        0.0
-    };
+    for mut viewport in viewport_query.iter_mut() {
+        // Compute gutter width based on line number display
+        viewport.gutter_width = if ui.show_line_numbers {
+            ui.gutter_padding_left + ui.gutter_padding_right
+                // Reserve space for at least 4 digits (9999 lines)
+                + (font.char_width * 4.0)
+        } else {
+            0.0
+        };
 
-    // Compute separator position (right edge of gutter)
-    viewport.separator_x = viewport.gutter_width;
+        // Compute separator position (right edge of gutter)
+        viewport.separator_x = viewport.gutter_width;
 
-    // Compute text area left position (gutter + code margin)
-    viewport.text_area_left = viewport.gutter_width + ui.code_margin_left;
+        // Compute text area left position (gutter + code margin)
+        viewport.text_area_left = viewport.gutter_width + ui.code_margin_left;
 
-    // Top margin for text area
-    viewport.text_area_top = ui.margin_top;
+        // Top margin for text area
+        viewport.text_area_top = ui.margin_top;
+    }
 }
 
 /// Helper function to apply render layers to an entity if configured
@@ -351,17 +349,16 @@ fn init_viewport_from_window(
     config: Res<ViewportConfig>,
     windows: Query<&Window>,
 ) {
-    let Ok(mut viewport) = viewport_query.single_mut() else {
-        return;
-    };
     // Only auto-initialize if auto_resize_to_window is true
     if !config.auto_resize_to_window {
         return;
     }
 
     if let Ok(window) = windows.single() {
-        viewport.width = window.resolution.width() as u32;
-        viewport.height = window.resolution.height() as u32;
+        for mut viewport in viewport_query.iter_mut() {
+            viewport.width = window.resolution.width() as u32;
+            viewport.height = window.resolution.height() as u32;
+        }
     }
 }
 
@@ -371,9 +368,6 @@ fn detect_viewport_resize(
     mut viewport_query: Query<&mut TextViewViewport, With<CodeEditor>>,
     windows: Query<&Window>,
 ) {
-    let Ok(mut viewport) = viewport_query.single_mut() else {
-        return;
-    };
     // Only auto-resize when enabled
     if !config.auto_resize_to_window {
         return;
@@ -383,10 +377,12 @@ fn detect_viewport_resize(
         let new_width = window.resolution.width() as u32;
         let new_height = window.resolution.height() as u32;
 
-        // Only update if changed to avoid unnecessary change detection
-        if viewport.width != new_width || viewport.height != new_height {
-            viewport.width = new_width;
-            viewport.height = new_height;
+        for mut viewport in viewport_query.iter_mut() {
+            // Only update if changed to avoid unnecessary change detection
+            if viewport.width != new_width || viewport.height != new_height {
+                viewport.width = new_width;
+                viewport.height = new_height;
+            }
         }
     }
 }
@@ -404,12 +400,11 @@ fn sync_viewport_from_resource(
     if config.auto_resize_to_window {
         return;
     }
-    let Ok(mut viewport) = viewport_query.single_mut() else {
-        return;
-    };
-    if viewport.width != dims.width || viewport.height != dims.height {
-        viewport.width = dims.width;
-        viewport.height = dims.height;
+    for mut viewport in viewport_query.iter_mut() {
+        if viewport.width != dims.width || viewport.height != dims.height {
+            viewport.width = dims.width;
+            viewport.height = dims.height;
+        }
     }
 }
 
@@ -448,42 +443,41 @@ fn setup_editor_ui(
     viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
     render_config: Res<EditorRenderConfig>,
 ) {
-    let Ok(viewport) = viewport_query.single() else {
-        return;
-    };
     // Load font
     let font_handle: Handle<Font> = asset_server.load(&font.family);
     font.handle = Some(font_handle.clone());
 
-    let viewport_width = viewport.width as f32;
-    let viewport_height = viewport.height as f32;
+    for viewport in viewport_query.iter() {
+        let viewport_width = viewport.width as f32;
+        let viewport_height = viewport.height as f32;
 
-    // GPU line numbers are created dynamically by update_gpu_line_numbers system
-    // No need to spawn Text2d entities here
+        // GPU line numbers are created dynamically by update_gpu_line_numbers system
+        // No need to spawn Text2d entities here
 
-    // Spawn separator line (only if enabled)
-    if ui.show_separator {
-        let mut separator = commands.spawn((
-            Sprite {
-                color: theme.separator,
-                custom_size: Some(Vec2::new(1.0, viewport_height)),
-                ..default()
-            },
-            Transform::from_translation(to_bevy_coords_left_aligned(
-                viewport.separator_x,
-                viewport_height / 2.0,
-                viewport_width,
-                viewport_height,
-                0.0,
-            )),
-            Separator,
-            Name::new("Separator"),
-        ));
-        apply_render_layers(&mut separator, &render_config);
+        // Spawn separator line (only if enabled)
+        if ui.show_separator {
+            let mut separator = commands.spawn((
+                Sprite {
+                    color: theme.separator,
+                    custom_size: Some(Vec2::new(1.0, viewport_height)),
+                    ..default()
+                },
+                Transform::from_translation(to_bevy_coords_left_aligned(
+                    viewport.separator_x,
+                    viewport_height / 2.0,
+                    viewport_width,
+                    viewport_height,
+                    0.0,
+                )),
+                Separator,
+                Name::new("Separator"),
+            ));
+            apply_render_layers(&mut separator, &render_config);
+        }
+
+        // Cursor carets are pushed into TextViewOverlays each frame by
+        // push_cursor_overlays — no Sprite entity to spawn here.
     }
-
-    // Cursor carets are pushed into TextViewOverlays each frame by
-    // push_cursor_overlays — no Sprite entity to spawn here.
 }
 
 /// Run condition: returns true when the TextViewViewport component has changed
@@ -496,7 +490,9 @@ fn update_separator_on_resize(
     viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
     mut separator_query: Query<(&mut Sprite, &mut Transform), With<Separator>>,
 ) {
-    let Ok(viewport) = viewport_query.single() else {
+    // Use the first viewport found; with multiple editors a follow-up will key
+    // separator entities to specific editors.
+    let Some(viewport) = viewport_query.iter().next() else {
         return;
     };
 

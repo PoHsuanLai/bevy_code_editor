@@ -149,21 +149,19 @@ fn handle_scrollbar_mouse(
     thumb_query: Query<(&ScrollbarThumb, &Transform, &Sprite)>,
     font: Res<crate::settings::FontSettings>,
 ) {
-    let Ok((_state, mut cursor_state, mut tv, viewport, mut drag_state)) =
-        editor_query.single_mut()
-    else {
-        return;
-    };
     let Ok(window) = windows.single() else {
         return;
     };
-    let Some(cursor_pos_window) = window.cursor_position() else {
+    let cursor_pos_window_opt = window.cursor_position();
+
+    for (_state, mut cursor_state, mut tv, viewport, mut drag_state) in editor_query.iter_mut() {
+    let Some(cursor_pos_window) = cursor_pos_window_opt else {
         // No cursor, release drag if active
         if mouse_button.just_released(MouseButton::Left) {
             drag_state.is_dragging = false;
             drag_state.dragging_entity = None;
         }
-        return;
+        continue;
     };
 
     // Convert window coordinates to world coordinates
@@ -266,6 +264,7 @@ fn handle_scrollbar_mouse(
     }
 
     // Handle clicking on track (not implemented yet - could add jump-to-position behavior)
+    }
 }
 
 /// System that updates scrollbar visuals based on Scrollbar component
@@ -303,13 +302,11 @@ fn update_scrollbars(
     render_config: Res<EditorRenderConfig>,
     mut last_scroll: Local<f32>,
 ) {
-    let Ok((_state, tv, viewport, drag_state)) = editor_query.single() else {
-        return;
-    };
+    for (_state, tv, viewport, drag_state) in editor_query.iter() {
     // Only update if scroll offset changed (but always update during drag for smooth thumb movement)
     let scroll_changed = (*last_scroll - tv.scroll_offset).abs() >= 0.01;
     if !scroll_changed && !drag_state.is_dragging {
-        return;
+        continue;
     }
     if scroll_changed {
         *last_scroll = tv.scroll_offset;
@@ -426,6 +423,7 @@ fn update_scrollbars(
             }
         }
     }
+    }
 }
 
 /// Marker for the main editor scrollbar
@@ -447,9 +445,6 @@ pub fn update_editor_scrollbar(
     scrollbar_settings: Res<crate::settings::ScrollbarSettings>,
     mut scrollbar_query: Query<&mut Scrollbar, With<EditorScrollbar>>,
 ) {
-    let Ok((_state, tv, viewport)) = editor_query.single() else {
-        return;
-    };
     if !scrollbar_settings.enabled {
         // Hide scrollbar if disabled
         for mut scrollbar in scrollbar_query.iter_mut() {
@@ -458,47 +453,49 @@ pub fn update_editor_scrollbar(
         return;
     }
 
-    let viewport_height = viewport.height as f32;
-    let viewport_width = viewport.width as f32;
-    let line_height = font.line_height;
-    let total_lines = tv.line_count();
-    let total_content_height = total_lines as f32 * line_height;
+    for (_state, tv, viewport) in editor_query.iter() {
+        let viewport_height = viewport.height as f32;
+        let viewport_width = viewport.width as f32;
+        let line_height = font.line_height;
+        let total_lines = tv.line_count();
+        let total_content_height = total_lines as f32 * line_height;
 
-    // Scrollbar position (always at right edge)
-    let scrollbar_x = viewport.world_left() + viewport_width - scrollbar_settings.width / 2.0;
-    let scrollbar_y = viewport.world_top() - viewport_height / 2.0;
+        // Scrollbar position (always at right edge)
+        let scrollbar_x = viewport.world_left() + viewport_width - scrollbar_settings.width / 2.0;
+        let scrollbar_y = viewport.world_top() - viewport_height / 2.0;
 
-    if let Ok(mut scrollbar) = scrollbar_query.single_mut() {
-        // Update existing scrollbar (scroll position is read from editor state in update_scrollbars)
-        scrollbar.enabled = total_content_height > viewport_height;
-        scrollbar.x = scrollbar_x;
-        scrollbar.y = scrollbar_y;
-        scrollbar.width = scrollbar_settings.width;
-        scrollbar.track_height = viewport_height;
-        scrollbar.visible_fraction = (viewport_height / total_content_height).min(1.0);
-        scrollbar.min_thumb_height = 30.0;
-        scrollbar.z_index = 10.0;
-        scrollbar.track_color = scrollbar_settings.background_color;
-        scrollbar.thumb_color = scrollbar_settings.thumb_color;
-        scrollbar.border_radius = 3.0;
-    } else {
-        // Create new scrollbar entity
-        commands.spawn((
-            Scrollbar {
-                x: scrollbar_x,
-                y: scrollbar_y,
-                width: scrollbar_settings.width,
-                track_height: viewport_height,
-                visible_fraction: (viewport_height / total_content_height).min(1.0),
-                min_thumb_height: 30.0,
-                z_index: 10.0,
-                track_color: scrollbar_settings.background_color,
-                thumb_color: scrollbar_settings.thumb_color,
-                enabled: total_content_height > viewport_height,
-                border_radius: 3.0,
-            },
-            EditorScrollbar,
-            Name::new("EditorScrollbar"),
-        ));
+        if let Some(mut scrollbar) = scrollbar_query.iter_mut().next() {
+            // Update existing scrollbar (scroll position is read from editor state in update_scrollbars)
+            scrollbar.enabled = total_content_height > viewport_height;
+            scrollbar.x = scrollbar_x;
+            scrollbar.y = scrollbar_y;
+            scrollbar.width = scrollbar_settings.width;
+            scrollbar.track_height = viewport_height;
+            scrollbar.visible_fraction = (viewport_height / total_content_height).min(1.0);
+            scrollbar.min_thumb_height = 30.0;
+            scrollbar.z_index = 10.0;
+            scrollbar.track_color = scrollbar_settings.background_color;
+            scrollbar.thumb_color = scrollbar_settings.thumb_color;
+            scrollbar.border_radius = 3.0;
+        } else {
+            // Create new scrollbar entity
+            commands.spawn((
+                Scrollbar {
+                    x: scrollbar_x,
+                    y: scrollbar_y,
+                    width: scrollbar_settings.width,
+                    track_height: viewport_height,
+                    visible_fraction: (viewport_height / total_content_height).min(1.0),
+                    min_thumb_height: 30.0,
+                    z_index: 10.0,
+                    track_color: scrollbar_settings.background_color,
+                    thumb_color: scrollbar_settings.thumb_color,
+                    enabled: total_content_height > viewport_height,
+                    border_radius: 3.0,
+                },
+                EditorScrollbar,
+                Name::new("EditorScrollbar"),
+            ));
+        }
     }
 }

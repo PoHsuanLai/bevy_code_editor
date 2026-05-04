@@ -14,7 +14,7 @@ use bevy::prelude::*;
 /// rather than Sprite entities. The collection logic (which lines/cols are
 /// selected) is unchanged; only the writing-out is different.
 pub(crate) fn update_selection_highlight(
-    editor_query: Query<
+    mut editor_query: Query<
         (
             &TextViewState,
             &TextViewViewport,
@@ -32,13 +32,9 @@ pub(crate) fn update_selection_highlight(
     wrapping: Res<WrappingSettings>,
     indentation: Res<IndentationSettings>,
 ) {
-    let mut iter = editor_query;
-    let Ok((tv, _vp, _editor, sel, display, cursor, mut overlays, fold_state)) =
-        iter.single_mut()
-    else {
-        return;
-    };
-
+    for (tv, _vp, _editor, sel, display, cursor, mut overlays, fold_state) in
+        editor_query.iter_mut()
+    {
     // Drain any selection rects from the previous frame (z = -1 marks selection;
     // cursor caret uses z = +1; z = 0 is reserved for line-bg/highlight overlays).
     overlays.rects.retain(|r| r.z != -1);
@@ -217,6 +213,7 @@ pub(crate) fn update_selection_highlight(
     }
 
     overlays.version = overlays.version.wrapping_add(1);
+    }
 }
 
 /// Update indent guide rendering
@@ -238,141 +235,140 @@ pub(crate) fn update_indent_guides(
         return;
     }
 
-    let Ok((tv, vp, fold_state)) = editor_query.single() else {
-        return;
-    };
-
     let line_height = font.line_height;
     let char_width = font.char_width;
     let indent_size = indentation.indent_size;
-    let viewport_height = vp.height as f32;
 
-    // Calculate visible display row range
-    let visible_start_row = ((-tv.scroll_offset) / line_height).floor() as usize;
-    let visible_lines = ((viewport_height / line_height).ceil() as usize) + 2;
-    let visible_end_row = visible_start_row + visible_lines;
-
-    // Collect guides needed for visible lines
-    // Each guide is identified by (display_row, indent_level)
-    let mut needed_guides: Vec<(usize, usize)> = Vec::new();
-
-    // === OPTIMIZATION: Start from approximate visible row instead of row 0 ===
-    // For files with no folding, we can jump directly to the visible start
-    // This changes O(all_lines) to O(visible_lines)
-    let total_lines = tv.rope.len_lines();
-    let has_folding = !fold_state.regions.is_empty();
-
-    // Calculate starting buffer line
-    let start_buffer_line = if has_folding {
-        // With folding, we need to iterate to find the right buffer line
-        // But we can still skip most lines quickly
-        let mut display_row = 0;
-        let mut buffer_line = 0;
-        while buffer_line < total_lines && display_row < visible_start_row {
-            if !fold_state.is_line_hidden(buffer_line) {
-                display_row += 1;
-            }
-            buffer_line += 1;
-        }
-        buffer_line
-    } else {
-        // No folding: display_row == buffer_line, jump directly
-        visible_start_row.min(total_lines)
-    };
-
-    // Start display row at visible_start_row (or the actual row if we started earlier)
-    let mut current_display_row: usize = if has_folding {
-        // With folding, we tracked this while finding start_buffer_line
-        let mut display_row = 0;
-        for bl in 0..start_buffer_line {
-            if !fold_state.is_line_hidden(bl) {
-                display_row += 1;
-            }
-        }
-        display_row
-    } else {
-        start_buffer_line
-    };
-
-    // Iterate only through visible buffer lines
-    for buffer_line in start_buffer_line..total_lines {
-        // Skip hidden lines
-        if fold_state.is_line_hidden(buffer_line) {
-            continue;
-        }
-
-        // Stop if past visible range
-        if current_display_row > visible_end_row {
-            break;
-        }
-
-        let line = tv.rope.line(buffer_line);
-
-        // Count leading whitespace to determine indentation
-        let mut leading_spaces = 0;
-        for c in line.chars() {
-            match c {
-                ' ' => leading_spaces += 1,
-                '\t' => leading_spaces += indent_size,
-                _ => break,
-            }
-        }
-
-        // Calculate number of indent levels
-        let indent_levels = leading_spaces / indent_size;
-
-        // Add a guide for each indent level (using display_row for position)
-        for level in 0..indent_levels {
-            needed_guides.push((current_display_row, level));
-        }
-
-        current_display_row += 1;
-    }
-
-    // Collect existing guide entities
+    // Collect existing guide entities once (shared pool across editors)
     let mut existing_guides: Vec<_> = guide_query.iter_mut().collect();
     let mut entity_index = 0;
 
-    for (display_row, level) in needed_guides.iter() {
-        let x_offset = vp.text_area_left + (*level * indent_size) as f32 * char_width;
-        let y_offset = vp.text_area_top + tv.scroll_offset + (*display_row as f32 * line_height);
+    for (tv, vp, fold_state) in editor_query.iter() {
+        let viewport_height = vp.height as f32;
 
-        // Position the guide line (thin vertical line)
-        // Camera viewport handles panel positioning, so no offset_x here
-        let sprite_x = vp.world_left() + x_offset - tv.horizontal_scroll_offset;
-        let sprite_y = vp.world_top() - y_offset;
-        let translation = Vec3::new(sprite_x, sprite_y, 0.1); // z=0.1 behind text
+        // Calculate visible display row range
+        let visible_start_row = ((-tv.scroll_offset) / line_height).floor() as usize;
+        let visible_lines = ((viewport_height / line_height).ceil() as usize) + 2;
+        let visible_end_row = visible_start_row + visible_lines;
 
-        if entity_index < existing_guides.len() {
-            // Reuse existing entity
-            let (_, ref mut transform, ref mut visibility, ref mut guide) =
-                &mut existing_guides[entity_index];
-            transform.translation = translation;
-            guide.level = *level;
-            guide.line_index = *display_row;
-            **visibility = Visibility::Visible;
-        } else {
-            // Spawn new guide entity
-            let mut entity_cmd = commands.spawn((
-                Sprite {
-                    color: theme.indent_guide,
-                    custom_size: Some(Vec2::new(1.0, line_height)),
-                    ..default()
-                },
-                Transform::from_translation(translation),
-                IndentGuide {
-                    level: *level,
-                    line_index: *display_row,
-                },
-                Name::new(format!("IndentGuide_{}_{}", display_row, level)),
-                Visibility::Visible,
-            ));
-            if let Some(ref layers) = render_config.render_layers {
-                entity_cmd.insert(layers.clone());
+        // Collect guides needed for visible lines
+        // Each guide is identified by (display_row, indent_level)
+        let mut needed_guides: Vec<(usize, usize)> = Vec::new();
+
+        // === OPTIMIZATION: Start from approximate visible row instead of row 0 ===
+        // For files with no folding, we can jump directly to the visible start
+        // This changes O(all_lines) to O(visible_lines)
+        let total_lines = tv.rope.len_lines();
+        let has_folding = !fold_state.regions.is_empty();
+
+        // Calculate starting buffer line
+        let start_buffer_line = if has_folding {
+            // With folding, we need to iterate to find the right buffer line
+            // But we can still skip most lines quickly
+            let mut display_row = 0;
+            let mut buffer_line = 0;
+            while buffer_line < total_lines && display_row < visible_start_row {
+                if !fold_state.is_line_hidden(buffer_line) {
+                    display_row += 1;
+                }
+                buffer_line += 1;
             }
+            buffer_line
+        } else {
+            // No folding: display_row == buffer_line, jump directly
+            visible_start_row.min(total_lines)
+        };
+
+        // Start display row at visible_start_row (or the actual row if we started earlier)
+        let mut current_display_row: usize = if has_folding {
+            // With folding, we tracked this while finding start_buffer_line
+            let mut display_row = 0;
+            for bl in 0..start_buffer_line {
+                if !fold_state.is_line_hidden(bl) {
+                    display_row += 1;
+                }
+            }
+            display_row
+        } else {
+            start_buffer_line
+        };
+
+        // Iterate only through visible buffer lines
+        for buffer_line in start_buffer_line..total_lines {
+            // Skip hidden lines
+            if fold_state.is_line_hidden(buffer_line) {
+                continue;
+            }
+
+            // Stop if past visible range
+            if current_display_row > visible_end_row {
+                break;
+            }
+
+            let line = tv.rope.line(buffer_line);
+
+            // Count leading whitespace to determine indentation
+            let mut leading_spaces = 0;
+            for c in line.chars() {
+                match c {
+                    ' ' => leading_spaces += 1,
+                    '\t' => leading_spaces += indent_size,
+                    _ => break,
+                }
+            }
+
+            // Calculate number of indent levels
+            let indent_levels = leading_spaces / indent_size;
+
+            // Add a guide for each indent level (using display_row for position)
+            for level in 0..indent_levels {
+                needed_guides.push((current_display_row, level));
+            }
+
+            current_display_row += 1;
         }
 
-        entity_index += 1;
+        for (display_row, level) in needed_guides.iter() {
+            let x_offset = vp.text_area_left + (*level * indent_size) as f32 * char_width;
+            let y_offset = vp.text_area_top + tv.scroll_offset + (*display_row as f32 * line_height);
+
+            // Position the guide line (thin vertical line)
+            // Camera viewport handles panel positioning, so no offset_x here
+            let sprite_x = vp.world_left() + x_offset - tv.horizontal_scroll_offset;
+            let sprite_y = vp.world_top() - y_offset;
+            let translation = Vec3::new(sprite_x, sprite_y, 0.1); // z=0.1 behind text
+
+            if entity_index < existing_guides.len() {
+                // Reuse existing entity
+                let (_, ref mut transform, ref mut visibility, ref mut guide) =
+                    &mut existing_guides[entity_index];
+                transform.translation = translation;
+                guide.level = *level;
+                guide.line_index = *display_row;
+                **visibility = Visibility::Visible;
+            } else {
+                // Spawn new guide entity
+                let mut entity_cmd = commands.spawn((
+                    Sprite {
+                        color: theme.indent_guide,
+                        custom_size: Some(Vec2::new(1.0, line_height)),
+                        ..default()
+                    },
+                    Transform::from_translation(translation),
+                    IndentGuide {
+                        level: *level,
+                        line_index: *display_row,
+                    },
+                    Name::new(format!("IndentGuide_{}_{}", display_row, level)),
+                    Visibility::Visible,
+                ));
+                if let Some(ref layers) = render_config.render_layers {
+                    entity_cmd.insert(layers.clone());
+                }
+            }
+
+            entity_index += 1;
+        }
     }
 
     // Hide unused guide entities
@@ -393,48 +389,46 @@ pub(crate) fn animate_smooth_scroll(
     _font: Res<crate::settings::FontSettings>,
     _viewport: Res<crate::types::ViewportDimensions>,
 ) {
-    let Ok((mut tv, scrollbar_drag)) = editor_query.single_mut() else {
-        return;
-    };
+    for (mut tv, scrollbar_drag) in editor_query.iter_mut() {
+        // When dragging scrollbar or smooth scrolling disabled, apply target immediately
+        let is_dragging = scrollbar_drag.is_dragging;
 
-    // When dragging scrollbar or smooth scrolling disabled, apply target immediately
-    let is_dragging = scrollbar_drag.is_dragging;
+        let use_smooth = scrolling.smooth && !is_dragging;
 
-    let use_smooth = scrolling.smooth && !is_dragging;
+        if !use_smooth {
+            // Instant update - no interpolation
+            if (tv.target_scroll_offset - tv.scroll_offset).abs() > 0.001 {
+                tv.scroll_offset = tv.target_scroll_offset;
+            }
+            if (tv.target_horizontal_scroll_offset - tv.horizontal_scroll_offset).abs() > 0.001 {
+                tv.horizontal_scroll_offset = tv.target_horizontal_scroll_offset;
+            }
+            continue;
+        }
 
-    if !use_smooth {
-        // Instant update - no interpolation
-        if (tv.target_scroll_offset - tv.scroll_offset).abs() > 0.001 {
+        // Smooth scrolling interpolation factor (higher = faster)
+        // Using exponential decay for natural feel
+        let smoothness = 12.0; // Adjust for desired smoothness
+        let dt = time.delta_secs();
+        let t = 1.0 - (-smoothness * dt).exp();
+
+        // Vertical scroll animation
+        let vertical_diff = tv.target_scroll_offset - tv.scroll_offset;
+        if vertical_diff.abs() > 0.1 {
+            tv.scroll_offset += vertical_diff * t;
+        } else if vertical_diff.abs() > 0.0 {
+            // Snap to target when close enough
             tv.scroll_offset = tv.target_scroll_offset;
         }
-        if (tv.target_horizontal_scroll_offset - tv.horizontal_scroll_offset).abs() > 0.001 {
+
+        // Horizontal scroll animation
+        let horizontal_diff = tv.target_horizontal_scroll_offset - tv.horizontal_scroll_offset;
+        if horizontal_diff.abs() > 0.1 {
+            tv.horizontal_scroll_offset += horizontal_diff * t;
+        } else if horizontal_diff.abs() > 0.0 {
+            // Snap to target when close enough
             tv.horizontal_scroll_offset = tv.target_horizontal_scroll_offset;
         }
-        return;
-    }
-
-    // Smooth scrolling interpolation factor (higher = faster)
-    // Using exponential decay for natural feel
-    let smoothness = 12.0; // Adjust for desired smoothness
-    let dt = time.delta_secs();
-    let t = 1.0 - (-smoothness * dt).exp();
-
-    // Vertical scroll animation
-    let vertical_diff = tv.target_scroll_offset - tv.scroll_offset;
-    if vertical_diff.abs() > 0.1 {
-        tv.scroll_offset += vertical_diff * t;
-    } else if vertical_diff.abs() > 0.0 {
-        // Snap to target when close enough
-        tv.scroll_offset = tv.target_scroll_offset;
-    }
-
-    // Horizontal scroll animation
-    let horizontal_diff = tv.target_horizontal_scroll_offset - tv.horizontal_scroll_offset;
-    if horizontal_diff.abs() > 0.1 {
-        tv.horizontal_scroll_offset += horizontal_diff * t;
-    } else if horizontal_diff.abs() > 0.0 {
-        // Snap to target when close enough
-        tv.horizontal_scroll_offset = tv.target_horizontal_scroll_offset;
     }
 }
 
@@ -455,18 +449,16 @@ pub(crate) fn should_auto_scroll(
         return false;
     }
 
-    let Ok((tv, cursor, scrollbar_drag)) = editor_query.single() else {
-        return false;
-    };
-
-    // Don't run when dragging scrollbar
-    if scrollbar_drag.is_dragging {
-        return false;
+    for (tv, cursor, scrollbar_drag) in editor_query.iter() {
+        if scrollbar_drag.is_dragging {
+            continue;
+        }
+        let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
+        if cursor_pos != cursor.last_cursor_pos {
+            return true;
+        }
     }
-
-    // Only run when cursor has moved
-    let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
-    cursor_pos != cursor.last_cursor_pos
+    false
 }
 
 /// Auto-scroll viewport to keep cursor visible
@@ -478,82 +470,80 @@ pub(crate) fn auto_scroll_to_cursor(
     >,
     font: Res<FontSettings>,
 ) {
-    let Ok((mut tv, mut cursor, vp)) = editor_query.single_mut() else {
-        return;
-    };
+    for (mut tv, mut cursor, vp) in editor_query.iter_mut() {
+        // Get cursor position
+        let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
 
-    // Get cursor position
-    let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
+        // Update last cursor position
+        cursor.last_cursor_pos = cursor_pos;
+        let line_index = tv.rope.char_to_line(cursor_pos);
+        let line_height = font.line_height;
+        let viewport_height = vp.height as f32;
+        let viewport_width = vp.width as f32;
 
-    // Update last cursor position
-    cursor.last_cursor_pos = cursor_pos;
-    let line_index = tv.rope.char_to_line(cursor_pos);
-    let line_height = font.line_height;
-    let viewport_height = vp.height as f32;
-    let viewport_width = vp.width as f32;
+        // === VERTICAL AUTO-SCROLL ===
 
-    // === VERTICAL AUTO-SCROLL ===
+        // Calculate cursor's Y position
+        let cursor_y = vp.text_area_top + tv.scroll_offset + (line_index as f32 * line_height);
 
-    // Calculate cursor's Y position
-    let cursor_y = vp.text_area_top + tv.scroll_offset + (line_index as f32 * line_height);
+        // Define visible range (with some margin)
+        let margin_vertical = line_height * 2.0;
+        let visible_top = margin_vertical;
+        let visible_bottom = viewport_height - margin_vertical;
 
-    // Define visible range (with some margin)
-    let margin_vertical = line_height * 2.0;
-    let visible_top = margin_vertical;
-    let visible_bottom = viewport_height - margin_vertical;
+        // Adjust target scroll if cursor is outside visible range
+        if cursor_y < visible_top {
+            // Cursor is above visible area - scroll up
+            tv.target_scroll_offset += visible_top - cursor_y;
+        } else if cursor_y > visible_bottom {
+            // Cursor is below visible area - scroll down
+            tv.target_scroll_offset -= cursor_y - visible_bottom;
+        } else {
+            // Cursor is visible, no auto-scroll needed
+            continue;
+        }
 
-    // Adjust target scroll if cursor is outside visible range
-    if cursor_y < visible_top {
-        // Cursor is above visible area - scroll up
-        tv.target_scroll_offset += visible_top - cursor_y;
-    } else if cursor_y > visible_bottom {
-        // Cursor is below visible area - scroll down
-        tv.target_scroll_offset -= cursor_y - visible_bottom;
-    } else {
-        // Cursor is visible, no auto-scroll needed
-        return;
+        // Clamp target_scroll_offset to valid range
+        tv.target_scroll_offset = tv.target_scroll_offset.min(0.0);
+        let line_count = tv.rope.len_lines();
+        let content_height = line_count as f32 * line_height;
+        let max_scroll = -(content_height - viewport_height + vp.text_area_top);
+        tv.target_scroll_offset = tv.target_scroll_offset.max(max_scroll.min(0.0));
+
+        // === HORIZONTAL AUTO-SCROLL ===
+
+        // Calculate cursor's X position (column within line)
+        let line_start = tv.rope.line_to_char(line_index);
+        let col_index = cursor_pos - line_start;
+        let char_width = font.char_width;
+
+        // Cursor X position relative to code area (before scrolling)
+        let cursor_x = col_index as f32 * char_width;
+
+        // Define horizontal visible range (with some margin)
+        let margin_horizontal = char_width * 5.0; // 5 characters of margin
+        let visible_left = tv.horizontal_scroll_offset;
+        let visible_right =
+            tv.horizontal_scroll_offset + viewport_width - vp.text_area_left - margin_horizontal;
+
+        // Adjust horizontal target scroll if cursor is outside visible range
+        if cursor_x < visible_left {
+            // Cursor is left of visible area - scroll left
+            tv.target_horizontal_scroll_offset = cursor_x.max(0.0);
+        } else if cursor_x > visible_right {
+            // Cursor is right of visible area - scroll right
+            tv.target_horizontal_scroll_offset =
+                cursor_x - (viewport_width - vp.text_area_left - margin_horizontal);
+        }
+
+        // Clamp target_horizontal_scroll_offset to valid range
+        // Minimum is 0.0 (don't scroll past the left edge)
+        tv.target_horizontal_scroll_offset = tv.target_horizontal_scroll_offset.max(0.0);
+
+        // Maximum is when rightmost content reaches viewport edge
+        let max_horizontal_scroll = (tv.max_content_width - viewport_width).max(0.0);
+        tv.target_horizontal_scroll_offset = tv
+            .target_horizontal_scroll_offset
+            .min(max_horizontal_scroll);
     }
-
-    // Clamp target_scroll_offset to valid range
-    tv.target_scroll_offset = tv.target_scroll_offset.min(0.0);
-    let line_count = tv.rope.len_lines();
-    let content_height = line_count as f32 * line_height;
-    let max_scroll = -(content_height - viewport_height + vp.text_area_top);
-    tv.target_scroll_offset = tv.target_scroll_offset.max(max_scroll.min(0.0));
-
-    // === HORIZONTAL AUTO-SCROLL ===
-
-    // Calculate cursor's X position (column within line)
-    let line_start = tv.rope.line_to_char(line_index);
-    let col_index = cursor_pos - line_start;
-    let char_width = font.char_width;
-
-    // Cursor X position relative to code area (before scrolling)
-    let cursor_x = col_index as f32 * char_width;
-
-    // Define horizontal visible range (with some margin)
-    let margin_horizontal = char_width * 5.0; // 5 characters of margin
-    let visible_left = tv.horizontal_scroll_offset;
-    let visible_right =
-        tv.horizontal_scroll_offset + viewport_width - vp.text_area_left - margin_horizontal;
-
-    // Adjust horizontal target scroll if cursor is outside visible range
-    if cursor_x < visible_left {
-        // Cursor is left of visible area - scroll left
-        tv.target_horizontal_scroll_offset = cursor_x.max(0.0);
-    } else if cursor_x > visible_right {
-        // Cursor is right of visible area - scroll right
-        tv.target_horizontal_scroll_offset =
-            cursor_x - (viewport_width - vp.text_area_left - margin_horizontal);
-    }
-
-    // Clamp target_horizontal_scroll_offset to valid range
-    // Minimum is 0.0 (don't scroll past the left edge)
-    tv.target_horizontal_scroll_offset = tv.target_horizontal_scroll_offset.max(0.0);
-
-    // Maximum is when rightmost content reaches viewport edge
-    let max_horizontal_scroll = (tv.max_content_width - viewport_width).max(0.0);
-    tv.target_horizontal_scroll_offset = tv
-        .target_horizontal_scroll_offset
-        .min(max_horizontal_scroll);
 }

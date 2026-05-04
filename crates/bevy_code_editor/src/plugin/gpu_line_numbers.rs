@@ -13,6 +13,8 @@ use bevy::prelude::*;
 /// Marker component for the GPU line numbers batch entity
 #[derive(Component)]
 pub struct GpuLineNumbersBatch {
+    /// Editor entity this batch belongs to
+    pub editor: Entity,
     /// Content version when this batch was built
     pub built_at_version: u64,
     /// Scroll offset when this batch was built
@@ -27,6 +29,7 @@ pub(crate) fn update_gpu_line_numbers(
     mut commands: Commands,
     editor_query: Query<
         (
+            Entity,
             &CodeEditorState,
             &CursorState,
             &TextViewState,
@@ -44,9 +47,6 @@ pub(crate) fn update_gpu_line_numbers(
     mut images: ResMut<Assets<Image>>,
     batch_query: Query<(Entity, &GpuLineNumbersBatch)>,
 ) {
-    let Ok((_state, cursor, tv, viewport, fold_state)) = editor_query.single() else {
-        return;
-    };
     // Hide if line numbers are disabled
     if !ui.show_line_numbers {
         for (entity, _) in batch_query.iter() {
@@ -55,12 +55,17 @@ pub(crate) fn update_gpu_line_numbers(
         return;
     }
 
+    for (editor_entity, _state, cursor, tv, viewport, fold_state) in editor_query.iter() {
     // Check if we need to update
     let fold_changed = fold_state.is_changed();
 
+    let existing_batch_for_editor = batch_query
+        .iter()
+        .find(|(_, b)| b.editor == editor_entity);
+
     if !fold_changed {
         // Check if existing batch is still valid
-        if let Some((entity, batch)) = batch_query.iter().next() {
+        if let Some((entity, batch)) = existing_batch_for_editor {
             let scroll_changed = (batch.built_at_scroll - tv.scroll_offset).abs() > 0.01;
             let viewport_changed =
                 batch.built_at_width != viewport.width || batch.built_at_height != viewport.height;
@@ -68,7 +73,7 @@ pub(crate) fn update_gpu_line_numbers(
             if !scroll_changed && !viewport_changed && batch.built_at_version == tv.content_version
             {
                 commands.entity(entity).insert(Visibility::Visible);
-                return;
+                continue;
             }
         }
     }
@@ -218,14 +223,20 @@ pub(crate) fn update_gpu_line_numbers(
     atlas.update_texture(&mut images);
 
     if instances.is_empty() {
-        for (entity, _) in batch_query.iter() {
+        if let Some((entity, _)) = batch_query
+            .iter()
+            .find(|(_, b)| b.editor == editor_entity)
+        {
             commands.entity(entity).insert(Visibility::Hidden);
         }
-        return;
+        continue;
     }
 
-    // Update or create batch entity
-    if let Some((entity, _)) = batch_query.iter().next() {
+    // Update or create batch entity for this editor
+    if let Some((entity, _)) = batch_query
+        .iter()
+        .find(|(_, b)| b.editor == editor_entity)
+    {
         commands
             .entity(entity)
             .insert(GlyphBatchComponent {
@@ -238,17 +249,13 @@ pub(crate) fn update_gpu_line_numbers(
                 }),
             })
             .insert(GpuLineNumbersBatch {
+                editor: editor_entity,
                 built_at_version: tv.content_version,
                 built_at_scroll: tv.scroll_offset,
                 built_at_width: viewport.width,
                 built_at_height: viewport.height,
             })
             .insert(Visibility::Visible);
-
-        // Despawn extras if any (shouldn't happen with single query)
-        for (extra_entity, _) in batch_query.iter().skip(1) {
-            commands.entity(extra_entity).despawn();
-        }
     } else {
         let mut entity_cmd = commands.spawn((
             GlyphBatchComponent {
@@ -263,6 +270,7 @@ pub(crate) fn update_gpu_line_numbers(
             Transform::default(),
             GlobalTransform::default(),
             GpuLineNumbersBatch {
+                editor: editor_entity,
                 built_at_version: tv.content_version,
                 built_at_scroll: tv.scroll_offset,
                 built_at_width: viewport.width,
@@ -277,5 +285,6 @@ pub(crate) fn update_gpu_line_numbers(
         if let Some(ref layers) = render_config.render_layers {
             entity_cmd.insert(layers.clone());
         }
+    }
     }
 }

@@ -94,17 +94,15 @@ pub fn handle_mouse_input(
     #[cfg(feature = "lsp")] mut hover_state: ResMut<crate::lsp::HoverState>,
     #[cfg(feature = "lsp")] hover_settings: Res<crate::settings::LspSettings>,
 ) {
-    let Ok((mut state, mut sel, mut cursor, mut tv, viewport, mut fold_state)) =
-        editor_query.single_mut()
-    else {
-        return;
-    };
-
     // Get cursor position
     let cursor_pos_screen = window_query
         .iter()
         .next()
         .and_then(|window| window.cursor_position());
+
+    for (mut state, mut sel, mut cursor, mut tv, viewport, mut fold_state) in
+        editor_query.iter_mut()
+    {
 
     // Calculate char position if mouse is over the editor
     let char_pos = if let Some(cursor_pos_screen) = cursor_pos_screen {
@@ -239,7 +237,7 @@ pub fn handle_mouse_input(
                         #[cfg(feature = "lsp")]
                         reset_hover_state(&mut hover_state);
 
-                        return; // Consume the click
+                        continue; // Consume the click
                     }
                 }
             }
@@ -271,7 +269,7 @@ pub fn handle_mouse_input(
                             position: lsp_position,
                         });
                     }
-                    return; // Consume the click, don't start drag or move cursor normally
+                    continue; // Consume the click, don't start drag or move cursor normally
                 }
             }
 
@@ -286,7 +284,7 @@ pub fn handle_mouse_input(
                 // Hide hover on click
                 #[cfg(feature = "lsp")]
                 reset_hover_state(&mut hover_state);
-                return;
+                continue;
             }
 
             // Start drag - capture scroll offset and screen position to prevent auto-scroll from affecting selection
@@ -363,6 +361,7 @@ pub fn handle_mouse_input(
             }
         }
     }
+    }
 }
 
 /// System to handle mouse wheel scrolling
@@ -382,11 +381,9 @@ pub fn handle_mouse_wheel(
     font: Res<FontSettings>,
     scrolling: Res<ScrollingSettings>,
 ) {
-    let Ok((_state, _sel, _cursor, mut tv, viewport)) = editor_query.single_mut() else {
-        return;
-    };
-
-    for event in mouse_wheel_events.read() {
+    let events: Vec<_> = mouse_wheel_events.read().copied().collect();
+    for (_state, _sel, _cursor, mut tv, viewport) in editor_query.iter_mut() {
+    for event in events.iter() {
         let mut scrolled = false;
         let use_smooth = scrolling.smooth;
 
@@ -462,5 +459,6 @@ pub fn handle_mouse_wheel(
             } else {
             }
         }
+    }
     }
 }

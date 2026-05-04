@@ -70,40 +70,38 @@ pub(crate) fn update_display_map_snapshot(
     mut syntax: ResMut<SyntaxResource>,
     mut last_fingerprint: Local<Option<LayoutFingerprint>>,
 ) {
-    let Ok((tv_state, tv_viewport, mut layout, fold_state)) = editor_query.single_mut() else {
-        return;
-    };
+    for (tv_state, tv_viewport, mut layout, fold_state) in editor_query.iter_mut() {
+        let fingerprint = LayoutFingerprint {
+            content_version: tv_state.content_version,
+            scroll_bits: tv_state.scroll_offset.to_bits(),
+            h_scroll_bits: tv_state.horizontal_scroll_offset.to_bits(),
+            viewport_w: tv_viewport.width,
+            viewport_h: tv_viewport.height,
+            viewport_top_bits: tv_viewport.text_area_top.to_bits(),
+            font_size_tenths: (font.size * 10.0) as u32,
+            line_height_tenths: (font.line_height * 10.0) as u32,
+            syntax_version: syntax_version(&syntax),
+            fold_count: fold_state.regions.len(),
+        };
 
-    let fingerprint = LayoutFingerprint {
-        content_version: tv_state.content_version,
-        scroll_bits: tv_state.scroll_offset.to_bits(),
-        h_scroll_bits: tv_state.horizontal_scroll_offset.to_bits(),
-        viewport_w: tv_viewport.width,
-        viewport_h: tv_viewport.height,
-        viewport_top_bits: tv_viewport.text_area_top.to_bits(),
-        font_size_tenths: (font.size * 10.0) as u32,
-        line_height_tenths: (font.line_height * 10.0) as u32,
-        syntax_version: syntax_version(&syntax),
-        fold_count: fold_state.regions.len(),
-    };
+        if last_fingerprint.as_ref() == Some(&fingerprint) {
+            continue;
+        }
 
-    if last_fingerprint.as_ref() == Some(&fingerprint) {
-        return;
+        let new_layout = build_display_layout(
+            tv_state,
+            tv_viewport,
+            fold_state,
+            &font,
+            &performance,
+            theme.foreground,
+            Some(&mut syntax),
+            Some(&syntax_settings.theme),
+        );
+
+        *layout = new_layout;
+        *last_fingerprint = Some(fingerprint);
     }
-
-    let new_layout = build_display_layout(
-        tv_state,
-        tv_viewport,
-        fold_state,
-        &font,
-        &performance,
-        theme.foreground,
-        Some(&mut syntax),
-        Some(&syntax_settings.theme),
-    );
-
-    *layout = new_layout;
-    *last_fingerprint = Some(fingerprint);
 }
 
 /// Cheap, hashable summary of every input that affects the layout.

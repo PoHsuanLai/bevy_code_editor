@@ -98,7 +98,15 @@ pub fn handle_keyboard_input(
     #[cfg(feature = "lsp")] mut rename_state: ResMut<crate::lsp::state::RenameState>,
     #[cfg(feature = "lsp")] mut lsp_sync: ResMut<crate::lsp::LspSyncState>,
 ) {
-    let Ok((
+    let Ok(action_state) = action_query.single() else {
+        warn!("No EditorInputManager entity found with ActionState");
+        return;
+    };
+
+    // Collect events once so each editor iteration sees the same set
+    let collected_char_events: Vec<KeyboardInput> = char_events.read().cloned().collect();
+
+    for (
         mut state,
         mut sel,
         mut hist,
@@ -109,23 +117,15 @@ pub fn handle_keyboard_input(
         _viewport,
         mut goto_line_state,
         mut fold_state,
-    )) = editor_query.single_mut()
-    else {
-        return;
-    };
-
+    ) in editor_query.iter_mut()
+    {
     if !state.is_focused {
-        return;
+        continue;
     }
-
-    let Ok(action_state) = action_query.single() else {
-        warn!("No EditorInputManager entity found with ActionState");
-        return;
-    };
 
     #[cfg(feature = "lsp")]
     if rename_state.visible {
-        for event in char_events.read() {
+        for event in collected_char_events.iter() {
             if !event.state.is_pressed() {
                 continue;
             }
@@ -165,7 +165,7 @@ pub fn handle_keyboard_input(
                 _ => {}
             }
         }
-        return;
+        continue;
     }
 
     let mut action_to_execute: Option<EditorAction> = None;
@@ -231,7 +231,7 @@ pub fn handle_keyboard_input(
     }
 
     if action_to_execute.is_none() {
-        for event in char_events.read() {
+        for event in collected_char_events.iter() {
             if event.state.is_pressed() {
                 match &event.logical_key {
                     bevy::input::keyboard::Key::Character(ref text) => {
@@ -406,21 +406,18 @@ pub fn handle_keyboard_input(
                 }
             }
         }
-    } else {
-        // Drain char events so they don't get inserted alongside the keybinding action
-        for _ in char_events.read() {}
     }
 
     if let Some(action) = action_to_execute {
         if action == EditorAction::Save {
             let content: String = tv.rope.chars().collect();
             save_events.write(crate::types::SaveRequested { content });
-            return;
+            continue;
         }
 
         if action == EditorAction::Open {
             open_events.write(crate::types::OpenRequested);
-            return;
+            continue;
         }
 
         #[cfg(feature = "lsp")]
@@ -447,7 +444,7 @@ pub fn handle_keyboard_input(
                     crate::lsp::systems::request_prepare_rename(&lsp_client, uri, position);
                 }
             }
-            return;
+            continue;
         }
 
         execute_action(
@@ -471,5 +468,6 @@ pub fn handle_keyboard_input(
             #[cfg(feature = "lsp")]
             &mut lsp_sync,
         );
+    }
     }
 }

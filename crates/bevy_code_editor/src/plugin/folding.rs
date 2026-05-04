@@ -12,50 +12,48 @@ pub(crate) fn detect_foldable_regions(
     mut editor_query: Query<(&CodeEditorState, &TextViewState, &mut FoldState), With<CodeEditor>>,
     syntax: Res<super::SyntaxResource>,
 ) {
-    let Ok((_state, tv, mut fold_state)) = editor_query.single_mut() else {
-        return;
-    };
-
-    // Only update when content changes
-    if fold_state.content_version == tv.content_version as usize {
-        return;
-    }
-
-    fold_state.content_version = tv.content_version as usize;
-
-    // Get the tree-sitter tree from syntax resource
-    #[cfg(feature = "tree-sitter")]
-    let tree = match syntax.tree() {
-        Some(t) => t,
-        None => return,
-    };
-
-    #[cfg(not(feature = "tree-sitter"))]
-    return;
-
-    let mut regions: Vec<FoldRegion> = Vec::new();
-    let root = tree.root_node();
-    // OPTIMIZATION: Use rope chunks instead of full to_string() conversion
-    let chunk_text: String = tv.rope.chunks().collect();
-    let text_bytes = chunk_text.as_bytes();
-
-    // Walk the tree and find foldable nodes
-    collect_foldable_regions(&root, text_bytes, &tv.rope, &mut regions, false);
-
-    // Preserve fold state for existing regions
-    let old_regions = std::mem::take(&mut fold_state.regions);
-    for mut region in regions {
-        // Check if this region was previously folded
-        if let Some(old) = old_regions
-            .iter()
-            .find(|r| r.start_line == region.start_line && r.end_line == region.end_line)
-        {
-            region.is_folded = old.is_folded;
+    for (_state, tv, mut fold_state) in editor_query.iter_mut() {
+        // Only update when content changes
+        if fold_state.content_version == tv.content_version as usize {
+            continue;
         }
-        fold_state.regions.push(region);
-    }
 
-    fold_state.enabled = true;
+        fold_state.content_version = tv.content_version as usize;
+
+        // Get the tree-sitter tree from syntax resource
+        #[cfg(feature = "tree-sitter")]
+        let tree = match syntax.tree() {
+            Some(t) => t,
+            None => continue,
+        };
+
+        #[cfg(not(feature = "tree-sitter"))]
+        continue;
+
+        let mut regions: Vec<FoldRegion> = Vec::new();
+        let root = tree.root_node();
+        // OPTIMIZATION: Use rope chunks instead of full to_string() conversion
+        let chunk_text: String = tv.rope.chunks().collect();
+        let text_bytes = chunk_text.as_bytes();
+
+        // Walk the tree and find foldable nodes
+        collect_foldable_regions(&root, text_bytes, &tv.rope, &mut regions, false);
+
+        // Preserve fold state for existing regions
+        let old_regions = std::mem::take(&mut fold_state.regions);
+        for mut region in regions {
+            // Check if this region was previously folded
+            if let Some(old) = old_regions
+                .iter()
+                .find(|r| r.start_line == region.start_line && r.end_line == region.end_line)
+            {
+                region.is_folded = old.is_folded;
+            }
+            fold_state.regions.push(region);
+        }
+
+        fold_state.enabled = true;
+    }
 }
 
 #[cfg(feature = "tree-sitter")]
@@ -205,75 +203,73 @@ pub(crate) fn node_to_fold_region(
 pub(crate) fn detect_foldable_regions(
     mut editor_query: Query<(&CodeEditorState, &TextViewState, &mut FoldState), With<CodeEditor>>,
 ) {
-    let Ok((_state, tv, mut fold_state)) = editor_query.single_mut() else {
-        return;
-    };
+    for (_state, tv, mut fold_state) in editor_query.iter_mut() {
+        // Only update when content changes
+        if fold_state.content_version == tv.content_version as usize {
+            continue;
+        }
 
-    // Only update when content changes
-    if fold_state.content_version == tv.content_version as usize {
-        return;
-    }
+        fold_state.content_version = tv.content_version as usize;
 
-    fold_state.content_version = tv.content_version as usize;
+        // Simple brace-matching based folding as fallback
+        let mut regions: Vec<FoldRegion> = Vec::new();
+        let mut brace_stack: Vec<(usize, usize)> = Vec::new(); // (line, indent_level)
 
-    // Simple brace-matching based folding as fallback
-    let mut regions: Vec<FoldRegion> = Vec::new();
-    let mut brace_stack: Vec<(usize, usize)> = Vec::new(); // (line, indent_level)
+        for line_idx in 0..tv.rope.len_lines() {
+            let line = tv.rope.line(line_idx);
+            let line_str: String = line.chars().collect();
 
-    for line_idx in 0..tv.rope.len_lines() {
-        let line = tv.rope.line(line_idx);
-        let line_str: String = line.chars().collect();
-
-        // Calculate indent level
-        let mut indent_level = 0;
-        for c in line_str.chars() {
-            match c {
-                ' ' => indent_level += 1,
-                '\t' => indent_level += 4,
-                _ => break,
+            // Calculate indent level
+            let mut indent_level = 0;
+            for c in line_str.chars() {
+                match c {
+                    ' ' => indent_level += 1,
+                    '\t' => indent_level += 4,
+                    _ => break,
+                }
             }
-        }
-        indent_level /= 4;
+            indent_level /= 4;
 
-        // Look for opening braces at end of line
-        let trimmed = line_str.trim_end();
-        if trimmed.ends_with('{') || trimmed.ends_with('[') || trimmed.ends_with('(') {
-            brace_stack.push((line_idx, indent_level));
-        }
+            // Look for opening braces at end of line
+            let trimmed = line_str.trim_end();
+            if trimmed.ends_with('{') || trimmed.ends_with('[') || trimmed.ends_with('(') {
+                brace_stack.push((line_idx, indent_level));
+            }
 
-        // Look for closing braces at start of line (after whitespace)
-        let trimmed_start = line_str.trim_start();
-        if trimmed_start.starts_with('}')
-            || trimmed_start.starts_with(']')
-            || trimmed_start.starts_with(')')
-        {
-            if let Some((start_line, start_indent)) = brace_stack.pop() {
-                if line_idx > start_line {
-                    regions.push(FoldRegion {
-                        start_line,
-                        end_line: line_idx,
-                        is_folded: false,
-                        kind: FoldKind::Block,
-                        indent_level: start_indent,
-                    });
+            // Look for closing braces at start of line (after whitespace)
+            let trimmed_start = line_str.trim_start();
+            if trimmed_start.starts_with('}')
+                || trimmed_start.starts_with(']')
+                || trimmed_start.starts_with(')')
+            {
+                if let Some((start_line, start_indent)) = brace_stack.pop() {
+                    if line_idx > start_line {
+                        regions.push(FoldRegion {
+                            start_line,
+                            end_line: line_idx,
+                            is_folded: false,
+                            kind: FoldKind::Block,
+                            indent_level: start_indent,
+                        });
+                    }
                 }
             }
         }
-    }
 
-    // Preserve fold state for existing regions
-    let old_regions = std::mem::take(&mut fold_state.regions);
-    for mut region in regions {
-        if let Some(old) = old_regions
-            .iter()
-            .find(|r| r.start_line == region.start_line && r.end_line == region.end_line)
-        {
-            region.is_folded = old.is_folded;
+        // Preserve fold state for existing regions
+        let old_regions = std::mem::take(&mut fold_state.regions);
+        for mut region in regions {
+            if let Some(old) = old_regions
+                .iter()
+                .find(|r| r.start_line == region.start_line && r.end_line == region.end_line)
+            {
+                region.is_folded = old.is_folded;
+            }
+            fold_state.regions.push(region);
         }
-        fold_state.regions.push(region);
-    }
 
-    fold_state.enabled = true;
+        fold_state.enabled = true;
+    }
 }
 
 // Duplicate imports removed - already imported at top of file
@@ -312,118 +308,121 @@ pub(crate) fn update_fold_indicators(
         &mut Visibility,
     )>,
 ) {
-    let Ok((_state, tv, viewport, fold_state)) = editor_query.single() else {
-        return;
-    };
-    // Hide all if folding is disabled
-    if !fold_state.enabled || !ui.show_line_numbers {
-        for (_, _, _, _, mut visibility) in indicator_query.iter_mut() {
-            *visibility = Visibility::Hidden;
-        }
-        return;
-    }
-
-    let line_height = font.line_height;
-    let font_size = font.size;
-    let viewport_width = viewport.width as f32;
-    let viewport_height = viewport.height as f32;
-
-    // Calculate visible line range
-    let visible_start_line = ((-tv.scroll_offset) / line_height).floor() as usize;
-    let visible_lines = ((viewport_height / line_height).ceil() as usize) + 2;
-    let visible_end_line = (visible_start_line + visible_lines).min(tv.rope.len_lines());
-
-    // Collect fold regions that start within visible range
-    let visible_regions: Vec<_> = fold_state
-        .regions
-        .iter()
-        .filter(|r| r.start_line >= visible_start_line && r.start_line < visible_end_line)
-        .collect();
-
-    // Collect existing indicators
+    // Collect existing indicators once (shared across all editors)
     let mut existing_indicators: std::collections::HashMap<usize, Entity> =
         std::collections::HashMap::new();
     for (entity, indicator, _, _, _) in indicator_query.iter() {
         existing_indicators.insert(indicator.line_index, entity);
     }
-
     let mut used_indices: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    let mut any_disabled_only = true;
 
-    // Calculate hidden lines for proper display positioning
-    // We need to count how many lines are hidden before each fold region
-    let count_hidden_lines_before = |line: usize| -> usize {
-        fold_state
-            .regions
-            .iter()
-            .filter(|r| r.is_folded && r.start_line < line)
-            .map(|r| r.end_line.saturating_sub(r.start_line))
-            .sum()
-    };
-
-    for region in visible_regions {
-        let line_idx = region.start_line;
-
-        // Skip if this region's start line is hidden by another fold
-        if fold_state.is_line_hidden(line_idx) {
+    for (_state, tv, viewport, fold_state) in editor_query.iter() {
+        if !fold_state.enabled || !ui.show_line_numbers {
             continue;
         }
+        any_disabled_only = false;
 
-        used_indices.insert(line_idx);
+        let line_height = font.line_height;
+        let font_size = font.size;
+        let viewport_width = viewport.width as f32;
+        let viewport_height = viewport.height as f32;
 
-        // Calculate display line by subtracting hidden lines above
-        let hidden_above = count_hidden_lines_before(line_idx);
-        let display_line = line_idx.saturating_sub(hidden_above);
+        // Calculate visible line range
+        let visible_start_line = ((-tv.scroll_offset) / line_height).floor() as usize;
+        let visible_lines = ((viewport_height / line_height).ceil() as usize) + 2;
+        let visible_end_line = (visible_start_line + visible_lines).min(tv.rope.len_lines());
 
-        // Position in fold gutter (between line numbers and separator)
-        // In VSCode style, this is a narrow gutter just before the separator
-        let x_offset = viewport.separator_x - 12.0; // Just before the separator
-        let y_offset =
-            viewport.text_area_top + tv.scroll_offset + (display_line as f32 * line_height);
+        // Collect fold regions that start within visible range
+        let visible_regions: Vec<_> = fold_state
+            .regions
+            .iter()
+            .filter(|r| r.start_line >= visible_start_line && r.start_line < visible_end_line)
+            .collect();
 
-        let translation =
-            to_bevy_coords_left_aligned(x_offset, y_offset, viewport_width, viewport_height, 0.0);
+        // Calculate hidden lines for proper display positioning
+        // We need to count how many lines are hidden before each fold region
+        let count_hidden_lines_before = |line: usize| -> usize {
+            fold_state
+                .regions
+                .iter()
+                .filter(|r| r.is_folded && r.start_line < line)
+                .map(|r| r.end_line.saturating_sub(r.start_line))
+                .sum()
+        };
 
-        // Choose indicator character based on fold state
-        let indicator_char = if region.is_folded { "▶" } else { "▼" };
+        for region in visible_regions {
+            let line_idx = region.start_line;
 
-        if let Some(entity) = existing_indicators.get(&line_idx) {
-            // Update existing indicator
-            if let Ok((_, _, mut transform, mut text, mut visibility)) =
-                indicator_query.get_mut(*entity)
-            {
-                transform.translation = translation;
-                text.0 = indicator_char.to_string();
-                *visibility = Visibility::Visible;
+            // Skip if this region's start line is hidden by another fold
+            if fold_state.is_line_hidden(line_idx) {
+                continue;
             }
-        } else {
-            // Spawn new indicator
-            let text_font = TextFont {
-                font: font.handle.clone().unwrap_or_default(),
-                font_size: font_size * 0.7,
-                ..default()
-            };
 
-            let mut entity_cmd = commands.spawn((
-                Text2d::new(indicator_char.to_string()),
-                text_font,
-                TextColor(theme.line_numbers.with_alpha(0.8)),
-                Transform::from_translation(translation),
-                FoldIndicator {
-                    line_index: line_idx,
-                },
-                Name::new(format!("FoldIndicator_{}", line_idx)),
-                Visibility::Visible,
-            ));
-            if let Some(ref layers) = render_config.render_layers {
-                entity_cmd.insert(layers.clone());
+            used_indices.insert(line_idx);
+
+            // Calculate display line by subtracting hidden lines above
+            let hidden_above = count_hidden_lines_before(line_idx);
+            let display_line = line_idx.saturating_sub(hidden_above);
+
+            // Position in fold gutter (between line numbers and separator)
+            // In VSCode style, this is a narrow gutter just before the separator
+            let x_offset = viewport.separator_x - 12.0; // Just before the separator
+            let y_offset =
+                viewport.text_area_top + tv.scroll_offset + (display_line as f32 * line_height);
+
+            let translation =
+                to_bevy_coords_left_aligned(x_offset, y_offset, viewport_width, viewport_height, 0.0);
+
+            // Choose indicator character based on fold state
+            let indicator_char = if region.is_folded { "▶" } else { "▼" };
+
+            if let Some(entity) = existing_indicators.get(&line_idx) {
+                // Update existing indicator
+                if let Ok((_, _, mut transform, mut text, mut visibility)) =
+                    indicator_query.get_mut(*entity)
+                {
+                    transform.translation = translation;
+                    text.0 = indicator_char.to_string();
+                    *visibility = Visibility::Visible;
+                }
+            } else {
+                // Spawn new indicator
+                let text_font = TextFont {
+                    font: font.handle.clone().unwrap_or_default(),
+                    font_size: font_size * 0.7,
+                    ..default()
+                };
+
+                let mut entity_cmd = commands.spawn((
+                    Text2d::new(indicator_char.to_string()),
+                    text_font,
+                    TextColor(theme.line_numbers.with_alpha(0.8)),
+                    Transform::from_translation(translation),
+                    FoldIndicator {
+                        line_index: line_idx,
+                    },
+                    Name::new(format!("FoldIndicator_{}", line_idx)),
+                    Visibility::Visible,
+                ));
+                if let Some(ref layers) = render_config.render_layers {
+                    entity_cmd.insert(layers.clone());
+                }
             }
         }
     }
 
-    // Hide unused indicators
-    for (_entity, indicator, _, _, mut visibility) in indicator_query.iter_mut() {
-        if !used_indices.contains(&indicator.line_index) {
+    if any_disabled_only {
+        // No editor enabled folding; hide everything
+        for (_, _, _, _, mut visibility) in indicator_query.iter_mut() {
             *visibility = Visibility::Hidden;
+        }
+    } else {
+        // Hide unused indicators
+        for (_entity, indicator, _, _, mut visibility) in indicator_query.iter_mut() {
+            if !used_indices.contains(&indicator.line_index) {
+                *visibility = Visibility::Hidden;
+            }
         }
     }
 }

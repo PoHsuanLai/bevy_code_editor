@@ -341,55 +341,53 @@ pub(crate) fn update_syntax_tree(
     mut highlight_cache: ResMut<HighlightCache>,
     mut parse_task_query: Query<(Entity, &mut ParseTask)>,
 ) {
-    let Ok((_state, mut syntax_cache, mut tv)) = editor_query.single_mut() else {
-        return;
-    };
+    for (_state, mut syntax_cache, mut tv) in editor_query.iter_mut() {
+        // Check if there's a completed parse task
+        if let Some((entity, mut parse_task)) = parse_task_query.iter_mut().next() {
+            // Poll the task without blocking
+            if let Some(tree) =
+                futures_lite::future::block_on(futures_lite::future::poll_once(&mut parse_task.task))
+            {
+                if let Some(tree) = tree {
+                    // Update the syntax provider with the completed tree and current rope
+                    // This increments syntax.tree_version, which will trigger a re-render automatically
+                    syntax.set_parsed_tree(tree, &tv.rope);
+                    syntax_cache.last_highlighted_version = parse_task.content_version;
 
-    // Check if there's a completed parse task
-    if let Some((entity, mut parse_task)) = parse_task_query.iter_mut().next() {
-        // Poll the task without blocking
-        if let Some(tree) =
-            futures_lite::future::block_on(futures_lite::future::poll_once(&mut parse_task.task))
-        {
-            if let Some(tree) = tree {
-                // Update the syntax provider with the completed tree and current rope
-                // This increments syntax.tree_version, which will trigger a re-render automatically
-                syntax.set_parsed_tree(tree, &tv.rope);
-                syntax_cache.last_highlighted_version = parse_task.content_version;
+                    // Clear the highlight cache when tree-sitter finishes
+                    highlight_cache.clear();
 
-                // Clear the highlight cache when tree-sitter finishes
-                highlight_cache.clear();
-
-                // Bump content_version so the line glyph cache is fully invalidated
-                // (otherwise cached uncolored glyphs from the pre-parse render persist).
-                // Set last_highlighted_version to match so we don't re-trigger a parse.
-                tv.content_version += 1;
-                syntax_cache.last_highlighted_version = tv.content_version;
+                    // Bump content_version so the line glyph cache is fully invalidated
+                    // (otherwise cached uncolored glyphs from the pre-parse render persist).
+                    // Set last_highlighted_version to match so we don't re-trigger a parse.
+                    tv.content_version += 1;
+                    syntax_cache.last_highlighted_version = tv.content_version;
+                }
+                // Remove the completed task
+                commands.entity(entity).despawn();
             }
-            // Remove the completed task
-            commands.entity(entity).despawn();
+            // Task still running, don't start a new one
+            continue;
         }
-        // Task still running, don't start a new one
-        return;
-    }
 
-    // Only start a new parse if content changed and no task is running
-    if tv.content_version != syntax_cache.last_highlighted_version && syntax.is_available() {
-        let rope = tv.rope.clone();
-        let content_version = tv.content_version;
+        // Only start a new parse if content changed and no task is running
+        if tv.content_version != syntax_cache.last_highlighted_version && syntax.is_available() {
+            let rope = tv.rope.clone();
+            let content_version = tv.content_version;
 
-        // Clone the provider's state — edits already applied via apply_sync_edit()
-        let (parser, language, cached_tree) = syntax.clone_parse_state();
+            // Clone the provider's state — edits already applied via apply_sync_edit()
+            let (parser, language, cached_tree) = syntax.clone_parse_state();
 
-        // Spawn async parse task
-        let task_pool = AsyncComputeTaskPool::get();
-        let task =
-            task_pool.spawn(async move { parse_tree_async(rope, parser, language, cached_tree) });
+            // Spawn async parse task
+            let task_pool = AsyncComputeTaskPool::get();
+            let task =
+                task_pool.spawn(async move { parse_tree_async(rope, parser, language, cached_tree) });
 
-        commands.spawn(ParseTask {
-            task,
-            content_version,
-        });
+            commands.spawn(ParseTask {
+                task,
+                content_version,
+            });
+        }
     }
 }
 
@@ -470,18 +468,17 @@ fn send_text_edit_events(
     >,
     mut writer: MessageWriter<crate::types::events::TextEditEvent>,
 ) {
-    let Ok((_state, mut syntax_cache, tv)) = editor_query.single_mut() else {
-        return;
-    };
-    if let Some((start_byte, old_end_byte, new_end_byte)) =
-        syntax_cache.pending_tree_sitter_edit.take()
-    {
-        writer.write(crate::types::events::TextEditEvent::new(
-            start_byte,
-            old_end_byte,
-            new_end_byte,
-            tv.content_version,
-        ));
+    for (_state, mut syntax_cache, tv) in editor_query.iter_mut() {
+        if let Some((start_byte, old_end_byte, new_end_byte)) =
+            syntax_cache.pending_tree_sitter_edit.take()
+        {
+            writer.write(crate::types::events::TextEditEvent::new(
+                start_byte,
+                old_end_byte,
+                new_end_byte,
+                tv.content_version,
+            ));
+        }
     }
 }
 
@@ -496,26 +493,26 @@ fn record_edits_for_incremental_parsing(
     mut syntax: ResMut<SyntaxResource>,
     mut events: MessageReader<crate::types::events::TextEditEvent>,
 ) {
-    let Ok((_state, _syntax_cache, tv)) = editor_query.single() else {
-        return;
-    };
-    for event in events.read() {
-        // Compute Points on main thread — these are sub-μs O(log n) rope lookups
-        let start_position = byte_to_point(&tv.rope, event.start_byte);
-        let old_end_position = byte_to_point(&tv.rope, event.old_end_byte);
-        let new_end_position = byte_to_point(&tv.rope, event.new_end_byte);
+    let collected_events: Vec<_> = events.read().cloned().collect();
+    for (_state, _syntax_cache, tv) in editor_query.iter() {
+        for event in collected_events.iter() {
+            // Compute Points on main thread — these are sub-μs O(log n) rope lookups
+            let start_position = byte_to_point(&tv.rope, event.start_byte);
+            let old_end_position = byte_to_point(&tv.rope, event.old_end_byte);
+            let new_end_position = byte_to_point(&tv.rope, event.new_end_byte);
 
-        let edit = tree_sitter::InputEdit {
-            start_byte: event.start_byte,
-            old_end_byte: event.old_end_byte,
-            new_end_byte: event.new_end_byte,
-            start_position,
-            old_end_position,
-            new_end_position,
-        };
+            let edit = tree_sitter::InputEdit {
+                start_byte: event.start_byte,
+                old_end_byte: event.old_end_byte,
+                new_end_byte: event.new_end_byte,
+                start_position,
+                old_end_position,
+                new_end_position,
+            };
 
-        // Apply edit to the cached tree immediately (tree interpolation)
-        syntax.apply_sync_edit(edit, &tv.rope);
+            // Apply edit to the cached tree immediately (tree interpolation)
+            syntax.apply_sync_edit(edit, &tv.rope);
+        }
     }
 }
 
