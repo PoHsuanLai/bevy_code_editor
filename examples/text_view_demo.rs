@@ -183,6 +183,8 @@ fn styled_line(text: &str, color: Color) -> (String, Vec<LineSegment>) {
             color,
             background: None,
             corner_radius: 0.0,
+            font_scale: 0.0,
+            skew: 0.0,
         }],
     )
 }
@@ -202,6 +204,8 @@ fn multi_segment_line(segments: Vec<(&str, Color)>) -> (String, Vec<LineSegment>
             color: c,
             background: None,
             corner_radius: 0.0,
+            font_scale: 0.0,
+            skew: 0.0,
         })
         .collect();
     (text, line_segments)

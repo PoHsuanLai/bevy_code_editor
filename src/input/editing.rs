@@ -15,7 +15,7 @@ impl EditHistoryState {
         display: &mut EditorDisplayState,
         cursor: &mut CursorState,
         tv: &mut TextViewState,
-    c: char,
+        c: char,
     ) {
         self.insert_char_with_history(sel, syntax, display, cursor, tv, c, true);
     }
