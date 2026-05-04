@@ -486,13 +486,11 @@ pub fn handle_mouse_wheel(
             scrolled = true;
         }
 
-        if scrolled {
-            // Horizontal scrolling requires full update (text content changes due to culling)
-            // Vertical scrolling only needs transform updates
-            if event.x.abs() > 0.0 {
-            } else {
-            }
-        }
+        // `scrolled` is intentionally unused — scroll-driven text reflow
+        // happens through `DisplayLayout`'s `Changed` detection in the
+        // display-map producer, not through any explicit per-event update
+        // here.
+        let _ = scrolled;
     }
     }
 }

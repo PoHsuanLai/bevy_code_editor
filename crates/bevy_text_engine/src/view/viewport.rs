@@ -7,21 +7,16 @@ use bevy::prelude::*;
 /// Replaces the old `screen_position: Vec2` + `Vec2::ZERO` sentinel pattern,
 /// which silently mis-classified views legitimately rendered at world (0,0)
 /// as "centered ortho" and forced every consumer to re-implement the branch.
-#[derive(Clone, Copy, Debug, PartialEq, Reflect)]
-#[reflect(PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Reflect)]
+#[reflect(Default, PartialEq)]
 pub enum ViewportOrigin {
     /// Render-to-texture / centered orthographic camera: viewport's top-left
     /// in world space is `(-width/2, +height/2)`. Computed at access time
     /// because it depends on the viewport size.
+    #[default]
     CenteredOrtho,
     /// Explicit world-space top-left position (e.g. windowed UI panel).
     ScreenAbsolute(Vec2),
-}
-
-impl Default for ViewportOrigin {
-    fn default() -> Self {
-        Self::CenteredOrtho
-    }
 }
 
 /// Viewport dimensions and layout for a single text view instance.

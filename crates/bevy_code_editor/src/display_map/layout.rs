@@ -234,6 +234,8 @@ pub fn build_display_layout(
                         runs: row.runs.clone(),
                         line_bg,
                         line_height: None,
+                        padding_top: 0.0,
+                        padding_bottom: 0.0,
                         inline_objects: Vec::new(),
                         shape: Some(row_shape),
                     });
@@ -252,6 +254,8 @@ pub fn build_display_layout(
                     runs,
                     line_bg,
                     line_height: None,
+                    padding_top: 0.0,
+                    padding_bottom: 0.0,
                     inline_objects: Vec::new(),
                     shape,
                 });

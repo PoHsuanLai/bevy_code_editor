@@ -166,6 +166,13 @@ pub struct ShapedLine {
     /// headings, code blocks at a different size) set this; helpers that
     /// stack rows must compute `y_top` accordingly (see `trivial_layout`).
     pub line_height: Option<f32>,
+    /// Vertical space in pixels above this row, on top of the row's line
+    /// height. Used for block-level spacing — heading top margins, paragraph
+    /// breaks, code-block separators. Producers that stack rows must include
+    /// this when computing `y_top`. Default 0.
+    pub padding_top: f32,
+    /// Vertical space in pixels below this row. See `padding_top`.
+    pub padding_bottom: f32,
     /// Inline non-text content (images, spacers) anchored at byte offsets in
     /// `text`. Empty for plain-text consumers.
     pub inline_objects: Vec<InlineObject>,
@@ -227,6 +234,8 @@ pub fn trivial_layout(
             runs: runs.clone(),
             line_bg: None,
             line_height: None,
+            padding_top: 0.0,
+            padding_bottom: 0.0,
             inline_objects: Vec::new(),
             shape: None,
         })
@@ -242,5 +251,156 @@ pub fn trivial_layout(
         default_fg,
         version: 1,
         scroll_version: 0,
+    }
+}
+
+/// One row of input for [`trivial_layout_blocks`]: text + styling +
+/// optional per-row line-height override + block padding above/below.
+///
+/// Markdown / chat consumers build a `Vec<TrivialBlock>` with appropriate
+/// padding for paragraph breaks, heading margins, code-block separators,
+/// and call [`trivial_layout_blocks`] to get a `DisplayLayout` with
+/// correctly-stacked `y_top` values.
+#[derive(Clone, Debug, Default)]
+pub struct TrivialBlock {
+    pub text: String,
+    pub runs: Vec<StyleRun>,
+    /// Per-row line-height in pixels. `None` = layout default.
+    pub line_height: Option<f32>,
+    pub padding_top: f32,
+    pub padding_bottom: f32,
+    pub line_bg: Option<Color>,
+}
+
+impl TrivialBlock {
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            ..Default::default()
+        }
+    }
+
+    pub fn with_runs(mut self, runs: Vec<StyleRun>) -> Self {
+        self.runs = runs;
+        self
+    }
+
+    pub fn with_line_height(mut self, lh: f32) -> Self {
+        self.line_height = Some(lh);
+        self
+    }
+
+    pub fn with_padding(mut self, top: f32, bottom: f32) -> Self {
+        self.padding_top = top;
+        self.padding_bottom = bottom;
+        self
+    }
+
+    pub fn with_background(mut self, color: Color) -> Self {
+        self.line_bg = Some(color);
+        self
+    }
+}
+
+/// Like [`trivial_layout`] but accepts per-row line-height + padding.
+///
+/// Stacks rows by accumulating `padding_top + line_height + padding_bottom`
+/// — markdown-style block layout. Rows where `line_height` is `None`
+/// fall back to the layout's global `line_height`.
+pub fn trivial_layout_blocks(
+    blocks: &[TrivialBlock],
+    line_height: f32,
+    char_width: f32,
+    baseline_offset: f32,
+    default_fg: bevy::prelude::Color,
+) -> super::layout::DisplayLayout {
+    use super::layout::DisplayLayout;
+    use std::sync::Arc;
+
+    let mut shaped: Vec<ShapedLine> = Vec::with_capacity(blocks.len());
+    let mut y = 0.0_f32;
+    for (i, b) in blocks.iter().enumerate() {
+        let row_h = b.line_height.unwrap_or(line_height);
+        y += b.padding_top;
+        shaped.push(ShapedLine {
+            display_row: i as u32,
+            buffer_row: i as u32,
+            buffer_byte_offset: 0,
+            is_wrap_continuation: false,
+            y_top: y,
+            x_offset: 0.0,
+            text: b.text.clone(),
+            runs: b.runs.clone(),
+            line_bg: b.line_bg,
+            line_height: b.line_height,
+            padding_top: b.padding_top,
+            padding_bottom: b.padding_bottom,
+            inline_objects: Vec::new(),
+            shape: None,
+        });
+        y += row_h + b.padding_bottom;
+    }
+    let total = shaped.len() as u32;
+    DisplayLayout {
+        lines: Arc::new(shaped),
+        visible_rows: 0..total,
+        total_display_rows: total,
+        line_height,
+        char_width,
+        baseline_offset,
+        default_fg,
+        version: 1,
+        scroll_version: 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::prelude::Color;
+
+    /// Block layout with mixed padding + per-row line-height stacks rows
+    /// correctly: each row's `y_top` equals the sum of all prior rows'
+    /// `(padding_top + line_height + padding_bottom) + this row's padding_top`.
+    #[test]
+    fn trivial_layout_blocks_stacks_padding_and_line_height() {
+        let blocks = vec![
+            // body: 16px line height, no padding.
+            TrivialBlock::new("hello"),
+            // heading: 24px line height, 8px above, 4px below.
+            TrivialBlock::new("# heading")
+                .with_line_height(24.0)
+                .with_padding(8.0, 4.0),
+            // body again, default line-height (16px), no padding.
+            TrivialBlock::new("more body"),
+            // code block row: 16px, 6px above, 6px below for the panel.
+            TrivialBlock::new("fn x() {}").with_padding(6.0, 6.0),
+        ];
+
+        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE);
+        let lines = &*layout.lines;
+        assert_eq!(lines.len(), 4);
+
+        // Row 0: y = 0
+        assert_eq!(lines[0].y_top, 0.0);
+        // Row 1: y = 0 + 16 (row0 lh) + 0 (row0 pad-bot) + 8 (row1 pad-top) = 24
+        assert_eq!(lines[1].y_top, 24.0);
+        // Row 2: y = 24 + 24 (row1 lh) + 4 (row1 pad-bot) + 0 = 52
+        assert_eq!(lines[2].y_top, 52.0);
+        // Row 3: y = 52 + 16 + 0 + 6 = 74
+        assert_eq!(lines[3].y_top, 74.0);
+    }
+
+    #[test]
+    fn trivial_layout_no_padding_matches_old_behavior() {
+        let blocks: Vec<TrivialBlock> = ["a", "b", "c"]
+            .iter()
+            .map(|s| TrivialBlock::new(*s))
+            .collect();
+        let layout = trivial_layout_blocks(&blocks, 20.0, 8.0, 5.0, Color::WHITE);
+        let lines = &*layout.lines;
+        assert_eq!(lines[0].y_top, 0.0);
+        assert_eq!(lines[1].y_top, 20.0);
+        assert_eq!(lines[2].y_top, 40.0);
     }
 }
