@@ -4,6 +4,8 @@ CLAUDE.md
 .DS_Store
 
 /zed
+/vscode
+/warp
 
 *.md
 
