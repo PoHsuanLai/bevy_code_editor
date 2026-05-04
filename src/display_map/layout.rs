@@ -123,12 +123,16 @@ pub fn build_display_layout(
             buffer_row: buffer_line as u32,
             is_wrap_continuation: false,
             // y_top is the row's visual top in screen pixels. Glyphs and overlays
-            // both derive from this single anchor: glyph baseline = y_top + ascent
-            // (~ line_height/2 + baseline_offset); overlay full-line rect spans
-            // y_top..y_top+line_height. The legacy "row center" convention is gone.
+            // both derive from this single anchor:
+            //   glyph baseline = y_top + line_height/2 + baseline_offset
+            //   overlay full-line rect spans y_top..y_top+line_height
+            // The legacy code anchored to row *center* at
+            // `text_area_top + scroll + row*line_height`; subtracting line_height/2
+            // converts that to row top.
             y_top: viewport.text_area_top
                 + state.scroll_offset
-                + current_display_row as f32 * line_height,
+                + current_display_row as f32 * line_height
+                - line_height * 0.5,
             x_offset: line_x_extra,
             text: render_text,
             runs,
