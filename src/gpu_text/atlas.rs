@@ -548,6 +548,24 @@ impl GlyphAtlas {
         self.get_or_insert(key, || GlyphRasterizer::rasterize(character, font_size))
             .map(|info| info.advance)
     }
+
+    /// Pre-rasterize a batch of (char, font_size) pairs into the atlas, ignoring
+    /// the result. Used by `display_map` to warm the atlas before the renderer
+    /// runs, so the renderer can take `&GlyphAtlas` (immutable) and never trigger
+    /// mid-paint texture uploads. Skips control characters and chars already present.
+    pub fn ensure_glyphs<I: IntoIterator<Item = (char, f32)>>(&mut self, chars: I) {
+        for (ch, font_size) in chars {
+            if ch == '\n' || ch == '\r' || ch == '\t' {
+                continue;
+            }
+            let key = GlyphKey::new(ch, font_size);
+            if self.glyphs.contains_key(&key) {
+                continue;
+            }
+            // Drop the result; we just need the side effect of insertion.
+            let _ = self.get_or_insert(key, || GlyphRasterizer::rasterize(ch, font_size));
+        }
+    }
 }
 
 /// A rasterized glyph ready to be copied to the atlas

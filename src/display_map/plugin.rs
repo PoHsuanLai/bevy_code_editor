@@ -33,7 +33,12 @@ impl Plugin for DisplayMapPlugin {
                 .after(crate::plugin::ApplyStateSet)
                 .before(crate::plugin::RenderingSet),
         );
-        app.add_systems(Update, update_display_map_snapshot.in_set(DisplayMapSet));
+        app.add_systems(
+            Update,
+            (update_display_map_snapshot, prewarm_atlas_for_layout)
+                .chain()
+                .in_set(DisplayMapSet),
+        );
     }
 }
 
@@ -126,4 +131,31 @@ fn syntax_version(syntax: &SyntaxResource) -> u64 {
 #[cfg(not(feature = "tree-sitter"))]
 fn syntax_version(_syntax: &SyntaxResource) -> u64 {
     0
+}
+
+/// Pre-rasterize every glyph the freshly-built `DisplayLayout` will need.
+///
+/// Runs in `DisplayMapSet` after `update_display_map_snapshot`, so by the time
+/// `text_view::update_text_views` reads the layout the atlas is fully
+/// populated. The renderer never triggers atlas mutation during the paint
+/// pass — eliminates first-encounter scroll stutter (W6).
+pub(crate) fn prewarm_atlas_for_layout(
+    layouts: Query<Ref<DisplayLayout>>,
+    font: Res<FontSettings>,
+    mut atlas: ResMut<crate::gpu_text::GlyphAtlas>,
+) {
+    for layout in &layouts {
+        if !layout.is_changed() {
+            continue;
+        }
+        // Default font size is per-line for now (we don't have per-run scaling
+        // in a place we can easily query here). Per-run font_scale is rare
+        // enough that mid-paint rasterization for those is acceptable.
+        atlas.ensure_glyphs(
+            layout
+                .lines
+                .iter()
+                .flat_map(|l| l.text.chars().map(|c| (c, font.size))),
+        );
+    }
 }
