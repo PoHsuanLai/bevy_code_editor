@@ -23,7 +23,9 @@ fn main() {
     }));
 
     // Insert minimal settings (font, theme, performance) needed by TextViewPlugin
-    EditorSettingsBuilder::default().build().insert_into(&mut app);
+    EditorSettingsBuilder::default()
+        .build()
+        .insert_into(&mut app);
 
     app.add_plugins(TextViewPlugin)
         .add_systems(Startup, (setup_camera, setup_text_view))
@@ -66,10 +68,7 @@ fn setup_text_view(mut commands: Commands, windows: Query<&Window>) {
             "  position, color, and UV coordinates via per-instance",
             Color::srgb(0.85, 0.85, 0.85),
         ),
-        styled_line(
-            "  data buffers.",
-            Color::srgb(0.85, 0.85, 0.85),
-        ),
+        styled_line("  data buffers.", Color::srgb(0.85, 0.85, 0.85)),
         plain_line(""),
         styled_line(
             "  For text rendering, each glyph is an instance of a",
@@ -104,7 +103,10 @@ fn setup_text_view(mut commands: Commands, windows: Query<&Window>) {
         plain_line(""),
         // More conversation
         styled_line("You:", Color::srgb(0.4, 0.7, 1.0)),
-        styled_line("  That makes sense! How does the atlas work?", Color::srgb(0.9, 0.9, 0.9)),
+        styled_line(
+            "  That makes sense! How does the atlas work?",
+            Color::srgb(0.9, 0.9, 0.9),
+        ),
         plain_line(""),
         styled_line("Assistant:", Color::srgb(0.5, 1.0, 0.5)),
         styled_line(
@@ -180,6 +182,7 @@ fn styled_line(text: &str, color: Color) -> (String, Vec<LineSegment>) {
             text: text.to_string(),
             color,
             background: None,
+            corner_radius: 0.0,
         }],
     )
 }
@@ -198,6 +201,7 @@ fn multi_segment_line(segments: Vec<(&str, Color)>) -> (String, Vec<LineSegment>
             text: t.to_string(),
             color: c,
             background: None,
+            corner_radius: 0.0,
         })
         .collect();
     (text, line_segments)

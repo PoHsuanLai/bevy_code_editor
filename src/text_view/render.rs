@@ -146,7 +146,11 @@ pub fn render_text_view(
         };
 
         // Per-line X offset (for right-alignment, indentation, etc.)
-        let line_x_extra = state.line_x_offsets.get(buffer_line).copied().unwrap_or(0.0);
+        let line_x_extra = state
+            .line_x_offsets
+            .get(buffer_line)
+            .copied()
+            .unwrap_or(0.0);
 
         // Current X offset relative to line start
         let mut current_x_offset: f32 = line_x_extra;
@@ -187,8 +191,8 @@ pub fn render_text_view(
                         color: color_arr,
                         z_index: 0.0,
                         corner_radius: 0.0,
-                    skew: 0.0,
-                            _padding: 0.0,
+                        skew: 0.0,
+                        _padding: 0.0,
                     });
                     current_x_offset += char_width;
                 } else {
@@ -198,30 +202,47 @@ pub fn render_text_view(
         } else {
             // Styled segments — check for line-level background
             let line_bg = segments.iter().find_map(|s| s.background);
-            let line_corner_radius = segments.iter().find_map(|s| {
-                if s.background.is_some() && s.corner_radius > 0.0 { Some(s.corner_radius) } else { None }
-            }).unwrap_or(0.0);
+            let line_corner_radius = segments
+                .iter()
+                .find_map(|s| {
+                    if s.background.is_some() && s.corner_radius > 0.0 {
+                        Some(s.corner_radius)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(0.0);
             if let Some(bg_color) = line_bg {
                 // Emit a background quad with left/right margins.
                 // For lines with X offset (right-aligned), extend the background with
                 // padding on the left side of the text.
                 let bg_linear = bg_color.to_linear();
                 let margin = content_start_x;
-                let bg_pad = if line_x_extra > 0.0 { char_width * 1.5 } else { 0.0 };
+                let bg_pad = if line_x_extra > 0.0 {
+                    char_width * 1.5
+                } else {
+                    0.0
+                };
                 let bg_x_start = (line_x_extra - bg_pad).max(0.0);
                 let bg_world_x = viewport.world_left() + margin + bg_x_start;
                 let bg_width = viewport.width as f32 - margin * 2.0 - bg_x_start;
-                let bg_world_y = viewport.world_top() - (base_y - baseline_offset) - line_height * 0.5;
+                let bg_world_y =
+                    viewport.world_top() - (base_y - baseline_offset) - line_height * 0.5;
                 bg_instances.push(GlyphInstance {
                     position: Vec2::new(bg_world_x, bg_world_y),
                     uv_min: atlas.solid_uv.uv_min,
                     uv_max: atlas.solid_uv.uv_max,
                     size: Vec2::new(bg_width, line_height),
-                    color: [bg_linear.red, bg_linear.green, bg_linear.blue, bg_linear.alpha],
+                    color: [
+                        bg_linear.red,
+                        bg_linear.green,
+                        bg_linear.blue,
+                        bg_linear.alpha,
+                    ],
                     z_index: 0.0,
                     corner_radius: line_corner_radius,
                     skew: 0.0,
-                            _padding: 0.0,
+                    _padding: 0.0,
                 });
             }
 
@@ -230,15 +251,26 @@ pub fn render_text_view(
                 if let Some(seg_bg) = segment.background {
                     if line_bg != Some(seg_bg) {
                         let seg_bg_linear = seg_bg.to_linear();
-                        let seg_width = segment.text.chars().filter(|c| *c != '\n' && *c != '\r').count() as f32 * char_width;
+                        let seg_width = segment
+                            .text
+                            .chars()
+                            .filter(|c| *c != '\n' && *c != '\r')
+                            .count() as f32
+                            * char_width;
                         let seg_world_x = viewport.world_left() + line_start_x + current_x_offset;
-                        let seg_world_y = viewport.world_top() - (base_y - baseline_offset) - line_height * 0.5;
+                        let seg_world_y =
+                            viewport.world_top() - (base_y - baseline_offset) - line_height * 0.5;
                         bg_instances.push(GlyphInstance {
                             position: Vec2::new(seg_world_x, seg_world_y),
                             uv_min: atlas.solid_uv.uv_min,
                             uv_max: atlas.solid_uv.uv_max,
                             size: Vec2::new(seg_width, line_height),
-                            color: [seg_bg_linear.red, seg_bg_linear.green, seg_bg_linear.blue, seg_bg_linear.alpha],
+                            color: [
+                                seg_bg_linear.red,
+                                seg_bg_linear.green,
+                                seg_bg_linear.blue,
+                                seg_bg_linear.alpha,
+                            ],
                             z_index: 0.0,
                             corner_radius: segment.corner_radius,
                             skew: 0.0,

@@ -62,6 +62,11 @@ pub struct TextViewState {
     pub styled_lines: Vec<Option<Vec<LineSegment>>>,
     /// Version counter for styled lines (for cache invalidation)
     pub styled_lines_version: u64,
+
+    // === Per-line Layout ===
+    /// Optional per-line X offset in pixels (for right-alignment, indentation, etc.).
+    /// Sparse: only lines with non-zero offsets need entries.
+    pub line_x_offsets: Vec<f32>,
 }
 
 impl Default for TextViewState {
@@ -85,6 +90,7 @@ impl Default for TextViewState {
             line_width_tracker: LineWidthTracker::new(),
             styled_lines: Vec::new(),
             styled_lines_version: 0,
+            line_x_offsets: Vec::new(),
         }
     }
 }
@@ -125,6 +131,7 @@ impl TextViewState {
         self.line_width_tracker = LineWidthTracker::from_rope(&self.rope);
         self.styled_lines.clear();
         self.styled_lines_version += 1;
+        self.line_x_offsets.clear();
     }
 
     /// Mark a range of lines as dirty (needing re-render)
@@ -161,5 +168,14 @@ impl TextViewState {
     pub fn clear_styled_lines(&mut self) {
         self.styled_lines.clear();
         self.styled_lines_version += 1;
+    }
+
+    /// Set the X offset for a specific line (in pixels).
+    /// Used for right-aligning or indenting individual lines.
+    pub fn set_line_x_offset(&mut self, line: usize, offset: f32) {
+        if self.line_x_offsets.len() <= line {
+            self.line_x_offsets.resize(line + 1, 0.0);
+        }
+        self.line_x_offsets[line] = offset;
     }
 }
