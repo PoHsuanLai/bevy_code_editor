@@ -629,6 +629,7 @@ fn push_overlay_quad(
         return;
     };
     let line_height = layout.line_height;
+    let baseline_offset = layout.baseline_offset;
     let x0 = rect.x_range.start.max(0.0);
     let x1 = if rect.x_range.end >= f32::MAX / 2.0 {
         // Full-line: extend to the viewport's right edge from `line_start_x + line.x_offset`.
@@ -638,10 +639,26 @@ fn push_overlay_quad(
         rect.x_range.end
     };
     let width = (x1 - x0).max(1.0);
-    let (y_off, height) = match &rect.y_range {
-        Some(yr) => (yr.start, (yr.end - yr.start).max(1.0)),
-        None => (0.0, line_height),
+
+    // Resolve semantic vertical placement against the row's geometry.
+    // y_off is from the row's top edge; height is the rect height.
+    let (y_off, height) = match rect.vertical {
+        super::overlay::RowVertical::Full => (0.0, line_height),
+        super::overlay::RowVertical::Caret { height_fraction } => {
+            let h = (line_height * height_fraction).max(1.0);
+            ((line_height - h) * 0.5, h)
+        }
+        super::overlay::RowVertical::TopBand { thickness } => (0.0, thickness.max(1.0)),
+        super::overlay::RowVertical::BottomBand { thickness } => {
+            let t = thickness.max(1.0);
+            (line_height - t, t)
+        }
+        super::overlay::RowVertical::UnderBaseline { thickness, gap } => {
+            let baseline_y_off = line_height * 0.5 + baseline_offset;
+            (baseline_y_off + gap, thickness.max(1.0))
+        }
     };
+
     let world_x = world_left + line_start_x + line.x_offset + x0;
     // Single anchor: line.y_top is the row's screen-Y top. Quad position is the
     // *center* of the rect; world_top inverts Y.

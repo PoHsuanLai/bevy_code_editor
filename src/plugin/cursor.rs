@@ -8,7 +8,9 @@ use crate::settings::{
     CursorLineSettings, CursorSettings, FontSettings, IndentationSettings, ThemeSettings,
     WrappingSettings,
 };
-use crate::text_view::{RectOverlay, TextViewOverlays, TextViewState, TextViewViewport};
+use crate::text_view::{
+    RectOverlay, RowVertical, TextViewOverlays, TextViewState, TextViewViewport,
+};
 use crate::types::*;
 use bevy::prelude::*;
 
@@ -141,7 +143,9 @@ pub(crate) fn push_cursor_overlays(
         overlays.rects.push(RectOverlay {
             display_row: display_row as u32,
             x_range: x_left..x_right,
-            y_range: None,
+            vertical: RowVertical::Caret {
+                height_fraction: cursor_settings.height_multiplier,
+            },
             color: theme.cursor,
             z: 1, // above text
             corner_radius: 0.0,
@@ -180,7 +184,6 @@ pub(crate) fn update_cursor_line_highlight(
         return;
     }
 
-    let line_height = font.line_height;
     let char_width = font.char_width;
     let use_wrapping = wrapping.enabled && display.display_map.wrap_width > 0;
 
@@ -223,20 +226,22 @@ pub(crate) fn update_cursor_line_highlight(
         };
 
         if cursor_line.show_border {
-            // Top border: thin band from y=0 to y=border_thickness.
             overlays.rects.push(RectOverlay {
                 display_row: display_row as u32,
                 x_range: band_x_left..band_x_right,
-                y_range: Some(0.0..border_thickness),
+                vertical: RowVertical::TopBand {
+                    thickness: border_thickness,
+                },
                 color: border_color,
                 z: 0,
                 corner_radius: 0.0,
             });
-            // Bottom border: thin band at the bottom of the row.
             overlays.rects.push(RectOverlay {
                 display_row: display_row as u32,
                 x_range: band_x_left..band_x_right,
-                y_range: Some((line_height - border_thickness)..line_height),
+                vertical: RowVertical::BottomBand {
+                    thickness: border_thickness,
+                },
                 color: border_color,
                 z: 0,
                 corner_radius: 0.0,
@@ -282,7 +287,7 @@ pub(crate) fn update_cursor_line_highlight(
             overlays.rects.push(RectOverlay {
                 display_row: display_row as u32,
                 x_range: x_left..x_right,
-                y_range: None,
+                vertical: RowVertical::Full,
                 color: word_highlight_color,
                 z: 0,
                 corner_radius: 0.0,

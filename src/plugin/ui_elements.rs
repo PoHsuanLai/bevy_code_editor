@@ -2,7 +2,9 @@
 
 use super::editor_ui_plugin::EditorRenderConfig;
 use crate::settings::*;
-use crate::text_view::{RectOverlay, TextViewOverlays, TextViewState, TextViewViewport};
+use crate::text_view::{
+    RectOverlay, RowVertical, TextViewOverlays, TextViewState, TextViewViewport,
+};
 use crate::types::*;
 use bevy::prelude::*;
 
@@ -213,7 +215,7 @@ pub(crate) fn update_selection_highlight(
         overlays.rects.push(RectOverlay {
             display_row: row_idx as u32,
             x_range: x_left..x_right,
-            y_range: None,
+            vertical: RowVertical::Full,
             color: theme.selection_background,
             z: -1, // below text
             corner_radius: 0.0,

@@ -33,7 +33,7 @@ pub use interaction::{
     copy_selection, screen_to_char_pos, TextViewDragState, TextViewSelectionState,
 };
 pub use layout::DisplayLayout;
-pub use overlay::{RectOverlay, TextViewOverlays};
+pub use overlay::{RectOverlay, RowVertical, TextViewOverlays};
 pub use plugin::{TextView, TextViewBatchEntity, TextViewPlugin, TextViewRenderSet};
 pub use render::{GlyphBatchComponent, GlyphInstance, TextViewBatch};
 pub use snapshot::{trivial_layout, ShapedLine, SimpleTheme, StyleRun};

@@ -29,16 +29,34 @@ impl TextViewOverlays {
 ///
 /// `display_row` indexes into `DisplayLayout.lines`; `x_range` is in pixels
 /// relative to the row's text origin. `0.0..f32::MAX` covers the full line.
-/// `y_range` is in pixels relative to the row's top edge — `None` means
-/// "full line height".
+///
+/// `vertical` declares *what kind* of decoration this is — `Full` for selection
+/// backgrounds, `Caret` for cursors, `TopBand`/`BottomBand` for cursor-line
+/// borders, `UnderBaseline` for underlines/squiggles. The renderer translates
+/// these into pixels using the row's geometry. Producers never compute Y.
 #[derive(Clone, Debug)]
 pub struct RectOverlay {
     pub display_row: u32,
     pub x_range: Range<f32>,
-    /// `None` = full line height. `Some(0.0..2.0)` = top 2px (e.g. row border).
-    pub y_range: Option<Range<f32>>,
+    pub vertical: RowVertical,
     pub color: Color,
     /// Z order: -1 = below text (selection bg, line highlight), +1 = above text (carets).
     pub z: i8,
     pub corner_radius: f32,
+}
+
+/// Semantic vertical placement within a row. Resolved to pixels by the renderer.
+#[derive(Clone, Copy, Debug)]
+pub enum RowVertical {
+    /// Span the full row height (selection background, line-highlight band).
+    Full,
+    /// Vertically centered on the row, at `height_fraction * line_height` tall.
+    /// `1.0` = full row, `0.9` ≈ vscode-ish caret.
+    Caret { height_fraction: f32 },
+    /// Thin band along the row's top edge.
+    TopBand { thickness: f32 },
+    /// Thin band along the row's bottom edge.
+    BottomBand { thickness: f32 },
+    /// Underline below the typographic baseline (squiggle / error indicator).
+    UnderBaseline { thickness: f32, gap: f32 },
 }
