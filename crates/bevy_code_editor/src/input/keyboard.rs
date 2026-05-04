@@ -458,16 +458,15 @@ pub fn handle_keyboard_input(
             },
             action,
             &indentation,
-            #[cfg(feature = "lsp")]
-            &lsp,
             &mut goto_line_state,
             &mut fold_state,
             #[cfg(feature = "lsp")]
-            &lsp_client,
-            #[cfg(feature = "lsp")]
-            &mut completion_state,
-            #[cfg(feature = "lsp")]
-            &mut lsp_sync,
+            crate::input::actions::LspBuf {
+                settings: &lsp,
+                client: &lsp_client,
+                completion: &mut completion_state,
+                sync: &mut lsp_sync,
+            },
         );
     }
     }

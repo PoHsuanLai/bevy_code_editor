@@ -20,7 +20,14 @@ impl EditHistoryState {
         self.insert_char_with_history(sel, syntax, display, cursor, tv, c, true);
     }
 
-    /// Insert character at cursor position with optional history recording
+    /// Insert character at cursor position with optional history recording.
+    ///
+    /// The 8-arg signature is the cost of this method living on
+    /// `EditHistoryState` while needing to mutate selection, syntax cache,
+    /// display, cursor, and rope alongside history. Bundling these into a
+    /// single `EditorBuf` is desirable but would require lifting all 16
+    /// `EditHistoryState` methods to free functions — a separate refactor.
+    #[allow(clippy::too_many_arguments)]
     pub fn insert_char_with_history(
         &mut self,
         sel: &mut SelectionState,
