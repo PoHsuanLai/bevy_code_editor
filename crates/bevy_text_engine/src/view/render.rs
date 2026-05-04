@@ -1,9 +1,11 @@
-//! Generic text view rendering — produces GlyphInstance batches from TextViewState.
+//! Generic text view rendering — produces `GlyphInstance` batches from a
+//! `DisplayLayout` and (optional) `TextViewOverlays`.
 //!
-//! This module contains the core rendering logic extracted from the editor's
-//! `update_gpu_text_instanced` system. It knows nothing about cursors, selections,
-//! syntax highlighting, or any other editor concept — it simply renders styled text
-//! lines into a viewport.
+//! Pure function over an immutable snapshot: no cursors, selections, syntax
+//! highlighting, or other editor concepts here. The producer (`display_map`)
+//! has already shaped each visible row through cosmic-text and resolved
+//! per-line/per-run colors into the `ShapedLine.runs`. This module turns
+//! that into per-glyph quads ready for the instanced pipeline.
 
 use bevy::prelude::*;
 
@@ -157,9 +159,10 @@ pub fn render_layout(
             base_y,
         };
 
-        // Shape-driven path is used when the line carries a `LineShape` shaped at
-        // this font_size and no run wants a font_scale override (those need
-        // per-run reshaping; out of scope for W1).
+        // Shape-driven path is used when the line carries a `LineShape` shaped
+        // at this font_size and no run wants a font_scale override. Runs with
+        // `font_scale != 0.0/1.0` need re-shaping at a different size, which
+        // happens on demand inside `emit_unshaped_run_glyphs`.
         let shape_usable = line
             .shape
             .as_ref()
@@ -181,12 +184,12 @@ pub fn render_layout(
                     &mut text_instances,
                 );
             } else {
-                emit_monospace_glyphs(
+                emit_unshaped_run_glyphs(
                     line,
                     0..line.text.len(),
                     anchor,
                     style,
-                    MonoMetrics {
+                    RunMetrics {
                         font_size,
                         start_x: 0.0,
                     },
@@ -243,12 +246,12 @@ pub fn render_layout(
                         &mut text_instances,
                     );
                 } else {
-                    emit_monospace_glyphs(
+                    emit_unshaped_run_glyphs(
                         line,
                         run.byte_range.clone(),
                         anchor,
                         style,
-                        MonoMetrics {
+                        RunMetrics {
                             font_size: seg_font_size,
                             start_x: seg_x_start,
                         },
@@ -364,7 +367,7 @@ fn emit_shaped_run_glyphs(
 /// overrides); `start_x` is the run's pen-x relative to the line origin (where
 /// it picks up after any preceding runs).
 #[derive(Clone, Copy)]
-struct MonoMetrics {
+struct RunMetrics {
     font_size: f32,
     start_x: f32,
 }
@@ -376,12 +379,12 @@ struct MonoMetrics {
 /// Shaping a per-frame slice is cheap — it's the same code path the producer
 /// uses, just narrowed to the run. For monospace ASCII it yields advances
 /// byte-identical to the old `col * char_width` walk.
-fn emit_monospace_glyphs(
+fn emit_unshaped_run_glyphs(
     line: &ShapedLine,
     range: std::ops::Range<usize>,
     anchor: RowAnchor,
     style: RunStyle,
-    metrics: MonoMetrics,
+    metrics: RunMetrics,
     atlas: &mut GlyphAtlas,
     out: &mut Vec<GlyphInstance>,
 ) {

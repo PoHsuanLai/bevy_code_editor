@@ -1,11 +1,10 @@
-//! Text View Demo — standalone `TextEnginePlugins` without any editor
+//! Text View Demo — standalone `TextEnginePlugins` without any editor.
 //!
 //! Demonstrates that the engine's `TextEnginePlugins` (GPU + view systems)
 //! can render styled text independently, without `CodeEditorPlugin`, cursor,
 //! selection, syntax highlighting, or keybindings.
 //!
-//! As of step 7 the demo builds a `DisplayLayout` directly via `trivial_layout`
-//! rather than going through `TextViewState.styled_lines`. Mouse-wheel
+//! Builds a `DisplayLayout` directly via `trivial_layout`. Mouse-wheel
 //! scrolling here is handled by a tiny demo-local system; real consumers
 //! that want the editor's scroll/drag/copy behaviour also add
 //! `TextInteractionPlugin`.

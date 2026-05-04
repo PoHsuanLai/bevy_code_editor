@@ -493,17 +493,10 @@ mod instanced_extensions {
         ) -> Option<(GlyphInfo, PlacementInfo)> {
             use swash::scale::image::Content;
 
-            // Check cache first
+            // Check cache first. `PlacementInfo` is reconstructed from
+            // `GlyphInfo.offset` (which already stores left/top in logical
+            // pixels), so we don't need to cache it separately.
             if let Some(info) = self.cache.get(&cache_key) {
-                // We don't cache PlacementInfo because it's specific to the layout engine's temporary cache
-                // But we can reconstruct it from the info or just re-query the image if placement is needed separately.
-                // Actually, the current usage in update_gpu_text_instanced needs PlacementInfo.
-                // The `GlyphInfo` struct stores `offset` which is basically placement.
-                // Let's see:
-                // GlyphInfo.offset = Vec2(left / scale, top / scale)
-                // PlacementInfo.left = left / scale, PlacementInfo.top = top / scale
-                // So we can reconstruct PlacementInfo from GlyphInfo.offset!
-
                 let placement = PlacementInfo {
                     left: info.offset.x,
                     top: info.offset.y,

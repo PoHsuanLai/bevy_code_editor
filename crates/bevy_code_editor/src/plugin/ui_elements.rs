@@ -12,9 +12,9 @@ use bevy_text_interaction::ScrollConfig;
 
 /// Push selection rectangles into `TextViewOverlays` for all cursors.
 ///
-/// As of step 6b, selections are paint-time overlays (z = -1, below text)
-/// rather than Sprite entities. The collection logic (which lines/cols are
-/// selected) is unchanged; only the writing-out is different.
+/// Selections render as paint-time overlay rects with `z = -1` (below text),
+/// not as separate `Sprite` entities, so the engine's renderer paints them
+/// in the same draw call as the glyphs.
 pub(crate) fn update_selection_highlight(
     mut editor_query: Query<
         (

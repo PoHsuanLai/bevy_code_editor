@@ -146,8 +146,9 @@ pub(crate) fn push_cursor_overlays(
     for (_display, cursor, tv, _vp, mut overlays, fold_state, font, layout) in
         editor_query.iter_mut()
     {
-        // Drain any caret rects from the previous frame. We mark them with z=+1 so
-        // we can identify them; selection rects use z=-1 (added in step 6b).
+        // Drain any caret rects from the previous frame. We mark them with
+        // `z = +1` so we can identify them; selection rects use `z = -1` and
+        // line-highlight uses `z = 0`.
         overlays.rects.retain(|r| r.z != 1);
 
         // Blink: skip pushing during the off-phase. Always visible for half a second

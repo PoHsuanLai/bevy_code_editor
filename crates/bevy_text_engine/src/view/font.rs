@@ -16,9 +16,10 @@ use bevy::prelude::*;
 
 /// Font sizing for a single text view entity.
 ///
-/// Monospace-only for now: `char_width` is a scalar advance applied to
-/// every glyph. Phase 4 will add weight/family/decoration on `StyleRun`,
-/// and a future phase will replace the scalar with shaped advances.
+/// `char_width` is a scalar fallback advance — the renderer prefers per-glyph
+/// shaped advances from `LineShape.glyphs[*].x` and only falls back to the
+/// scalar for `trivial_layout` consumers that ship `shape: None`. For monospace
+/// faces the scalar matches the shaped advance bit-for-bit.
 #[derive(Component, Clone, Debug, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct FontConfig {
