@@ -158,8 +158,8 @@ pub(crate) fn update_text_views(
             Entity,
             &TextViewState,
             &TextViewViewport,
-            &DisplayLayout,
-            Option<&TextViewOverlays>,
+            Ref<DisplayLayout>,
+            Option<Ref<TextViewOverlays>>,
             Option<&TextViewBatchEntity>,
             Option<&bevy_camera::visibility::RenderLayers>,
         ),
@@ -172,6 +172,15 @@ pub(crate) fn update_text_views(
     for (tv_entity, state, viewport, layout, overlays, batch_entity_opt, render_layers) in
         text_views.iter_mut()
     {
+        // W5 skip-on-unchanged: if neither the display layout nor the overlays
+        // changed since last frame, the GPU batch is still valid — skip the
+        // rebuild + atlas upload entirely.
+        let overlays_changed = overlays.as_ref().map(|o| o.is_changed()).unwrap_or(false);
+        if !layout.is_changed() && !overlays_changed && batch_entity_opt.is_some() {
+            continue;
+        }
+        let layout: &DisplayLayout = &layout;
+        let overlays = overlays.as_deref();
         let content_start_x = if viewport.gutter_width > 0.0 {
             viewport.text_area_left.max(viewport.gutter_width)
         } else {
