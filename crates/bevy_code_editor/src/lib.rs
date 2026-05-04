@@ -50,51 +50,34 @@ pub mod types;
 pub mod lsp;
 
 pub mod prelude {
-    //! Convenient re-exports for common usage
-    pub use crate::input::*;
-    pub use crate::language::{Language, TreeSitterConfig};
+    //! Convenient re-exports for common editor usage.
+    //!
+    //! Engine-side primitives (`TextView`, `FontConfig`, `DisplayLayout`,
+    //! `TextViewState`, `TextViewViewport`, `TextEnginePlugin`,
+    //! `TextEnginePlugins`) come in via `bevy_text_engine::prelude::*`. The
+    //! editor adds: the editor plugin (+ `standalone()`'s plugin group), the
+    //! UI plugin, the interaction plugin, the `CodeEditor` marker, and the
+    //! handful of file/save events + scroll config that hosts touch
+    //! day-to-day. Lower-level types (display map points, fold/wrap state,
+    //! shaped lines, history) live on the crate path
+    //! (`bevy_code_editor::types::*`, `::display_map::*`, etc.) for hosts
+    //! that need them.
+
+    // Engine surface — TextEnginePlugins, TextEnginePlugin, TextView,
+    // FontConfig, DisplayLayout, TextViewState, TextViewViewport.
+    pub use bevy_text_engine::prelude::*;
+
+    // Editor plugin + its standalone PluginGroup, and the interaction +
+    // UI plugins that hosts compose with.
     pub use crate::plugin::{
-        ApplyStateSet, CodeEditorPlugin, EditorInputManager, EditorSetupSet, EditorUiPlugin,
-        HighlightCache, InputSet, RenderingSet, SyntaxPlugin, SyntaxResource,
+        CodeEditorPlugin, CodeEditorStandalone, EditorUiPlugin,
     };
-    pub use crate::types::events::*;
+    pub use crate::text_view::TextInteractionPlugin;
 
-    pub use crate::plugin::{Scrollbar, ScrollbarPlugin};
-    pub use crate::settings::*;
-    pub use crate::text_view::{
-        copy_selection, screen_to_char_pos, GlyphBatchComponent, GlyphInstance, TextView,
-        TextViewBatch, TextViewBatchEntity, TextViewDragState, TextViewPlugin, TextViewRenderSet,
-        TextViewSelectionState, TextViewState, TextViewViewport, ViewportOrigin,
-    };
-    // User-facing editor components
-    pub use crate::types::editor::{
-        CodeEditor, CursorState, EditHistoryState, EditorDisplayState,
-        EditorScrollControl, KeyRepeatState, OpenRequested, SaveRequested, ScrollConfig,
-        SelectionState, SyntaxCacheState, ViewportConfig, ViewportDimensions,
-    };
-    // Engine-side per-entity font configuration (re-exported for convenience).
-    pub use bevy_text_engine::FontConfig;
-    // User-facing data types
-    pub use crate::types::display_map::LineSegment;
-    pub use crate::types::fold::{FoldState, GotoLineState};
+    // Editor marker + per-entity scroll config + save/open events.
+    pub use crate::types::editor::{CodeEditor, OpenRequested, SaveRequested, ScrollConfig};
+
+    // Cursor (the editor-side cursor data type) and the EditorAction enum.
+    pub use crate::input::EditorAction;
     pub use crate::types::selection::Cursor;
-
-    // Selective re-exports from display_map to avoid name conflicts with types.rs
-    pub use crate::display_map::{
-        BufferPoint, BufferRowDisplayInfo, DisplayMapLayer, DisplayPoint, DisplayRowInfo,
-        DisplaySnapshot, FoldMap, FoldPoint, LayeredDisplayMap, Point, TabMap, WrapMap, WrapPoint,
-    };
-
-    #[cfg(feature = "lsp")]
-    pub use crate::lsp::*;
-
-    // Re-export LSP plugins (feature-gated)
-    #[cfg(feature = "lsp")]
-    pub use crate::plugin::{LspPlugin, LspUiPlugin};
-
-    // Re-export egui LSP UI plugin (feature-gated)
-    #[cfg(feature = "egui-overlays")]
-    pub use crate::lsp::egui_render::LspEguiViewportOffset;
-    #[cfg(feature = "egui-overlays")]
-    pub use crate::plugin::lsp_egui_ui_plugin::LspEguiUiPlugin;
 }

@@ -6,6 +6,9 @@
 use bevy::prelude::*;
 use bevy::window::{CursorIcon, SystemCursorIcon};
 use bevy_code_editor::prelude::*;
+use bevy_code_editor::types::editor::{
+    CursorState, EditHistoryState, SelectionState, SyntaxCacheState,
+};
 
 #[cfg(feature = "tree-sitter")]
 use bevy_code_editor::plugin::syntax_highlighting::SyntaxResource;
@@ -22,8 +25,7 @@ fn main() {
             }),
             ..default()
         }))
-        .add_plugins(CodeEditorPlugin)
-        .add_plugins(EditorUiPlugin::default())
+        .add_plugins(CodeEditorPlugin::standalone())
         .add_systems(PostStartup, setup_editor)
         .add_systems(Update, update_cursor_icon)
         .run();

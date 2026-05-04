@@ -8,10 +8,7 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use ropey::Rope;
 
-use super::plugin::TextView;
-use super::state::TextViewState;
-use super::viewport::TextViewViewport;
-use bevy_text_engine::FontConfig;
+use bevy_text_engine::{FontConfig, TextView, TextViewState, TextViewViewport};
 
 // =============================================================================
 // Components & Resources

@@ -1,5 +1,7 @@
 use crate::types::*;
+use bevy::app::{PluginGroup, PluginGroupBuilder};
 use bevy::prelude::*;
+use bevy_text_engine::TextEnginePlugins;
 
 pub mod brackets;
 pub mod cursor;
@@ -83,8 +85,61 @@ pub struct RenderingSet;
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EditorSetupSet;
 
+/// Editor systems plugin. Registers editor settings resources, input
+/// dispatch, the editor's per-frame update pipeline, and the syntax /
+/// folding / cursor / scrollbar / bracket sub-plugins.
+///
+/// **Dependencies (host responsibility):** this plugin does **not** add the
+/// engine GPU pipeline or the `TextView` rendering systems. Hosts must add
+/// [`bevy_text_engine::TextEnginePlugins`] and
+/// [`crate::text_view::TextInteractionPlugin`] separately, e.g.
+///
+/// ```rust,no_run
+/// # use bevy::prelude::*;
+/// # use bevy_text_engine::TextEnginePlugins;
+/// # use bevy_code_editor::prelude::*;
+/// App::new()
+///     .add_plugins(DefaultPlugins)
+///     .add_plugins((TextEnginePlugins, TextInteractionPlugin, CodeEditorPlugin))
+///     .run();
+/// ```
+///
+/// For a one-line "hello world" with everything pre-wired (engine + interaction
+/// + UI + camera), use [`CodeEditorPlugin::standalone`].
 #[derive(Default)]
 pub struct CodeEditorPlugin;
+
+impl CodeEditorPlugin {
+    /// Returns a [`PluginGroup`] that bundles everything for a runnable
+    /// editor demo: [`TextEnginePlugins`] (GPU + view systems),
+    /// [`crate::text_view::TextInteractionPlugin`] (mouse/keyboard for
+    /// text views), [`CodeEditorPlugin`] (editor systems), and
+    /// [`EditorUiPlugin`] (line numbers, separator, camera).
+    ///
+    /// Use this when you just want to drop an editor into an app without
+    /// thinking about plugin ordering. For embedded use (one panel inside
+    /// a larger UI), prefer adding the constituent plugins yourself.
+    pub fn standalone() -> CodeEditorStandalone {
+        CodeEditorStandalone
+    }
+}
+
+/// `PluginGroup` returned by [`CodeEditorPlugin::standalone`].
+///
+/// Bundles the engine, interaction, editor, and default UI plugins into a
+/// single group. Mirror of `bevy::DefaultPlugins`: hosts that want
+/// fine-grained control can `.disable::<X>()` individual plugins.
+pub struct CodeEditorStandalone;
+
+impl PluginGroup for CodeEditorStandalone {
+    fn build(self) -> PluginGroupBuilder {
+        PluginGroupBuilder::start::<Self>()
+            .add_group(TextEnginePlugins)
+            .add(crate::text_view::TextInteractionPlugin)
+            .add(CodeEditorPlugin)
+            .add(EditorUiPlugin::default())
+    }
+}
 
 impl Plugin for CodeEditorPlugin {
     fn build(&self, app: &mut App) {
@@ -131,9 +186,12 @@ impl Plugin for CodeEditorPlugin {
                 .chain(),
         );
 
-        // Add GPU text rendering plugins (must be added before other plugins that depend on it)
-        app.add_plugins(bevy_text_engine::gpu::GpuTextPlugin);
-        app.add_plugins(bevy_text_engine::gpu::InstancedTextRenderPlugin);
+        // GPU text rendering plugins live in `bevy_text_engine::TextEnginePlugins`
+        // and are the host's responsibility to add — see this plugin's
+        // top-level doc-comment. We don't auto-add them: doing so would make
+        // the engine plugins effectively part of CodeEditorPlugin's surface,
+        // and hosts couldn't disable / replace them via standard PluginGroup
+        // tools.
 
         // Per-entity keyboard focus, idempotent if the host already added it.
         if !app.is_plugin_added::<bevy::input_focus::InputDispatchPlugin>() {
@@ -195,13 +253,14 @@ impl Plugin for CodeEditorPlugin {
         // Display-map snapshot — runs between input/state and rendering.
         app.add_plugins(crate::display_map::DisplayMapPlugin);
 
-        // Renderer: text_view::update_text_views consumes the DisplayLayout the
-        // display-map system wrote, plus the overlays cursor/selection systems wrote.
-        // Runs after all overlay producers so it sees this frame's overlays.
-        app.add_systems(
+        // The renderer (`update_text_views`) is registered by `TextEnginePlugin`
+        // — see `bevy_text_engine::view::plugin`. It already runs in
+        // `TextViewRenderSet` with `.run_if(atlas_ready)`. We just configure
+        // the editor-side ordering: rendering must observe this frame's
+        // cursor / selection overlays.
+        app.configure_sets(
             Update,
-            crate::text_view::plugin::update_text_views
-                .run_if(bevy_text_engine::gpu::atlas_ready)
+            bevy_text_engine::TextViewRenderSet
                 .in_set(RenderingSet)
                 .after(crate::plugin::cursor::push_cursor_overlays)
                 .after(crate::plugin::cursor::update_cursor_line_highlight)

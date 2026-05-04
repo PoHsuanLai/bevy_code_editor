@@ -154,7 +154,7 @@ impl Plugin for EditorUiPlugin {
         app.add_systems(
             Update,
             update_gpu_line_numbers
-                .after(crate::text_view::plugin::update_text_views)
+                .after(bevy_text_engine::TextViewRenderSet)
                 .run_if(bevy_text_engine::gpu::atlas_ready)
                 .in_set(super::RenderingSet),
         );

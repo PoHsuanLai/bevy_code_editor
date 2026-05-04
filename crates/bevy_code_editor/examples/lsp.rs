@@ -8,6 +8,19 @@
 
 use bevy::prelude::*;
 use bevy_code_editor::prelude::*;
+#[cfg(feature = "lsp")]
+use bevy_code_editor::language::Language;
+#[cfg(feature = "lsp")]
+use bevy_code_editor::lsp::LspClient;
+#[cfg(all(feature = "lsp", not(feature = "egui-overlays")))]
+use bevy_code_editor::plugin::LspUiPlugin;
+#[cfg(all(feature = "lsp", feature = "tree-sitter"))]
+use bevy_code_editor::language::TreeSitterConfig;
+#[cfg(feature = "egui-overlays")]
+use bevy_code_editor::plugin::lsp_egui_ui_plugin::LspEguiUiPlugin;
+use bevy_code_editor::types::editor::{
+    CursorState, EditHistoryState, SelectionState, SyntaxCacheState,
+};
 
 fn main() {
     #[cfg(feature = "lsp")]
@@ -39,8 +52,7 @@ fn run_with_lsp() {
         app.add_plugins(bevy_egui::EguiPlugin::default());
     }
 
-    app.add_plugins(CodeEditorPlugin)
-        .add_plugins(EditorUiPlugin::default());
+    app.add_plugins(CodeEditorPlugin::standalone());
 
     // LspPlugin is already added by CodeEditorPlugin when the lsp feature is enabled.
     // Just add the UI layer.
@@ -211,7 +223,7 @@ fn run_without_lsp() {
             }),
             ..default()
         }))
-        .add_plugins(CodeEditorPlugin::default())
+        .add_plugins(CodeEditorPlugin::standalone())
         .add_systems(PostStartup, show_lsp_message)
         .run();
 }

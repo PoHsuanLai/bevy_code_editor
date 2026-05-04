@@ -33,9 +33,15 @@ fn main() {
             }),
             ..default()
         }))
-        // CodeEditorPlugin auto-spawns one default editor on Startup.
-        // We replace the spawn with our own pair of editors below.
-        .add_plugins(CodeEditorPlugin)
+        // Embedded mode: explicitly compose the engine plugins, the
+        // interaction plugin, and the editor plugin. We skip `EditorUiPlugin`
+        // (no global gutter/separator/camera) because each editor here
+        // carries its own camera + render layer pair.
+        .add_plugins((
+            TextEnginePlugins,
+            TextInteractionPlugin,
+            CodeEditorPlugin,
+        ))
         .add_systems(Startup, (despawn_default_editor, spawn_two_editors).chain())
         .run();
 }

@@ -1,27 +1,32 @@
-//! Text View Demo — standalone TextViewPlugin without any editor
+//! Text View Demo — standalone `TextEnginePlugins` without any editor
 //!
-//! Demonstrates that TextViewPlugin can render styled text independently,
-//! without CodeEditorPlugin, cursor, selection, syntax highlighting, or keybindings.
+//! Demonstrates that the engine's `TextEnginePlugins` (GPU + view systems)
+//! can render styled text independently, without `CodeEditorPlugin`, cursor,
+//! selection, syntax highlighting, or keybindings.
 //!
 //! As of step 7 the demo builds a `DisplayLayout` directly via `trivial_layout`
-//! rather than going through `TextViewState.styled_lines`.
+//! rather than going through `TextViewState.styled_lines`. Mouse-wheel
+//! scrolling here is handled by a tiny demo-local system; real consumers
+//! that want the editor's scroll/drag/copy behaviour also add
+//! `TextInteractionPlugin`.
 
 use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
-use bevy_code_editor::text_view::*;
+use bevy_text_engine::prelude::*;
+use bevy_text_engine::view::snapshot::{trivial_layout, StyleRun};
 
 fn main() {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
-            title: "TextViewPlugin Demo — No Editor".to_string(),
+            title: "TextEnginePlugins Demo — No Editor".to_string(),
             resolution: (800, 600).into(),
             ..default()
         }),
         ..default()
     }));
 
-    app.add_plugins(TextViewPlugin)
+    app.add_plugins(TextEnginePlugins)
         .add_systems(Startup, (setup_camera, setup_text_view))
         .add_systems(Update, handle_scroll)
         .run();
@@ -124,7 +129,7 @@ fn setup_text_view(mut commands: Commands, windows: Query<&Window>) {
     let state = TextViewState::with_text(&full_text);
 
     // Build the display layout directly. Match the editor's font defaults so
-    // the demo's metrics line up with what TextViewPlugin's render system uses.
+    // the demo's metrics line up with what `update_text_views` uses.
     let line_height = 24.0;
     let char_width = 10.0;
     let baseline_offset = 18.0 * 0.32;

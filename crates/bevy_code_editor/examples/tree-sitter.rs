@@ -5,6 +5,14 @@
 
 use bevy::prelude::*;
 use bevy_code_editor::prelude::*;
+use bevy_code_editor::types::editor::{
+    CursorState, EditHistoryState, SelectionState, SyntaxCacheState,
+};
+#[cfg(feature = "tree-sitter")]
+use bevy_code_editor::{
+    language::{Language, TreeSitterConfig},
+    plugin::syntax_highlighting::SyntaxResource,
+};
 
 fn main() {
     App::new()
@@ -16,8 +24,7 @@ fn main() {
             }),
             ..default()
         }))
-        .add_plugins(CodeEditorPlugin)
-        .add_plugins(EditorUiPlugin::default())
+        .add_plugins(CodeEditorPlugin::standalone())
         .add_systems(PostStartup, setup_editor_with_treesitter)
         .run();
 }

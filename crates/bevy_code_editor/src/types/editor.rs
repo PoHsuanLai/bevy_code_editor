@@ -142,10 +142,13 @@ impl ScrollConfig {
 /// `#[require]` cascades every supporting component, so spawning a
 /// `CodeEditor` is sufficient to get a fully functional editor entity
 /// (mirror of `bevy_text::Text2d`). The required `TextView` transitively
-/// requires the engine rendering components.
+/// requires the engine rendering components; the interaction-state
+/// components attached here are read by the editor's input systems and
+/// kept on `CodeEditor` (rather than `TextView`) so plain text views
+/// don't pay for them.
 #[derive(Component, Default)]
 #[require(
-    crate::text_view::TextView,
+    bevy_text_engine::TextView,
     SelectionState,
     EditHistoryState,
     SyntaxCacheState,
@@ -156,6 +159,8 @@ impl ScrollConfig {
     crate::types::fold::GotoLineState,
     crate::types::fold::FoldState,
     crate::plugin::scrollbar::ScrollbarDragState,
+    crate::text_view::interaction::TextViewDragState,
+    crate::text_view::interaction::TextViewSelectionState,
 )]
 pub struct CodeEditor;
 

@@ -6,6 +6,9 @@
 use bevy::prelude::*;
 use bevy::window::{CursorIcon, SystemCursorIcon};
 use bevy_code_editor::prelude::*;
+use bevy_code_editor::types::editor::{
+    CursorState, EditHistoryState, SelectionState, SyntaxCacheState, ViewportConfig,
+};
 
 /// Which edge/corner is being resized
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -100,8 +103,7 @@ fn main() {
             ..default()
         }))
         .insert_resource(EditorPanel::default())
-        .add_plugins(CodeEditorPlugin)
-        .add_plugins(EditorUiPlugin::default())
+        .add_plugins(CodeEditorPlugin::standalone())
         // Disable auto-resize so we can control viewport manually
         // IMPORTANT: Must be AFTER CodeEditorPlugin to override its default
         .insert_resource(ViewportConfig {
@@ -147,7 +149,7 @@ fn setup(
     // Set initial viewport position (left/top of panel in window coords).
     // Both rendering origin and hit-test position track the panel's screen edge.
     let panel_pos = bevy::math::Vec2::new(panel.left, panel.top);
-    viewport.origin = bevy_code_editor::prelude::ViewportOrigin::ScreenAbsolute(panel_pos);
+    viewport.origin = bevy_text_engine::ViewportOrigin::ScreenAbsolute(panel_pos);
     viewport.hit_test_position = panel_pos;
 
     // Spawn 4 border sprites (top, bottom, left, right)
