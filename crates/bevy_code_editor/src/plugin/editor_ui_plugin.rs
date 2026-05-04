@@ -32,7 +32,7 @@ use super::{
     update_gpu_line_numbers, update_indent_guides,
     update_selection_highlight, EditorSetupSet,
 };
-use crate::gpu_text::GlyphAtlas;
+use bevy_text_engine::gpu::GlyphAtlas;
 
 #[cfg(feature = "brackets")]
 use super::{update_bracket_highlight, update_bracket_match};
@@ -147,7 +147,7 @@ impl Plugin for EditorUiPlugin {
         app.add_systems(
             Update,
             update_font_metrics
-                .run_if(crate::gpu_text::atlas_ready)
+                .run_if(bevy_text_engine::gpu::atlas_ready)
                 .in_set(super::RenderingSet),
         );
 
@@ -157,7 +157,7 @@ impl Plugin for EditorUiPlugin {
             Update,
             update_gpu_line_numbers
                 .after(crate::text_view::plugin::update_text_views)
-                .run_if(crate::gpu_text::atlas_ready)
+                .run_if(bevy_text_engine::gpu::atlas_ready)
                 .in_set(super::RenderingSet),
         );
 

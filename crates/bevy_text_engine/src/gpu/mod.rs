@@ -17,13 +17,16 @@ pub use atlas::{
 
 pub use atlas::{PlacementInfo, PositionedGlyph};
 
-pub use instanced_render::InstancedTextRenderPlugin;
+pub use instanced_render::{ExtractedTextGlobals, InstancedTextRenderPlugin};
 
 pub use atlas::GlyphAtlas as GlyphAtlasType;
 pub use render::{
-    update_atlas_texture, GlyphBatch, GlyphInstance, GpuTextPlugin, TextBatchBuilder, TextMaterial,
+    update_atlas_texture, GlyphBatch, GpuTextPlugin, TextBatchBuilder, TextMaterial,
     TextRenderState,
 };
+// `gpu::render::GlyphInstance` is the legacy material-batch type used only
+// inside `gpu/render.rs`. The live one is `view::render::GlyphInstance` —
+// re-exported from the crate root via `view::*`.
 
 pub use bevy::sprite_render::MeshMaterial2d;
 

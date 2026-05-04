@@ -869,6 +869,7 @@ dependencies = [
  "bevy",
  "bevy_camera",
  "bevy_egui",
+ "bevy_text_engine",
  "bytemuck",
  "cosmic-text 0.12.1",
  "eframe",
@@ -1768,6 +1769,18 @@ dependencies = [
  "thiserror 2.0.17",
  "tracing",
  "wgpu-types 26.0.0",
+]
+
+[[package]]
+name = "bevy_text_engine"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_camera",
+ "bytemuck",
+ "cosmic-text 0.12.1",
+ "ropey",
+ "swash 0.1.19",
 ]
 
 [[package]]

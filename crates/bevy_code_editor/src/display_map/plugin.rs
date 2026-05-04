@@ -142,7 +142,7 @@ fn syntax_version(_syntax: &SyntaxResource) -> u64 {
 pub(crate) fn prewarm_atlas_for_layout(
     layouts: Query<Ref<DisplayLayout>>,
     font: Res<FontSettings>,
-    mut atlas: ResMut<crate::gpu_text::GlyphAtlas>,
+    mut atlas: ResMut<bevy_text_engine::gpu::GlyphAtlas>,
 ) {
     for layout in &layouts {
         if !layout.is_changed() {

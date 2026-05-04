@@ -7,7 +7,7 @@
 
 use bevy::prelude::*;
 
-use crate::gpu_text::{GlyphAtlas, GlyphKey, GlyphRasterizer};
+use crate::gpu::{GlyphAtlas, GlyphKey, GlyphRasterizer};
 
 use super::layout::DisplayLayout;
 use super::overlay::TextViewOverlays;
@@ -327,7 +327,7 @@ fn push_overlay_quad(
     world_left: f32,
     world_top: f32,
     line_start_x: f32,
-    solid_uv: crate::gpu_text::GlyphInfo,
+    solid_uv: crate::gpu::GlyphInfo,
     out: &mut Vec<GlyphInstance>,
 ) {
     let Some(line) = layout

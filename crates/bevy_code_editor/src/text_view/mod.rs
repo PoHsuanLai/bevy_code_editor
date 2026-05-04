@@ -1,41 +1,30 @@
 //! Reusable text view module — generic text rendering in a scrollable viewport.
 //!
-//! This module provides the core abstraction for rendering styled text using the GPU
-//! instanced rendering pipeline. It is editor-agnostic: it knows nothing about cursors,
-//! selections, syntax highlighting, or keybindings.
-//!
-//! ## Usage
-//!
-//! ```rust,ignore
-//! use bevy_code_editor::text_view::*;
-//!
-//! app.add_plugins(TextViewPlugin);
-//!
-//! // Spawn a text view entity
-//! commands.spawn((
-//!     TextView,
-//!     TextViewState::with_text("Hello, World!"),
-//!     TextViewViewport::default(),
-//! ));
-//! ```
+//! Most types (`DisplayLayout`, `ShapedLine`, `StyleRun`, `RectOverlay`,
+//! `TextViewState`, `TextViewViewport`, `render_layout`, …) live in
+//! [`bevy_text_engine`] and are re-exported here so existing
+//! `use bevy_code_editor::text_view::…;` paths keep working through the
+//! workspace split. Editor-specific bits (`interaction`, `plugin`) remain
+//! in this crate; subsequent phases will move `interaction` to a
+//! `bevy_text_interaction` peer crate and slim `plugin` into a thin editor
+//! adapter.
 
 pub mod interaction;
-pub mod layout;
-pub mod line_width;
-pub mod overlay;
 pub mod plugin;
-pub mod render;
-pub mod snapshot;
-pub mod state;
-pub mod viewport;
+
+// Re-export the engine view layer so the rest of the editor crate keeps
+// using `crate::text_view::…`. Re-exporting submodules (not just symbols)
+// preserves paths like `crate::text_view::render::GlyphInstance`.
+pub use bevy_text_engine::view::{
+    layout, line_width, overlay, render, snapshot, state, viewport, DisplayLayout,
+    GlyphBatchComponent, GlyphInstance, LineWidthTracker, RectOverlay, RowVertical, ShapedLine,
+    SimpleTheme, StyleRun, TextViewBatch, TextViewOverlays, TextViewState, TextViewViewport,
+    ViewportOrigin,
+};
+
+pub use bevy_text_engine::view::snapshot::trivial_layout;
 
 pub use interaction::{
     copy_selection, screen_to_char_pos, TextViewDragState, TextViewSelectionState,
 };
-pub use layout::DisplayLayout;
-pub use overlay::{RectOverlay, RowVertical, TextViewOverlays};
 pub use plugin::{TextView, TextViewBatchEntity, TextViewPlugin, TextViewRenderSet};
-pub use render::{GlyphBatchComponent, GlyphInstance, TextViewBatch};
-pub use snapshot::{trivial_layout, ShapedLine, SimpleTheme, StyleRun};
-pub use state::TextViewState;
-pub use viewport::{TextViewViewport, ViewportOrigin};

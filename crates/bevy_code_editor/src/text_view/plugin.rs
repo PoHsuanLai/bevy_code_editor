@@ -11,7 +11,7 @@ use super::overlay::TextViewOverlays;
 use super::render::{render_layout, GlyphBatchComponent, TextViewBatch};
 use super::state::TextViewState;
 use super::viewport::TextViewViewport;
-use crate::gpu_text::GlyphAtlas;
+use bevy_text_engine::gpu::GlyphAtlas;
 use crate::settings::FontSettings;
 
 /// System set for text view rendering
@@ -47,11 +47,11 @@ impl Plugin for TextViewPlugin {
         // and produces opaque "atlas not ready" failures when forgotten. Hosts
         // that genuinely want their own GPU pipeline can add the plugins first
         // and our `is_plugin_added` check skips the duplicate add.
-        if !app.is_plugin_added::<crate::gpu_text::GpuTextPlugin>() {
-            app.add_plugins(crate::gpu_text::GpuTextPlugin);
+        if !app.is_plugin_added::<bevy_text_engine::gpu::GpuTextPlugin>() {
+            app.add_plugins(bevy_text_engine::gpu::GpuTextPlugin);
         }
-        if !app.is_plugin_added::<crate::gpu_text::InstancedTextRenderPlugin>() {
-            app.add_plugins(crate::gpu_text::InstancedTextRenderPlugin);
+        if !app.is_plugin_added::<bevy_text_engine::gpu::InstancedTextRenderPlugin>() {
+            app.add_plugins(bevy_text_engine::gpu::InstancedTextRenderPlugin);
         }
 
         // Interaction resources
@@ -63,7 +63,7 @@ impl Plugin for TextViewPlugin {
             (
                 animate_text_view_scroll,
                 update_text_views
-                    .run_if(crate::gpu_text::atlas_ready)
+                    .run_if(bevy_text_engine::gpu::atlas_ready)
                     .in_set(TextViewRenderSet),
             )
                 .chain(),

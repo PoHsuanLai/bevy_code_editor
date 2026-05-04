@@ -27,27 +27,7 @@ use bevy::{
 
 use bevy_camera::visibility::RenderLayers;
 
-use crate::text_view::{TextViewState, TextViewViewport};
-use crate::types::CodeEditor;
-
-use crate::text_view::render::{GlyphBatchComponent, GlyphInstance};
-
-use bevy::render::Extract;
-
-// ...
-
-fn extract_text_globals(
-    mut commands: Commands,
-    code_editor_query: Extract<Query<(&TextViewState, &TextViewViewport), With<CodeEditor>>>,
-) {
-    // Legacy: still insert global resource for backwards compat
-    if let Ok((state, viewport)) = code_editor_query.single() {
-        commands.insert_resource(ExtractedTextGlobals {
-            scroll_offset: Vec2::new(state.horizontal_scroll_offset, state.scroll_offset),
-            viewport_size: Vec2::new(viewport.width as f32, viewport.height as f32),
-        });
-    }
-}
+use crate::view::render::{GlyphBatchComponent, GlyphInstance};
 
 /// Plugin for instanced glyph rendering
 pub struct InstancedTextRenderPlugin;
@@ -58,9 +38,13 @@ impl Plugin for InstancedTextRenderPlugin {
 
         app.add_plugins(ExtractComponentPlugin::<GlyphBatchComponent>::default());
 
-        // Extract system must run in RenderApp's ExtractSchedule to insert resources in render world
+        // The engine intentionally does NOT register a singleton extract system
+        // for `ExtractedTextGlobals` here. The resource is still defined and
+        // read by `prepare_view_bind_group` as a legacy override path; consumers
+        // that want it (today: `bevy_code_editor`) register their own extractor.
+        // The orthographic-camera path derives viewport+scroll from the
+        // projection matrix and works without it.
         let render_app = app.sub_app_mut(RenderApp);
-        render_app.add_systems(ExtractSchedule, extract_text_globals);
 
         render_app
             .add_render_command::<Transparent2d, DrawInstancedText>()
@@ -106,10 +90,19 @@ struct TextGlobals {
     scroll_offset: Vec2,
 }
 
+/// Render-world resource that lets a consumer override the per-view scroll
+/// offset / viewport size that the orthographic-projection path infers from
+/// `ExtractedView`.
+///
+/// Today's only consumer is `bevy_code_editor`, which registers an extract
+/// system that populates this from its (single) editor entity. Future
+/// consumers should ideally avoid this resource and rely on the projection
+/// matrix path instead — Phase 2 of the refactor will revisit the
+/// per-entity ownership of scroll offsets in the render world.
 #[derive(Resource)]
-struct ExtractedTextGlobals {
-    scroll_offset: Vec2,
-    viewport_size: Vec2,
+pub struct ExtractedTextGlobals {
+    pub scroll_offset: Vec2,
+    pub viewport_size: Vec2,
 }
 
 /// GPU buffer for instance data

@@ -39,7 +39,6 @@
 //! ```
 
 pub mod display_map;
-pub mod gpu_text;
 pub mod input;
 pub mod language;
 pub mod plugin;

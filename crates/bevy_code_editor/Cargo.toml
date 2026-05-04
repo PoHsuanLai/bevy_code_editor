@@ -10,6 +10,9 @@ keywords = ["bevy", "editor", "code-editor", "syntax-highlighting"]
 categories = ["game-development", "text-editors"]
 
 [dependencies]
+# Text rendering engine: GPU atlas, instanced rendering, DisplayLayout, overlays
+bevy_text_engine = { path = "../bevy_text_engine" }
+
 # Bevy engine
 bevy = { version = "0.17", default-features = false, features = [
     "bevy_render",
@@ -51,7 +54,7 @@ arboard = { version = "3.4"}
 
 # egui overlay rendering for LSP popups (optional)
 bevy_egui = { version = "0.38", optional = true }
-armas = { path = "../../../armas/crates/armas", default-features = false, features = ["basic"], optional = true }
+armas = { path = "../../../../../../armas/crates/armas", default-features = false, features = ["basic"], optional = true }
 
 # LSP support (optional)
 lsp-types = { version = "0.95", optional = true }

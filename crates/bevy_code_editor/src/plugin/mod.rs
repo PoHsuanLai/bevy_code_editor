@@ -120,8 +120,8 @@ impl Plugin for CodeEditorPlugin {
         );
 
         // Add GPU text rendering plugins (must be added before other plugins that depend on it)
-        app.add_plugins(crate::gpu_text::GpuTextPlugin);
-        app.add_plugins(crate::gpu_text::InstancedTextRenderPlugin);
+        app.add_plugins(bevy_text_engine::gpu::GpuTextPlugin);
+        app.add_plugins(bevy_text_engine::gpu::InstancedTextRenderPlugin);
 
         // Add input manager plugin for action-based input
         app.add_plugins(leafwing_input_manager::plugin::InputManagerPlugin::<
@@ -184,7 +184,7 @@ impl Plugin for CodeEditorPlugin {
         app.add_systems(
             Update,
             crate::text_view::plugin::update_text_views
-                .run_if(crate::gpu_text::atlas_ready)
+                .run_if(bevy_text_engine::gpu::atlas_ready)
                 .in_set(RenderingSet)
                 .after(crate::plugin::cursor::push_cursor_overlays)
                 .after(crate::plugin::cursor::update_cursor_line_highlight)

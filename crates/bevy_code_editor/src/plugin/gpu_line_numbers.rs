@@ -3,7 +3,7 @@
 //! Uses the same instanced rendering pipeline as the main code text for visual consistency.
 
 use super::editor_ui_plugin::EditorRenderConfig;
-use crate::gpu_text::{GlyphAtlas, GlyphKey, GlyphRasterizer};
+use bevy_text_engine::gpu::{GlyphAtlas, GlyphKey, GlyphRasterizer};
 use crate::settings::*;
 use crate::text_view::render::{GlyphBatchComponent, GlyphInstance};
 use crate::text_view::{TextViewState, TextViewViewport};
