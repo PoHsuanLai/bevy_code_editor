@@ -871,13 +871,13 @@ dependencies = [
  "bevy_egui",
  "bevy_text_engine",
  "bevy_text_interaction",
+ "bevy_tree_sitter",
  "bytemuck",
  "cosmic-text 0.12.1",
  "eframe",
  "egui 0.30.0",
  "egui-wgpu",
  "env_logger",
- "futures-lite",
  "fuzzy-matcher",
  "leafwing-input-manager",
  "lsp-types 0.95.1",
@@ -885,11 +885,9 @@ dependencies = [
  "ropey",
  "serde",
  "serde_json",
- "streaming-iterator",
  "swash 0.1.19",
  "tokio",
  "tower-lsp",
- "tree-sitter",
  "tree-sitter-c",
  "tree-sitter-rust",
 ]
@@ -1825,6 +1823,17 @@ dependencies = [
  "derive_more",
  "serde",
  "thiserror 2.0.17",
+]
+
+[[package]]
+name = "bevy_tree_sitter"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "futures-lite",
+ "ropey",
+ "streaming-iterator",
+ "tree-sitter",
 ]
 
 [[package]]

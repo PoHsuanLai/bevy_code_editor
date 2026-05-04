@@ -39,7 +39,6 @@
 
 pub mod display_map;
 pub mod input;
-pub mod language;
 pub mod plugin;
 pub mod settings;
 pub mod syntax;

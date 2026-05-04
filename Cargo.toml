@@ -4,6 +4,7 @@ members = [
     "crates/bevy_code_editor",
     "crates/bevy_text_engine",
     "crates/bevy_text_interaction",
+    "crates/bevy_tree_sitter",
 ]
 
 [profile.release]

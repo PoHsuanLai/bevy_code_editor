@@ -16,6 +16,10 @@ bevy_text_engine = { path = "../bevy_text_engine" }
 # TextView interaction: scroll, drag-select, copy systems + ScrollConfig
 bevy_text_interaction = { path = "../bevy_text_interaction" }
 
+# Tree-sitter integration (engine-tier, rendering-agnostic). Optional: gated
+# behind the editor's `tree-sitter` feature.
+bevy_tree_sitter = { path = "../bevy_tree_sitter", optional = true }
+
 # Bevy engine
 bevy = { version = "0.17", default-features = false, features = [
     "bevy_render",
@@ -48,10 +52,8 @@ cosmic-text = "0.12"
 swash = "0.1"  # For accessing Content enum in glyph rasterization
 bytemuck = { version = "1.14", features = ["derive"] }
 
-# Syntax highlighting (optional)
-tree-sitter = { version = "0.24", optional = true }
-streaming-iterator = { version = "0.1", optional = true }
-futures-lite = "2.5"
+# Syntax highlighting machinery now lives in `bevy_tree_sitter` (transitive
+# dep through the optional `bevy_tree_sitter` declared above).
 
 # Clipboard support (optional)
 arboard = { version = "3.4"}
@@ -82,8 +84,8 @@ env_logger = "0.11"
 [features]
 default = ["tree-sitter"]
 
-# Syntax highlighting via tree-sitter
-tree-sitter = ["dep:tree-sitter", "streaming-iterator"]
+# Syntax highlighting via tree-sitter (delegates to the bevy_tree_sitter crate)
+tree-sitter = ["dep:bevy_tree_sitter"]
 
 # LSP support (language server protocol)
 lsp = ["lsp-types", "tower-lsp", "tokio", "serde_json", "fuzzy-matcher"]

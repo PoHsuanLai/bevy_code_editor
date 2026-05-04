@@ -1,15 +1,11 @@
-//! Syntax highlighting module
+//! Editor-side syntax glue.
 //!
-//! Provides pluggable syntax highlighting through the SyntaxProvider trait.
-//! Currently supports tree-sitter, but can be extended with other providers.
+//! The structural tree-sitter machinery (`SyntaxProvider`, `TreeSitterProvider`,
+//! `Language`, `ParseTask`, …) lives in [`bevy_tree_sitter`]. This module
+//! supplies just the editor-side bridge: theme color mapping and (when the
+//! `tree-sitter` feature is on) the cache + system that turns structural
+//! `HighlightRange`s into colored `LineSegment`s.
 
 pub mod highlighter;
 
-#[cfg(feature = "tree-sitter")]
-pub mod tree_sitter;
-
-// Re-export main types
-pub use highlighter::{map_highlight_color, SyntaxProvider};
-
-#[cfg(feature = "tree-sitter")]
-pub use tree_sitter::TreeSitterProvider;
+pub use highlighter::map_highlight_color;

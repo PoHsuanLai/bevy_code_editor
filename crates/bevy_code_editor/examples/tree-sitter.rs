@@ -9,10 +9,9 @@ use bevy_code_editor::types::editor::{
     CursorState, EditHistoryState, SelectionState, SyntaxCacheState,
 };
 #[cfg(feature = "tree-sitter")]
-use bevy_code_editor::{
-    language::{Language, TreeSitterConfig},
-    plugin::syntax_highlighting::SyntaxResource,
-};
+use bevy_code_editor::plugin::syntax_highlighting::SyntaxResource;
+#[cfg(feature = "tree-sitter")]
+use bevy_tree_sitter::{Language, TreeSitterConfig};
 
 fn main() {
     App::new()
@@ -122,8 +121,6 @@ fn main() {
             grammar: tree_sitter_rust::LANGUAGE.into(),
             highlights_query: tree_sitter_rust::HIGHLIGHTS_QUERY.to_string(),
         }),
-        #[cfg(feature = "lsp")]
-        lsp_command: Some(("rust-analyzer", &[])),
     };
 
     // Set up tree-sitter highlighting using the language configuration

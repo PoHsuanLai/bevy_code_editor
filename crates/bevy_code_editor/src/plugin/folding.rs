@@ -9,6 +9,7 @@ use crate::types::*;
 use bevy::prelude::*;
 use bevy_text_engine::FontConfig;
 
+#[cfg(feature = "tree-sitter")]
 pub(crate) fn detect_foldable_regions(
     mut editor_query: Query<(&TextViewState, &mut FoldState), With<CodeEditor>>,
     syntax: Res<super::SyntaxResource>,
@@ -22,14 +23,10 @@ pub(crate) fn detect_foldable_regions(
         fold_state.content_version = tv.content_version as usize;
 
         // Get the tree-sitter tree from syntax resource
-        #[cfg(feature = "tree-sitter")]
         let tree = match syntax.tree() {
             Some(t) => t,
             None => continue,
         };
-
-        #[cfg(not(feature = "tree-sitter"))]
-        continue;
 
         let mut regions: Vec<FoldRegion> = Vec::new();
         let root = tree.root_node();
@@ -59,7 +56,7 @@ pub(crate) fn detect_foldable_regions(
 
 #[cfg(feature = "tree-sitter")]
 pub(crate) fn collect_foldable_regions(
-    node: &tree_sitter::Node,
+    node: &bevy_tree_sitter::ts::Node,
     text: &[u8],
     rope: &ropey::Rope,
     regions: &mut Vec<FoldRegion>,
@@ -112,7 +109,7 @@ pub(crate) fn collect_foldable_regions(
 
 #[cfg(feature = "tree-sitter")]
 pub(crate) fn node_to_fold_region(
-    node: &tree_sitter::Node,
+    node: &bevy_tree_sitter::ts::Node,
     _text: &[u8],
     rope: &ropey::Rope,
 ) -> Option<FoldRegion> {

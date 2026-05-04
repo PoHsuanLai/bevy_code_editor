@@ -1,48 +1,16 @@
-//! Syntax highlighting trait and utilities
+//! Capture-name → theme-color mapping.
+//!
+//! `bevy_tree_sitter` emits structural `HighlightRange`s keyed by capture
+//! name (e.g. `"keyword"`, `"function.method"`). The editor's renderer wants
+//! `Color`s — this module bridges the two using the editor-side
+//! `SyntaxTheme`. Theme hot-swap is a free side effect: callers re-run
+//! `map_highlight_color` on the read path, no cache invalidation needed.
 
-use crate::types::LineSegment;
 use bevy::prelude::*;
 
-/// Trait for syntax highlighting providers
-///
-/// This allows different syntax highlighting backends (tree-sitter, regex, TextMate, etc.)
-/// to be plugged in without coupling to the core editor state.
-pub trait SyntaxProvider: Send + Sync {
-    /// Highlight a range of lines and return colored segments
-    ///
-    /// # Arguments
-    /// * `text` - The text content to highlight (for the specified line range)
-    /// * `start_line` - Starting line index
-    /// * `end_line` - Ending line index (exclusive)
-    /// * `start_byte` - Starting byte offset in the full document (for tree-sitter queries)
-    /// * `theme` - Syntax color theme
-    /// * `default_color` - Fallback color for unhighlighted text
-    ///
-    /// # Returns
-    /// Vec of LineSegments for each line in the range
-    fn highlight_range(
-        &mut self,
-        text: &str,
-        start_line: usize,
-        end_line: usize,
-        start_byte: usize,
-        theme: &crate::settings::SyntaxTheme,
-        default_color: Color,
-    ) -> Vec<Vec<LineSegment>>;
-
-    /// Notify the provider that text was edited (for incremental highlighting)
-    ///
-    /// # Arguments
-    /// * `start_byte` - Starting byte offset of the edit
-    /// * `old_end_byte` - Ending byte offset before the edit
-    /// * `new_end_byte` - Ending byte offset after the edit
-    fn notify_edit(&mut self, start_byte: usize, old_end_byte: usize, new_end_byte: usize);
-
-    /// Check if highlighting is available
-    fn is_available(&self) -> bool;
-}
-
-/// Map tree-sitter highlight type to theme color
+/// Map a tree-sitter capture name (or `None`, meaning "no capture") to a
+/// concrete color drawn from `syntax_theme`. Unmapped categories fall back
+/// to `default_color`.
 pub fn map_highlight_color(
     highlight_type: Option<&str>,
     syntax_theme: &crate::settings::SyntaxTheme,

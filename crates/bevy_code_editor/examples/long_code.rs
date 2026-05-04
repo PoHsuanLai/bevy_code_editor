@@ -13,7 +13,7 @@ use bevy_code_editor::types::editor::{
 #[cfg(feature = "tree-sitter")]
 use bevy_code_editor::plugin::syntax_highlighting::SyntaxResource;
 #[cfg(feature = "tree-sitter")]
-use bevy_code_editor::syntax::TreeSitterProvider;
+use bevy_tree_sitter::TreeSitterProvider;
 
 fn main() {
     App::new()
