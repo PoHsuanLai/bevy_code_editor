@@ -142,14 +142,15 @@ fn animate_text_view_scroll(mut query: Query<&mut TextViewState, With<TextView>>
 
 /// Main rendering system for all text views.
 ///
-/// Queries all entities with `TextView` + `TextViewState` + `TextViewViewport`
-/// + `DisplayLayout` and renders each one using `render_layout()`. The legacy
-/// `render_text_view` path is gone — consumers must provide a `DisplayLayout`
-/// (e.g. via `text_view::trivial_layout` for static content).
+/// Queries entities with `TextView`, `TextViewState`, `TextViewViewport`, and
+/// `DisplayLayout`, rendering each via `render_layout()`. The legacy
+/// `render_text_view` path is gone; consumers must provide a `DisplayLayout`,
+/// e.g. via `text_view::trivial_layout` for static content.
 ///
 /// Exposed `pub(crate)` so the editor plugin can register it directly without
 /// adding `TextViewPlugin` (which would double-add scroll/input systems the
 /// editor handles itself).
+#[allow(clippy::type_complexity)]
 pub(crate) fn update_text_views(
     mut commands: Commands,
     mut text_views: Query<
