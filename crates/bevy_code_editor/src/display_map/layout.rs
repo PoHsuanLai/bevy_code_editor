@@ -6,7 +6,7 @@
 //! with the legacy one and assert equivalence.
 
 use bevy::prelude::*;
-use bevy_text_engine::FontConfig;
+use bevy_text_engine::{FontConfig, GlyphAtlas};
 use std::sync::Arc;
 
 use crate::settings::{PerformanceSettings, SyntaxTheme};
@@ -35,6 +35,7 @@ pub fn build_display_layout(
     foreground_color: Color,
     syntax: Option<&mut crate::plugin::SyntaxResource>,
     syntax_theme: Option<&SyntaxTheme>,
+    atlas: Option<&mut GlyphAtlas>,
 ) -> DisplayLayout {
     let line_height = font.line_height;
     let char_width = font.char_width;
@@ -72,6 +73,7 @@ pub fn build_display_layout(
 
     // Move the syntax + theme into a local Option so we can re-borrow per line.
     let mut syntax_opt = syntax;
+    let mut atlas_opt = atlas;
 
     for buffer_line in start_buffer_line..total_buffer_lines {
         if fold_state.is_line_hidden(buffer_line) {
@@ -138,6 +140,14 @@ pub fn build_display_layout(
             line_text.clone()
         };
 
+        // Shape via cosmic-text when an atlas is available. Strip a trailing
+        // newline first — the rope line includes it, but cosmic-text would just
+        // emit a zero-advance glyph for it.
+        let shape = atlas_opt.as_deref_mut().map(|atlas| {
+            let shape_text = render_text.strip_suffix('\n').unwrap_or(&render_text);
+            Arc::new(atlas.shape_line(shape_text, font.size))
+        });
+
         shaped_lines.push(ShapedLine {
             display_row: current_display_row,
             buffer_row: buffer_line as u32,
@@ -159,6 +169,7 @@ pub fn build_display_layout(
             line_bg,
             line_height: None,
             inline_objects: Vec::new(),
+            shape,
         });
 
         current_display_row += 1;

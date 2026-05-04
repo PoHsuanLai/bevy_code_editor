@@ -69,6 +69,7 @@ pub(crate) fn update_display_map_snapshot(
     performance: Res<PerformanceSettings>,
     syntax_settings: Res<SyntaxSettings>,
     mut syntax: ResMut<SyntaxResource>,
+    mut atlas: ResMut<bevy_text_engine::GlyphAtlas>,
     mut last_fingerprint: Local<Option<LayoutFingerprint>>,
 ) {
     for (tv_state, tv_viewport, mut layout, fold_state, font) in editor_query.iter_mut() {
@@ -98,6 +99,7 @@ pub(crate) fn update_display_map_snapshot(
             theme.foreground,
             Some(&mut syntax),
             Some(&syntax_settings.theme),
+            Some(&mut atlas),
         );
 
         *layout = new_layout;

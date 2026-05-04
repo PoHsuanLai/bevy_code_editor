@@ -8,6 +8,37 @@ use bevy::prelude::*;
 use std::ops::Range;
 use std::sync::Arc;
 
+/// One glyph from cosmic-text shaping. Rendered by looking up `cache_key` in the atlas.
+///
+/// `byte_index` is the cluster-start byte in the parent `ShapedLine.text` — a single
+/// glyph may cover multiple bytes (ligatures, combining marks). Renderer consumers
+/// that need a per-glyph color resolve it by binary-searching `ShapedLine.runs` on
+/// `byte_index`.
+#[derive(Clone, Copy, Debug)]
+pub struct ShapedGlyph {
+    /// Pen-x at glyph start, line-local in pixels (does not include `ShapedLine.x_offset`).
+    pub x: f32,
+    /// First byte in `ShapedLine.text` covered by this glyph.
+    pub byte_index: usize,
+    /// Atlas key — pass to `GlyphAtlas::get_or_rasterize_glyph`.
+    pub cache_key: cosmic_text::CacheKey,
+}
+
+/// Per-line cosmic-text shaping result. Held by `ShapedLine.shape` as `Arc<LineShape>`
+/// so scroll-only frames can reuse the previous frame's shape via `Arc::ptr_eq`.
+#[derive(Clone, Debug)]
+pub struct LineShape {
+    /// Shaped glyphs in visual order. Indices align 1:1 with the cosmic-text
+    /// `LayoutLine.glyphs` they were derived from.
+    pub glyphs: Vec<ShapedGlyph>,
+    /// Total advance of the line in pixels — equals last glyph's pen-x + last advance.
+    /// Consumed by `LineWidthTracker` (W3) for horizontal scrollbar sizing.
+    pub width: f32,
+    /// Font size at which shaping was performed. Renderer compares against its own
+    /// font_size and falls back to the char_width path on mismatch.
+    pub font_size: f32,
+}
+
 /// Text decoration applied across a `StyleRun`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextDecoration {
@@ -131,6 +162,10 @@ pub struct ShapedLine {
     /// Inline non-text content (images, spacers) anchored at byte offsets in
     /// `text`. Empty for plain-text consumers.
     pub inline_objects: Vec<InlineObject>,
+    /// Per-glyph advances from cosmic-text shaping. `None` = use the layout's
+    /// `char_width` fallback (cheap path for `trivial_layout` consumers like
+    /// chat/log demos that don't want to pay shaping cost).
+    pub shape: Option<Arc<LineShape>>,
 }
 
 /// Trivial styling source: one foreground color for the whole text.
@@ -185,6 +220,7 @@ pub fn trivial_layout(
             line_bg: None,
             line_height: None,
             inline_objects: Vec::new(),
+            shape: None,
         })
         .collect();
     let total = shaped.len() as u32;

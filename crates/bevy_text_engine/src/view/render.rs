@@ -9,8 +9,9 @@ use bevy::prelude::*;
 
 use crate::gpu::{GlyphAtlas, GlyphKey, GlyphRasterizer};
 
-use super::layout::DisplayLayout;
+use super::layout::{line_x_at_byte, DisplayLayout};
 use super::overlay::TextViewOverlays;
+use super::snapshot::ShapedLine;
 use super::viewport::TextViewViewport;
 
 /// Glyph instance data for GPU rendering
@@ -115,7 +116,6 @@ pub fn render_layout(
 
         // Line background (full-width quad) — full row, top-anchored on y_top.
         if let Some(bg) = line.line_bg {
-            let bg_linear = bg.to_linear();
             let margin = content_start_x;
             let bg_pad = if line.x_offset > 0.0 {
                 char_width * 1.5
@@ -123,10 +123,7 @@ pub fn render_layout(
                 0.0
             };
             let bg_x_start = (line.x_offset - bg_pad).max(0.0);
-            let bg_world_x = viewport_world_left + margin + bg_x_start;
-            let bg_width = viewport.width as f32 - margin * 2.0 - bg_x_start;
-            let bg_world_y = viewport_world_top - line.y_top - line_height * 0.5;
-            // Pick the largest corner radius among runs that share this background, if any.
+            // Pick the largest corner radius among runs sharing this background.
             let line_corner_radius = line
                 .runs
                 .iter()
@@ -134,16 +131,17 @@ pub fn render_layout(
                 .map(|r| r.corner_radius)
                 .fold(0.0_f32, f32::max);
             below_instances.push(GlyphInstance {
-                position: Vec2::new(bg_world_x, bg_world_y),
+                position: Vec2::new(
+                    viewport_world_left + margin + bg_x_start,
+                    viewport_world_top - line.y_top - line_height * 0.5,
+                ),
                 uv_min: atlas.solid_uv.uv_min,
                 uv_max: atlas.solid_uv.uv_max,
-                size: Vec2::new(bg_width, line_height),
-                color: [
-                    bg_linear.red,
-                    bg_linear.green,
-                    bg_linear.blue,
-                    bg_linear.alpha,
-                ],
+                size: Vec2::new(
+                    viewport.width as f32 - margin * 2.0 - bg_x_start,
+                    line_height,
+                ),
+                color: linear_rgba(bg),
                 z_index: 0.0,
                 corner_radius: line_corner_radius,
                 skew: 0.0,
@@ -151,79 +149,73 @@ pub fn render_layout(
             });
         }
 
+        // Pre-compose the row anchor; threads through every emitter call.
+        let anchor = RowAnchor {
+            viewport_world_left,
+            viewport_world_top,
+            line_x,
+            base_y,
+        };
+
+        // Shape-driven path is used when the line carries a `LineShape` shaped at
+        // this font_size and no run wants a font_scale override (those need
+        // per-run reshaping; out of scope for W1).
+        let shape_usable = line
+            .shape
+            .as_ref()
+            .filter(|s| (s.font_size - font_size).abs() < f32::EPSILON)
+            .filter(|_| line.runs.iter().all(|r| r.font_scale == 0.0 || r.font_scale == 1.0));
+
         if line.runs.is_empty() {
-            // Plain text — use layout default fg
-            let color_linear = layout.default_fg.to_linear();
-            let color_arr = [
-                color_linear.red,
-                color_linear.green,
-                color_linear.blue,
-                color_linear.alpha,
-            ];
-            let mut x = 0.0_f32;
-            for ch in line.text.chars() {
-                if ch == '\n' || ch == '\r' {
-                    continue;
-                }
-                if ch == '\t' {
-                    x += char_width * 4.0;
-                    continue;
-                }
-                let key = GlyphKey::new(ch, font_size);
-                if let Some(info) =
-                    atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, font_size))
-                {
-                    let screen_x = line_x + x + info.offset.x;
-                    let screen_y = base_y - info.offset.y;
-                    text_instances.push(GlyphInstance {
-                        position: Vec2::new(
-                            viewport_world_left + screen_x,
-                            viewport_world_top - screen_y - info.size.y,
-                        ),
-                        uv_min: info.uv_min,
-                        uv_max: info.uv_max,
-                        size: info.size,
-                        color: color_arr,
-                        z_index: 0.0,
-                        corner_radius: 0.0,
-                        skew: 0.0,
-                        _padding: 0.0,
-                    });
-                }
-                x += char_width;
+            let style = RunStyle {
+                color: linear_rgba(layout.default_fg),
+                skew: 0.0,
+            };
+            if let Some(shape) = shape_usable {
+                emit_shaped_run_glyphs(
+                    &shape.glyphs,
+                    0..line.text.len(),
+                    anchor,
+                    style,
+                    atlas,
+                    &mut text_instances,
+                );
+            } else {
+                emit_monospace_glyphs(
+                    line,
+                    0..line.text.len(),
+                    anchor,
+                    style,
+                    MonoMetrics {
+                        char_width,
+                        font_size,
+                        start_x: 0.0,
+                    },
+                    atlas,
+                    &mut text_instances,
+                );
             }
         } else {
-            // Styled runs — slice line.text by byte_range
             for run in &line.runs {
-                let Some(run_text) = line.text.get(run.byte_range.clone()) else {
+                if line.text.get(run.byte_range.clone()).is_none() {
                     continue;
-                };
+                }
+
+                let seg_x_start = line_byte_to_x(line, run.byte_range.start, char_width);
+                let seg_x_end = line_byte_to_x(line, run.byte_range.end, char_width);
 
                 // Per-run background (skip if it duplicates the line bg)
                 if let Some(bg) = run.bg {
                     if line.line_bg != Some(bg) {
-                        let seg_bg_linear = bg.to_linear();
-                        // Width: use char_width since runs are pre-shaped against the layout's
-                        // metrics; W1 will replace this with the run's own shaped advance.
-                        let visible_chars = run_text
-                            .chars()
-                            .filter(|c| *c != '\n' && *c != '\r')
-                            .count();
-                        let seg_width = visible_chars as f32 * char_width;
-                        let seg_x = run_byte_to_x(line, run.byte_range.start, char_width);
-                        let seg_world_x = viewport_world_left + line_x + seg_x;
-                        let seg_world_y = viewport_world_top - line.y_top - line_height * 0.5;
                         below_instances.push(GlyphInstance {
-                            position: Vec2::new(seg_world_x, seg_world_y),
+                            position: Vec2::new(
+                                viewport_world_left + line_x + seg_x_start,
+                                viewport_world_top - line.y_top - line_height * 0.5,
+                            ),
                             uv_min: atlas.solid_uv.uv_min,
                             uv_max: atlas.solid_uv.uv_max,
-                            size: Vec2::new(seg_width, line_height),
-                            color: [
-                                seg_bg_linear.red,
-                                seg_bg_linear.green,
-                                seg_bg_linear.blue,
-                                seg_bg_linear.alpha,
-                            ],
+                            size: Vec2::new((seg_x_end - seg_x_start).max(0.0), line_height),
+                            color: linear_rgba(bg),
                             z_index: 0.0,
                             corner_radius: run.corner_radius,
                             skew: 0.0,
@@ -232,13 +224,10 @@ pub fn render_layout(
                     }
                 }
 
-                let color_linear = run.fg.to_linear();
-                let color_arr = [
-                    color_linear.red,
-                    color_linear.green,
-                    color_linear.blue,
-                    color_linear.alpha,
-                ];
+                let style = RunStyle {
+                    color: linear_rgba(run.fg),
+                    skew: run.skew,
+                };
                 let seg_font_size = if run.font_scale > 0.0 {
                     font_size * run.font_scale
                 } else {
@@ -250,38 +239,29 @@ pub fn render_layout(
                     char_width
                 };
 
-                // Where this run starts within the line, in pixels.
-                let mut x = run_byte_to_x(line, run.byte_range.start, char_width);
-                for ch in run_text.chars() {
-                    if ch == '\n' || ch == '\r' {
-                        continue;
-                    }
-                    if ch == '\t' {
-                        x += seg_char_width * 4.0;
-                        continue;
-                    }
-                    let key = GlyphKey::new(ch, seg_font_size);
-                    if let Some(info) =
-                        atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, seg_font_size))
-                    {
-                        let screen_x = line_x + x + info.offset.x;
-                        let screen_y = base_y - info.offset.y;
-                        text_instances.push(GlyphInstance {
-                            position: Vec2::new(
-                                viewport_world_left + screen_x,
-                                viewport_world_top - screen_y - info.size.y,
-                            ),
-                            uv_min: info.uv_min,
-                            uv_max: info.uv_max,
-                            size: info.size,
-                            color: color_arr,
-                            z_index: 0.0,
-                            corner_radius: 0.0,
-                            skew: run.skew,
-                            _padding: 0.0,
-                        });
-                    }
-                    x += seg_char_width;
+                if let Some(shape) = shape_usable {
+                    emit_shaped_run_glyphs(
+                        &shape.glyphs,
+                        run.byte_range.clone(),
+                        anchor,
+                        style,
+                        atlas,
+                        &mut text_instances,
+                    );
+                } else {
+                    emit_monospace_glyphs(
+                        line,
+                        run.byte_range.clone(),
+                        anchor,
+                        style,
+                        MonoMetrics {
+                            char_width: seg_char_width,
+                            font_size: seg_font_size,
+                            start_x: seg_x_start,
+                        },
+                        atlas,
+                        &mut text_instances,
+                    );
                 }
             }
         }
@@ -309,19 +289,127 @@ pub fn render_layout(
     out
 }
 
-fn run_byte_to_x(line: &super::snapshot::ShapedLine, byte: usize, char_width: f32) -> f32 {
-    // Pixel offset of `byte` within `line.text` under the monospace assumption.
-    // W1 will replace this with shaped per-glyph advances.
-    let prefix = line.text.get(..byte).unwrap_or("");
-    let mut x = 0.0;
-    for ch in prefix.chars() {
-        if ch == '\t' {
-            x += char_width * 4.0;
-        } else if ch != '\n' && ch != '\r' {
-            x += char_width;
-        }
+/// Pixel offset of `byte` within `line.text`. Uses shaped advances when present
+/// and falls back to a `char_width` walk otherwise. Tab handling matches the
+/// shaper's behavior (it inflates `\t` advance by `tab_width = 4`).
+fn line_byte_to_x(line: &ShapedLine, byte: usize, char_width: f32) -> f32 {
+    line_x_at_byte(line, byte, char_width)
+}
+
+/// Where a row paints — viewport origin + line-local offsets. Composed once
+/// per row in `render_layout` and threaded into both glyph emitters and quad
+/// pushers, eliminating repeated 4-float parameter lists.
+#[derive(Clone, Copy)]
+struct RowAnchor {
+    /// Viewport's world-space top-left X (Bevy's center-origin Y is inverted).
+    viewport_world_left: f32,
+    /// Viewport's world-space top edge (Y inversion baseline).
+    viewport_world_top: f32,
+    /// Line-local origin X in screen pixels, includes scroll + line.x_offset.
+    line_x: f32,
+    /// Glyph baseline Y in screen pixels (top-down origin).
+    base_y: f32,
+}
+
+/// Per-run paint attributes. `color` is pre-linearized; `skew` carries italic
+/// simulation. `corner_radius: 0.0` since glyphs themselves don't round.
+#[derive(Clone, Copy)]
+struct RunStyle {
+    color: [f32; 4],
+    skew: f32,
+}
+
+/// Build a glyph quad from an atlas hit. Centralizes the legacy/shaped paint
+/// math so both emitters share one expression for screen→world conversion.
+fn glyph_quad(
+    info: crate::gpu::GlyphInfo,
+    pen_x: f32,
+    anchor: RowAnchor,
+    style: RunStyle,
+) -> GlyphInstance {
+    let screen_x = anchor.line_x + pen_x + info.offset.x;
+    let screen_y = anchor.base_y - info.offset.y;
+    GlyphInstance {
+        position: Vec2::new(
+            anchor.viewport_world_left + screen_x,
+            anchor.viewport_world_top - screen_y - info.size.y,
+        ),
+        uv_min: info.uv_min,
+        uv_max: info.uv_max,
+        size: info.size,
+        color: style.color,
+        z_index: 0.0,
+        corner_radius: 0.0,
+        skew: style.skew,
+        _padding: 0.0,
     }
-    x
+}
+
+/// Emit glyphs whose `byte_index` lies inside `range` from a pre-shaped line.
+/// `glyphs[i].x` is line-local; `glyph_quad` adds the row anchor.
+fn emit_shaped_run_glyphs(
+    glyphs: &[super::snapshot::ShapedGlyph],
+    range: std::ops::Range<usize>,
+    anchor: RowAnchor,
+    style: RunStyle,
+    atlas: &mut GlyphAtlas,
+    out: &mut Vec<GlyphInstance>,
+) {
+    for g in glyphs {
+        if g.byte_index < range.start || g.byte_index >= range.end {
+            continue;
+        }
+        let Some((info, _)) = atlas.get_or_rasterize_glyph(g.cache_key) else {
+            continue;
+        };
+        out.push(glyph_quad(info, g.x, anchor, style));
+    }
+}
+
+/// Per-run metrics for the monospace fallback path. `char_width` is the
+/// uniform advance per non-tab glyph; `font_size` is the rasterizer size (may
+/// differ from the line default when a `font_scale` run overrides); `start_x`
+/// is the run's pen-x relative to the line origin (where it picks up after
+/// any preceding runs).
+#[derive(Clone, Copy)]
+struct MonoMetrics {
+    char_width: f32,
+    font_size: f32,
+    start_x: f32,
+}
+
+/// Emit glyphs for a byte range using the legacy char-walk. Used when no
+/// `LineShape` is attached or when a `StyleRun.font_scale` override would
+/// require re-shaping at a different size (out of scope for W1).
+fn emit_monospace_glyphs(
+    line: &ShapedLine,
+    range: std::ops::Range<usize>,
+    anchor: RowAnchor,
+    style: RunStyle,
+    metrics: MonoMetrics,
+    atlas: &mut GlyphAtlas,
+    out: &mut Vec<GlyphInstance>,
+) {
+    let Some(slice) = line.text.get(range) else {
+        return;
+    };
+    let mut x = metrics.start_x;
+    for ch in slice.chars() {
+        if ch == '\n' || ch == '\r' {
+            continue;
+        }
+        if ch == '\t' {
+            x += metrics.char_width * 4.0;
+            continue;
+        }
+        let key = GlyphKey::new(ch, metrics.font_size);
+        if let Some(info) =
+            atlas.get_or_insert(key, || GlyphRasterizer::rasterize(ch, metrics.font_size))
+        {
+            out.push(glyph_quad(info, x, anchor, style));
+        }
+        x += metrics.char_width;
+    }
 }
 
 fn push_overlay_quad(
@@ -396,21 +484,21 @@ fn push_overlay_quad(
     let world_y = world_top - line.y_top - y_off - height * 0.5;
 
 
-    let color_linear = rect.color.to_linear();
     out.push(GlyphInstance {
         position: Vec2::new(world_x, world_y),
         uv_min: solid_uv.uv_min,
         uv_max: solid_uv.uv_max,
         size: Vec2::new(width, height),
-        color: [
-            color_linear.red,
-            color_linear.green,
-            color_linear.blue,
-            color_linear.alpha,
-        ],
+        color: linear_rgba(rect.color),
         z_index: 0.0,
         corner_radius: rect.corner_radius,
         skew: 0.0,
         _padding: 0.0,
     });
+}
+
+/// Pre-multiplied linear RGBA suitable for `GlyphInstance.color`.
+fn linear_rgba(color: Color) -> [f32; 4] {
+    let l = color.to_linear();
+    [l.red, l.green, l.blue, l.alpha]
 }

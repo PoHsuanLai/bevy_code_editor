@@ -723,6 +723,70 @@ mod instanced_extensions {
             result
         }
 
+        /// Shape a line into the engine's owned `LineShape`, ready to attach to a
+        /// `ShapedLine.shape` field.
+        ///
+        /// Uses cosmic-text shaping with `Shaping::Advanced` (ligatures, complex
+        /// scripts) and a fixed tab width of 4 — the renderer trusts the shaped
+        /// advance for `\t` rather than special-casing it. `cache_key` is computed
+        /// at `DPI_SCALE` so it round-trips through `get_or_rasterize_glyph`.
+        pub fn shape_line(
+            &mut self,
+            text: &str,
+            font_size: f32,
+        ) -> crate::view::snapshot::LineShape {
+            use crate::view::snapshot::{LineShape, ShapedGlyph};
+
+            let attrs = Attrs::new();
+            let attrs_list = AttrsList::new(attrs);
+
+            let line = ShapeLine::new(
+                &mut self.font_system,
+                text,
+                &attrs_list,
+                Shaping::Advanced,
+                4,
+            );
+
+            let mut layout_lines = Vec::with_capacity(1);
+            let mut scratch = ShapeBuffer::default();
+
+            line.layout_to_buffer(
+                &mut scratch,
+                font_size,
+                None,
+                cosmic_text::Wrap::None,
+                None,
+                &mut layout_lines,
+                None,
+            );
+
+            if layout_lines.is_empty() {
+                return LineShape {
+                    glyphs: Vec::new(),
+                    width: 0.0,
+                    font_size,
+                };
+            }
+
+            let layout = &layout_lines[0];
+            let mut glyphs = Vec::with_capacity(layout.glyphs.len());
+            for g in &layout.glyphs {
+                let physical = g.physical((0.0, 0.0), DPI_SCALE);
+                glyphs.push(ShapedGlyph {
+                    x: g.x,
+                    byte_index: g.start,
+                    cache_key: physical.cache_key,
+                });
+            }
+
+            LineShape {
+                glyphs,
+                width: layout.w,
+                font_size,
+            }
+        }
+
         /// Get or rasterize a glyph using cosmic_text cache key
         pub fn get_or_rasterize_glyph(
             &mut self,
