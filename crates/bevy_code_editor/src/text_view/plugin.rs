@@ -81,11 +81,13 @@ impl Plugin for TextViewPlugin {
     }
 }
 
-/// Marker component to identify text views managed by TextViewPlugin.
+/// Marker component for text views managed by `TextViewPlugin`.
 ///
-/// Entities with this marker (plus `TextViewState` + `TextViewViewport`)
-/// will be rendered by the `update_text_views` system.
+/// `#[require]` cascades the rest of the rendering machinery: spawning a
+/// `TextView` is sufficient to get a usable text-rendering entity. Mirror
+/// of `bevy_text::Text2d` (which requires `TextLayout`, `TextFont`, etc.).
 #[derive(Component, Default)]
+#[require(TextViewState, TextViewViewport, DisplayLayout, TextViewOverlays)]
 pub struct TextView;
 
 /// Component that links a text view to its batch rendering entity.

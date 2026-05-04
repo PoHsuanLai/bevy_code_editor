@@ -99,10 +99,26 @@ impl Default for ViewportDimensions {
     }
 }
 
-/// Marker component for the code editor entity.
+/// Marker component for a code editor entity.
 ///
-/// The editor entity has `CodeEditor` + `CodeEditorState` + `CursorState` + `TextViewState` + `TextViewViewport`.
+/// `#[require]` cascades every supporting component: spawning a
+/// `CodeEditor` is sufficient to get a fully functional editor entity.
+/// Mirror of `bevy_text::Text2d` — single-component spawn surface, no
+/// bundle struct.
+///
+/// The required `TextView` itself transitively requires the engine
+/// rendering components (`TextViewState`, `TextViewViewport`,
+/// `DisplayLayout`, `TextViewOverlays`).
 #[derive(Component, Default)]
+#[require(
+    crate::text_view::TextView,
+    CodeEditorState,
+    SelectionState,
+    EditHistoryState,
+    SyntaxCacheState,
+    EditorDisplayState,
+    CursorState,
+)]
 pub struct CodeEditor;
 
 /// Cursor state component — tracks cursor positions and multi-cursor state.

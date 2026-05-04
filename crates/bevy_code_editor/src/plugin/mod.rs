@@ -194,23 +194,13 @@ impl Plugin for CodeEditorPlugin {
 }
 
 
-/// Spawn the editor entity with TextViewState + TextViewViewport components
+/// Spawn the editor entity. `CodeEditor`'s `#[require]` cascade pulls in
+/// `TextView` (which in turn cascades `TextViewState`, `TextViewViewport`,
+/// `DisplayLayout`, `TextViewOverlays`) plus `CodeEditorState`,
+/// `SelectionState`, `EditHistoryState`, `SyntaxCacheState`,
+/// `EditorDisplayState`, `CursorState`.
 fn spawn_editor_entity(mut commands: Commands) {
-    commands.spawn((
-        CodeEditor,
-        CodeEditorState::default(),
-        SelectionState::default(),
-        EditHistoryState::default(),
-        SyntaxCacheState::default(),
-        EditorDisplayState::default(),
-        CursorState::default(),
-        crate::text_view::TextView,
-        crate::text_view::TextViewState::default(),
-        crate::text_view::TextViewViewport::default(),
-        crate::text_view::TextViewOverlays::default(),
-        crate::text_view::DisplayLayout::default(),
-        Name::new("CodeEditor"),
-    ));
+    commands.spawn((CodeEditor, Name::new("CodeEditor")));
 }
 
 /// Spawn a default `EditorInputManager` with `default_input_map()` if the host
