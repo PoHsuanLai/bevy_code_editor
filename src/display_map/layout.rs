@@ -82,11 +82,7 @@ pub fn build_display_layout(
 
         let rope_line = state.rope.line(buffer_line);
         let line_text: String = rope_line.to_string();
-        let line_x_extra = state
-            .line_x_offsets
-            .get(buffer_line)
-            .copied()
-            .unwrap_or(0.0);
+        let line_x_extra = 0.0_f32;
 
         // Resolve styling for this line: syntax-highlight inline if available,
         // otherwise fall back to plain (empty runs → renderer uses default_fg).

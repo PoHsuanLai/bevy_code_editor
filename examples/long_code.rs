@@ -90,7 +90,6 @@ fn setup_editor(
     // Set the provider in the syntax resource
     syntax.set_provider(provider);
 
-    tv.needs_update = true;
 }
 
 #[cfg(not(feature = "tree-sitter"))]

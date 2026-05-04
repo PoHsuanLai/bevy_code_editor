@@ -173,7 +173,6 @@ pub fn process_lsp_messages(
                         let line_start_char = tv.rope.line_to_char(line_num);
                         let target_char_pos = line_start_char + char_in_line;
                         cursor_state.cursor_pos = target_char_pos.min(tv.rope.len_chars());
-                        tv.needs_update = true;
                     }
                 } else {
                     navigate_events.write(NavigateToFileEvent {
@@ -323,11 +322,7 @@ fn apply_text_edits(
         }
     }
 
-    tv.needs_update = true;
-    tv.pending_update = false;
     tv.content_version += 1;
-    tv.dirty_lines = None;
-    tv.previous_line_count = tv.rope.len_lines();
 }
 
 /// System to sync document with LSP (debounced)

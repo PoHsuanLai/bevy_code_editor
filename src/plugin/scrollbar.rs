@@ -239,7 +239,6 @@ fn handle_scrollbar_mouse(
                     // This ensures the scrollbar thumb stays in sync with the drag position
                     tv.target_scroll_offset = new_scroll_offset;
                     tv.scroll_offset = new_scroll_offset;
-                    tv.needs_scroll_update = true;
 
                     // IMPORTANT: Update last_cursor_pos to prevent auto_scroll_to_cursor from
                     // snapping back after drag release. We keep the cursor at the same position

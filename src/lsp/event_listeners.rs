@@ -298,7 +298,6 @@ pub fn listen_apply_completion(
             cursor_state.cursor_pos += insert_text.len();
 
             // Mark as needing update
-            tv.pending_update = true;
             tv.content_version += 1;
 
             // Dismiss completion

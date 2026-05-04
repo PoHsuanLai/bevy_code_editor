@@ -236,7 +236,6 @@ pub fn handle_keyboard_input(
                                 && should_skip_auto_close(&cursor, &tv.rope, c)
                             {
                                 state.move_cursor(&mut cursor, &tv.rope, 1);
-                                tv.pending_update = true;
                                 continue;
                             }
 
@@ -248,7 +247,6 @@ pub fn handle_keyboard_input(
                                     && should_skip_auto_close(&cursor, &tv.rope, c)
                                 {
                                     state.move_cursor(&mut cursor, &tv.rope, 1);
-                                    tv.pending_update = true;
                                     continue;
                                 }
                             }

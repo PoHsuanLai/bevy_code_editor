@@ -45,7 +45,6 @@ impl EditHistoryState {
         tv.rope.insert_char(cursor_pos, c);
         cursor.cursor_pos += 1;
         sel.sync_cursors_from_primary(cursor);
-        tv.pending_update = true;
         tv.content_version += 1;
 
         #[cfg(feature = "tree-sitter")]
@@ -71,13 +70,11 @@ impl EditHistoryState {
         }
 
         let new_line_count = tv.rope.len_lines();
-        tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
 
         if c == '\n' {
             display.invalidate_lines_from = Some(line_idx);
         }
 
-        tv.previous_line_count = new_line_count;
     }
 
     /// Delete character before cursor (with undo recording)
@@ -115,7 +112,6 @@ impl EditHistoryState {
             tv.rope.remove(char_idx..byte_idx_end);
             cursor.cursor_pos -= 1;
             sel.sync_cursors_from_primary(cursor);
-            tv.pending_update = true;
             tv.content_version += 1;
 
             #[cfg(feature = "tree-sitter")]
@@ -135,13 +131,11 @@ impl EditHistoryState {
             }
 
             let new_line_count = tv.rope.len_lines();
-            tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
 
             if deleted_char == '\n' {
                 display.invalidate_lines_from = Some(line_idx);
             }
 
-            tv.previous_line_count = new_line_count;
         }
     }
 
@@ -179,7 +173,6 @@ impl EditHistoryState {
 
             tv.rope.remove(char_idx..byte_idx_end);
             sel.sync_cursors_from_primary(cursor);
-            tv.pending_update = true;
             tv.content_version += 1;
 
             #[cfg(feature = "tree-sitter")]
@@ -199,13 +192,11 @@ impl EditHistoryState {
             }
 
             let new_line_count = tv.rope.len_lines();
-            tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
 
             if deleted_char == '\n' {
                 display.invalidate_lines_from = Some(line_idx);
             }
 
-            tv.previous_line_count = new_line_count;
         }
     }
 
@@ -231,15 +222,12 @@ impl EditHistoryState {
             .record_edit(TextEdit::insert(pos, text_char_len));
 
         tv.rope.insert(pos, text);
-        tv.pending_update = true;
         tv.content_version += 1;
-        tv.dirty_lines = None;
 
         if text.contains('\n') {
             display.invalidate_lines_from = Some(line_idx);
         }
 
-        tv.previous_line_count = tv.rope.len_lines();
 
         #[cfg(feature = "tree-sitter")]
         {
@@ -270,15 +258,12 @@ impl EditHistoryState {
             self.anchors.record_edit(TextEdit::delete(start, end));
 
             tv.rope.remove(start_byte..end_byte);
-            tv.pending_update = true;
             tv.content_version += 1;
-            tv.dirty_lines = None;
 
             if has_newlines {
                 display.invalidate_lines_from = Some(line_idx);
             }
 
-            tv.previous_line_count = tv.rope.len_lines();
 
             #[cfg(feature = "tree-sitter")]
             {
@@ -363,14 +348,10 @@ impl EditHistoryState {
 
         tv.rope = Rope::from_str(text);
         cursor.cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
-        tv.pending_update = true;
         tv.content_version += 1;
-        tv.dirty_lines = None;
-        tv.previous_line_count = tv.rope.len_lines();
         self.anchors.clear();
         sel.selections = SelectionCollection::with_cursor(cursor.cursor_pos);
         tv.line_width_tracker.rebuild(&tv.rope);
-        tv.max_content_width_version = 0;
 
         #[cfg(feature = "tree-sitter")]
         {

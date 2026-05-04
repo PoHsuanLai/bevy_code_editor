@@ -85,10 +85,6 @@ pub struct RenderingSet;
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EditorSetupSet;
 
-/// Debouncing interval: Only promote pending_update to needs_update if enough time has passed
-/// OPTIMIZATION: Reduced to minimize input lag (~60fps)
-const DEBOUNCE_INTERVAL_MS: f64 = 16.0;
-
 #[derive(Default)]
 pub struct CodeEditorPlugin;
 
@@ -137,9 +133,6 @@ impl Plugin for CodeEditorPlugin {
         // Use `default_input_map()` for the standard keybindings.
         app.add_systems(Startup, spawn_editor_entity);
 
-        // Force initial render after setup
-        app.add_systems(PostStartup, force_initial_render);
-
         // Register editor events (for file operations)
         // These events are emitted by keybindings and should be handled by the host application
         app.add_message::<SaveRequested>();
@@ -161,7 +154,6 @@ impl Plugin for CodeEditorPlugin {
         app.add_systems(
             Update,
             (
-                debounce_updates,
                 ui_elements::animate_smooth_scroll,
                 ui_elements::auto_scroll_to_cursor.run_if(ui_elements::should_auto_scroll),
             )
@@ -199,47 +191,6 @@ impl Plugin for CodeEditorPlugin {
     }
 }
 
-/// Force initial render by promoting pending_update to needs_update
-fn force_initial_render(
-    mut editor_query: Query<
-        (&mut CodeEditorState, &mut crate::text_view::TextViewState),
-        With<CodeEditor>,
-    >,
-) {
-    let Ok((mut _state, mut tv)) = editor_query.single_mut() else {
-        return;
-    };
-    if tv.pending_update {
-        tv.needs_update = true;
-        tv.pending_update = false;
-    }
-}
-
-/// Debouncing system: Only promote pending_update to needs_update if enough time has passed
-/// This prevents excessive re-renders during rapid typing
-fn debounce_updates(
-    mut editor_query: Query<
-        (&mut CodeEditorState, &mut crate::text_view::TextViewState),
-        With<CodeEditor>,
-    >,
-    time: Res<Time>,
-) {
-    let Ok((mut _state, mut tv)) = editor_query.single_mut() else {
-        return;
-    };
-    if !tv.pending_update {
-        return;
-    }
-
-    let current_time = time.elapsed_secs_f64() * 1000.0;
-    let elapsed = current_time - tv.last_render_time;
-
-    if elapsed >= DEBOUNCE_INTERVAL_MS {
-        tv.needs_update = true;
-        tv.pending_update = false;
-        tv.last_render_time = current_time;
-    }
-}
 
 /// Spawn the editor entity with TextViewState + TextViewViewport components
 fn spawn_editor_entity(mut commands: Commands) {

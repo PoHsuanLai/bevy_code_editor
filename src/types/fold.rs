@@ -40,7 +40,6 @@ impl GotoLineState {
             cursor.cursor_pos = char_pos;
             sel.selection_start = None;
             sel.selection_end = None;
-            tv.pending_update = true;
 
             return true;
         }

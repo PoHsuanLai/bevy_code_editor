@@ -211,13 +211,9 @@ pub fn delete_word_backward(
         });
 
         // Mark for update
-        tv.needs_update = true;
-        tv.pending_update = false;
         tv.content_version += 1;
         let line_idx = tv.rope.char_to_line(word_start);
         let new_line_count = tv.rope.len_lines();
-        tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-        tv.previous_line_count = new_line_count;
     }
 }
 
@@ -259,12 +255,8 @@ pub fn delete_word_forward(
         });
 
         // Mark for update
-        tv.needs_update = true;
-        tv.pending_update = false;
         tv.content_version += 1;
         let line_idx = tv.rope.char_to_line(cursor_before);
         let new_line_count = tv.rope.len_lines();
-        tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-        tv.previous_line_count = new_line_count;
     }
 }

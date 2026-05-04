@@ -61,7 +61,7 @@ pub(crate) fn update_gpu_line_numbers(
     #[cfg(not(feature = "folding"))]
     let fold_changed = false;
 
-    if !tv.needs_update && !tv.needs_scroll_update && !fold_changed {
+    if !fold_changed {
         // Check if existing batch is still valid
         if let Some((entity, batch)) = batch_query.iter().next() {
             let scroll_changed = (batch.built_at_scroll - tv.scroll_offset).abs() > 0.01;

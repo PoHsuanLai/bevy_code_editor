@@ -236,7 +236,6 @@ pub fn handle_mouse_input(
                     // Check if there's a foldable region starting at this line
                     if fold_state.is_foldable_line(buffer_line) {
                         fold_state.toggle_fold_at_line(buffer_line);
-                        tv.pending_update = true;
                         state.is_focused = true;
 
                         // Hide hover on click
@@ -309,7 +308,6 @@ pub fn handle_mouse_input(
             sel.selection_start = None;
             sel.selection_end = None;
             sel.sync_cursors_from_primary(&mut cursor);
-            tv.pending_update = true;
 
             // Hide hover on click
             #[cfg(feature = "lsp")]
@@ -365,7 +363,6 @@ pub fn handle_mouse_input(
                     cursor.cursor_pos = current_pos;
                     sel.selection_start = Some(start_pos);
                     sel.selection_end = Some(current_pos);
-                    tv.pending_update = true;
                 }
             }
         }
@@ -466,9 +463,7 @@ pub fn handle_mouse_wheel(
             // Horizontal scrolling requires full update (text content changes due to culling)
             // Vertical scrolling only needs transform updates
             if event.x.abs() > 0.0 {
-                tv.needs_update = true;
             } else {
-                tv.needs_scroll_update = true;
             }
         }
     }

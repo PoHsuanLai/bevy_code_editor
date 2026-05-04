@@ -365,8 +365,6 @@ pub(crate) fn update_syntax_tree(
                 // Set last_highlighted_version to match so we don't re-trigger a parse.
                 tv.content_version += 1;
                 syntax_cache.last_highlighted_version = tv.content_version;
-                tv.dirty_lines = None;
-                tv.needs_update = true;
             }
             // Remove the completed task
             commands.entity(entity).despawn();

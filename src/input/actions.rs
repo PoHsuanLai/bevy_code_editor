@@ -63,14 +63,11 @@ pub fn insert_closing_char(
 
     // Don't move cursor - it stays between the brackets
     // OPTIMIZATION: Use debounce instead of immediate update
-    tv.pending_update = true;
     tv.content_version += 1;
 
     // Mark only current line as dirty (not entire rest of file!)
     let line_idx = tv.rope.char_to_line(cursor_pos);
     let new_line_count = tv.rope.len_lines();
-    tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-    tv.previous_line_count = new_line_count;
 }
 
 /// Get the closing bracket for an opening bracket
@@ -162,11 +159,7 @@ fn delete_selection_with_history(
         sel.selection_start = None;
         sel.selection_end = None;
 
-        tv.needs_update = true;
-        tv.pending_update = false;
         tv.content_version += 1;
-        tv.dirty_lines = None;
-        tv.previous_line_count = tv.rope.len_lines();
     }
 }
 
@@ -198,15 +191,11 @@ pub fn apply_completion(
             tv.rope.insert(start, &insert_text);
 
             cursor.cursor_pos = start + insert_text.chars().count();
-            tv.needs_update = true;
-            tv.pending_update = false;
             tv.content_version += 1;
 
             // Mark lines as dirty for highlighting update
             let line_idx = tv.rope.char_to_line(start);
             let new_line_count = tv.rope.len_lines();
-            tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-            tv.previous_line_count = new_line_count;
         }
     }
     completion_state.visible = false;
@@ -605,14 +594,10 @@ fn execute_action_core(
 
                 sel.selection_start = None;
                 sel.selection_end = None;
-                tv.needs_update = true;
-                tv.pending_update = false;
                 tv.content_version += 1;
 
                 let new_line_count = tv.rope.len_lines();
                 let line_idx = tv.rope.char_to_line(start);
-                tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-                tv.previous_line_count = new_line_count;
 
                 result.text_changed = true;
             }
@@ -666,8 +651,6 @@ fn execute_action_core(
 
                         tv.rope.insert(paste_position, &text);
                         cursor.cursor_pos = paste_position + text.chars().count();
-                        tv.needs_update = true;
-                        tv.pending_update = false;
                         tv.content_version += 1;
 
                         // Record for undo (combined delete selection + insert paste)
@@ -681,8 +664,6 @@ fn execute_action_core(
                         });
 
                         let new_line_count = tv.rope.len_lines();
-                        tv.dirty_lines = Some(line_idx..(line_idx + 1).min(new_line_count));
-                        tv.previous_line_count = new_line_count;
 
                         result.text_changed = true;
                     }
@@ -749,29 +730,24 @@ fn execute_action_core(
         EditorAction::ToggleFold => {
             let line = tv.rope.char_to_line(cursor.cursor_pos);
             fold_state.toggle_fold_at_line(line);
-            tv.pending_update = true;
         }
         #[cfg(feature = "folding")]
         EditorAction::Fold => {
             let line = tv.rope.char_to_line(cursor.cursor_pos);
             fold_state.fold_at_line(line);
-            tv.pending_update = true;
         }
         #[cfg(feature = "folding")]
         EditorAction::Unfold => {
             let line = tv.rope.char_to_line(cursor.cursor_pos);
             fold_state.unfold_at_line(line);
-            tv.pending_update = true;
         }
         #[cfg(feature = "folding")]
         EditorAction::FoldAll => {
             fold_state.fold_all();
-            tv.pending_update = true;
         }
         #[cfg(feature = "folding")]
         EditorAction::UnfoldAll => {
             fold_state.unfold_all();
-            tv.pending_update = true;
         }
         #[cfg(not(feature = "folding"))]
         EditorAction::ToggleFold

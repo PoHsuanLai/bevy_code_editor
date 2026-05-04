@@ -133,7 +133,6 @@ impl CodeEditorState {
                 if let Some((start, end)) = self.word_at_position(&tv.rope, primary.position) {
                     cursor.cursors[0] = Cursor::with_selection(end, start);
                     sel.sync_primary_cursor(cursor);
-                    tv.pending_update = true;
                     return true;
                 }
                 return false;

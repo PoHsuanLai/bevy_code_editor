@@ -39,7 +39,6 @@ impl SelectionState {
         if !cursor.cursors.iter().any(|c| c.position == position) {
             cursor.cursors.push(Cursor::new(position));
             self.sort_and_merge_cursors(cursor);
-            tv.pending_update = true;
         }
     }
 
@@ -57,7 +56,6 @@ impl SelectionState {
             .cursors
             .push(Cursor::with_selection(position, anchor));
         self.sort_and_merge_cursors(cursor);
-        tv.pending_update = true;
     }
 
     /// Remove all cursors except the primary one
@@ -66,7 +64,6 @@ impl SelectionState {
             cursor.cursors.truncate(1);
         }
         self.sync_primary_cursor(cursor);
-        tv.pending_update = true;
     }
 
     /// Check if we have multiple cursors
@@ -169,7 +166,6 @@ impl SelectionState {
         let offset = offset.min(tv.rope.len_chars());
         self.selections.add_cursor(offset);
         self.sync_from_selections(cursor);
-        tv.pending_update = true;
     }
 
     /// Add a new selection with a range
@@ -184,7 +180,6 @@ impl SelectionState {
         let anchor = anchor.min(tv.rope.len_chars());
         self.selections.add_selection_range(head, anchor);
         self.sync_from_selections(cursor);
-        tv.pending_update = true;
     }
 
     /// Clear all secondary selections, keeping only the primary
@@ -195,7 +190,6 @@ impl SelectionState {
     ) {
         self.selections.clear_secondary();
         self.sync_from_selections(cursor);
-        tv.pending_update = true;
     }
 
     /// Move the primary selection to a new position
@@ -209,6 +203,5 @@ impl SelectionState {
         let head = head.min(tv.rope.len_chars());
         self.selections.move_primary(head, extend);
         self.sync_from_selections(cursor);
-        tv.pending_update = true;
     }
 }

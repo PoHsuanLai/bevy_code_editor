@@ -125,7 +125,6 @@ fn main() {
         syntax.set_provider(provider);
     }
 
-    tv.needs_update = true;
 }
 
 #[cfg(not(feature = "tree-sitter"))]

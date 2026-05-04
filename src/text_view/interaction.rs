@@ -143,7 +143,6 @@ pub fn handle_text_view_scroll(
                     tv.scroll_offset = tv.scroll_offset.min(0.0).max(max_scroll);
                 }
 
-                tv.needs_scroll_update = true;
             }
         }
     }

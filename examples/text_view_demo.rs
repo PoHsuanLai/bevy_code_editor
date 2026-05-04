@@ -165,7 +165,6 @@ fn handle_scroll(
         for mut state in text_views.iter_mut() {
             state.target_scroll_offset += event.y * scroll_speed;
             state.target_scroll_offset = state.target_scroll_offset.min(0.0);
-            state.needs_scroll_update = true;
         }
     }
 }

@@ -253,11 +253,6 @@ pub(crate) fn update_indent_guides(
         return;
     };
 
-    // Update when state changes (text edits, scroll, etc.)
-    if !tv.needs_update && !tv.needs_scroll_update {
-        return;
-    }
-
     let line_height = font.line_height;
     let char_width = font.char_width;
     let indent_size = indentation.indent_size;
@@ -441,11 +436,9 @@ pub(crate) fn animate_smooth_scroll(
         // Instant update - no interpolation
         if (tv.target_scroll_offset - tv.scroll_offset).abs() > 0.001 {
             tv.scroll_offset = tv.target_scroll_offset;
-            tv.needs_scroll_update = true;
         }
         if (tv.target_horizontal_scroll_offset - tv.horizontal_scroll_offset).abs() > 0.001 {
             tv.horizontal_scroll_offset = tv.target_horizontal_scroll_offset;
-            tv.needs_update = true;
         }
         return;
     }
@@ -460,22 +453,18 @@ pub(crate) fn animate_smooth_scroll(
     let vertical_diff = tv.target_scroll_offset - tv.scroll_offset;
     if vertical_diff.abs() > 0.1 {
         tv.scroll_offset += vertical_diff * t;
-        tv.needs_scroll_update = true;
     } else if vertical_diff.abs() > 0.0 {
         // Snap to target when close enough
         tv.scroll_offset = tv.target_scroll_offset;
-        tv.needs_scroll_update = true;
     }
 
     // Horizontal scroll animation
     let horizontal_diff = tv.target_horizontal_scroll_offset - tv.horizontal_scroll_offset;
     if horizontal_diff.abs() > 0.1 {
         tv.horizontal_scroll_offset += horizontal_diff * t;
-        tv.needs_update = true; // Horizontal scroll needs full update
     } else if horizontal_diff.abs() > 0.0 {
         // Snap to target when close enough
         tv.horizontal_scroll_offset = tv.target_horizontal_scroll_offset;
-        tv.needs_update = true;
     }
 }
 

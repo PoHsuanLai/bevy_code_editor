@@ -55,7 +55,6 @@ impl Plugin for TextViewPlugin {
         app.add_systems(
             Update,
             (
-                debounce_text_view_updates,
                 animate_text_view_scroll,
                 update_text_views
                     .run_if(crate::gpu_text::atlas_ready)
@@ -88,30 +87,6 @@ pub struct TextView;
 #[derive(Component)]
 pub struct TextViewBatchEntity(pub Entity);
 
-/// Debounce interval for text view updates (~60fps)
-const DEBOUNCE_INTERVAL_MS: f64 = 16.0;
-
-/// Debouncing system for text views — promotes pending_update to needs_update
-fn debounce_text_view_updates(
-    mut query: Query<&mut TextViewState, With<TextView>>,
-    time: Res<Time>,
-) {
-    for mut state in query.iter_mut() {
-        if !state.pending_update {
-            continue;
-        }
-
-        let current_time = time.elapsed_secs_f64() * 1000.0;
-        let elapsed = current_time - state.last_render_time;
-
-        if elapsed >= DEBOUNCE_INTERVAL_MS {
-            state.needs_update = true;
-            state.pending_update = false;
-            state.last_render_time = current_time;
-        }
-    }
-}
-
 /// Smooth scroll animation for text views
 fn animate_text_view_scroll(mut query: Query<&mut TextViewState, With<TextView>>, time: Res<Time>) {
     let dt = time.delta_secs();
@@ -122,20 +97,16 @@ fn animate_text_view_scroll(mut query: Query<&mut TextViewState, With<TextView>>
         let diff_v = state.target_scroll_offset - state.scroll_offset;
         if diff_v.abs() > 0.5 {
             state.scroll_offset += diff_v * (1.0 - (-lerp_speed * dt).exp());
-            state.needs_scroll_update = true;
         } else if diff_v.abs() > 0.001 {
             state.scroll_offset = state.target_scroll_offset;
-            state.needs_scroll_update = true;
         }
 
         // Horizontal scroll
         let diff_h = state.target_horizontal_scroll_offset - state.horizontal_scroll_offset;
         if diff_h.abs() > 0.5 {
             state.horizontal_scroll_offset += diff_h * (1.0 - (-lerp_speed * dt).exp());
-            state.needs_scroll_update = true;
         } else if diff_h.abs() > 0.001 {
             state.horizontal_scroll_offset = state.target_horizontal_scroll_offset;
-            state.needs_scroll_update = true;
         }
     }
 }
