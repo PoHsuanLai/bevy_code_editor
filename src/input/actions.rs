@@ -10,6 +10,8 @@ use ropey::Rope;
 
 #[cfg(feature = "lsp")]
 use crate::lsp;
+#[cfg(feature = "lsp")]
+use bevy::log::trace;
 
 /// Result of executing an action
 pub struct ActionResult {

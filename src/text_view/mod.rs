@@ -38,4 +38,4 @@ pub use plugin::{TextView, TextViewBatchEntity, TextViewPlugin, TextViewRenderSe
 pub use render::{GlyphBatchComponent, GlyphInstance, TextViewBatch};
 pub use snapshot::{trivial_layout, ShapedLine, SimpleTheme, StyleRun};
 pub use state::TextViewState;
-pub use viewport::TextViewViewport;
+pub use viewport::{TextViewViewport, ViewportOrigin};

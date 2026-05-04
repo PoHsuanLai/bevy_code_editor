@@ -67,7 +67,7 @@ pub mod prelude {
     pub use crate::text_view::{
         copy_selection, screen_to_char_pos, GlyphBatchComponent, GlyphInstance, TextView,
         TextViewBatch, TextViewBatchEntity, TextViewDragState, TextViewPlugin, TextViewRenderSet,
-        TextViewSelectionState, TextViewState, TextViewViewport,
+        TextViewSelectionState, TextViewState, TextViewViewport, ViewportOrigin,
     };
     // User-facing editor components
     pub use crate::types::editor::{

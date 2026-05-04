@@ -111,8 +111,8 @@ pub fn handle_mouse_input(
     let char_pos = if let Some(cursor_pos_screen) = cursor_pos_screen {
         let viewport_width = viewport.width as f32;
         let viewport_height = viewport.height as f32;
-        let viewport_left = viewport.screen_position.x;
-        let viewport_top = viewport.screen_position.y;
+        let viewport_left = viewport.hit_test_position.x;
+        let viewport_top = viewport.hit_test_position.y;
         let viewport_right = viewport_left + viewport_width;
         let viewport_bottom = viewport_top + viewport_height;
 
@@ -212,8 +212,8 @@ pub fn handle_mouse_input(
             let _viewport_height = viewport.height as f32;
             let line_height = font.line_height;
 
-            let viewport_left = viewport.screen_position.x;
-            let viewport_top = viewport.screen_position.y;
+            let viewport_left = viewport.hit_test_position.x;
+            let viewport_top = viewport.hit_test_position.y;
 
             let local_x = cursor_pos_screen.x - viewport_left;
             let local_y = cursor_pos_screen.y - viewport_top;
@@ -342,8 +342,8 @@ pub fn handle_mouse_input(
                 let _viewport_width = viewport.width as f32;
                 let _viewport_height = viewport.height as f32;
                 let viewport_local_pos = Vec2::new(
-                    cursor_pos_screen.x - viewport.screen_position.x,
-                    cursor_pos_screen.y - viewport.screen_position.y,
+                    cursor_pos_screen.x - viewport.hit_test_position.x,
+                    cursor_pos_screen.y - viewport.hit_test_position.y,
                 );
 
                 // Use the scroll offset from drag start to prevent auto-scroll from affecting selection

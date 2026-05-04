@@ -96,9 +96,6 @@ pub fn update_completion_ui(
     let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
     let y_offset = ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
 
-    let viewport_width = vp.width as f32;
-    let viewport_height = vp.height as f32;
-
     // Calculate dynamic width
     let max_char_count = filtered_items
         .iter()
@@ -120,8 +117,8 @@ pub fn update_completion_ui(
     let box_height = (visible_count as f32 * line_height) + 10.0;
 
     let pos = Vec3::new(
-        -viewport_width / 2.0 + x_offset + vp.screen_position.x + box_width / 2.0,
-        viewport_height / 2.0 - y_offset - box_height / 2.0,
+        vp.world_left() + x_offset + box_width / 2.0,
+        vp.world_top() - y_offset - box_height / 2.0,
         100.0,
     );
 
@@ -266,9 +263,6 @@ pub fn update_hover_ui(
     let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
     let y_offset = ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
 
-    let viewport_width = vp.width as f32;
-    let viewport_height = vp.height as f32;
-
     let font_size = font.size * 0.9;
     let padding = 10.0;
 
@@ -287,8 +281,8 @@ pub fn update_hover_ui(
     let box_height = (line_count as f32 * font_size * 1.2) + padding * 2.0;
 
     let pos = Vec3::new(
-        -viewport_width / 2.0 + x_offset + vp.screen_position.x + box_width / 2.0,
-        viewport_height / 2.0 - y_offset - box_height / 2.0,
+        vp.world_left() + x_offset + box_width / 2.0,
+        vp.world_top() - y_offset - box_height / 2.0,
         100.0,
     );
 
@@ -380,9 +374,6 @@ pub fn update_signature_help_ui(
     let y_offset =
         ui.margin_top + tv.scroll_offset + (line_index as f32 * line_height) - line_height;
 
-    let viewport_width = vp.width as f32;
-    let viewport_height = vp.height as f32;
-
     let font_size = font.size * 0.9;
     let padding = 8.0;
 
@@ -393,8 +384,8 @@ pub fn update_signature_help_ui(
     let box_height = font_size * 1.4 + padding * 2.0;
 
     let pos = Vec3::new(
-        -viewport_width / 2.0 + x_offset + vp.screen_position.x + box_width / 2.0,
-        viewport_height / 2.0 - y_offset - box_height / 2.0,
+        vp.world_left() + x_offset + box_width / 2.0,
+        vp.world_top() - y_offset - box_height / 2.0,
         100.0,
     );
 
@@ -497,9 +488,6 @@ pub fn update_code_action_ui(
     let x_offset = ui.code_margin_left - 20.0;
     let y_offset = ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
 
-    let viewport_width = vp.width as f32;
-    let viewport_height = vp.height as f32;
-
     // Calculate box dimensions
     let max_label_len = action_state
         .actions
@@ -516,8 +504,8 @@ pub fn update_code_action_ui(
     let box_height = (visible_count as f32 * line_height) + 10.0;
 
     let pos = Vec3::new(
-        -viewport_width / 2.0 + x_offset + vp.screen_position.x + box_width / 2.0,
-        viewport_height / 2.0 - y_offset - box_height / 2.0,
+        vp.world_left() + x_offset + box_width / 2.0,
+        vp.world_top() - y_offset - box_height / 2.0,
         100.0,
     );
 
@@ -604,8 +592,6 @@ pub fn update_inlay_hints_ui(
     let visible_lines = (vp.height as f32 / font.line_height) as u32 + 2;
     let visible_end_line = visible_start_line + visible_lines;
 
-    let viewport_width = vp.width as f32;
-    let viewport_height = vp.height as f32;
     let char_width = font.char_width;
     let line_height = font.line_height;
 
@@ -633,8 +619,8 @@ pub fn update_inlay_hints_ui(
             ui.margin_top + tv.scroll_offset + (line as f32 * line_height) + (line_height / 2.0);
 
         let pos = Vec3::new(
-            -viewport_width / 2.0 + x_offset + vp.screen_position.x,
-            viewport_height / 2.0 - y_offset,
+            vp.world_left() + x_offset,
+            vp.world_top() - y_offset,
             50.0, // Below cursor but above text
         );
 
@@ -683,7 +669,6 @@ pub fn update_document_highlights_ui(
         return;
     }
 
-    let viewport_width = vp.width as f32;
     let viewport_height = vp.height as f32;
     let char_width = font.char_width;
     let line_height = font.line_height;
@@ -726,8 +711,8 @@ pub fn update_document_highlights_ui(
                 + (line_height / 2.0);
 
             let pos = Vec3::new(
-                -viewport_width / 2.0 + x_offset + vp.screen_position.x + width / 2.0,
-                viewport_height / 2.0 - y_offset,
+                vp.world_left() + x_offset + width / 2.0,
+                vp.world_top() - y_offset,
                 5.0, // Behind text but visible
             );
 
@@ -764,8 +749,8 @@ pub fn update_document_highlights_ui(
                     + (line_height / 2.0);
 
                 let pos = Vec3::new(
-                    -viewport_width / 2.0 + x_offset + vp.screen_position.x + width / 2.0,
-                    viewport_height / 2.0 - y_offset,
+                    vp.world_left() + x_offset + width / 2.0,
+                    vp.world_top() - y_offset,
                     5.0,
                 );
 
@@ -830,9 +815,6 @@ pub fn update_rename_ui(
     let y_offset =
         ui.margin_top + tv.scroll_offset + (line as f32 * line_height) + (line_height / 2.0);
 
-    let viewport_width = vp.width as f32;
-    let viewport_height = vp.height as f32;
-
     let font_size = font.size;
     let padding_x = 4.0;
     let padding_y = 2.0;
@@ -851,8 +833,8 @@ pub fn update_rename_ui(
     let box_height = line_height + padding_y * 2.0;
 
     let pos = Vec3::new(
-        -viewport_width / 2.0 + x_offset + vp.screen_position.x,
-        viewport_height / 2.0 - y_offset,
+        vp.world_left() + x_offset,
+        vp.world_top() - y_offset,
         150.0, // Above everything
     );
 

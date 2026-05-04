@@ -17,8 +17,8 @@ use super::selection::{Cursor, SelectionCollection};
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct ViewportConfig {
     /// If true, viewport automatically resizes to match window size.
-    /// If false, you must manually set ViewportDimensions.
-    /// Default: true (for backward compatibility)
+    /// If false, you must manually set [`ViewportDimensions`].
+    /// Default: true.
     pub auto_resize_to_window: bool,
 }
 
@@ -43,8 +43,9 @@ pub struct ViewportDimensions {
     /// Viewport height in pixels
     pub height: u32,
 
-    /// Top-left position of the editor panel in window/screen pixels (set by host app)
-    pub screen_position: Vec2,
+    /// How the viewport's top-left maps to world coordinates.
+    /// See [`crate::text_view::ViewportOrigin`].
+    pub origin: crate::text_view::ViewportOrigin,
 
     // === Computed Layout (set by UI plugin) ===
     /// Left margin/padding before text starts
@@ -61,26 +62,25 @@ pub struct ViewportDimensions {
 }
 
 impl ViewportDimensions {
+    /// World-space top-left of the viewport, resolving the origin enum.
+    pub fn origin_position(&self) -> Vec2 {
+        match self.origin {
+            crate::text_view::ViewportOrigin::CenteredOrtho => Vec2::new(
+                -(self.width as f32) / 2.0,
+                self.height as f32 / 2.0,
+            ),
+            crate::text_view::ViewportOrigin::ScreenAbsolute(p) => p,
+        }
+    }
+
     /// Calculate the world coordinate of the viewport's left edge
     pub fn world_left(&self) -> f32 {
-        if self.screen_position == Vec2::ZERO {
-            // Auto-resize mode (default): viewport is centered at (0,0)
-            -(self.width as f32) / 2.0
-        } else {
-            // Manual mode: screen_position.x is the left edge
-            self.screen_position.x
-        }
+        self.origin_position().x
     }
 
     /// Calculate the world coordinate of the viewport's top edge
     pub fn world_top(&self) -> f32 {
-        if self.screen_position == Vec2::ZERO {
-            // Auto-resize mode (default): viewport is centered at (0,0)
-            self.height as f32 / 2.0
-        } else {
-            // Manual mode: screen_position.y is the top edge
-            self.screen_position.y
-        }
+        self.origin_position().y
     }
 }
 
@@ -89,7 +89,7 @@ impl Default for ViewportDimensions {
         Self {
             width: 800,
             height: 600,
-            screen_position: Vec2::ZERO,
+            origin: crate::text_view::ViewportOrigin::CenteredOrtho,
             // Default layout values (can be overridden by UI plugin)
             text_area_left: 80.0,
             text_area_top: 10.0,

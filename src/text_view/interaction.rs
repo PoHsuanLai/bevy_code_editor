@@ -177,7 +177,7 @@ pub fn handle_text_view_mouse(
     // Handle press — start selection
     if mouse_button.just_pressed(MouseButton::Left) {
         for (mut sel, tv, viewport) in views.iter_mut() {
-            let vp_pos = viewport.screen_position;
+            let vp_pos = viewport.hit_test_position;
             let vp_rect = bevy::math::Rect::new(
                 vp_pos.x,
                 vp_pos.y,
@@ -213,7 +213,7 @@ pub fn handle_text_view_mouse(
         }
 
         for (mut sel, tv, viewport) in views.iter_mut() {
-            let vp_pos = viewport.screen_position;
+            let vp_pos = viewport.hit_test_position;
             let local_pos = Vec2::new(cursor_pos.x - vp_pos.x, cursor_pos.y - vp_pos.y);
             let char_pos = screen_to_char_pos(
                 local_pos,

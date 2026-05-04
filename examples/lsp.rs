@@ -172,14 +172,20 @@ fn display_lsp_info(lsp_client: Res<LspClient>) {
 /// the gap by watching for content changes and firing completion at the cursor.
 #[cfg(feature = "lsp")]
 fn auto_request_completion(
-    editor_query: Query<(&CodeEditorState, &CursorState, &TextViewState), With<CodeEditor>>,
+    editor_query: Query<
+        (&CodeEditorState, &CursorState, Ref<TextViewState>),
+        With<CodeEditor>,
+    >,
     mut writer: MessageWriter<bevy_code_editor::types::events::RequestCompletionEvent>,
 ) {
     let Ok((_state, cursor, tv)) = editor_query.single() else {
         return;
     };
 
-    if !tv.pending_update {
+    // pending_update was removed in the snapshot-Arc refactor. Drive completion
+    // off Bevy's Changed detection on TextViewState — fires when the rope or
+    // scroll moves, which is the same trigger condition.
+    if !tv.is_changed() {
         return;
     }
 

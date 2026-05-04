@@ -2,6 +2,27 @@
 
 use bevy::prelude::*;
 
+/// How the viewport's top-left maps to world coordinates.
+///
+/// Replaces the old `screen_position: Vec2` + `Vec2::ZERO` sentinel pattern,
+/// which silently mis-classified views legitimately rendered at world (0,0)
+/// as "centered ortho" and forced every consumer to re-implement the branch.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ViewportOrigin {
+    /// Render-to-texture / centered orthographic camera: viewport's top-left
+    /// in world space is `(-width/2, +height/2)`. Computed at access time
+    /// because it depends on the viewport size.
+    CenteredOrtho,
+    /// Explicit world-space top-left position (e.g. windowed UI panel).
+    ScreenAbsolute(Vec2),
+}
+
+impl Default for ViewportOrigin {
+    fn default() -> Self {
+        Self::CenteredOrtho
+    }
+}
+
 /// Viewport dimensions and layout for a single text view instance.
 ///
 /// This is a Component (not a Resource) so each text view entity has its own viewport.
@@ -12,10 +33,10 @@ pub struct TextViewViewport {
     /// Viewport height in pixels
     pub height: u32,
 
-    /// Top-left position of the editor panel in window/screen pixels (set by host app).
-    /// Used by `world_left()`/`world_top()` for glyph positioning.
-    /// For render-to-texture views with centered ortho cameras, keep this at ZERO.
-    pub screen_position: bevy::math::Vec2,
+    /// How this viewport's top-left maps to world coordinates.
+    /// Resolved once via [`origin_position`](Self::origin_position) instead of
+    /// the per-glyph branch the old `screen_position` field required.
+    pub origin: ViewportOrigin,
 
     /// Screen-space hit-test rect for mouse interaction (independent of rendering coords).
     /// Set this to the actual screen position even for render-to-texture views.
@@ -37,7 +58,7 @@ impl Default for TextViewViewport {
         Self {
             width: 800,
             height: 600,
-            screen_position: bevy::math::Vec2::ZERO,
+            origin: ViewportOrigin::CenteredOrtho,
             hit_test_position: bevy::math::Vec2::ZERO,
             text_area_left: 0.0,
             text_area_top: 8.0,
@@ -48,21 +69,25 @@ impl Default for TextViewViewport {
 }
 
 impl TextViewViewport {
+    /// World-space top-left of the viewport, resolving the origin enum.
+    /// Use this when you need the raw `(x, y)` in world coords.
+    pub fn origin_position(&self) -> Vec2 {
+        match self.origin {
+            ViewportOrigin::CenteredOrtho => Vec2::new(
+                -(self.width as f32) / 2.0,
+                self.height as f32 / 2.0,
+            ),
+            ViewportOrigin::ScreenAbsolute(p) => p,
+        }
+    }
+
     /// Calculate the world coordinate of the viewport's left edge
     pub fn world_left(&self) -> f32 {
-        if self.screen_position == bevy::math::Vec2::ZERO {
-            -(self.width as f32) / 2.0
-        } else {
-            self.screen_position.x
-        }
+        self.origin_position().x
     }
 
     /// Calculate the world coordinate of the viewport's top edge
     pub fn world_top(&self) -> f32 {
-        if self.screen_position == bevy::math::Vec2::ZERO {
-            self.height as f32 / 2.0
-        } else {
-            self.screen_position.y
-        }
+        self.origin_position().y
     }
 }

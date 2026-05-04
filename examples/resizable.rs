@@ -143,8 +143,11 @@ fn setup(
         return;
     };
 
-    // Set initial viewport position (left/top of panel in window coords)
-    viewport.screen_position = bevy::math::Vec2::new(panel.left, panel.top);
+    // Set initial viewport position (left/top of panel in window coords).
+    // Both rendering origin and hit-test position track the panel's screen edge.
+    let panel_pos = bevy::math::Vec2::new(panel.left, panel.top);
+    viewport.origin = bevy_code_editor::prelude::ViewportOrigin::ScreenAbsolute(panel_pos);
+    viewport.hit_test_position = panel_pos;
 
     // Spawn 4 border sprites (top, bottom, left, right)
     // Camera is positioned at panel center, so borders are relative to camera center (0, 0)
@@ -445,9 +448,9 @@ fn sync_viewport_to_panel(
     let size_changed = viewport.width != new_width || viewport.height != new_height;
 
     if size_changed {
-        // Only update viewport SIZE, never position
-        // screen_position is set once at startup and never changes
-        // This prevents UI elements from repositioning when panel resizes
+        // Only update viewport SIZE, never position.
+        // origin and hit_test_position are set once at startup and never change —
+        // this prevents UI elements from repositioning when the panel resizes.
         viewport.width = new_width;
         viewport.height = new_height;
     }

@@ -60,13 +60,11 @@ pub fn render_completion_popup(
             commands.entity(entity).despawn();
         }
 
-        let viewport_width = viewport.width as f32;
-        let viewport_height = viewport.height as f32;
         let line_height = font.line_height;
 
         let pos = Vec3::new(
-            -viewport_width / 2.0 + popup.position.x + popup.width / 2.0,
-            viewport_height / 2.0 - popup.position.y - popup.height / 2.0,
+            viewport.world_left() + popup.position.x + popup.width / 2.0,
+            viewport.world_top() - popup.position.y - popup.height / 2.0,
             theme.completion.z_index,
         );
 
@@ -188,12 +186,10 @@ pub fn render_hover_popup(
             commands.entity(entity).despawn();
         }
 
-        let viewport_width = viewport.width as f32;
-        let viewport_height = viewport.height as f32;
 
         let pos = Vec3::new(
-            -viewport_width / 2.0 + popup.position.x + popup.width / 2.0,
-            viewport_height / 2.0 - popup.position.y - popup.height / 2.0,
+            viewport.world_left() + popup.position.x + popup.width / 2.0,
+            viewport.world_top() - popup.position.y - popup.height / 2.0,
             theme.hover.z_index,
         );
 
@@ -251,12 +247,10 @@ pub fn render_signature_help_popup(
             commands.entity(entity).despawn();
         }
 
-        let viewport_width = viewport.width as f32;
-        let viewport_height = viewport.height as f32;
 
         let pos = Vec3::new(
-            -viewport_width / 2.0 + popup.position.x + popup.width / 2.0,
-            viewport_height / 2.0 - popup.position.y - popup.height / 2.0,
+            viewport.world_left() + popup.position.x + popup.width / 2.0,
+            viewport.world_top() - popup.position.y - popup.height / 2.0,
             theme.signature_help.z_index,
         );
 
@@ -331,13 +325,11 @@ pub fn render_code_actions_popup(
             commands.entity(entity).despawn();
         }
 
-        let viewport_width = viewport.width as f32;
-        let viewport_height = viewport.height as f32;
         let line_height = font.line_height;
 
         let pos = Vec3::new(
-            -viewport_width / 2.0 + popup.position.x + popup.width / 2.0,
-            viewport_height / 2.0 - popup.position.y - popup.height / 2.0,
+            viewport.world_left() + popup.position.x + popup.width / 2.0,
+            viewport.world_top() - popup.position.y - popup.height / 2.0,
             theme.code_actions.z_index,
         );
 
@@ -410,13 +402,11 @@ pub fn render_rename_input(
             commands.entity(entity).despawn();
         }
 
-        let viewport_width = viewport.width as f32;
-        let viewport_height = viewport.height as f32;
         let char_width = font.char_width;
 
         let pos = Vec3::new(
-            -viewport_width / 2.0 + popup.position.x,
-            viewport_height / 2.0 - popup.position.y,
+            viewport.world_left() + popup.position.x,
+            viewport.world_top() - popup.position.y,
             theme.rename.z_index,
         );
 
@@ -499,8 +489,6 @@ pub fn render_inlay_hints(
     let Ok(viewport) = viewport_query.single() else {
         return;
     };
-    let viewport_width = viewport.width as f32;
-    let viewport_height = viewport.height as f32;
 
     for (entity, hint) in hint_query.iter() {
         let color = match hint.kind {
@@ -510,8 +498,8 @@ pub fn render_inlay_hints(
         };
 
         let pos = Vec3::new(
-            -viewport_width / 2.0 + hint.position.x,
-            viewport_height / 2.0 - hint.position.y,
+            viewport.world_left() + hint.position.x,
+            viewport.world_top() - hint.position.y,
             theme.inlay_hints.z_index,
         );
 
@@ -550,8 +538,6 @@ pub fn render_document_highlights(
     let Ok(viewport) = viewport_query.single() else {
         return;
     };
-    let viewport_width = viewport.width as f32;
-    let viewport_height = viewport.height as f32;
 
     for (entity, highlight) in highlight_query.iter() {
         let color = if highlight.is_write {
@@ -561,8 +547,8 @@ pub fn render_document_highlights(
         };
 
         let pos = Vec3::new(
-            -viewport_width / 2.0 + highlight.position.x,
-            viewport_height / 2.0 - highlight.position.y,
+            viewport.world_left() + highlight.position.x,
+            viewport.world_top() - highlight.position.y,
             5.0, // Behind text
         );
 

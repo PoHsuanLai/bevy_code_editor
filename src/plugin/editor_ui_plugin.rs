@@ -254,10 +254,10 @@ fn update_camera_viewport(
         return;
     };
 
-    // Convert from center-origin viewport coordinates to top-left origin window coordinates
-    // For resizable panels: viewport.screen_position stores the LEFT and TOP edges (not center!)
-    // For auto-resize mode: screen_position is (0, 0) and panel is centered
-    // viewport.width/height are the panel dimensions
+    // Convert from center-origin viewport coordinates to top-left origin window coordinates.
+    // - ViewportOrigin::ScreenAbsolute(p) → p is the panel's LEFT/TOP world-space edges.
+    // - ViewportOrigin::CenteredOrtho → panel is centered at world (0,0).
+    // viewport.width/height are the panel dimensions.
     let window_width = window.width();
     let window_height = window.height();
     let scale_factor = window.scale_factor();
@@ -400,8 +400,8 @@ fn detect_viewport_resize(
 /// Sync ViewportDimensions resource → TextViewViewport component.
 /// When auto_resize_to_window is false, the host app sets ViewportDimensions
 /// and this system propagates size to the per-entity TextViewViewport.
-/// screen_position is NOT propagated — in render-to-texture mode the camera
-/// is centered at origin, so TextViewViewport keeps screen_position = ZERO.
+/// `origin` is NOT propagated — in render-to-texture mode the camera is
+/// centered at origin, so TextViewViewport keeps `ViewportOrigin::CenteredOrtho`.
 fn sync_viewport_from_resource(
     config: Res<ViewportConfig>,
     dims: Res<ViewportDimensions>,
