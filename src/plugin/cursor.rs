@@ -137,11 +137,17 @@ pub(crate) fn push_cursor_overlays(
 
         let x_left = extra_indent + (display_col as f32 * char_width);
         let x_right = x_left + cursor_settings.width;
+        // Match legacy positioning: caret center sits on the row's top edge,
+        // extending half above into the previous row's space and half into
+        // this row. Honor cursor_settings.height_multiplier.
+        let cursor_height = font.line_height * cursor_settings.height_multiplier;
+        let y_top = -cursor_height * 0.5;
+        let y_bot = cursor_height * 0.5;
 
         overlays.rects.push(RectOverlay {
             display_row: display_row as u32,
             x_range: x_left..x_right,
-            y_range: None,
+            y_range: Some(y_top..y_bot),
             color: theme.cursor,
             z: 1, // above text
             corner_radius: 0.0,
