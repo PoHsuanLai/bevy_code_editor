@@ -215,11 +215,14 @@ impl Plugin for CodeEditorPlugin {
         app.add_message::<SaveRequested>();
         app.add_message::<OpenRequested>();
 
-        // Add input handling systems in InputSet
+        // Per-event keyboard input goes through a FocusedInput observer;
+        // action polling stays a system so leafwing's ActionState (which is
+        // itself polled, not event-streamed) still drives shortcuts.
+        app.add_observer(crate::input::on_focused_keyboard);
         app.add_systems(
             Update,
             (
-                crate::input::handle_keyboard_input,
+                crate::input::process_editor_actions,
                 crate::input::handle_mouse_input,
                 crate::input::handle_mouse_wheel,
             )

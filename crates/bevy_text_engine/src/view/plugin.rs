@@ -32,6 +32,13 @@ pub struct TextViewRenderSet;
 /// `TextView` alone is enough to get a usable text-rendering entity
 /// (mirror of `bevy_text::Text2d`).
 ///
+/// `Pickable` is also cascaded so a custom `bevy_picking` backend (in
+/// `bevy_text_interaction::picking`) can produce `PointerHits` for this
+/// entity, routing pointer events / scroll / drag observers correctly. The
+/// engine itself doesn't run the backend — adding `Pickable` is a no-op
+/// without `TextInteractionPlugin` (or another picking backend) registered,
+/// it just declares "this entity wants to be pickable."
+///
 /// This component intentionally requires only engine-side data. Editor /
 /// interaction layers attach their own components via their own
 /// `#[require]` cascades on top of `TextView`.
@@ -42,6 +49,7 @@ pub struct TextViewRenderSet;
     DisplayLayout,
     TextViewOverlays,
     FontConfig,
+    bevy::picking::Pickable,
 )]
 pub struct TextView;
 
