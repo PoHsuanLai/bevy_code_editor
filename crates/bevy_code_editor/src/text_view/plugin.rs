@@ -83,9 +83,9 @@ impl Plugin for TextViewPlugin {
 
 /// Marker component for text views managed by `TextViewPlugin`.
 ///
-/// `#[require]` cascades the rest of the rendering machinery: spawning a
-/// `TextView` is sufficient to get a usable text-rendering entity. Mirror
-/// of `bevy_text::Text2d` (which requires `TextLayout`, `TextFont`, etc.).
+/// `#[require]` cascades the rest of the rendering machinery, so spawning
+/// `TextView` alone is enough to get a usable text-rendering entity
+/// (mirror of `bevy_text::Text2d`).
 #[derive(Component, Default)]
 #[require(TextViewState, TextViewViewport, DisplayLayout, TextViewOverlays)]
 pub struct TextView;

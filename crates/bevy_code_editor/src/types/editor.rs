@@ -101,14 +101,10 @@ impl Default for ViewportDimensions {
 
 /// Marker component for a code editor entity.
 ///
-/// `#[require]` cascades every supporting component: spawning a
-/// `CodeEditor` is sufficient to get a fully functional editor entity.
-/// Mirror of `bevy_text::Text2d` — single-component spawn surface, no
-/// bundle struct.
-///
-/// The required `TextView` itself transitively requires the engine
-/// rendering components (`TextViewState`, `TextViewViewport`,
-/// `DisplayLayout`, `TextViewOverlays`).
+/// `#[require]` cascades every supporting component, so spawning a
+/// `CodeEditor` is sufficient to get a fully functional editor entity
+/// (mirror of `bevy_text::Text2d`). The required `TextView` transitively
+/// requires the engine rendering components.
 #[derive(Component, Default)]
 #[require(
     crate::text_view::TextView,
@@ -118,6 +114,9 @@ impl Default for ViewportDimensions {
     SyntaxCacheState,
     EditorDisplayState,
     CursorState,
+    BracketMatchState,
+    crate::types::fold::GotoLineState,
+    crate::types::fold::FoldState,
 )]
 pub struct CodeEditor;
 
@@ -400,8 +399,8 @@ pub struct BracketMatch {
     pub matching_bracket_pos: usize,
 }
 
-/// Resource to track the current bracket match state
-#[derive(Resource, Default, Clone, Debug)]
+/// Per-editor bracket-match state — the bracket pair under the cursor.
+#[derive(Component, Default, Clone, Debug)]
 pub struct BracketMatchState {
     /// Current bracket match (if any)
     pub current_match: Option<BracketMatch>,

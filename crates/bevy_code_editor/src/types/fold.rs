@@ -5,8 +5,8 @@ use bevy::prelude::*;
 use super::editor::{CursorState, SelectionState};
 use crate::text_view::TextViewState;
 
-/// State for "Go to line" functionality
-#[derive(Clone, Debug, Default, Resource)]
+/// Per-editor "go to line" dialog state.
+#[derive(Clone, Debug, Default, Component)]
 pub struct GotoLineState {
     /// Whether the goto line dialog is active
     pub active: bool,
@@ -138,8 +138,8 @@ impl FoldKind {
     }
 }
 
-/// Resource to track all fold regions and their state
-#[derive(Resource, Clone, Debug)]
+/// Per-editor fold-region state.
+#[derive(Component, Clone, Debug)]
 pub struct FoldState {
     /// All detected fold regions, sorted by start line
     pub regions: Vec<FoldRegion>,

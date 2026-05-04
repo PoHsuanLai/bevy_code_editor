@@ -9,11 +9,10 @@ use crate::types::*;
 use bevy::prelude::*;
 
 pub(crate) fn detect_foldable_regions(
-    editor_query: Query<(&CodeEditorState, &TextViewState), With<CodeEditor>>,
-    mut fold_state: ResMut<FoldState>,
+    mut editor_query: Query<(&CodeEditorState, &TextViewState, &mut FoldState), With<CodeEditor>>,
     syntax: Res<super::SyntaxResource>,
 ) {
-    let Ok((_state, tv)) = editor_query.single() else {
+    let Ok((_state, tv, mut fold_state)) = editor_query.single_mut() else {
         return;
     };
 
@@ -204,10 +203,9 @@ pub(crate) fn node_to_fold_region(
 /// Fallback for when tree-sitter is not enabled
 #[cfg(not(feature = "tree-sitter"))]
 pub(crate) fn detect_foldable_regions(
-    editor_query: Query<(&CodeEditorState, &TextViewState), With<CodeEditor>>,
-    mut fold_state: ResMut<FoldState>,
+    mut editor_query: Query<(&CodeEditorState, &TextViewState, &mut FoldState), With<CodeEditor>>,
 ) {
-    let Ok((_state, tv)) = editor_query.single() else {
+    let Ok((_state, tv, mut fold_state)) = editor_query.single_mut() else {
         return;
     };
 
@@ -284,7 +282,6 @@ pub struct FoldingPlugin;
 
 impl Plugin for FoldingPlugin {
     fn build(&self, _app: &mut App) {
-        #[cfg(feature = "folding")]
         _app.add_systems(
             Update,
             (
@@ -299,11 +296,13 @@ impl Plugin for FoldingPlugin {
 
 pub(crate) fn update_fold_indicators(
     mut commands: Commands,
-    editor_query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    editor_query: Query<
+        (&CodeEditorState, &TextViewState, &TextViewViewport, &FoldState),
+        With<CodeEditor>,
+    >,
     font: Res<FontSettings>,
     theme: Res<ThemeSettings>,
     ui: Res<UiSettings>,
-    fold_state: Res<FoldState>,
     render_config: Res<EditorRenderConfig>,
     mut indicator_query: Query<(
         Entity,
@@ -313,7 +312,7 @@ pub(crate) fn update_fold_indicators(
         &mut Visibility,
     )>,
 ) {
-    let Ok((_state, tv, viewport)) = editor_query.single() else {
+    let Ok((_state, tv, viewport, fold_state)) = editor_query.single() else {
         return;
     };
     // Hide all if folding is disabled

@@ -77,6 +77,8 @@ pub fn handle_keyboard_input(
             &mut CursorState,
             &mut TextViewState,
             &TextViewViewport,
+            &mut GotoLineState,
+            &mut FoldState,
         ),
         With<CodeEditor>,
     >,
@@ -86,8 +88,6 @@ pub fn handle_keyboard_input(
     brackets: Res<BracketSettings>,
     indentation: Res<IndentationSettings>,
     #[cfg(feature = "lsp")] lsp: Res<LspSettings>,
-    mut goto_line_state: ResMut<GotoLineState>,
-    #[cfg(feature = "folding")] mut fold_state: ResMut<FoldState>,
     mut key_repeat_state: ResMut<KeyRepeatState>,
     (mut save_events, mut open_events): (
         MessageWriter<crate::types::SaveRequested>,
@@ -98,8 +98,18 @@ pub fn handle_keyboard_input(
     #[cfg(feature = "lsp")] mut rename_state: ResMut<crate::lsp::state::RenameState>,
     #[cfg(feature = "lsp")] mut lsp_sync: ResMut<crate::lsp::LspSyncState>,
 ) {
-    let Ok((mut state, mut sel, mut hist, mut syntax, mut display, mut cursor, mut tv, _viewport)) =
-        editor_query.single_mut()
+    let Ok((
+        mut state,
+        mut sel,
+        mut hist,
+        mut syntax,
+        mut display,
+        mut cursor,
+        mut tv,
+        _viewport,
+        mut goto_line_state,
+        mut fold_state,
+    )) = editor_query.single_mut()
     else {
         return;
     };
@@ -453,7 +463,6 @@ pub fn handle_keyboard_input(
             #[cfg(feature = "lsp")]
             &lsp,
             &mut goto_line_state,
-            #[cfg(feature = "folding")]
             &mut fold_state,
             #[cfg(feature = "lsp")]
             &lsp_client,

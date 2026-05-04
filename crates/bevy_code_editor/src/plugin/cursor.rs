@@ -68,6 +68,7 @@ pub(crate) fn push_cursor_overlays(
             &TextViewState,
             &TextViewViewport,
             &mut TextViewOverlays,
+            &FoldState,
         ),
         With<CodeEditor>,
     >,
@@ -76,11 +77,10 @@ pub(crate) fn push_cursor_overlays(
     theme: Res<ThemeSettings>,
     wrapping: Res<WrappingSettings>,
     indentation: Res<IndentationSettings>,
-    #[cfg(feature = "folding")] fold_state: Res<FoldState>,
     time: Res<Time>,
 ) {
     let mut iter = editor_query;
-    let Ok((display, cursor, tv, _vp, mut overlays)) = iter.single_mut() else {
+    let Ok((display, cursor, tv, _vp, mut overlays, fold_state)) = iter.single_mut() else {
         return;
     };
 
@@ -120,10 +120,7 @@ pub(crate) fn push_cursor_overlays(
         let (display_row, display_col) = if use_wrapping {
             display.display_map.buffer_to_display(line_index, col_index)
         } else {
-            #[cfg(feature = "folding")]
             let display_row = fold_state.actual_to_display_line(line_index);
-            #[cfg(not(feature = "folding"))]
-            let display_row = line_index;
             (display_row, col_index)
         };
 
@@ -162,6 +159,7 @@ pub(crate) fn update_cursor_line_highlight(
             &TextViewState,
             &TextViewViewport,
             &mut TextViewOverlays,
+            &FoldState,
         ),
         With<CodeEditor>,
     >,
@@ -169,10 +167,9 @@ pub(crate) fn update_cursor_line_highlight(
     cursor_line: Res<CursorLineSettings>,
     theme: Res<ThemeSettings>,
     wrapping: Res<WrappingSettings>,
-    #[cfg(feature = "folding")] fold_state: Res<FoldState>,
 ) {
     let mut iter = editor_query;
-    let Ok((display, cursor, tv, vp, mut overlays)) = iter.single_mut() else {
+    let Ok((display, cursor, tv, vp, mut overlays, fold_state)) = iter.single_mut() else {
         return;
     };
 
@@ -201,7 +198,6 @@ pub(crate) fn update_cursor_line_highlight(
         let cursor_pos = c.position.min(tv.rope.len_chars());
         let line_index = tv.rope.char_to_line(cursor_pos);
 
-        #[cfg(feature = "folding")]
         if fold_state.is_line_hidden(line_index) {
             continue;
         }
@@ -209,20 +205,13 @@ pub(crate) fn update_cursor_line_highlight(
         let display_row = if use_wrapping {
             display.display_map.buffer_to_display(line_index, 0).0
         } else {
-            #[cfg(feature = "folding")]
-            {
-                let mut visible_row = line_index;
-                for i in 0..line_index {
-                    if fold_state.is_line_hidden(i) {
-                        visible_row = visible_row.saturating_sub(1);
-                    }
+            let mut visible_row = line_index;
+            for i in 0..line_index {
+                if fold_state.is_line_hidden(i) {
+                    visible_row = visible_row.saturating_sub(1);
                 }
-                visible_row
             }
-            #[cfg(not(feature = "folding"))]
-            {
-                line_index
-            }
+            visible_row
         };
 
         if cursor_line.show_border {

@@ -60,7 +60,6 @@ pub mod prelude {
     };
     pub use crate::types::events::*;
 
-    #[cfg(feature = "scrollbar")]
     pub use crate::plugin::{Scrollbar, ScrollbarPlugin};
     pub use crate::settings::*;
     pub use crate::text_view::{

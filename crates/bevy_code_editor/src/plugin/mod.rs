@@ -39,10 +39,8 @@ pub use self::scrollbar::ScrollbarPlugin;
 pub use self::syntax_highlighting::{HighlightCache, SyntaxPlugin, SyntaxResource};
 
 // Re-export helper functions and systems for internal plugin use (crate-visible only)
-#[cfg(feature = "brackets")]
 pub(crate) use self::brackets::{update_bracket_highlight, update_bracket_match};
 pub(crate) use self::cursor::update_cursor_line_highlight;
-#[cfg(feature = "folding")]
 pub(crate) use self::folding::update_fold_indicators;
 pub(crate) use self::gpu_line_numbers::update_gpu_line_numbers;
 pub(crate) use self::ui_elements::{update_indent_guides, update_selection_highlight};
@@ -101,12 +99,8 @@ impl Plugin for CodeEditorPlugin {
         app.insert_resource(crate::input::MouseDragState::default());
         app.insert_resource(KeyRepeatState::default());
 
-        // Initialize feature-specific resources
-        app.insert_resource(BracketMatchState::default());
-        app.insert_resource(GotoLineState::default());
-
-        #[cfg(feature = "folding")]
-        app.insert_resource(FoldState::default());
+        // BracketMatchState, GotoLineState, and FoldState are now per-editor
+        // components (cascaded via #[require] on CodeEditor); no global resource init.
 
         // Configure system set ordering
         app.configure_sets(
@@ -194,11 +188,8 @@ impl Plugin for CodeEditorPlugin {
 }
 
 
-/// Spawn the editor entity. `CodeEditor`'s `#[require]` cascade pulls in
-/// `TextView` (which in turn cascades `TextViewState`, `TextViewViewport`,
-/// `DisplayLayout`, `TextViewOverlays`) plus `CodeEditorState`,
-/// `SelectionState`, `EditHistoryState`, `SyntaxCacheState`,
-/// `EditorDisplayState`, `CursorState`.
+/// Spawn the default editor entity. `CodeEditor`'s `#[require]` cascade
+/// pulls in every supporting component.
 fn spawn_editor_entity(mut commands: Commands) {
     commands.spawn((CodeEditor, Name::new("CodeEditor")));
 }

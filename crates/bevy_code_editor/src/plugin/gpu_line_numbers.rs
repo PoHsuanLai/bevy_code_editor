@@ -31,6 +31,7 @@ pub(crate) fn update_gpu_line_numbers(
             &CursorState,
             &TextViewState,
             &TextViewViewport,
+            Ref<FoldState>,
         ),
         With<CodeEditor>,
     >,
@@ -38,13 +39,12 @@ pub(crate) fn update_gpu_line_numbers(
     theme: Res<ThemeSettings>,
     ui: Res<UiSettings>,
     performance: Res<PerformanceSettings>,
-    #[cfg(feature = "folding")] fold_state: Res<FoldState>,
     mut atlas: ResMut<GlyphAtlas>,
     render_config: Res<EditorRenderConfig>,
     mut images: ResMut<Assets<Image>>,
     batch_query: Query<(Entity, &GpuLineNumbersBatch)>,
 ) {
-    let Ok((_state, cursor, tv, viewport)) = editor_query.single() else {
+    let Ok((_state, cursor, tv, viewport, fold_state)) = editor_query.single() else {
         return;
     };
     // Hide if line numbers are disabled
@@ -56,10 +56,7 @@ pub(crate) fn update_gpu_line_numbers(
     }
 
     // Check if we need to update
-    #[cfg(feature = "folding")]
     let fold_changed = fold_state.is_changed();
-    #[cfg(not(feature = "folding"))]
-    let fold_changed = false;
 
     if !fold_changed {
         // Check if existing batch is still valid
@@ -103,30 +100,19 @@ pub(crate) fn update_gpu_line_numbers(
         ((viewport_bottom - viewport.text_area_top) / line_height).ceil() as usize;
 
     let total_buffer_lines = tv.line_count();
-    #[cfg(feature = "folding")]
     let has_folding = !fold_state.regions.is_empty();
-    #[cfg(not(feature = "folding"))]
-    let has_folding = false;
 
     // Calculate starting buffer line and display row
     let (start_buffer_line, mut current_display_row) = if has_folding {
-        #[cfg(feature = "folding")]
-        {
-            let mut display_row = 0;
-            let mut buffer_line = 0;
-            while buffer_line < total_buffer_lines && display_row < first_visible_display_row {
-                if !fold_state.is_line_hidden(buffer_line) {
-                    display_row += 1;
-                }
-                buffer_line += 1;
+        let mut display_row = 0;
+        let mut buffer_line = 0;
+        while buffer_line < total_buffer_lines && display_row < first_visible_display_row {
+            if !fold_state.is_line_hidden(buffer_line) {
+                display_row += 1;
             }
-            (buffer_line, display_row)
+            buffer_line += 1;
         }
-        #[cfg(not(feature = "folding"))]
-        {
-            let start = first_visible_display_row.min(total_buffer_lines);
-            (start, start)
-        }
+        (buffer_line, display_row)
     } else {
         let start = first_visible_display_row.min(total_buffer_lines);
         (start, start)
@@ -142,7 +128,6 @@ pub(crate) fn update_gpu_line_numbers(
 
     // Iterate over visible buffer lines
     for buffer_line in start_buffer_line..total_buffer_lines {
-        #[cfg(feature = "folding")]
         if fold_state.is_line_hidden(buffer_line) {
             continue;
         }

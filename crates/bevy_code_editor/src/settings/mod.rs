@@ -12,7 +12,6 @@ mod syntax;
 mod ui;
 mod wrapping;
 
-#[cfg(feature = "scrollbar")]
 mod scrollbar;
 
 #[cfg(feature = "lsp")]
@@ -27,7 +26,6 @@ pub use syntax::*;
 pub use ui::*;
 pub use wrapping::*;
 
-#[cfg(feature = "scrollbar")]
 pub use scrollbar::*;
 
 #[cfg(feature = "lsp")]
@@ -61,7 +59,6 @@ pub struct EditorSettingsBuilder {
     performance: PerformanceSettings,
     wrapping: WrappingSettings,
 
-    #[cfg(feature = "scrollbar")]
     scrollbar: ScrollbarSettings,
 
     #[cfg(feature = "lsp")]
@@ -113,7 +110,6 @@ impl EditorSettingsBuilder {
         self
     }
 
-    #[cfg(feature = "scrollbar")]
     pub fn scrollbar(mut self, scrollbar: ScrollbarSettings) -> Self {
         self.scrollbar = scrollbar;
         self
@@ -187,7 +183,6 @@ impl EditorSettingsBuilder {
             performance: self.performance,
             wrapping: self.wrapping,
 
-            #[cfg(feature = "scrollbar")]
             scrollbar: self.scrollbar,
 
             #[cfg(feature = "lsp")]
@@ -213,7 +208,6 @@ pub struct SettingsBundle {
     pub performance: PerformanceSettings,
     pub wrapping: WrappingSettings,
 
-    #[cfg(feature = "scrollbar")]
     pub scrollbar: ScrollbarSettings,
 
     #[cfg(feature = "lsp")]
@@ -260,7 +254,6 @@ impl SettingsBundle {
             app.insert_resource(self.wrapping);
         }
 
-        #[cfg(feature = "scrollbar")]
         if !app.world().contains_resource::<ScrollbarSettings>() {
             app.insert_resource(self.scrollbar);
         }

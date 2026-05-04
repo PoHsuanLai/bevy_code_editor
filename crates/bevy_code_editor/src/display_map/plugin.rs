@@ -55,23 +55,24 @@ impl Plugin for DisplayMapPlugin {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn update_display_map_snapshot(
     mut editor_query: Query<
-        (&TextViewState, &TextViewViewport, &mut DisplayLayout),
+        (
+            &TextViewState,
+            &TextViewViewport,
+            &mut DisplayLayout,
+            &FoldState,
+        ),
         With<CodeEditor>,
     >,
     font: Res<FontSettings>,
     theme: Res<ThemeSettings>,
     performance: Res<PerformanceSettings>,
     syntax_settings: Res<SyntaxSettings>,
-    #[cfg(feature = "folding")] fold_state: Res<FoldState>,
     mut syntax: ResMut<SyntaxResource>,
     mut last_fingerprint: Local<Option<LayoutFingerprint>>,
 ) {
-    let Ok((tv_state, tv_viewport, mut layout)) = editor_query.single_mut() else {
+    let Ok((tv_state, tv_viewport, mut layout, fold_state)) = editor_query.single_mut() else {
         return;
     };
-
-    #[cfg(not(feature = "folding"))]
-    let fold_state = FoldState::default();
 
     let fingerprint = LayoutFingerprint {
         content_version: tv_state.content_version,
@@ -93,7 +94,7 @@ pub(crate) fn update_display_map_snapshot(
     let new_layout = build_display_layout(
         tv_state,
         tv_viewport,
-        &fold_state,
+        fold_state,
         &font,
         &performance,
         theme.foreground,

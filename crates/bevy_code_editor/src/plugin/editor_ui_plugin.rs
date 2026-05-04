@@ -34,13 +34,10 @@ use super::{
 };
 use bevy_text_engine::gpu::GlyphAtlas;
 
-#[cfg(feature = "brackets")]
 use super::{update_bracket_highlight, update_bracket_match};
 
-#[cfg(feature = "folding")]
 use super::update_fold_indicators;
 
-#[cfg(feature = "scrollbar")]
 use super::scrollbar::update_editor_scrollbar;
 
 /// Resource to store render layer configuration for the editor
@@ -162,7 +159,6 @@ impl Plugin for EditorUiPlugin {
         );
 
         // Fold indicators (feature-gated)
-        #[cfg(feature = "folding")]
         app.add_systems(
             Update,
             update_fold_indicators
@@ -188,7 +184,6 @@ impl Plugin for EditorUiPlugin {
         );
 
         // Bracket matching (feature-gated)
-        #[cfg(feature = "brackets")]
         app.add_systems(
             Update,
             (update_bracket_match, update_bracket_highlight)
@@ -198,7 +193,6 @@ impl Plugin for EditorUiPlugin {
         );
 
         // Editor scrollbar config update (feature-gated)
-        #[cfg(feature = "scrollbar")]
         app.add_systems(
             Update,
             update_editor_scrollbar

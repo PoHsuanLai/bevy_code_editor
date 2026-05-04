@@ -224,10 +224,6 @@ fn setup_gpu_text(
     mut materials: ResMut<Assets<TextMaterial>>,
     mut render_state: ResMut<TextRenderState>,
 ) {
-    // Create the glyph atlas with the default embedded font.
-    // Phase 3 will introduce a per-entity `FontConfig` component; the editor
-    // (and other consumers) will set the family there rather than via a
-    // global resource read by the engine.
     let atlas = GlyphAtlas::new(&mut images);
 
     // Create the text material

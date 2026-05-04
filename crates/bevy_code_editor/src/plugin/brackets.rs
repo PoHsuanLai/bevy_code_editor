@@ -11,7 +11,6 @@ pub struct BracketPlugin;
 
 impl Plugin for BracketPlugin {
     fn build(&self, _app: &mut App) {
-        #[cfg(feature = "brackets")]
         _app.add_systems(
             Update,
             (
@@ -130,11 +129,13 @@ pub(crate) fn find_opening_bracket(
 }
 
 pub(crate) fn update_bracket_match(
-    editor_query: Query<(&CodeEditorState, &CursorState, &TextViewState), With<CodeEditor>>,
+    mut editor_query: Query<
+        (&CodeEditorState, &CursorState, &TextViewState, &mut BracketMatchState),
+        With<CodeEditor>,
+    >,
     brackets: Res<BracketSettings>,
-    mut bracket_state: ResMut<BracketMatchState>,
 ) {
-    let Ok((_state, cursor, tv)) = editor_query.single() else {
+    let Ok((_state, cursor, tv, mut bracket_state)) = editor_query.single_mut() else {
         return;
     };
 
@@ -149,12 +150,19 @@ pub(crate) fn update_bracket_match(
 
 pub(crate) fn update_bracket_highlight(
     mut commands: Commands,
-    editor_query: Query<(&CodeEditorState, &TextViewState, &TextViewViewport), With<CodeEditor>>,
+    editor_query: Query<
+        (
+            &CodeEditorState,
+            &TextViewState,
+            &TextViewViewport,
+            &BracketMatchState,
+            &FoldState,
+        ),
+        With<CodeEditor>,
+    >,
     font: Res<FontSettings>,
     theme: Res<ThemeSettings>,
     brackets: Res<BracketSettings>,
-    bracket_state: Res<BracketMatchState>,
-    #[cfg(feature = "folding")] fold_state: Res<FoldState>,
     render_config: Res<EditorRenderConfig>,
     mut highlight_query: Query<(
         Entity,
@@ -164,7 +172,7 @@ pub(crate) fn update_bracket_highlight(
         &mut Visibility,
     )>,
 ) {
-    let Ok((_state, tv, viewport)) = editor_query.single() else {
+    let Ok((_state, tv, viewport, bracket_state, fold_state)) = editor_query.single() else {
         return;
     };
     let mut highlights: Vec<_> = highlight_query.iter_mut().collect();
@@ -189,7 +197,6 @@ pub(crate) fn update_bracket_highlight(
             for (bracket_idx, &bracket_pos) in positions.iter().enumerate() {
                 let line_idx = tv.rope.char_to_line(bracket_pos);
 
-                #[cfg(feature = "folding")]
                 if fold_state.is_line_hidden(line_idx) {
                     continue;
                 }
@@ -197,10 +204,7 @@ pub(crate) fn update_bracket_highlight(
                 let line_start = tv.rope.line_to_char(line_idx);
                 let col_idx = bracket_pos - line_start;
 
-                #[cfg(feature = "folding")]
                 let display_row = fold_state.actual_to_display_line(line_idx);
-                #[cfg(not(feature = "folding"))]
-                let display_row = line_idx;
 
                 let x_offset = viewport.text_area_left + (col_idx as f32 * char_width);
                 let y_offset =

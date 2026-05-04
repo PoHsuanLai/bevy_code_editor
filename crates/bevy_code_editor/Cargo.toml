@@ -76,22 +76,13 @@ parking_lot = "0.12"
 env_logger = "0.11"
 
 [features]
-default = ["tree-sitter", "scrollbar", "folding", "brackets"]
+default = ["tree-sitter"]
 
 # Syntax highlighting via tree-sitter
 tree-sitter = ["dep:tree-sitter", "streaming-iterator"]
 
 # LSP support (language server protocol)
 lsp = ["lsp-types", "tower-lsp", "tokio", "serde_json", "fuzzy-matcher"]
-
-# Built-in scrollbar UI (disable to use your own scrollbar implementation)
-scrollbar = []
-
-# Code folding support
-folding = []
-
-# Bracket matching and highlighting
-brackets = []
 
 # Dynamic linking for fast iteration (dev only, not for release builds)
 dynamic_linking = ["bevy/dynamic_linking"]

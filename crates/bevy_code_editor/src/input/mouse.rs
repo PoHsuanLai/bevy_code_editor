@@ -31,7 +31,7 @@ fn screen_to_char_pos(
     current_scroll_offset: f32,
     font: &FontSettings,
     viewport: &TextViewViewport,
-    #[cfg(feature = "folding")] fold_state: &FoldState,
+    fold_state: &FoldState,
     scroll_offset_override: Option<f32>,
 ) -> usize {
     // Calculate the clicked position relative to code start
@@ -54,10 +54,7 @@ fn screen_to_char_pos(
     let col = (relative_x / char_width).max(0.0) as usize;
 
     // Convert display row to buffer line (accounting for folds)
-    #[cfg(feature = "folding")]
     let buffer_line = fold_state.display_to_actual_line(display_row);
-    #[cfg(not(feature = "folding"))]
-    let buffer_line = display_row;
 
     // Convert line/col to character position
     let line_count = rope.len_lines();
@@ -82,6 +79,7 @@ pub fn handle_mouse_input(
             &mut CursorState,
             &mut TextViewState,
             &TextViewViewport,
+            &mut FoldState,
         ),
         With<CodeEditor>,
     >,
@@ -90,14 +88,15 @@ pub fn handle_mouse_input(
     window_query: Query<&Window, With<PrimaryWindow>>,
     font: Res<FontSettings>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    #[cfg(feature = "folding")] mut fold_state: ResMut<FoldState>,
     #[cfg(feature = "lsp")] time: Res<Time>,
     #[cfg(feature = "lsp")] lsp_client: Res<crate::lsp::LspClient>,
     #[cfg(feature = "lsp")] lsp_sync: Res<crate::lsp::LspSyncState>,
     #[cfg(feature = "lsp")] mut hover_state: ResMut<crate::lsp::HoverState>,
     #[cfg(feature = "lsp")] hover_settings: Res<crate::settings::LspSettings>,
 ) {
-    let Ok((mut state, mut sel, mut cursor, mut tv, viewport)) = editor_query.single_mut() else {
+    let Ok((mut state, mut sel, mut cursor, mut tv, viewport, mut fold_state)) =
+        editor_query.single_mut()
+    else {
         return;
     };
 
@@ -134,7 +133,6 @@ pub fn handle_mouse_input(
                 tv.scroll_offset,
                 &font,
                 viewport,
-                #[cfg(feature = "folding")]
                 &fold_state,
                 None, // Use current scroll offset for initial position calculation
             ))
@@ -206,7 +204,6 @@ pub fn handle_mouse_input(
     // Handle mouse button press
     if mouse_button.just_pressed(MouseButton::Left) {
         // Check for fold indicator click (in the fold gutter area)
-        #[cfg(feature = "folding")]
         if let Some(cursor_pos_screen) = cursor_pos_screen {
             let _viewport_width = viewport.width as f32;
             let _viewport_height = viewport.height as f32;
@@ -353,7 +350,6 @@ pub fn handle_mouse_input(
                     tv.scroll_offset,
                     &font,
                     viewport,
-                    #[cfg(feature = "folding")]
                     &fold_state,
                     Some(drag_state.drag_start_scroll_offset),
                 );

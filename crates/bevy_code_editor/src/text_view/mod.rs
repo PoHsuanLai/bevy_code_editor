@@ -1,20 +1,17 @@
-//! Reusable text view module — generic text rendering in a scrollable viewport.
+//! Editor-side text-view module.
 //!
-//! Most types (`DisplayLayout`, `ShapedLine`, `StyleRun`, `RectOverlay`,
-//! `TextViewState`, `TextViewViewport`, `render_layout`, …) live in
-//! [`bevy_text_engine`] and are re-exported here so existing
-//! `use bevy_code_editor::text_view::…;` paths keep working through the
-//! workspace split. Editor-specific bits (`interaction`, `plugin`) remain
-//! in this crate; subsequent phases will move `interaction` to a
-//! `bevy_text_interaction` peer crate and slim `plugin` into a thin editor
-//! adapter.
+//! The generic primitives (`DisplayLayout`, `ShapedLine`, `StyleRun`,
+//! `RectOverlay`, `TextViewState`, `TextViewViewport`, `render_layout`,
+//! …) live in [`bevy_text_engine`] and are re-exported here so existing
+//! `use bevy_code_editor::text_view::…;` paths keep resolving. Editor-only
+//! pieces — input interaction and the editor's render plugin — live in
+//! the [`interaction`] and [`plugin`] submodules.
 
 pub mod interaction;
 pub mod plugin;
 
-// Re-export the engine view layer so the rest of the editor crate keeps
-// using `crate::text_view::…`. Re-exporting submodules (not just symbols)
-// preserves paths like `crate::text_view::render::GlyphInstance`.
+// Re-exporting submodules (not just symbols) preserves paths like
+// `crate::text_view::render::GlyphInstance` for downstream code.
 pub use bevy_text_engine::view::{
     layout, line_width, overlay, render, snapshot, state, viewport, DisplayLayout,
     GlyphBatchComponent, GlyphInstance, LineWidthTracker, RectOverlay, RowVertical, ShapedLine,

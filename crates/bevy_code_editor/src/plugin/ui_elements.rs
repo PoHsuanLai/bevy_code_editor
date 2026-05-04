@@ -23,6 +23,7 @@ pub(crate) fn update_selection_highlight(
             &EditorDisplayState,
             &CursorState,
             &mut TextViewOverlays,
+            &FoldState,
         ),
         With<CodeEditor>,
     >,
@@ -30,10 +31,11 @@ pub(crate) fn update_selection_highlight(
     theme: Res<ThemeSettings>,
     wrapping: Res<WrappingSettings>,
     indentation: Res<IndentationSettings>,
-    #[cfg(feature = "folding")] fold_state: Res<FoldState>,
 ) {
     let mut iter = editor_query;
-    let Ok((tv, _vp, _editor, sel, display, cursor, mut overlays)) = iter.single_mut() else {
+    let Ok((tv, _vp, _editor, sel, display, cursor, mut overlays, fold_state)) =
+        iter.single_mut()
+    else {
         return;
     };
 
@@ -62,7 +64,6 @@ pub(crate) fn update_selection_highlight(
 
             for line_idx in start_line..=end_line {
                 // Skip hidden lines
-                #[cfg(feature = "folding")]
                 if fold_state.is_line_hidden(line_idx) {
                     continue;
                 }
@@ -108,10 +109,7 @@ pub(crate) fn update_selection_highlight(
                         }
                     } else {
                         // Convert buffer line to display row
-                        #[cfg(feature = "folding")]
                         let display_row = fold_state.actual_to_display_line(line_idx);
-                        #[cfg(not(feature = "folding"))]
-                        let display_row = line_idx;
                         selection_rects.push((
                             cursor_idx,
                             display_row,
@@ -140,7 +138,6 @@ pub(crate) fn update_selection_highlight(
 
                 for line_idx in start_line..=end_line {
                     // Skip hidden lines
-                    #[cfg(feature = "folding")]
                     if fold_state.is_line_hidden(line_idx) {
                         continue;
                     }
@@ -183,10 +180,7 @@ pub(crate) fn update_selection_highlight(
                             }
                         } else {
                             // Convert buffer line to display row
-                            #[cfg(feature = "folding")]
                             let display_row = fold_state.actual_to_display_line(line_idx);
-                            #[cfg(not(feature = "folding"))]
-                            let display_row = line_idx;
                             selection_rects.push((
                                 0,
                                 display_row,
@@ -228,13 +222,11 @@ pub(crate) fn update_selection_highlight(
 /// Update indent guide rendering
 pub(crate) fn update_indent_guides(
     mut commands: Commands,
-    editor_query: Query<&TextViewState, With<CodeEditor>>,
+    editor_query: Query<(&TextViewState, &TextViewViewport, &FoldState), With<CodeEditor>>,
     font: Res<FontSettings>,
     theme: Res<ThemeSettings>,
     ui: Res<UiSettings>,
     indentation: Res<IndentationSettings>,
-    vp_query: Query<&TextViewViewport, With<CodeEditor>>,
-    #[cfg(feature = "folding")] fold_state: Res<FoldState>,
     render_config: Res<EditorRenderConfig>,
     mut guide_query: Query<(Entity, &mut Transform, &mut Visibility, &mut IndentGuide)>,
 ) {
@@ -246,10 +238,7 @@ pub(crate) fn update_indent_guides(
         return;
     }
 
-    let Ok(tv) = editor_query.single() else {
-        return;
-    };
-    let Ok(vp) = vp_query.single() else {
+    let Ok((tv, vp, fold_state)) = editor_query.single() else {
         return;
     };
 
@@ -271,31 +260,21 @@ pub(crate) fn update_indent_guides(
     // For files with no folding, we can jump directly to the visible start
     // This changes O(all_lines) to O(visible_lines)
     let total_lines = tv.rope.len_lines();
-    #[cfg(feature = "folding")]
     let has_folding = !fold_state.regions.is_empty();
-    #[cfg(not(feature = "folding"))]
-    let has_folding = false;
 
     // Calculate starting buffer line
     let start_buffer_line = if has_folding {
-        #[cfg(feature = "folding")]
-        {
-            // With folding, we need to iterate to find the right buffer line
-            // But we can still skip most lines quickly
-            let mut display_row = 0;
-            let mut buffer_line = 0;
-            while buffer_line < total_lines && display_row < visible_start_row {
-                if !fold_state.is_line_hidden(buffer_line) {
-                    display_row += 1;
-                }
-                buffer_line += 1;
+        // With folding, we need to iterate to find the right buffer line
+        // But we can still skip most lines quickly
+        let mut display_row = 0;
+        let mut buffer_line = 0;
+        while buffer_line < total_lines && display_row < visible_start_row {
+            if !fold_state.is_line_hidden(buffer_line) {
+                display_row += 1;
             }
-            buffer_line
+            buffer_line += 1;
         }
-        #[cfg(not(feature = "folding"))]
-        {
-            visible_start_row.min(total_lines)
-        }
+        buffer_line
     } else {
         // No folding: display_row == buffer_line, jump directly
         visible_start_row.min(total_lines)
@@ -303,21 +282,14 @@ pub(crate) fn update_indent_guides(
 
     // Start display row at visible_start_row (or the actual row if we started earlier)
     let mut current_display_row: usize = if has_folding {
-        #[cfg(feature = "folding")]
-        {
-            // With folding, we tracked this while finding start_buffer_line
-            let mut display_row = 0;
-            for bl in 0..start_buffer_line {
-                if !fold_state.is_line_hidden(bl) {
-                    display_row += 1;
-                }
+        // With folding, we tracked this while finding start_buffer_line
+        let mut display_row = 0;
+        for bl in 0..start_buffer_line {
+            if !fold_state.is_line_hidden(bl) {
+                display_row += 1;
             }
-            display_row
         }
-        #[cfg(not(feature = "folding"))]
-        {
-            start_buffer_line
-        }
+        display_row
     } else {
         start_buffer_line
     };
@@ -325,7 +297,6 @@ pub(crate) fn update_indent_guides(
     // Iterate only through visible buffer lines
     for buffer_line in start_buffer_line..total_lines {
         // Skip hidden lines
-        #[cfg(feature = "folding")]
         if fold_state.is_line_hidden(buffer_line) {
             continue;
         }
@@ -418,17 +389,14 @@ pub(crate) fn animate_smooth_scroll(
     scrolling: Res<ScrollingSettings>,
     _font: Res<crate::settings::FontSettings>,
     _viewport: Res<crate::types::ViewportDimensions>,
-    #[cfg(feature = "scrollbar")] scrollbar_drag: Res<super::scrollbar::ScrollbarDragState>,
+    scrollbar_drag: Res<super::scrollbar::ScrollbarDragState>,
 ) {
     let Ok(mut tv) = editor_query.single_mut() else {
         return;
     };
 
     // When dragging scrollbar or smooth scrolling disabled, apply target immediately
-    #[cfg(feature = "scrollbar")]
     let is_dragging = scrollbar_drag.is_dragging;
-    #[cfg(not(feature = "scrollbar"))]
-    let is_dragging = false;
 
     let use_smooth = scrolling.smooth && !is_dragging;
 
@@ -471,11 +439,10 @@ pub(crate) fn animate_smooth_scroll(
 /// Run condition: only run auto_scroll_to_cursor when cursor has moved and not dragging scrollbar
 pub(crate) fn should_auto_scroll(
     editor_query: Query<(&TextViewState, &CursorState), With<CodeEditor>>,
-    #[cfg(feature = "scrollbar")] scrollbar_drag: Res<super::scrollbar::ScrollbarDragState>,
+    scrollbar_drag: Res<super::scrollbar::ScrollbarDragState>,
     mouse_drag: Res<crate::input::MouseDragState>,
 ) -> bool {
     // Don't run when dragging scrollbar
-    #[cfg(feature = "scrollbar")]
     if scrollbar_drag.is_dragging {
         return false;
     }

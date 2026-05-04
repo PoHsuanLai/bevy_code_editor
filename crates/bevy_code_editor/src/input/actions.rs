@@ -347,8 +347,7 @@ fn execute_action_core(
     action: EditorAction,
     indentation: &IndentationSettings,
     goto_line_state: &mut GotoLineState,
-    #[cfg(feature = "folding")] fold_state: &mut FoldState,
-    #[cfg(not(feature = "folding"))] _fold_state_unused: Option<&mut ()>,
+    fold_state: &mut FoldState,
 ) -> ActionResult {
     let mut result = ActionResult {
         text_changed: false,
@@ -715,36 +714,23 @@ fn execute_action_core(
         }
 
         // Code folding actions
-        #[cfg(feature = "folding")]
         EditorAction::ToggleFold => {
             let line = tv.rope.char_to_line(cursor.cursor_pos);
             fold_state.toggle_fold_at_line(line);
         }
-        #[cfg(feature = "folding")]
         EditorAction::Fold => {
             let line = tv.rope.char_to_line(cursor.cursor_pos);
             fold_state.fold_at_line(line);
         }
-        #[cfg(feature = "folding")]
         EditorAction::Unfold => {
             let line = tv.rope.char_to_line(cursor.cursor_pos);
             fold_state.unfold_at_line(line);
         }
-        #[cfg(feature = "folding")]
         EditorAction::FoldAll => {
             fold_state.fold_all();
         }
-        #[cfg(feature = "folding")]
         EditorAction::UnfoldAll => {
             fold_state.unfold_all();
-        }
-        #[cfg(not(feature = "folding"))]
-        EditorAction::ToggleFold
-        | EditorAction::Fold
-        | EditorAction::Unfold
-        | EditorAction::FoldAll
-        | EditorAction::UnfoldAll => {
-            // Folding feature is disabled, no-op
         }
 
         // File operations are handled in keyboard.rs before execute_action is called
@@ -816,7 +802,7 @@ pub fn execute_action(
     indentation: &IndentationSettings,
     #[cfg(feature = "lsp")] lsp: &LspSettings,
     goto_line_state: &mut GotoLineState,
-    #[cfg(feature = "folding")] fold_state: &mut FoldState,
+    fold_state: &mut FoldState,
     #[cfg(feature = "lsp")] lsp_client: &lsp::LspClient,
     #[cfg(feature = "lsp")] completion_state: &mut lsp::CompletionState,
     #[cfg(feature = "lsp")] lsp_sync: &mut lsp::LspSyncState,
@@ -890,10 +876,7 @@ pub fn execute_action(
         action,
         indentation,
         goto_line_state,
-        #[cfg(feature = "folding")]
         fold_state,
-        #[cfg(not(feature = "folding"))]
-        None,
     );
 
     #[cfg(feature = "lsp")]
