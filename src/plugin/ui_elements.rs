@@ -2,13 +2,16 @@
 
 use super::editor_ui_plugin::EditorRenderConfig;
 use crate::settings::*;
-use crate::text_view::{TextViewState, TextViewViewport};
+use crate::text_view::{RectOverlay, TextViewOverlays, TextViewState, TextViewViewport};
 use crate::types::*;
 use bevy::prelude::*;
 
-/// Update selection highlight rectangles for all cursors
+/// Push selection rectangles into `TextViewOverlays` for all cursors.
+///
+/// As of step 6b, selections are paint-time overlays (z = -1, below text)
+/// rather than Sprite entities. The collection logic (which lines/cols are
+/// selected) is unchanged; only the writing-out is different.
 pub(crate) fn update_selection_highlight(
-    mut commands: Commands,
     editor_query: Query<
         (
             &TextViewState,
@@ -17,6 +20,7 @@ pub(crate) fn update_selection_highlight(
             &SelectionState,
             &EditorDisplayState,
             &CursorState,
+            &mut TextViewOverlays,
         ),
         With<CodeEditor>,
     >,
@@ -25,26 +29,18 @@ pub(crate) fn update_selection_highlight(
     wrapping: Res<WrappingSettings>,
     indentation: Res<IndentationSettings>,
     #[cfg(feature = "folding")] fold_state: Res<FoldState>,
-    render_config: Res<EditorRenderConfig>,
-    mut selection_query: Query<(
-        Entity,
-        &mut Transform,
-        &mut Sprite,
-        &mut Visibility,
-        &mut SelectionHighlight,
-    )>,
 ) {
-    let Ok((tv, vp, _editor, sel, display, cursor)) = editor_query.single() else {
+    let mut iter = editor_query;
+    let Ok((tv, _vp, _editor, sel, display, cursor, mut overlays)) = iter.single_mut() else {
         return;
     };
 
-    // Update selection when state changes (text edits, cursor moves, selection changes)
-    if !tv.needs_update && !tv.needs_scroll_update {
-        return;
-    }
+    // Drain any selection rects from the previous frame (z = -1 marks selection;
+    // cursor caret uses z = +1; z = 0 is reserved for line-bg/highlight overlays).
+    overlays.rects.retain(|r| r.z != -1);
 
     let char_width = font.char_width;
-    let line_height = font.line_height;
+    let _ = font.line_height;
 
     // Check if we're using soft line wrapping
     let use_wrapping = wrapping.enabled && display.display_map.wrap_width > 0;
@@ -203,71 +199,27 @@ pub(crate) fn update_selection_highlight(
         }
     }
 
-    // Clear all if no selections
-    if selection_rects.is_empty() {
-        for (_, _, _, mut visibility, _) in selection_query.iter_mut() {
-            *visibility = Visibility::Hidden;
-        }
-        return;
-    }
-
-    let mut existing_selections: Vec<_> = selection_query.iter_mut().collect();
-    let mut entity_index = 0;
-
-    for (cursor_idx, row_idx, sel_start_col, sel_end_col, is_continuation) in selection_rects {
-        let selection_width = (sel_end_col - sel_start_col) as f32 * char_width;
-
-        // Add continuation indent for wrapped lines
+    // Push selection rects into TextViewOverlays. Done after draining any
+    // previous-frame selection rects above; an empty `selection_rects` is
+    // equivalent to "no selections this frame".
+    for (_cursor_idx, row_idx, sel_start_col, sel_end_col, is_continuation) in selection_rects {
         let extra_indent = if use_wrapping && is_continuation && wrapping.indent_wrapped_lines {
             indentation.indent_size as f32 * char_width
         } else {
             0.0
         };
-
-        let x_left_edge = vp.text_area_left + extra_indent + (sel_start_col as f32 * char_width);
-        let y_from_top = vp.text_area_top + tv.scroll_offset + (row_idx as f32 * line_height);
-
-        let sprite_center_x = vp.world_left() + x_left_edge + selection_width / 2.0;
-        let sprite_center_y = vp.world_top() - y_from_top;
-
-        let translation = Vec3::new(sprite_center_x, sprite_center_y, 0.5);
-
-        if entity_index < existing_selections.len() {
-            let (_, ref mut transform, ref mut sprite, ref mut visibility, ref mut marker) =
-                &mut existing_selections[entity_index];
-            sprite.custom_size = Some(Vec2::new(selection_width, line_height));
-            transform.translation = translation;
-            marker.line_index = row_idx;
-            marker.cursor_index = cursor_idx;
-            **visibility = Visibility::Visible;
-        } else {
-            let mut entity_cmd = commands.spawn((
-                Sprite {
-                    color: theme.selection_background,
-                    custom_size: Some(Vec2::new(selection_width, line_height)),
-                    ..default()
-                },
-                Transform::from_translation(translation),
-                SelectionHighlight {
-                    line_index: row_idx,
-                    cursor_index: cursor_idx,
-                },
-                Name::new(format!("Selection_C{}_R{}", cursor_idx, row_idx)),
-                Visibility::Visible,
-            ));
-            if let Some(ref layers) = render_config.render_layers {
-                entity_cmd.insert(layers.clone());
-            }
-        }
-
-        entity_index += 1;
+        let x_left = extra_indent + (sel_start_col as f32 * char_width);
+        let x_right = extra_indent + (sel_end_col as f32 * char_width);
+        overlays.rects.push(RectOverlay {
+            display_row: row_idx as u32,
+            x_range: x_left..x_right,
+            color: theme.selection_background,
+            z: -1, // below text
+            corner_radius: 0.0,
+        });
     }
 
-    // Hide unused selections
-    for i in entity_index..existing_selections.len() {
-        let (_, _, _, ref mut visibility, _) = &mut existing_selections[i];
-        **visibility = Visibility::Hidden;
-    }
+    overlays.version = overlays.version.wrapping_add(1);
 }
 
 /// Update indent guide rendering

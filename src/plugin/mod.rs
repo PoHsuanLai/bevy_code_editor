@@ -190,7 +190,8 @@ impl Plugin for CodeEditorPlugin {
             update_gpu_text_instanced
                 .run_if(crate::gpu_text::atlas_ready)
                 .in_set(RenderingSet)
-                .after(crate::plugin::cursor::push_cursor_overlays),
+                .after(crate::plugin::cursor::push_cursor_overlays)
+                .after(crate::plugin::ui_elements::update_selection_highlight),
         );
     }
 }
