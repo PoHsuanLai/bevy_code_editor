@@ -1018,12 +1018,5 @@ fn auto_request_completion(
     if cursor_pos == 0 {
         return;
     }
-
-    let line = tv.rope.char_to_line(cursor_pos);
-    let line_start = tv.rope.line_to_char(line);
-    let character = cursor_pos - line_start;
-
-    writer.write(bevy_code_editor::types::events::RequestCompletionEvent::new(
-        line, character,
-    ));
+    writer.write(bevy_code_editor::types::events::RequestCompletionEvent::new(cursor_pos));
 }

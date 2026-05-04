@@ -1072,6 +1072,7 @@ dependencies = [
  "bevy-tokio-tasks",
  "futures",
  "lsp-types",
+ "ropey",
  "serde",
  "serde_json",
  "tokio",

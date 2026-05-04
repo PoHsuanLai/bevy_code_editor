@@ -3,6 +3,11 @@
 //! These systems read editor events ([`crate::types::events::*`]) and translate
 //! them into LSP request sends through each editor entity's
 //! [`bevy_lsp::LspClient`] Component.
+//!
+//! Position conversion goes through [`bevy_lsp::rope_char_to_lsp_position`]
+//! with [`PositionEncoding::Utf16`] (LSP spec default). Once we read the
+//! server's negotiated `position_encoding` from `initialize.serverInfo.
+//! capabilities` we'll thread that through here instead.
 
 use super::state::{
     LspCompletionPopup, LspDebounceTimers, LspRenamePopup, LspSignatureHelpPopup, PendingLspRequest,
@@ -14,22 +19,19 @@ use crate::types::events::{
 };
 use crate::types::{CodeEditor, CursorState};
 use bevy::prelude::*;
-use bevy_lsp::{LspClient, LspDocument, LspMessage};
+use bevy_lsp::{
+    rope_byte_to_lsp_position, rope_char_to_lsp_position, LspClient, LspDocument, LspMessage,
+    PositionEncoding,
+};
 
-/// System that listens to TextEditEvent and sends incremental didChange to LSP.
-///
-/// Converts byte-level edit ranges to LSP Position (line/character) and sends
-/// only the changed range instead of the full document text.
+/// LSP wire encoding the editor currently uses. Matches the spec default.
+/// TODO: read this off `ServerCapabilities::position_encoding` once it's
+/// surfaced as a Component field.
+const ENC: PositionEncoding = PositionEncoding::Utf16;
+
 pub fn listen_text_edit_events(
     mut events: MessageReader<TextEditEvent>,
-    mut query: Query<
-        (
-            &TextViewState,
-            &LspClient,
-            Option<&mut LspDocument>,
-        ),
-        With<CodeEditor>,
-    >,
+    mut query: Query<(&TextViewState, &LspClient, Option<&mut LspDocument>), With<CodeEditor>>,
 ) {
     let Ok((tv, lsp_client, lsp_document)) = query.single_mut() else {
         return;
@@ -37,69 +39,45 @@ pub fn listen_text_edit_events(
     let Some(mut lsp_document) = lsp_document else {
         return;
     };
+    let rope = &tv.rope;
     for event in events.read() {
         let uri = lsp_document.uri.clone();
         let version = lsp_document.bump_version();
 
-        // Convert byte offsets to LSP positions using the CURRENT rope
-        // (which already has the edit applied)
-        let rope = &tv.rope;
-
-        // start_byte position (same in old and new)
-        let start_pos = byte_to_lsp_position(rope, event.start_byte);
-
-        // For the old end position, we use range_length mode which doesn't
-        // need old_end_position.
+        let start_pos = rope_byte_to_lsp_position(rope, event.start_byte, ENC);
         let old_len = event.old_end_byte - event.start_byte;
 
         let new_text_start = event.start_byte.min(rope.len_bytes());
         let new_text_end = event.new_end_byte.min(rope.len_bytes());
-
-        // Extract the new text from the rope
         let new_text = if new_text_start < new_text_end {
-            let start_char = rope.byte_to_char(new_text_start);
-            let end_char = rope.byte_to_char(new_text_end);
-            rope.slice(start_char..end_char).to_string()
+            let s = rope.byte_to_char(new_text_start);
+            let e = rope.byte_to_char(new_text_end);
+            rope.slice(s..e).to_string()
         } else {
             String::new()
         };
 
         use lsp_types::TextDocumentContentChangeEvent;
-        let msg = LspMessage::DidChange {
+        lsp_client.send(LspMessage::DidChange {
             uri,
             version,
             changes: vec![TextDocumentContentChangeEvent {
                 range: Some(lsp_types::Range {
                     start: start_pos,
-                    end: start_pos, // Will be overridden by range_length
+                    end: start_pos, // overridden by range_length
                 }),
                 range_length: Some(old_len as u32),
                 text: new_text,
             }],
-        };
-
-        lsp_client.send(msg);
+        });
     }
 }
 
-/// Convert a byte offset to LSP Position (line, character) using the rope
-fn byte_to_lsp_position(rope: &ropey::Rope, byte_offset: usize) -> lsp_types::Position {
-    let byte_offset = byte_offset.min(rope.len_bytes());
-    let char_offset = rope.byte_to_char(byte_offset);
-    let line = rope.char_to_line(char_offset);
-    let line_start_char = rope.line_to_char(line);
-    let character = char_offset - line_start_char;
-    lsp_types::Position {
-        line: line as u32,
-        character: character as u32,
-    }
-}
-
-/// System that listens to RequestCompletionEvent and buffers for debouncing
 pub fn listen_completion_requests(
     mut events: MessageReader<RequestCompletionEvent>,
     mut query: Query<
         (
+            &TextViewState,
             Option<&LspDocument>,
             &mut LspDebounceTimers,
             &mut LspCompletionPopup,
@@ -107,32 +85,27 @@ pub fn listen_completion_requests(
         With<CodeEditor>,
     >,
 ) {
-    let Ok((lsp_document, mut debounce, mut completion_state)) = query.single_mut() else {
+    let Ok((tv, lsp_document, mut debounce, mut completion_state)) = query.single_mut() else {
         return;
     };
     let Some(lsp_document) = lsp_document else {
         return;
     };
     for event in events.read() {
-        // Buffer the request and reset the debounce timer
         debounce.pending_completion = Some(PendingLspRequest {
             uri: lsp_document.uri.clone(),
-            line: event.line as u32,
-            character: event.character as u32,
+            position: rope_char_to_lsp_position(&tv.rope, event.cursor_char, ENC),
         });
         debounce.completion_timer.reset();
-
-        // Mark completion as pending
         completion_state.visible = true;
     }
 }
 
-/// System that listens to RequestHoverEvent and buffers for debouncing
 pub fn listen_hover_requests(
     mut events: MessageReader<RequestHoverEvent>,
-    mut query: Query<(Option<&LspDocument>, &mut LspDebounceTimers), With<CodeEditor>>,
+    mut query: Query<(&TextViewState, Option<&LspDocument>, &mut LspDebounceTimers), With<CodeEditor>>,
 ) {
-    let Ok((lsp_document, mut debounce)) = query.single_mut() else {
+    let Ok((tv, lsp_document, mut debounce)) = query.single_mut() else {
         return;
     };
     let Some(lsp_document) = lsp_document else {
@@ -141,18 +114,17 @@ pub fn listen_hover_requests(
     for event in events.read() {
         debounce.pending_hover = Some(PendingLspRequest {
             uri: lsp_document.uri.clone(),
-            line: event.line as u32,
-            character: event.character as u32,
+            position: rope_char_to_lsp_position(&tv.rope, event.cursor_char, ENC),
         });
         debounce.hover_timer.reset();
     }
 }
 
-/// System that listens to RequestRenameEvent
 pub fn listen_rename_requests(
     mut events: MessageReader<RequestRenameEvent>,
     mut query: Query<
         (
+            &TextViewState,
             Option<&LspDocument>,
             &LspClient,
             &mut LspRenamePopup,
@@ -160,18 +132,14 @@ pub fn listen_rename_requests(
         With<CodeEditor>,
     >,
 ) {
-    let Ok((lsp_document, lsp_client, mut rename_state)) = query.single_mut() else {
+    let Ok((tv, lsp_document, lsp_client, mut rename_state)) = query.single_mut() else {
         return;
     };
     let Some(lsp_document) = lsp_document else {
         return;
     };
     for event in events.read() {
-        use lsp_types::Position;
-        let position = Position {
-            line: event.line as u32,
-            character: event.character as u32,
-        };
+        let position = rope_char_to_lsp_position(&tv.rope, event.cursor_char, ENC);
         rename_state.start_prepare(position);
         lsp_client.send(LspMessage::PrepareRename {
             uri: lsp_document.uri.clone(),
@@ -180,11 +148,11 @@ pub fn listen_rename_requests(
     }
 }
 
-/// System that listens to RequestSignatureHelpEvent
 pub fn listen_signature_help_requests(
     mut events: MessageReader<RequestSignatureHelpEvent>,
     mut query: Query<
         (
+            &TextViewState,
             Option<&LspDocument>,
             &LspClient,
             &mut LspSignatureHelpPopup,
@@ -192,7 +160,7 @@ pub fn listen_signature_help_requests(
         With<CodeEditor>,
     >,
 ) {
-    let Ok((lsp_document, lsp_client, mut sig_help_state)) = query.single_mut() else {
+    let Ok((tv, lsp_document, lsp_client, mut sig_help_state)) = query.single_mut() else {
         return;
     };
     let Some(lsp_document) = lsp_document else {
@@ -200,20 +168,13 @@ pub fn listen_signature_help_requests(
     };
     for event in events.read() {
         sig_help_state.reset();
-        use lsp_types::Position;
-        let msg = LspMessage::SignatureHelp {
+        lsp_client.send(LspMessage::SignatureHelp {
             uri: lsp_document.uri.clone(),
-            position: Position {
-                line: event.line as u32,
-                character: event.character as u32,
-            },
-        };
-
-        lsp_client.send(msg);
+            position: rope_char_to_lsp_position(&tv.rope, event.cursor_char, ENC),
+        });
     }
 }
 
-/// System that listens to DismissCompletionEvent
 pub fn listen_dismiss_completion(
     mut events: MessageReader<DismissCompletionEvent>,
     mut query: Query<&mut LspCompletionPopup, With<CodeEditor>>,
@@ -228,10 +189,10 @@ pub fn listen_dismiss_completion(
     }
 }
 
-/// System that ticks debounce timers and sends LSP requests when they fire.
+/// Tick debounce timers and fire LSP requests when they expire.
 ///
-/// Note: kept as a free function (not in this file's `pub use` set) and named
-/// `tick_lsp_debounce_timers` so callers in `plugin/lsp_plugin.rs` can find it
+/// Kept as a free function (not in this file's `pub use` set) and named
+/// `tick_lsp_debounce_timers` so callers in `plugin/lsp_plugin.rs` find it
 /// at the same path as before the refactor.
 pub fn tick_lsp_debounce_timers(
     time: Res<Time>,
@@ -240,17 +201,14 @@ pub fn tick_lsp_debounce_timers(
     let Ok((lsp_client, mut debounce)) = query.single_mut() else {
         return;
     };
-    // Tick all active timers
+
     if debounce.pending_completion.is_some() {
         debounce.completion_timer.tick(time.delta());
         if debounce.completion_timer.just_finished() {
             if let Some(req) = debounce.pending_completion.take() {
                 lsp_client.send(LspMessage::Completion {
                     uri: req.uri,
-                    position: lsp_types::Position {
-                        line: req.line,
-                        character: req.character,
-                    },
+                    position: req.position,
                 });
             }
         }
@@ -262,10 +220,7 @@ pub fn tick_lsp_debounce_timers(
             if let Some(req) = debounce.pending_hover.take() {
                 lsp_client.send(LspMessage::Hover {
                     uri: req.uri,
-                    position: lsp_types::Position {
-                        line: req.line,
-                        character: req.character,
-                    },
+                    position: req.position,
                 });
             }
         }
@@ -277,10 +232,7 @@ pub fn tick_lsp_debounce_timers(
             if let Some(req) = debounce.pending_highlight.take() {
                 lsp_client.send(LspMessage::DocumentHighlight {
                     uri: req.uri,
-                    position: lsp_types::Position {
-                        line: req.line,
-                        character: req.character,
-                    },
+                    position: req.position,
                 });
             }
         }
@@ -300,58 +252,49 @@ pub fn tick_lsp_debounce_timers(
     }
 }
 
-/// System that listens to ApplyCompletionEvent
+/// Listens to ApplyCompletionEvent.
 pub fn listen_apply_completion(
     mut events: MessageReader<ApplyCompletionEvent>,
     mut query: Query<
         (
-            &mut CursorState,
             &mut TextViewState,
+            &mut CursorState,
             &mut LspCompletionPopup,
         ),
         With<CodeEditor>,
     >,
 ) {
-    let Ok((mut cursor_state, mut tv, mut completion_state)) = query.single_mut() else {
+    let Ok((mut tv, mut cursor_state, mut completion_state)) = query.single_mut() else {
         return;
     };
     for event in events.read() {
-        if event.item_index < completion_state.items.len() {
-            let item = &completion_state.items[event.item_index];
-
-            // Calculate current position from cursor_pos
-            let cursor_pos = cursor_state.cursor_pos.min(tv.rope.len_chars());
-            let line = tv.rope.char_to_line(cursor_pos);
-            let line_start = tv.rope.line_to_char(line);
-            let cursor_char = cursor_pos - line_start;
-
-            let line_text = tv.rope.line(line).to_string();
-
-            let word_start = line_text[..cursor_char]
-                .rfind(|c: char| !c.is_alphanumeric() && c != '_')
-                .map(|i| i + 1)
-                .unwrap_or(0);
-
-            // Delete the partial word
-            if word_start < cursor_char {
-                let start_pos = line_start + word_start;
-                let end_pos = line_start + cursor_char;
-                tv.rope.remove(start_pos..end_pos);
-                cursor_state.cursor_pos = start_pos + word_start;
-            }
-
-            // Insert the completion text
-            let insert_text = item.insert_text.as_ref().unwrap_or(&item.label);
-            let cursor_pos = cursor_state.cursor_pos;
-            tv.rope.insert(cursor_pos, insert_text);
-            cursor_state.cursor_pos += insert_text.len();
-
-            // Mark as needing update
-            tv.content_version += 1;
-
-            // Dismiss completion
-            completion_state.visible = false;
-            completion_state.items.clear();
+        let filtered = completion_state.filtered_items();
+        if event.item_index >= filtered.len() {
+            continue;
         }
+        let item = &filtered[event.item_index];
+
+        let cursor_pos = cursor_state.cursor_pos.min(tv.rope.len_chars());
+        let line = tv.rope.char_to_line(cursor_pos);
+        let line_start = tv.rope.line_to_char(line);
+        let cursor_char = cursor_pos - line_start;
+
+        let start_offset_in_line = if completion_state.start_char_index >= line_start {
+            completion_state.start_char_index - line_start
+        } else {
+            cursor_char
+        };
+        let start_pos = line_start + start_offset_in_line;
+        if start_pos < cursor_pos {
+            tv.rope.remove(start_pos..cursor_pos);
+            cursor_state.cursor_pos = start_pos;
+        }
+
+        let insert_text = item.insert_text();
+        let cursor_pos = cursor_state.cursor_pos;
+        tv.rope.insert(cursor_pos, insert_text);
+        cursor_state.cursor_pos += insert_text.len();
+        completion_state.visible = false;
+        completion_state.filter.clear();
     }
 }

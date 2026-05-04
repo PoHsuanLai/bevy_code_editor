@@ -245,16 +245,12 @@ pub fn request_completion(
     completion_state: &mut LspCompletionPopup,
     lsp_document: Option<&LspDocument>,
 ) {
-    use lsp_types::Position;
-
     let cursor_pos = cursor.cursor_pos.min(rope.len_chars());
-    let line_index = rope.char_to_line(cursor_pos);
-    let char_in_line_index = cursor_pos - rope.line_to_char(line_index);
-
-    let lsp_position = Position {
-        line: line_index as u32,
-        character: char_in_line_index as u32,
-    };
+    let lsp_position = bevy_lsp::rope_char_to_lsp_position(
+        rope,
+        cursor_pos,
+        bevy_lsp::PositionEncoding::Utf16,
+    );
 
     if let Some(doc) = lsp_document {
         trace!(

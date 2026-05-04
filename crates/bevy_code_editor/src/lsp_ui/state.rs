@@ -423,12 +423,13 @@ impl LspInlayHints {
     }
 }
 
-/// A pending LSP request (position-based)
+/// A pending LSP request (position-based). `position` is already in the
+/// negotiated wire encoding — convert with [`bevy_lsp::rope_char_to_lsp_position`]
+/// at enqueue time.
 #[derive(Clone, Debug)]
 pub struct PendingLspRequest {
     pub uri: Url,
-    pub line: u32,
-    pub character: u32,
+    pub position: Position,
 }
 
 /// A pending code action request (range-based)

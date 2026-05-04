@@ -575,18 +575,14 @@ pub fn request_document_highlights(
     highlight_state.debounce_timer = None;
     highlight_state.cursor_position = cursor_state.cursor_pos;
 
-    // Convert cursor position to LSP position
-    let cursor_pos = cursor_state.cursor_pos.min(tv.rope.len_chars());
-    let line = tv.rope.char_to_line(cursor_pos);
-    let line_start = tv.rope.line_to_char(line);
-    let character = cursor_pos - line_start;
-
+    let position = bevy_lsp::rope_char_to_lsp_position(
+        &tv.rope,
+        cursor_state.cursor_pos,
+        bevy_lsp::PositionEncoding::Utf16,
+    );
     lsp_client.send(LspMessage::DocumentHighlight {
         uri: lsp_document.uri.clone(),
-        position: Position {
-            line: line as u32,
-            character: character as u32,
-        },
+        position,
     });
 }
 

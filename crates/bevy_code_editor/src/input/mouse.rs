@@ -183,8 +183,6 @@ pub fn handle_mouse_input(
     // --- LSP Hover logic ---
     #[cfg(feature = "lsp")]
     {
-        use lsp_types::Position;
-
         // Only process hover if enabled in settings
         if hover_settings.hover.enabled {
             if let Some(current_char_pos) = char_pos {
@@ -204,17 +202,18 @@ pub fn handle_mouse_input(
                 if let Some(timer) = &mut hover_state.timer {
                     timer.tick(time.delta());
                     if timer.just_finished() && !hover_state.request_sent {
+                        // Clamp to last char of line (exclude newline) so the
+                        // server doesn't see a position past the line end.
                         let line_index = tv.rope.char_to_line(current_char_pos);
                         let line_start = tv.rope.line_to_char(line_index);
                         let line_len = tv.rope.line(line_index).len_chars();
-                        // Clamp column to actual line length (excluding newline)
-                        let char_in_line_index =
-                            (current_char_pos - line_start).min(line_len.saturating_sub(1));
-
-                        let lsp_position = Position {
-                            line: line_index as u32,
-                            character: char_in_line_index as u32,
-                        };
+                        let clamped = line_start
+                            + (current_char_pos - line_start).min(line_len.saturating_sub(1));
+                        let lsp_position = bevy_lsp::rope_char_to_lsp_position(
+                            &tv.rope,
+                            clamped,
+                            bevy_lsp::PositionEncoding::Utf16,
+                        );
 
                         if let Some(doc) = lsp_document {
                             lsp_client.send(LspMessage::Hover {
@@ -223,7 +222,6 @@ pub fn handle_mouse_input(
                             });
                             hover_state.request_sent = true;
                             hover_state.pending_char_index = Some(current_char_pos);
-                            // Remember which position we requested
                         }
                     }
                 }
@@ -291,16 +289,11 @@ pub fn handle_mouse_input(
                 if keyboard_input.pressed(KeyCode::ControlLeft)
                     || keyboard_input.pressed(KeyCode::ControlRight)
                 {
-                    use lsp_types::Position;
-
-                    let line_index = tv.rope.char_to_line(char_pos);
-                    let char_in_line_index = char_pos - tv.rope.line_to_char(line_index);
-
-                    let lsp_position = Position {
-                        line: line_index as u32,
-                        character: char_in_line_index as u32,
-                    };
-
+                    let lsp_position = bevy_lsp::rope_char_to_lsp_position(
+                        &tv.rope,
+                        char_pos,
+                        bevy_lsp::PositionEncoding::Utf16,
+                    );
                     if let Some(doc) = lsp_document {
                         lsp_client.send(LspMessage::GotoDefinition {
                             uri: doc.uri.clone(),

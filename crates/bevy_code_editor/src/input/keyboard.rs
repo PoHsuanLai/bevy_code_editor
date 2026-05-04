@@ -520,14 +520,11 @@ pub fn process_editor_actions(
     if action == EditorAction::RenameSymbol {
         if capabilities.supports_rename() {
             if let Some(doc) = lsp_document.as_deref() {
-                let cp = cursor.cursor_pos.min(tv.rope.len_chars());
-                let line = tv.rope.char_to_line(cp);
-                let line_start = tv.rope.line_to_char(line);
-                let character = cp - line_start;
-                let position = lsp_types::Position {
-                    line: line as u32,
-                    character: character as u32,
-                };
+                let position = bevy_lsp::rope_char_to_lsp_position(
+                    &tv.rope,
+                    cursor.cursor_pos,
+                    bevy_lsp::PositionEncoding::Utf16,
+                );
                 rename_state.start_prepare(position);
                 crate::lsp_ui::systems::request_prepare_rename(
                     lsp_client,

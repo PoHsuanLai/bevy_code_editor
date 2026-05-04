@@ -1,8 +1,9 @@
-//! Editor events for inter-plugin communication
+//! Editor events for inter-plugin communication.
 
 use bevy::prelude::*;
 
-/// Notifies plugins (syntax highlighting, LSP, etc.) about text changes for incremental updates
+/// Notifies plugins (syntax highlighting, LSP, etc.) about text changes for
+/// incremental updates.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct TextEditEvent {
@@ -28,59 +29,62 @@ impl TextEditEvent {
     }
 }
 
-/// Fired when user presses Ctrl+Space or types a trigger character
+// LSP request events.
+//
+// `cursor_char` is a rope char offset; the listener resolves it to an LSP
+// `Position` in the negotiated wire encoding (UTF-16 by spec default). This
+// keeps producers honest about non-ASCII content — no inline char-counting
+// at the construction site.
+
+/// Fired when user presses Ctrl+Space or types a trigger character.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct RequestCompletionEvent {
-    pub line: usize,
-    pub character: usize,
+    pub cursor_char: usize,
 }
 
 impl RequestCompletionEvent {
-    pub fn new(line: usize, character: usize) -> Self {
-        Self { line, character }
+    pub fn new(cursor_char: usize) -> Self {
+        Self { cursor_char }
     }
 }
 
-/// Fired when user hovers over a symbol
+/// Fired when user hovers over a symbol.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct RequestHoverEvent {
-    pub line: usize,
-    pub character: usize,
+    pub cursor_char: usize,
 }
 
 impl RequestHoverEvent {
-    pub fn new(line: usize, character: usize) -> Self {
-        Self { line, character }
+    pub fn new(cursor_char: usize) -> Self {
+        Self { cursor_char }
     }
 }
 
-/// Fired when user initiates a rename (F2)
+/// Fired when user initiates a rename (F2).
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct RequestRenameEvent {
-    pub line: usize,
-    pub character: usize,
+    pub cursor_char: usize,
 }
 
 impl RequestRenameEvent {
-    pub fn new(line: usize, character: usize) -> Self {
-        Self { line, character }
+    pub fn new(cursor_char: usize) -> Self {
+        Self { cursor_char }
     }
 }
 
-/// Fired when user types '(' or ','
+/// Fired when user types '(' or ','.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct RequestSignatureHelpEvent {
-    pub line: usize,
-    pub character: usize,
+    pub cursor_char: usize,
 }
 
 impl RequestSignatureHelpEvent {
-    pub fn new(line: usize, character: usize) -> Self {
-        Self { line, character }
+    pub fn new(cursor_char: usize) -> Self {
+        Self { cursor_char }
     }
 }
 
