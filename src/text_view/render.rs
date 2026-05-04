@@ -401,6 +401,7 @@ pub fn render_layout(
         let base_y = line.y_top + line_height * 0.5 + baseline_offset;
         let line_x = line_start_x + line.x_offset;
 
+
         // Line background (full-width quad) — full row, top-anchored on y_top.
         if let Some(bg) = line.line_bg {
             let bg_linear = bg.to_linear();
@@ -641,12 +642,22 @@ fn push_overlay_quad(
     let width = (x1 - x0).max(1.0);
 
     // Resolve semantic vertical placement against the row's geometry.
-    // y_off is from the row's top edge; height is the rect height.
+    // y_off is from the row's top edge (line.y_top); height is the rect height.
+    //
+    // Important: the row "box" (`y_top..y_top + line_height`) includes leading
+    // above/below the actual glyph cap-to-descender extent. Carets and full-line
+    // backgrounds should align with the *text* (centered on the baseline), not
+    // with the leaded box, so they sit visually on the row of text rather than
+    // straddling line-spacing whitespace.
+    let baseline_y_off = line_height * 0.5 + baseline_offset;
     let (y_off, height) = match rect.vertical {
-        super::overlay::RowVertical::Full => (0.0, line_height),
+        super::overlay::RowVertical::Full => {
+            // Center on baseline, span ~one line worth of vertical space.
+            (baseline_y_off - line_height * 0.5, line_height)
+        }
         super::overlay::RowVertical::Caret { height_fraction } => {
             let h = (line_height * height_fraction).max(1.0);
-            ((line_height - h) * 0.5, h)
+            (baseline_y_off - h * 0.5, h)
         }
         super::overlay::RowVertical::TopBand { thickness } => (0.0, thickness.max(1.0)),
         super::overlay::RowVertical::BottomBand { thickness } => {
@@ -654,7 +665,6 @@ fn push_overlay_quad(
             (line_height - t, t)
         }
         super::overlay::RowVertical::UnderBaseline { thickness, gap } => {
-            let baseline_y_off = line_height * 0.5 + baseline_offset;
             (baseline_y_off + gap, thickness.max(1.0))
         }
     };
@@ -663,6 +673,8 @@ fn push_overlay_quad(
     // Single anchor: line.y_top is the row's screen-Y top. Quad position is the
     // *center* of the rect; world_top inverts Y.
     let world_y = world_top - line.y_top - y_off - height * 0.5;
+
+
     let color_linear = rect.color.to_linear();
     out.push(GlyphInstance {
         position: Vec2::new(world_x, world_y),
