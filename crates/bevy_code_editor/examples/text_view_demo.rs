@@ -8,7 +8,6 @@
 
 use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
-use bevy_code_editor::settings::EditorSettingsBuilder;
 use bevy_code_editor::text_view::*;
 
 fn main() {
@@ -21,10 +20,6 @@ fn main() {
         }),
         ..default()
     }));
-
-    EditorSettingsBuilder::default()
-        .build()
-        .insert_into(&mut app);
 
     app.add_plugins(TextViewPlugin)
         .add_systems(Startup, (setup_camera, setup_text_view))

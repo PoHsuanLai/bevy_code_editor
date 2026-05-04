@@ -1,42 +1,41 @@
 //! # Bevy Code Editor
 //!
-//! Code editor plugin for Bevy.
+//! Code editor plugin for Bevy. The editor is one consumer of the
+//! [`bevy_text_engine`] text rendering primitives — see also
+//! [`crate::text_view`] for the lower-level `TextView` API.
+//!
+//! ## Quick start
 //!
 //! ```rust,no_run
 //! use bevy::prelude::*;
 //! use bevy_code_editor::prelude::*;
 //!
-//! fn main() {
-//!     // Define your keybindings
-//!     let input_map = InputMap::default()
-//!         .with(EditorAction::MoveCursorLeft, KeyCode::ArrowLeft)
-//!         .with(EditorAction::MoveCursorRight, KeyCode::ArrowRight)
-//!         .with(EditorAction::Copy, ButtonlikeChord::new([KeyCode::ControlLeft, KeyCode::KeyC]))
-//!         .with(EditorAction::Paste, ButtonlikeChord::new([KeyCode::ControlLeft, KeyCode::KeyV]));
-//!
-//!     App::new()
-//!         .add_plugins(DefaultPlugins)
-//!         .add_plugins(CodeEditorPlugin::new(input_map))
-//!         .run();
-//! }
+//! App::new()
+//!     .add_plugins(DefaultPlugins)
+//!     .add_plugins(CodeEditorPlugin)
+//!     .run();
 //! ```
 //!
-//! ## Customization
+//! `CodeEditorPlugin` is a `Default` unit struct: it registers default
+//! settings resources and spawns one `CodeEditor` entity at startup, with
+//! a default key binding map. Per-entity configuration lives on
+//! components — to start with a different font size, override
+//! [`bevy_text_engine::FontConfig`] when spawning:
 //!
 //! ```rust,no_run
-//! use bevy::prelude::*;
-//! use bevy_code_editor::prelude::*;
-//!
-//! fn main() {
-//!     let input_map = InputMap::default();
-//!     let settings = EditorSettings::minimal();
-//!
-//!     App::new()
-//!         .add_plugins(DefaultPlugins)
-//!         .add_plugins(CodeEditorPlugin::new(input_map).with_settings(settings))
-//!         .run();
+//! # use bevy::prelude::*;
+//! # use bevy_code_editor::prelude::*;
+//! fn spawn_editor(mut commands: Commands) {
+//!     commands.spawn((
+//!         CodeEditor,
+//!         FontConfig::from_size(18.0).with_line_height_multiplier(1.4),
+//!     ));
 //! }
 //! ```
+//!
+//! Customizing keybindings: spawn an `EditorInputManager` with your own
+//! `InputMap<EditorAction>` *before* `PostStartup`; the plugin's default
+//! input manager is gated on no existing one being present.
 
 pub mod display_map;
 pub mod input;

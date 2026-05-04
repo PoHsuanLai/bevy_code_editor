@@ -88,10 +88,28 @@ pub struct CodeEditorPlugin;
 
 impl Plugin for CodeEditorPlugin {
     fn build(&self, app: &mut App) {
-        // Initialize all settings with defaults
-        crate::settings::EditorSettingsBuilder::default()
-            .build()
-            .insert_into(app);
+        use crate::settings::*;
+
+        // Initialize each editor-side settings resource with its Default.
+        // Per-entity values (font size, scroll behaviour) are already
+        // FontConfig / ScrollConfig components on the editor entity; what
+        // remains here is genuinely-global config like theme, UI toggles,
+        // indentation rules, etc.
+        app.init_resource::<FontSettings>();
+        app.init_resource::<ThemeSettings>();
+        app.init_resource::<UiSettings>();
+        app.init_resource::<IndentationSettings>();
+        app.init_resource::<BracketSettings>();
+        app.init_resource::<CursorSettings>();
+        app.init_resource::<CursorLineSettings>();
+        app.init_resource::<ScrollingSettings>();
+        app.init_resource::<SearchSettings>();
+        app.init_resource::<SyntaxSettings>();
+        app.init_resource::<PerformanceSettings>();
+        app.init_resource::<WrappingSettings>();
+        app.init_resource::<ScrollbarSettings>();
+        #[cfg(feature = "lsp")]
+        app.init_resource::<LspSettings>();
 
         // Initialize core resources
         app.init_resource::<ViewportConfig>();
