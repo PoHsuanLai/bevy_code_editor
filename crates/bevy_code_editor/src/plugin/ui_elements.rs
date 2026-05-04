@@ -7,6 +7,7 @@ use crate::text_view::{
 };
 use crate::types::*;
 use bevy::prelude::*;
+use bevy_text_engine::FontConfig;
 
 /// Push selection rectangles into `TextViewOverlays` for all cursors.
 ///
@@ -23,15 +24,15 @@ pub(crate) fn update_selection_highlight(
             &CursorState,
             &mut TextViewOverlays,
             &FoldState,
+            &FontConfig,
         ),
         With<CodeEditor>,
     >,
-    font: Res<FontSettings>,
     theme: Res<ThemeSettings>,
     wrapping: Res<WrappingSettings>,
     indentation: Res<IndentationSettings>,
 ) {
-    for (tv, _vp, sel, display, cursor, mut overlays, fold_state) in
+    for (tv, _vp, sel, display, cursor, mut overlays, fold_state, font) in
         editor_query.iter_mut()
     {
     // Drain any selection rects from the previous frame (z = -1 marks selection;
@@ -218,8 +219,10 @@ pub(crate) fn update_selection_highlight(
 /// Update indent guide rendering
 pub(crate) fn update_indent_guides(
     mut commands: Commands,
-    editor_query: Query<(&TextViewState, &TextViewViewport, &FoldState), With<CodeEditor>>,
-    font: Res<FontSettings>,
+    editor_query: Query<
+        (&TextViewState, &TextViewViewport, &FoldState, &FontConfig),
+        With<CodeEditor>,
+    >,
     theme: Res<ThemeSettings>,
     ui: Res<UiSettings>,
     indentation: Res<IndentationSettings>,
@@ -234,15 +237,15 @@ pub(crate) fn update_indent_guides(
         return;
     }
 
-    let line_height = font.line_height;
-    let char_width = font.char_width;
     let indent_size = indentation.indent_size;
 
     // Collect existing guide entities once (shared pool across editors)
     let mut existing_guides: Vec<_> = guide_query.iter_mut().collect();
     let mut entity_index = 0;
 
-    for (tv, vp, fold_state) in editor_query.iter() {
+    for (tv, vp, fold_state, font) in editor_query.iter() {
+        let line_height = font.line_height;
+        let char_width = font.char_width;
         let viewport_height = vp.height as f32;
 
         // Calculate visible display row range
@@ -380,19 +383,20 @@ pub(crate) fn update_indent_guides(
 /// Animate smooth scrolling by interpolating towards target scroll offset
 pub(crate) fn animate_smooth_scroll(
     mut editor_query: Query<
-        (&mut TextViewState, &super::scrollbar::ScrollbarDragState),
+        (
+            &mut TextViewState,
+            &super::scrollbar::ScrollbarDragState,
+            &ScrollConfig,
+        ),
         With<CodeEditor>,
     >,
     time: Res<Time>,
-    scrolling: Res<ScrollingSettings>,
-    _font: Res<crate::settings::FontSettings>,
-    _viewport: Res<crate::types::ViewportDimensions>,
 ) {
-    for (mut tv, scrollbar_drag) in editor_query.iter_mut() {
+    for (mut tv, scrollbar_drag, scroll_cfg) in editor_query.iter_mut() {
         // When dragging scrollbar or smooth scrolling disabled, apply target immediately
         let is_dragging = scrollbar_drag.is_dragging;
 
-        let use_smooth = scrolling.smooth && !is_dragging;
+        let use_smooth = scroll_cfg.smooth && !is_dragging;
 
         if !use_smooth {
             // Instant update - no interpolation
@@ -464,12 +468,16 @@ pub(crate) fn should_auto_scroll(
 /// Writes to target_scroll_offset, not scroll_offset (applied by animate_smooth_scroll)
 pub(crate) fn auto_scroll_to_cursor(
     mut editor_query: Query<
-        (&mut TextViewState, &mut CursorState, &TextViewViewport),
+        (
+            &mut TextViewState,
+            &mut CursorState,
+            &TextViewViewport,
+            &FontConfig,
+        ),
         With<CodeEditor>,
     >,
-    font: Res<FontSettings>,
 ) {
-    for (mut tv, mut cursor, vp) in editor_query.iter_mut() {
+    for (mut tv, mut cursor, vp, font) in editor_query.iter_mut() {
         // Get cursor position
         let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
 

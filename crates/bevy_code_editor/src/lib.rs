@@ -70,9 +70,11 @@ pub mod prelude {
     // User-facing editor components
     pub use crate::types::editor::{
         CodeEditor, CursorState, EditHistoryState, EditorDisplayState,
-        EditorScrollControl, KeyRepeatState, OpenRequested, SaveRequested, SelectionState,
-        SyntaxCacheState, ViewportConfig, ViewportDimensions,
+        EditorScrollControl, KeyRepeatState, OpenRequested, SaveRequested, ScrollConfig,
+        SelectionState, SyntaxCacheState, ViewportConfig, ViewportDimensions,
     };
+    // Engine-side per-entity font configuration (re-exported for convenience).
+    pub use bevy_text_engine::FontConfig;
     // User-facing data types
     pub use crate::types::display_map::LineSegment;
     pub use crate::types::fold::{FoldState, GotoLineState};

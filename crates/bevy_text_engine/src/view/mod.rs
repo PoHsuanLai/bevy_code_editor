@@ -1,5 +1,6 @@
 //! View primitives: rope-backed text state, viewport, paint-ready layout, overlays, renderer.
 
+pub mod font;
 pub mod layout;
 pub mod line_width;
 pub mod overlay;
@@ -8,6 +9,7 @@ pub mod snapshot;
 pub mod state;
 pub mod viewport;
 
+pub use font::FontConfig;
 pub use layout::DisplayLayout;
 pub use line_width::LineWidthTracker;
 pub use overlay::{RectOverlay, RowVertical, TextViewOverlays};

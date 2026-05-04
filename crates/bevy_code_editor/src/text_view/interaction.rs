@@ -11,7 +11,7 @@ use ropey::Rope;
 use super::plugin::TextView;
 use super::state::TextViewState;
 use super::viewport::TextViewViewport;
-use crate::settings::{FontSettings, ScrollingSettings};
+use bevy_text_engine::FontConfig;
 
 // =============================================================================
 // Components & Resources
@@ -43,7 +43,7 @@ pub fn screen_to_char_pos(
     screen_pos: Vec2,
     rope: &Rope,
     current_scroll_offset: f32,
-    font: &FontSettings,
+    font: &FontConfig,
     viewport: &TextViewViewport,
     scroll_offset_override: Option<f32>,
 ) -> usize {
@@ -52,7 +52,7 @@ pub fn screen_to_char_pos(
     let relative_y = screen_pos.y - viewport.text_area_top - scroll_offset;
 
     let line_height = font.line_height;
-    let char_width = font.size * 0.6;
+    let char_width = font.char_width;
 
     let display_row = (relative_y / line_height).max(0.0) as usize;
     let col = (relative_x / char_width).max(0.0) as usize;
@@ -94,11 +94,21 @@ pub fn copy_selection(sel: &TextViewSelectionState, tv: &TextViewState) -> bool 
 
 /// Mouse wheel scroll for all `TextView` entities.
 /// Hit-tests against each viewport to only scroll the hovered view.
+///
+/// Per-view scroll behaviour: `FontConfig` is per-entity. `ScrollConfig` is
+/// optional — `CodeEditor` entities provide one via their `#[require]`
+/// cascade; standalone `TextView`s (chat, logs) fall back to defaults.
 pub fn handle_text_view_scroll(
-    mut views: Query<(&mut TextViewState, &TextViewViewport), With<TextView>>,
+    mut views: Query<
+        (
+            &mut TextViewState,
+            &TextViewViewport,
+            &FontConfig,
+            Option<&crate::types::ScrollConfig>,
+        ),
+        With<TextView>,
+    >,
     mut mouse_wheel_events: MessageReader<MouseWheel>,
-    font: Res<FontSettings>,
-    scrolling: Res<ScrollingSettings>,
     windows: Query<&Window, With<PrimaryWindow>>,
 ) {
     let Ok(window) = windows.single() else { return };
@@ -112,7 +122,9 @@ pub fn handle_text_view_scroll(
         return;
     }
 
-    for (mut tv, viewport) in views.iter_mut() {
+    let default_scroll = crate::types::ScrollConfig::default();
+    for (mut tv, viewport, font, scroll_cfg) in views.iter_mut() {
+        let scroll_cfg = scroll_cfg.unwrap_or(&default_scroll);
         // Hit-test: is the cursor within this viewport?
         let vp_pos = viewport.hit_test_position;
         let vp_rect = bevy::math::Rect::new(
@@ -128,14 +140,14 @@ pub fn handle_text_view_scroll(
 
         for event in &events {
             if event.y.abs() > 0.0 {
-                let scroll_delta = event.y * font.line_height * scrolling.speed;
+                let scroll_delta = event.y * font.line_height * scroll_cfg.speed;
                 let line_count = tv.rope.len_lines();
                 let content_height = line_count as f32 * font.line_height;
                 let viewport_height = viewport.height as f32;
                 let max_scroll =
                     (-(content_height - viewport_height + viewport.text_area_top)).min(0.0);
 
-                if scrolling.smooth {
+                if scroll_cfg.smooth {
                     tv.target_scroll_offset += scroll_delta;
                     tv.target_scroll_offset = tv.target_scroll_offset.min(0.0).max(max_scroll);
                 } else {
@@ -161,13 +173,13 @@ pub fn handle_text_view_mouse(
             &mut TextViewDragState,
             &TextViewState,
             &TextViewViewport,
+            &FontConfig,
         ),
         With<TextView>,
     >,
     mut input_focus: ResMut<bevy::input_focus::InputFocus>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    font: Res<FontSettings>,
 ) {
     let Ok(window) = windows.single() else { return };
     let Some(cursor_pos) = window.cursor_position() else {
@@ -176,7 +188,7 @@ pub fn handle_text_view_mouse(
 
     // Handle release: clear drag flag on every view that thought it was dragging.
     if mouse_button.just_released(MouseButton::Left) {
-        for (_, _, mut drag_state, _, _) in views.iter_mut() {
+        for (_, _, mut drag_state, _, _, _) in views.iter_mut() {
             drag_state.is_dragging = false;
         }
         return;
@@ -185,7 +197,7 @@ pub fn handle_text_view_mouse(
     // Handle press: hit-test each view; the one under the cursor begins a drag
     // and acquires keyboard focus.
     if mouse_button.just_pressed(MouseButton::Left) {
-        for (entity, mut sel, mut drag_state, tv, viewport) in views.iter_mut() {
+        for (entity, mut sel, mut drag_state, tv, viewport, font) in views.iter_mut() {
             let vp_pos = viewport.hit_test_position;
             let vp_rect = bevy::math::Rect::new(
                 vp_pos.x,
@@ -200,7 +212,7 @@ pub fn handle_text_view_mouse(
 
             let local_pos = Vec2::new(cursor_pos.x - vp_pos.x, cursor_pos.y - vp_pos.y);
             let char_pos =
-                screen_to_char_pos(local_pos, &tv.rope, tv.scroll_offset, &font, viewport, None);
+                screen_to_char_pos(local_pos, &tv.rope, tv.scroll_offset, font, viewport, None);
 
             sel.selection_start = Some(char_pos);
             sel.selection_end = None;
@@ -215,7 +227,7 @@ pub fn handle_text_view_mouse(
 
     // Handle drag — only the view that started the drag extends its selection.
     if mouse_button.pressed(MouseButton::Left) {
-        for (_, mut sel, mut drag_state, tv, viewport) in views.iter_mut() {
+        for (_, mut sel, mut drag_state, tv, viewport, font) in views.iter_mut() {
             if !drag_state.is_dragging {
                 continue;
             }
@@ -232,7 +244,7 @@ pub fn handle_text_view_mouse(
                 local_pos,
                 &tv.rope,
                 tv.scroll_offset,
-                &font,
+                font,
                 viewport,
                 Some(drag_state.drag_start_scroll_offset),
             );

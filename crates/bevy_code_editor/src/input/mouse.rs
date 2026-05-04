@@ -1,9 +1,9 @@
-use crate::settings::*;
 use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::*;
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
+use bevy_text_engine::FontConfig;
 use ropey::Rope;
 
 #[cfg(feature = "lsp")]
@@ -29,7 +29,7 @@ fn screen_to_char_pos(
     screen_pos: Vec2,
     rope: &Rope,
     current_scroll_offset: f32,
-    font: &FontSettings,
+    font: &FontConfig,
     viewport: &TextViewViewport,
     fold_state: &FoldState,
     scroll_offset_override: Option<f32>,
@@ -48,7 +48,7 @@ fn screen_to_char_pos(
 
     // Calculate line and column from pixel position
     let line_height = font.line_height;
-    let char_width = font.size * 0.6; // Approximate monospace width
+    let char_width = font.char_width;
 
     let display_row = (relative_y / line_height).max(0.0) as usize;
     let col = (relative_x / char_width).max(0.0) as usize;
@@ -80,6 +80,7 @@ pub fn handle_mouse_input(
             &mut TextViewState,
             &TextViewViewport,
             &mut FoldState,
+            &FontConfig,
         ),
         With<CodeEditor>,
     >,
@@ -87,7 +88,6 @@ pub fn handle_mouse_input(
     mut drag_state: ResMut<MouseDragState>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
-    font: Res<FontSettings>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     #[cfg(feature = "lsp")] time: Res<Time>,
     #[cfg(feature = "lsp")] lsp_client: Res<crate::lsp::LspClient>,
@@ -101,7 +101,7 @@ pub fn handle_mouse_input(
         .next()
         .and_then(|window| window.cursor_position());
 
-    for (editor_entity, mut sel, mut cursor, mut tv, viewport, mut fold_state) in
+    for (editor_entity, mut sel, mut cursor, mut tv, viewport, mut fold_state, font) in
         editor_query.iter_mut()
     {
 
@@ -130,7 +130,7 @@ pub fn handle_mouse_input(
                 viewport_local_pos,
                 &tv.rope,
                 tv.scroll_offset,
-                &font,
+                font,
                 viewport,
                 &fold_state,
                 None, // Use current scroll offset for initial position calculation
@@ -349,7 +349,7 @@ pub fn handle_mouse_input(
                     viewport_local_pos,
                     &tv.rope,
                     tv.scroll_offset,
-                    &font,
+                    font,
                     viewport,
                     &fold_state,
                     Some(drag_state.drag_start_scroll_offset),
@@ -375,19 +375,19 @@ pub fn handle_mouse_wheel(
             &mut CursorState,
             &mut TextViewState,
             &TextViewViewport,
+            &FontConfig,
+            &ScrollConfig,
         ),
         With<CodeEditor>,
     >,
     mut mouse_wheel_events: MessageReader<MouseWheel>,
     _keyboard: Res<ButtonInput<KeyCode>>,
-    font: Res<FontSettings>,
-    scrolling: Res<ScrollingSettings>,
 ) {
     let events: Vec<_> = mouse_wheel_events.read().copied().collect();
-    for (_sel, _cursor, mut tv, viewport) in editor_query.iter_mut() {
+    for (_sel, _cursor, mut tv, viewport, font, scroll_cfg) in editor_query.iter_mut() {
     for event in events.iter() {
         let mut scrolled = false;
-        let use_smooth = scrolling.smooth;
+        let use_smooth = scroll_cfg.smooth;
 
         // Horizontal scrolling (using event.x)
         if event.x.abs() > 0.0 {
@@ -399,7 +399,7 @@ pub fn handle_mouse_wheel(
             if tv.max_content_width > available_text_width {
                 // Positive x = scroll right (content moves left, horizontal_scroll_offset increases)
                 // Negative x = scroll left (content moves right, horizontal_scroll_offset decreases)
-                let scroll_delta = event.x * font.char_width * scrolling.speed;
+                let scroll_delta = event.x * font.char_width * scroll_cfg.speed;
 
                 if use_smooth {
                     // Update target for smooth scrolling
@@ -433,7 +433,7 @@ pub fn handle_mouse_wheel(
         if event.y.abs() > 0.0 {
             // Positive y = scroll up (content moves down, scroll_offset increases)
             // Negative y = scroll down (content moves up, scroll_offset decreases)
-            let scroll_delta = event.y * font.line_height * scrolling.speed;
+            let scroll_delta = event.y * font.line_height * scroll_cfg.speed;
 
             // Calculate scroll bounds
             let line_count = tv.rope.len_lines();

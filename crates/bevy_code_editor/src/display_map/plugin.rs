@@ -11,10 +11,11 @@
 //! stack in and emits incremental dirty patches.
 
 use bevy::prelude::*;
+use bevy_text_engine::FontConfig;
 
 use super::layout::build_display_layout;
 use crate::plugin::syntax_highlighting::SyntaxResource;
-use crate::settings::{FontSettings, PerformanceSettings, SyntaxSettings, ThemeSettings};
+use crate::settings::{PerformanceSettings, SyntaxSettings, ThemeSettings};
 use crate::text_view::{DisplayLayout, TextViewState, TextViewViewport};
 use crate::types::{CodeEditor, FoldState};
 
@@ -60,17 +61,17 @@ pub(crate) fn update_display_map_snapshot(
             &TextViewViewport,
             &mut DisplayLayout,
             &FoldState,
+            &FontConfig,
         ),
         With<CodeEditor>,
     >,
-    font: Res<FontSettings>,
     theme: Res<ThemeSettings>,
     performance: Res<PerformanceSettings>,
     syntax_settings: Res<SyntaxSettings>,
     mut syntax: ResMut<SyntaxResource>,
     mut last_fingerprint: Local<Option<LayoutFingerprint>>,
 ) {
-    for (tv_state, tv_viewport, mut layout, fold_state) in editor_query.iter_mut() {
+    for (tv_state, tv_viewport, mut layout, fold_state, font) in editor_query.iter_mut() {
         let fingerprint = LayoutFingerprint {
             content_version: tv_state.content_version,
             scroll_bits: tv_state.scroll_offset.to_bits(),
@@ -92,7 +93,7 @@ pub(crate) fn update_display_map_snapshot(
             tv_state,
             tv_viewport,
             fold_state,
-            &font,
+            font,
             &performance,
             theme.foreground,
             Some(&mut syntax),
@@ -139,17 +140,15 @@ fn syntax_version(_syntax: &SyntaxResource) -> u64 {
 /// populated. The renderer never triggers atlas mutation during the paint
 /// pass — eliminates first-encounter scroll stutter (W6).
 pub(crate) fn prewarm_atlas_for_layout(
-    layouts: Query<Ref<DisplayLayout>>,
-    font: Res<FontSettings>,
+    layouts: Query<(Ref<DisplayLayout>, &FontConfig)>,
     mut atlas: ResMut<bevy_text_engine::gpu::GlyphAtlas>,
 ) {
-    for layout in &layouts {
+    for (layout, font) in &layouts {
         if !layout.is_changed() {
             continue;
         }
-        // Default font size is per-line for now (we don't have per-run scaling
-        // in a place we can easily query here). Per-run font_scale is rare
-        // enough that mid-paint rasterization for those is acceptable.
+        // Per-line font size pulled from the entity's `FontConfig`. Per-run
+        // font_scale is rare enough that mid-paint rasterization is OK.
         atlas.ensure_glyphs(
             layout
                 .lines

@@ -6,9 +6,10 @@
 //! with the legacy one and assert equivalence.
 
 use bevy::prelude::*;
+use bevy_text_engine::FontConfig;
 use std::sync::Arc;
 
-use crate::settings::{FontSettings, PerformanceSettings, SyntaxTheme};
+use crate::settings::{PerformanceSettings, SyntaxTheme};
 use crate::text_view::layout::DisplayLayout;
 use crate::text_view::snapshot::{ShapedLine, StyleRun};
 use crate::text_view::state::TextViewState;
@@ -29,7 +30,7 @@ pub fn build_display_layout(
     state: &TextViewState,
     viewport: &TextViewViewport,
     fold_state: &FoldState,
-    font: &FontSettings,
+    font: &FontConfig,
     performance: &PerformanceSettings,
     foreground_color: Color,
     syntax: Option<&mut crate::plugin::SyntaxResource>,

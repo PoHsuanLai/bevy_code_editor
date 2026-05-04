@@ -6,6 +6,7 @@ use crate::settings::*;
 use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::*;
 use bevy::prelude::*;
+use bevy_text_engine::FontConfig;
 
 pub struct BracketPlugin;
 
@@ -154,10 +155,10 @@ pub(crate) fn update_bracket_highlight(
             &TextViewViewport,
             &BracketMatchState,
             &FoldState,
+            &FontConfig,
         ),
         With<CodeEditor>,
     >,
-    font: Res<FontSettings>,
     theme: Res<ThemeSettings>,
     brackets: Res<BracketSettings>,
     render_config: Res<EditorRenderConfig>,
@@ -173,7 +174,7 @@ pub(crate) fn update_bracket_highlight(
     let mut entity_index_global: usize = 0;
     let mut any_match = false;
 
-    for (tv, viewport, bracket_state, fold_state) in editor_query.iter() {
+    for (tv, viewport, bracket_state, fold_state, font) in editor_query.iter() {
     match &bracket_state.current_match {
         Some(bracket_match) => {
             any_match = true;

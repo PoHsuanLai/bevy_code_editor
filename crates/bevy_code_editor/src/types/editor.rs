@@ -99,6 +99,44 @@ impl Default for ViewportDimensions {
     }
 }
 
+/// Per-editor scrolling behaviour.
+///
+/// Replaces the global `ScrollingSettings` resource: each `CodeEditor` carries
+/// its own scrolling configuration so two editors can scroll at different
+/// speeds or with smooth-vs-instant independently.
+#[derive(Component, Clone, Debug)]
+pub struct ScrollConfig {
+    /// Scroll speed multiplier (lines per wheel notch).
+    pub speed: f32,
+    /// Smooth-scroll easing toward `target_scroll_offset`.
+    pub smooth: bool,
+}
+
+impl Default for ScrollConfig {
+    fn default() -> Self {
+        Self {
+            speed: 3.0,
+            smooth: true,
+        }
+    }
+}
+
+impl ScrollConfig {
+    /// Build a `ScrollConfig` with the given scroll speed.
+    pub const fn from_speed(speed: f32) -> Self {
+        Self {
+            speed,
+            smooth: true,
+        }
+    }
+
+    /// Override smooth-scroll on/off.
+    pub const fn with_smooth(mut self, smooth: bool) -> Self {
+        self.smooth = smooth;
+        self
+    }
+}
+
 /// Marker component for a code editor entity.
 ///
 /// `#[require]` cascades every supporting component, so spawning a
@@ -114,6 +152,7 @@ impl Default for ViewportDimensions {
     EditorDisplayState,
     CursorState,
     BracketMatchState,
+    ScrollConfig,
     crate::types::fold::GotoLineState,
     crate::types::fold::FoldState,
     crate::plugin::scrollbar::ScrollbarDragState,

@@ -7,6 +7,7 @@ use crate::settings::{FontSettings, ThemeSettings, UiSettings};
 use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::*;
 use bevy::prelude::*;
+use bevy_text_engine::FontConfig;
 
 pub(crate) fn detect_foldable_regions(
     mut editor_query: Query<(&TextViewState, &mut FoldState), With<CodeEditor>>,
@@ -293,10 +294,10 @@ impl Plugin for FoldingPlugin {
 pub(crate) fn update_fold_indicators(
     mut commands: Commands,
     editor_query: Query<
-        (&TextViewState, &TextViewViewport, &FoldState),
+        (&TextViewState, &TextViewViewport, &FoldState, &FontConfig),
         With<CodeEditor>,
     >,
-    font: Res<FontSettings>,
+    font_settings: Res<FontSettings>,
     theme: Res<ThemeSettings>,
     ui: Res<UiSettings>,
     render_config: Res<EditorRenderConfig>,
@@ -317,7 +318,7 @@ pub(crate) fn update_fold_indicators(
     let mut used_indices: std::collections::HashSet<usize> = std::collections::HashSet::new();
     let mut any_disabled_only = true;
 
-    for (tv, viewport, fold_state) in editor_query.iter() {
+    for (tv, viewport, fold_state, font) in editor_query.iter() {
         if !fold_state.enabled || !ui.show_line_numbers {
             continue;
         }
@@ -389,7 +390,7 @@ pub(crate) fn update_fold_indicators(
             } else {
                 // Spawn new indicator
                 let text_font = TextFont {
-                    font: font.handle.clone().unwrap_or_default(),
+                    font: font_settings.handle.clone().unwrap_or_default(),
                     font_size: font_size * 0.7,
                     ..default()
                 };

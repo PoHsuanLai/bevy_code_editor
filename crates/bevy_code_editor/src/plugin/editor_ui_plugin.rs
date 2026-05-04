@@ -16,6 +16,7 @@
 use bevy::prelude::*;
 // Import RenderLayers from bevy_camera crate directly
 use bevy_camera::visibility::RenderLayers;
+use bevy_text_engine::FontConfig;
 
 use crate::settings::*;
 use crate::text_view::{TextViewState, TextViewViewport};
@@ -293,11 +294,10 @@ fn update_camera_viewport(
 
 /// Compute ViewportDimensions layout fields based on UI settings
 fn compute_viewport_layout(
-    mut viewport_query: Query<&mut TextViewViewport, With<CodeEditor>>,
+    mut viewport_query: Query<(&mut TextViewViewport, &FontConfig), With<CodeEditor>>,
     ui: Res<UiSettings>,
-    font: Res<FontSettings>,
 ) {
-    for mut viewport in viewport_query.iter_mut() {
+    for (mut viewport, font) in viewport_query.iter_mut() {
         // Compute gutter width based on line number display
         viewport.gutter_width = if ui.show_line_numbers {
             ui.gutter_padding_left + ui.gutter_padding_right
@@ -517,21 +517,23 @@ fn update_separator_on_resize(
     }
 }
 
-/// Update font metrics (character width) based on actual loaded font
-
-fn update_font_metrics(mut font: ResMut<FontSettings>, mut atlas: ResMut<GlyphAtlas>) {
-    // Measure '0' for monospace width (standard for code)
-
-    if let Some(width) = atlas.measure_char_width('0', font.size) {
-        // Only update if difference is significant
-
-        if (font.char_width - width).abs() > 0.01 {
-            info!(
-                "Updating font char_width from {:.3} to {:.3} (measured)",
-                font.char_width, width
-            );
-
-            font.char_width = width;
+/// Update each editor's `FontConfig.char_width` to match the actual rasterized
+/// glyph advance for its `size`. Per-entity so multiple editors with different
+/// font sizes each get accurate metrics.
+fn update_font_metrics(
+    mut editors: Query<&mut FontConfig, With<CodeEditor>>,
+    mut atlas: ResMut<GlyphAtlas>,
+) {
+    for mut font in editors.iter_mut() {
+        // Measure '0' for monospace width (standard for code)
+        if let Some(width) = atlas.measure_char_width('0', font.size) {
+            if (font.char_width - width).abs() > 0.01 {
+                info!(
+                    "Updating font char_width from {:.3} to {:.3} (measured)",
+                    font.char_width, width
+                );
+                font.char_width = width;
+            }
         }
     }
 }

@@ -4,6 +4,7 @@
 
 use super::editor_ui_plugin::EditorRenderConfig;
 use bevy_text_engine::gpu::{GlyphAtlas, GlyphKey, GlyphRasterizer};
+use bevy_text_engine::FontConfig;
 use crate::settings::*;
 use crate::text_view::render::{GlyphBatchComponent, GlyphInstance};
 use crate::text_view::{TextViewState, TextViewViewport};
@@ -34,10 +35,10 @@ pub(crate) fn update_gpu_line_numbers(
             &TextViewState,
             &TextViewViewport,
             Ref<FoldState>,
+            &FontConfig,
         ),
         With<CodeEditor>,
     >,
-    font: Res<FontSettings>,
     theme: Res<ThemeSettings>,
     ui: Res<UiSettings>,
     performance: Res<PerformanceSettings>,
@@ -54,7 +55,7 @@ pub(crate) fn update_gpu_line_numbers(
         return;
     }
 
-    for (editor_entity, cursor, tv, viewport, fold_state) in editor_query.iter() {
+    for (editor_entity, cursor, tv, viewport, fold_state, font) in editor_query.iter() {
     // Check if we need to update
     let fold_changed = fold_state.is_changed();
 

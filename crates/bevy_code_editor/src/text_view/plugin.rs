@@ -12,7 +12,7 @@ use super::render::{render_layout, GlyphBatchComponent, TextViewBatch};
 use super::state::TextViewState;
 use super::viewport::TextViewViewport;
 use bevy_text_engine::gpu::GlyphAtlas;
-use crate::settings::FontSettings;
+use bevy_text_engine::FontConfig;
 
 /// System set for text view rendering
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -89,6 +89,7 @@ impl Plugin for TextViewPlugin {
     TextViewViewport,
     DisplayLayout,
     TextViewOverlays,
+    bevy_text_engine::FontConfig,
     super::interaction::TextViewDragState,
     super::interaction::TextViewSelectionState,
 )]
@@ -141,6 +142,7 @@ pub(crate) fn update_text_views(
             Entity,
             &TextViewState,
             &TextViewViewport,
+            &FontConfig,
             Ref<DisplayLayout>,
             Option<Ref<TextViewOverlays>>,
             Option<&TextViewBatchEntity>,
@@ -148,11 +150,10 @@ pub(crate) fn update_text_views(
         ),
         With<TextView>,
     >,
-    font: Res<FontSettings>,
     mut atlas: ResMut<GlyphAtlas>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    for (tv_entity, state, viewport, layout, overlays, batch_entity_opt, render_layers) in
+    for (tv_entity, state, viewport, font, layout, overlays, batch_entity_opt, render_layers) in
         text_views.iter_mut()
     {
         // W5 skip-on-unchanged: if neither the display layout nor the overlays

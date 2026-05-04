@@ -5,14 +5,14 @@
 //! (no separate `animate_cursor` system).
 
 use crate::settings::{
-    CursorLineSettings, CursorSettings, FontSettings, IndentationSettings, ThemeSettings,
-    WrappingSettings,
+    CursorLineSettings, CursorSettings, IndentationSettings, ThemeSettings, WrappingSettings,
 };
 use crate::text_view::{
     RectOverlay, RowVertical, TextViewOverlays, TextViewState, TextViewViewport,
 };
 use crate::types::*;
 use bevy::prelude::*;
+use bevy_text_engine::FontConfig;
 
 #[allow(unused_imports)]
 use super::editor_ui_plugin::EditorRenderConfig;
@@ -68,17 +68,17 @@ pub(crate) fn push_cursor_overlays(
             &TextViewViewport,
             &mut TextViewOverlays,
             &FoldState,
+            &FontConfig,
         ),
         With<CodeEditor>,
     >,
-    font: Res<FontSettings>,
     cursor_settings: Res<CursorSettings>,
     theme: Res<ThemeSettings>,
     wrapping: Res<WrappingSettings>,
     indentation: Res<IndentationSettings>,
     time: Res<Time>,
 ) {
-    for (display, cursor, tv, _vp, mut overlays, fold_state) in editor_query.iter_mut() {
+    for (display, cursor, tv, _vp, mut overlays, fold_state, font) in editor_query.iter_mut() {
         // Drain any caret rects from the previous frame. We mark them with z=+1 so
         // we can identify them; selection rects use z=-1 (added in step 6b).
         overlays.rects.retain(|r| r.z != 1);
@@ -156,15 +156,15 @@ pub(crate) fn update_cursor_line_highlight(
             &TextViewViewport,
             &mut TextViewOverlays,
             &FoldState,
+            &FontConfig,
         ),
         With<CodeEditor>,
     >,
-    font: Res<FontSettings>,
     cursor_line: Res<CursorLineSettings>,
     theme: Res<ThemeSettings>,
     wrapping: Res<WrappingSettings>,
 ) {
-    for (display, cursor, tv, vp, mut overlays, fold_state) in editor_query.iter_mut() {
+    for (display, cursor, tv, vp, mut overlays, fold_state, font) in editor_query.iter_mut() {
         // Drain previous-frame line-border / word rects (z = 0 reserved for cursor-line decoration).
         overlays.rects.retain(|r| r.z != 0);
 
