@@ -20,16 +20,22 @@
 //! ```
 
 pub mod interaction;
+pub mod layout;
 pub mod line_width;
+pub mod overlay;
 pub mod plugin;
 pub mod render;
+pub mod snapshot;
 pub mod state;
 pub mod viewport;
 
 pub use interaction::{
     copy_selection, screen_to_char_pos, TextViewDragState, TextViewSelectionState,
 };
+pub use layout::DisplayLayout;
+pub use overlay::{RectOverlay, TextViewOverlays};
 pub use plugin::{TextView, TextViewBatchEntity, TextViewPlugin, TextViewRenderSet};
 pub use render::{GlyphBatchComponent, GlyphInstance, TextViewBatch};
+pub use snapshot::{ShapedLine, SimpleTheme, StyleRun};
 pub use state::TextViewState;
 pub use viewport::TextViewViewport;
