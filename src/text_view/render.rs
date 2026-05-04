@@ -662,10 +662,14 @@ fn push_overlay_quad(
             (baseline_y_off - cap_to_descender * 0.5, cap_to_descender)
         }
         super::overlay::RowVertical::Caret { height_fraction } => {
-            // Bottom-aligned with the row's bottom edge (matches the cursor-line
-            // bottom border). height_fraction scales the vertical extent upward
-            // from the bottom: 1.0 ≈ one text band, smaller values = shorter caret.
-            let h = (cap_to_descender * height_fraction).max(1.0);
+            // Caret sits below the text baseline, with its top at the baseline
+            // and its bottom at the row's bottom edge — like an underline-style
+            // block cursor that doesn't overlap the glyphs above.
+            //
+            // Top = baseline_y_off; bottom = line_height. height_fraction scales
+            // the height (1.0 = full descender-to-bottom band).
+            let band = (line_height - baseline_y_off).max(1.0);
+            let h = (band * height_fraction).max(1.0);
             (line_height - h, h)
         }
         super::overlay::RowVertical::TopBand { thickness } => (0.0, thickness.max(1.0)),
