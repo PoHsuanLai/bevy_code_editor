@@ -656,19 +656,18 @@ fn push_overlay_quad(
     // tight box around glyphs, used as the canonical text-aligned span for
     // carets and full-line backgrounds.
     let cap_to_descender = baseline_y_off + baseline_offset * 0.6;
+    // Bias text-aligned overlays slightly below the baseline so they cover the
+    // descender region (where the eye perceives the text "sitting"), not just
+    // float around the baseline midpoint. Used uniformly by Full + Caret so
+    // selection backgrounds and carets stack to the same Y.
+    let text_band_above_baseline = cap_to_descender * 0.25;
     let (y_off, height) = match rect.vertical {
         super::overlay::RowVertical::Full => {
-            // Span the text band, centered on baseline.
-            (baseline_y_off - cap_to_descender * 0.5, cap_to_descender)
+            (baseline_y_off - text_band_above_baseline, cap_to_descender)
         }
         super::overlay::RowVertical::Caret { height_fraction } => {
-            // Caret sits mostly *below* the baseline so it covers the descender
-            // region as well as a bit of the body above. With `above_baseline`
-            // a smaller fraction of total height, the caret center is below
-            // the baseline (= further down on screen).
             let h = (cap_to_descender * height_fraction).max(1.0);
-            let above_baseline = h * 0.25;
-            (baseline_y_off - above_baseline, h)
+            (baseline_y_off - h * 0.25, h)
         }
         super::overlay::RowVertical::TopBand { thickness } => (0.0, thickness.max(1.0)),
         super::overlay::RowVertical::BottomBand { thickness } => {
