@@ -29,10 +29,14 @@ impl TextViewOverlays {
 ///
 /// `display_row` indexes into `DisplayLayout.lines`; `x_range` is in pixels
 /// relative to the row's text origin. `0.0..f32::MAX` covers the full line.
+/// `y_range` is in pixels relative to the row's top edge — `None` means
+/// "full line height".
 #[derive(Clone, Debug)]
 pub struct RectOverlay {
     pub display_row: u32,
     pub x_range: Range<f32>,
+    /// `None` = full line height. `Some(0.0..2.0)` = top 2px (e.g. row border).
+    pub y_range: Option<Range<f32>>,
     pub color: Color,
     /// Z order: -1 = below text (selection bg, line highlight), +1 = above text (carets).
     pub z: i8,

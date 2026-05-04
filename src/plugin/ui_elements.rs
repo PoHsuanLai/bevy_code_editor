@@ -213,6 +213,7 @@ pub(crate) fn update_selection_highlight(
         overlays.rects.push(RectOverlay {
             display_row: row_idx as u32,
             x_range: x_left..x_right,
+            y_range: None,
             color: theme.selection_background,
             z: -1, // below text
             corner_radius: 0.0,

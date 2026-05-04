@@ -141,6 +141,7 @@ pub(crate) fn push_cursor_overlays(
         overlays.rects.push(RectOverlay {
             display_row: display_row as u32,
             x_range: x_left..x_right,
+            y_range: None,
             color: theme.cursor,
             z: 1, // above text
             corner_radius: 0.0,

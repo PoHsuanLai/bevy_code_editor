@@ -640,14 +640,20 @@ fn push_overlay_quad(
         rect.x_range.end
     };
     let width = (x1 - x0).max(1.0);
+    let (y_off, height) = match &rect.y_range {
+        Some(yr) => (yr.start, (yr.end - yr.start).max(1.0)),
+        None => (0.0, line_height),
+    };
     let world_x = world_left + line_start_x + line.x_offset + x0;
-    let world_y = world_top - (base_y - baseline_offset) - line_height * 0.5;
+    // Screen-Y of the row's top is `base_y - baseline_offset` (legacy convention).
+    // Quad position is the *center* of the rect; world_top inverts Y.
+    let world_y = world_top - (base_y - baseline_offset) - y_off - height * 0.5;
     let color_linear = rect.color.to_linear();
     out.push(GlyphInstance {
         position: Vec2::new(world_x, world_y),
         uv_min: solid_uv.uv_min,
         uv_max: solid_uv.uv_max,
-        size: Vec2::new(width, line_height),
+        size: Vec2::new(width, height),
         color: [
             color_linear.red,
             color_linear.green,
