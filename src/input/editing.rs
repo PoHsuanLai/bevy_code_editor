@@ -32,7 +32,6 @@ impl EditHistoryState {
         record_history: bool,
     ) {
         let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
-        let line_idx = tv.rope.char_to_line(cursor_pos);
         let cursor_before = cursor_pos;
 
         #[cfg(feature = "tree-sitter")]
@@ -69,12 +68,11 @@ impl EditHistoryState {
             });
         }
 
-        let new_line_count = tv.rope.len_lines();
 
         if c == '\n' {
+            let line_idx = tv.rope.char_to_line(cursor_pos);
             display.invalidate_lines_from = Some(line_idx);
         }
-
     }
 
     /// Delete character before cursor (with undo recording)
@@ -130,7 +128,6 @@ impl EditHistoryState {
                 });
             }
 
-            let new_line_count = tv.rope.len_lines();
 
             if deleted_char == '\n' {
                 display.invalidate_lines_from = Some(line_idx);
@@ -191,7 +188,6 @@ impl EditHistoryState {
                 });
             }
 
-            let new_line_count = tv.rope.len_lines();
 
             if deleted_char == '\n' {
                 display.invalidate_lines_from = Some(line_idx);
@@ -211,7 +207,6 @@ impl EditHistoryState {
     ) {
         let pos = pos.min(tv.rope.len_chars());
         let text_char_len = text.chars().count();
-        let line_idx = tv.rope.char_to_line(pos);
 
         #[cfg(feature = "tree-sitter")]
         let start_byte = tv.rope.char_to_byte(pos);
@@ -225,9 +220,9 @@ impl EditHistoryState {
         tv.content_version += 1;
 
         if text.contains('\n') {
+            let line_idx = tv.rope.char_to_line(pos);
             display.invalidate_lines_from = Some(line_idx);
         }
-
 
         #[cfg(feature = "tree-sitter")]
         {
@@ -248,7 +243,6 @@ impl EditHistoryState {
         let start = start.min(tv.rope.len_chars());
         let end = end.min(tv.rope.len_chars());
         if start < end {
-            let line_idx = tv.rope.char_to_line(start);
             let start_byte = tv.rope.char_to_byte(start);
             let end_byte = tv.rope.char_to_byte(end);
 
@@ -261,6 +255,7 @@ impl EditHistoryState {
             tv.content_version += 1;
 
             if has_newlines {
+                let line_idx = tv.rope.char_to_line(start);
                 display.invalidate_lines_from = Some(line_idx);
             }
 

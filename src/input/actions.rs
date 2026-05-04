@@ -1,5 +1,3 @@
-use bevy::log::trace;
-
 use super::cursor::*;
 use super::keybindings::EditorAction;
 use crate::settings::IndentationSettings;
@@ -62,12 +60,7 @@ pub fn insert_closing_char(
     tv.rope.insert_char(cursor_pos, c);
 
     // Don't move cursor - it stays between the brackets
-    // OPTIMIZATION: Use debounce instead of immediate update
     tv.content_version += 1;
-
-    // Mark only current line as dirty (not entire rest of file!)
-    let line_idx = tv.rope.char_to_line(cursor_pos);
-    let new_line_count = tv.rope.len_lines();
 }
 
 /// Get the closing bracket for an opening bracket
@@ -194,8 +187,6 @@ pub fn apply_completion(
             tv.content_version += 1;
 
             // Mark lines as dirty for highlighting update
-            let line_idx = tv.rope.char_to_line(start);
-            let new_line_count = tv.rope.len_lines();
         }
     }
     completion_state.visible = false;
@@ -596,8 +587,6 @@ fn execute_action_core(
                 sel.selection_end = None;
                 tv.content_version += 1;
 
-                let new_line_count = tv.rope.len_lines();
-                let line_idx = tv.rope.char_to_line(start);
 
                 result.text_changed = true;
             }
@@ -647,7 +636,6 @@ fn execute_action_core(
                         }
 
                         // Insert pasted text
-                        let line_idx = tv.rope.char_to_line(paste_position);
 
                         tv.rope.insert(paste_position, &text);
                         cursor.cursor_pos = paste_position + text.chars().count();
@@ -663,7 +651,6 @@ fn execute_action_core(
                             kind: EditKind::Paste, // Paste is always its own transaction
                         });
 
-                        let new_line_count = tv.rope.len_lines();
 
                         result.text_changed = true;
                     }

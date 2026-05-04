@@ -59,7 +59,7 @@ impl SelectionState {
     }
 
     /// Remove all cursors except the primary one
-    pub fn clear_secondary_cursors(&mut self, cursor: &mut CursorState, tv: &mut TextViewState) {
+    pub fn clear_secondary_cursors(&mut self, cursor: &mut CursorState, _tv: &mut TextViewState) {
         if !cursor.cursors.is_empty() {
             cursor.cursors.truncate(1);
         }
@@ -186,7 +186,7 @@ impl SelectionState {
     pub fn clear_secondary_selections_sel(
         &mut self,
         cursor: &mut CursorState,
-        tv: &mut TextViewState,
+        _tv: &mut TextViewState,
     ) {
         self.selections.clear_secondary();
         self.sync_from_selections(cursor);

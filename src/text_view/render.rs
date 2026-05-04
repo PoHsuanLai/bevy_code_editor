@@ -8,12 +8,9 @@
 use bevy::prelude::*;
 
 use crate::gpu_text::{GlyphAtlas, GlyphKey, GlyphRasterizer};
-use crate::settings::FontSettings;
-
 
 use super::layout::DisplayLayout;
 use super::overlay::TextViewOverlays;
-use super::state::TextViewState;
 use super::viewport::TextViewViewport;
 
 /// Glyph instance data for GPU rendering
