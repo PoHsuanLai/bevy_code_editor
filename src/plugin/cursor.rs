@@ -137,14 +137,10 @@ pub(crate) fn push_cursor_overlays(
 
         let x_left = extra_indent + (display_col as f32 * char_width);
         let x_right = x_left + cursor_settings.width;
-        // Caret aligned with the text glyphs: roughly cap-height tall, sitting
-        // around the baseline. baseline_offset puts the baseline at row
-        // y = line_height/2 + baseline_offset; caret center sits there.
+        // Caret centered vertically in the row, scaled by height_multiplier.
         let line_h = font.line_height;
-        let baseline_offset = font.size * 0.32;
-        let cursor_height = font.size * cursor_settings.height_multiplier;
-        let baseline_y = line_h * 0.5 + baseline_offset;
-        let center_y = baseline_y - cursor_height * 0.2; // bias slightly upward into glyph body
+        let cursor_height = line_h * cursor_settings.height_multiplier;
+        let center_y = line_h * 0.5;
         let y_top = center_y - cursor_height * 0.5;
         let y_bot = center_y + cursor_height * 0.5;
 
