@@ -8,13 +8,13 @@
 
 use bevy::prelude::*;
 
-use crate::lsp::render::{
+use crate::lsp_ui::render::{
     cleanup_lsp_ui_visuals, render_code_actions_popup, render_completion_popup,
     render_document_highlights, render_hover_popup, render_inlay_hints, render_rename_input,
     render_signature_help_popup,
 };
-use crate::lsp::theme::LspUiTheme;
-use crate::lsp::LspUiRenderSet;
+use crate::lsp_ui::theme::LspUiTheme;
+use crate::lsp_ui::LspUiRenderSet;
 
 /// LSP UI plugin providing default rendering for LSP features
 ///

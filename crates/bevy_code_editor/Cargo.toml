@@ -20,6 +20,12 @@ bevy_text_interaction = { path = "../bevy_text_interaction" }
 # behind the editor's `tree-sitter` feature.
 bevy_tree_sitter = { path = "../bevy_tree_sitter", optional = true }
 
+# LSP transport (engine-tier, rendering-agnostic). Optional: gated behind the
+# editor's `lsp` feature. The editor's `lsp_ui` module is the editor-coupled
+# adapter on top of this — popup rendering, theme, event-listener bridges that
+# translate editor `TextEditEvent`s into `LspMessage::DidChange`s.
+bevy_lsp = { path = "../bevy_lsp", optional = true }
+
 # Bevy engine
 bevy = { version = "0.17", default-features = false, features = [
     "bevy_render",
@@ -62,12 +68,14 @@ arboard = { version = "3.4"}
 bevy_egui = { version = "0.38", optional = true }
 armas = { path = "../../../../../../armas/crates/armas", default-features = false, features = ["basic"], optional = true }
 
-# LSP support (optional)
+# LSP-types is needed at the editor layer for the `lsp_ui` adapter (popup
+# rendering reads `lsp_types::CompletionItem`, hover reads `lsp_types::Range`,
+# etc.). Pulled in as a regular dep gated on the `lsp` feature, since the
+# transitive `bevy_lsp -> lsp_types` re-export is renamed at the
+# `bevy_lsp::lsp_types` path and adapter code is more readable importing
+# `lsp_types::*` directly.
 lsp-types = { version = "0.95", optional = true }
-tower-lsp = { version = "0.20", optional = true }
-tokio = { version = "1.0", features = ["sync", "rt"], optional = true }
 serde_json = { version = "1.0", optional = true }
-fuzzy-matcher = { version = "0.3", optional = true }
 
 [dev-dependencies]
 bevy = { version = "0.17", features = ["bevy_window", "bevy_winit"] }
@@ -87,8 +95,10 @@ default = ["tree-sitter"]
 # Syntax highlighting via tree-sitter (delegates to the bevy_tree_sitter crate)
 tree-sitter = ["dep:bevy_tree_sitter"]
 
-# LSP support (language server protocol)
-lsp = ["lsp-types", "tower-lsp", "tokio", "serde_json", "fuzzy-matcher"]
+# LSP support (language server protocol). Transport + per-document state lives
+# in the peer `bevy_lsp` crate; the editor's `lsp_ui` module is the
+# editor-coupled adapter on top.
+lsp = ["dep:bevy_lsp", "lsp-types", "serde_json"]
 
 # Dynamic linking for fast iteration (dev only, not for release builds)
 dynamic_linking = ["bevy/dynamic_linking"]

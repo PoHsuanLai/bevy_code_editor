@@ -1,45 +1,16 @@
-//! LSP (Language Server Protocol) integration
+//! Editor-coupled LSP UI adapter
 //!
-//! This module provides LSP client functionality for advanced code editor features:
-//! - Diagnostics (errors, warnings)
-//! - Code completion
-//! - Hover information
-//! - Go to definition / Find references
-//! - Code actions (quick fixes, refactoring)
-//! - Signature help
-//! - Inlay hints
-//! - Document formatting
+//! The transport layer (JSON-RPC client, request/response routing, server
+//! capability cache, document-sync state) lives in the peer crate
+//! [`bevy_lsp`]. This module is the editor-coupled adapter: popup rendering
+//! (Sprite or egui), theme, marker components, and the event-listener bridges
+//! that translate editor `TextEditEvent`s, cursor moves, and key presses into
+//! `LspMessage` sends.
 //!
-//! ## Architecture
-//!
-//! The LSP module is organized into several submodules:
-//!
-//! - `client`: LSP client with JSON-RPC communication
-//! - `messages`: Request/response message types
-//! - `capabilities`: Server capability checking
-//! - `state`: Bevy resources for UI state
-//! - `components`: Marker components for UI elements
-//! - `theme`: Theming configuration
-//! - `sync`: Systems that sync state to marker entities
-//! - `render`: Default render systems for UI elements
-//! - `ui`: Legacy rendering systems (deprecated, use render)
-//! - `systems`: Bevy systems for message processing
-//!
-//! ## Usage
-//!
-//! ```rust,ignore
-//! use bevy_code_editor::lsp::prelude::*;
-//!
-//! // Create and start LSP client
-//! let mut client = LspClient::new();
-//! client.start("rust-analyzer", &[]).unwrap();
-//!
-//! // Send initialize request
-//! client.send(LspMessage::Initialize {
-//!     root_uri: Url::from_file_path("/my/project").unwrap(),
-//!     capabilities: ClientCapabilities::default(),
-//! });
-//! ```
+//! Hosts that want completion / hover / etc. UI must add **both**:
+//! - `bevy_lsp::LspPlugin` — the transport.
+//! - `bevy_code_editor::plugin::LspPlugin` (this crate's editor-side plugin) —
+//!   wires the UI sync, render, and event-listener systems.
 //!
 //! ## Custom UI Rendering
 //!
@@ -47,7 +18,7 @@
 //!
 //! ```rust,ignore
 //! use bevy_code_editor::prelude::*;
-//! use bevy_code_editor::lsp::components::*;
+//! use bevy_code_editor::lsp_ui::components::*;
 //!
 //! // Disable default UI when adding the plugin
 //! app.add_plugins(
@@ -68,15 +39,11 @@
 
 use bevy::prelude::*;
 
-pub mod capabilities;
-pub mod client;
 pub mod components;
 #[cfg(feature = "egui-overlays")]
 pub mod egui_render;
 pub mod event_listeners;
-pub mod messages;
 pub mod render;
-pub mod state;
 pub mod sync;
 pub mod systems;
 pub mod theme;
@@ -92,8 +59,17 @@ pub struct LspUiRenderSet;
 
 /// Prelude for convenient imports
 pub mod prelude {
-    pub use super::capabilities::ServerCapabilitiesCache;
-    pub use super::client::{LspClient, DEFAULT_REQUEST_TIMEOUT_SECS};
+    // Transport-side surface — re-exported from bevy_lsp so consumers don't
+    // have to know that's a separate crate at the import-line level.
+    pub use bevy_lsp::{
+        CodeActionOrCommand, CodeActionState, CompletionState, DocumentHighlightState, HoverState,
+        InlayHintState, LspClient, LspDebounceTimers, LspMessage, LspResponse, LspSyncState,
+        PendingCodeActionRequest, PendingLspRequest, RenameState, RequestType,
+        ServerCapabilitiesCache, SignatureHelpState, UnifiedCompletionItem, WordCompletionItem,
+        COMPLETION_MAX_VISIBLE_DEFAULT, DEFAULT_REQUEST_TIMEOUT_SECS,
+    };
+
+    // Editor-coupled UI surface.
     pub use super::components::{
         CodeActionItemData, CodeActionsPopupData, CompletionItemData, CompletionPopupData,
         DocumentHighlightData, HoverPopupData, InlayHintData, InlayHintKind, LspUiElement,
@@ -104,16 +80,10 @@ pub mod prelude {
         listen_hover_requests, listen_rename_requests, listen_signature_help_requests,
         listen_text_edit_events,
     };
-    pub use super::messages::{CodeActionOrCommand, LspMessage, LspResponse, RequestType};
     pub use super::render::{
         cleanup_lsp_ui_visuals, render_code_actions_popup, render_completion_popup,
         render_document_highlights, render_hover_popup, render_inlay_hints, render_rename_input,
         render_signature_help_popup,
-    };
-    pub use super::state::{
-        CodeActionState, CompletionState, HoverState, InlayHintState, LspSyncState,
-        SignatureHelpState, UnifiedCompletionItem, WordCompletionItem,
-        COMPLETION_MAX_VISIBLE_DEFAULT,
     };
     pub use super::sync::{
         sync_code_actions_popup, sync_completion_popup, sync_document_highlights, sync_hover_popup,
@@ -139,12 +109,13 @@ pub mod prelude {
     pub use super::egui_render::LspEguiViewportOffset;
 }
 
-// Re-export commonly used types at module level for backward compatibility
-pub use client::LspClient;
-pub use messages::{LspMessage, LspResponse};
-pub use state::{
-    CompletionState, HoverState, LspSyncState, UnifiedCompletionItem, WordCompletionItem,
-    COMPLETION_MAX_VISIBLE_DEFAULT,
+// Re-export commonly used types at module level for backward compatibility.
+// Transport types come from bevy_lsp; UI types are local.
+pub use bevy_lsp::{
+    CodeActionOrCommand, CodeActionState, CompletionState, DocumentHighlightState, HoverState,
+    InlayHintState, LspClient, LspDebounceTimers, LspMessage, LspResponse, LspSyncState,
+    PendingCodeActionRequest, PendingLspRequest, RenameState, RequestType, ServerCapabilitiesCache,
+    SignatureHelpState, UnifiedCompletionItem, WordCompletionItem, COMPLETION_MAX_VISIBLE_DEFAULT,
 };
 pub use systems::{
     process_lsp_messages, sync_lsp_document, DiagnosticMarker, LocationType,
@@ -153,6 +124,6 @@ pub use systems::{
 pub use ui::{update_completion_ui, update_hover_ui, CompletionUI, HoverUI};
 
 /// Reset hover state helper (for backward compatibility)
-pub fn reset_hover_state(hover_state: &mut HoverState) {
+pub fn reset_hover_state(hover_state: &mut bevy_lsp::HoverState) {
     hover_state.reset();
 }

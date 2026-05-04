@@ -7,7 +7,7 @@ use crate::settings::*;
 use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::{CodeEditor, CursorState};
 
-use super::state::{
+use bevy_lsp::{
     CodeActionState, CompletionState, DocumentHighlightState, HoverState, InlayHintState,
     RenameState, SignatureHelpState,
 };
@@ -489,8 +489,8 @@ pub fn update_code_action_ui(
         .actions
         .iter()
         .map(|a| match a {
-            super::messages::CodeActionOrCommand::Action(action) => action.title.chars().count(),
-            super::messages::CodeActionOrCommand::Command(cmd) => cmd.title.chars().count(),
+            bevy_lsp::CodeActionOrCommand::Action(action) => action.title.chars().count(),
+            bevy_lsp::CodeActionOrCommand::Command(cmd) => cmd.title.chars().count(),
         })
         .max()
         .unwrap_or(20);
@@ -534,7 +534,7 @@ pub fn update_code_action_ui(
                 }
 
                 let (icon, title) = match action {
-                    super::messages::CodeActionOrCommand::Action(a) => {
+                    bevy_lsp::CodeActionOrCommand::Action(a) => {
                         let icon = match &a.kind {
                             Some(kind) if kind.as_str().starts_with("quickfix") => "🔧",
                             Some(kind) if kind.as_str().starts_with("refactor") => "✨",
@@ -543,7 +543,7 @@ pub fn update_code_action_ui(
                         };
                         (icon, a.title.as_str())
                     }
-                    super::messages::CodeActionOrCommand::Command(c) => ("⚡", c.title.as_str()),
+                    bevy_lsp::CodeActionOrCommand::Command(c) => ("⚡", c.title.as_str()),
                 };
 
                 parent.spawn((

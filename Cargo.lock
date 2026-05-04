@@ -869,6 +869,7 @@ dependencies = [
  "bevy",
  "bevy_camera",
  "bevy_egui",
+ "bevy_lsp",
  "bevy_text_engine",
  "bevy_text_interaction",
  "bevy_tree_sitter",
@@ -878,7 +879,6 @@ dependencies = [
  "egui 0.30.0",
  "egui-wgpu",
  "env_logger",
- "fuzzy-matcher",
  "leafwing-input-manager",
  "lsp-types 0.95.1",
  "parking_lot",
@@ -886,8 +886,6 @@ dependencies = [
  "serde",
  "serde_json",
  "swash 0.1.19",
- "tokio",
- "tower-lsp",
  "tree-sitter-c",
  "tree-sitter-rust",
 ]
@@ -1316,6 +1314,20 @@ dependencies = [
  "tracing-oslog",
  "tracing-subscriber",
  "tracing-wasm",
+]
+
+[[package]]
+name = "bevy_lsp"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "fuzzy-matcher",
+ "lsp-types 0.95.1",
+ "ropey",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-lsp",
 ]
 
 [[package]]

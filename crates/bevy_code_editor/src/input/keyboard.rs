@@ -97,7 +97,7 @@ pub fn handle_keyboard_input(
     ),
     #[cfg(feature = "lsp")] lsp_client: Res<crate::lsp::LspClient>,
     #[cfg(feature = "lsp")] mut completion_state: ResMut<crate::lsp::CompletionState>,
-    #[cfg(feature = "lsp")] mut rename_state: ResMut<crate::lsp::state::RenameState>,
+    #[cfg(feature = "lsp")] mut rename_state: ResMut<crate::lsp::RenameState>,
     #[cfg(feature = "lsp")] mut lsp_sync: ResMut<crate::lsp::LspSyncState>,
 ) {
     let Ok(action_state) = action_query.single() else {

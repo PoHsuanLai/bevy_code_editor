@@ -17,9 +17,10 @@ use armas::prelude::*;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 
-use super::client::LspClient;
-use super::messages::LspMessage;
-use super::state::*;
+use bevy_lsp::{
+    CodeActionState, CompletionState, HoverState, LspClient, LspMessage, LspSyncState,
+    RenameState, SignatureHelpState,
+};
 use crate::settings::FontSettings;
 use crate::text_view::TextViewState;
 use crate::types::{CodeEditor, CursorState, ViewportDimensions};
@@ -531,7 +532,7 @@ pub fn render_code_actions_egui(
                         };
 
                         let (icon, title) = match action {
-                            super::messages::CodeActionOrCommand::Action(a) => {
+                            bevy_lsp::CodeActionOrCommand::Action(a) => {
                                 let icon = match &a.kind {
                                     Some(kind) if kind.as_str().starts_with("quickfix") => "W",
                                     Some(kind) if kind.as_str().starts_with("refactor") => "R",
@@ -540,7 +541,7 @@ pub fn render_code_actions_egui(
                                 };
                                 (icon, a.title.as_str())
                             }
-                            super::messages::CodeActionOrCommand::Command(c) => {
+                            bevy_lsp::CodeActionOrCommand::Command(c) => {
                                 ("C", c.title.as_str())
                             }
                         };

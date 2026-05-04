@@ -2,11 +2,9 @@
 //!
 //! These systems listen to editor events and translate them into LSP operations
 
-use crate::lsp::client::LspClient;
-use crate::lsp::messages::LspMessage;
-use crate::lsp::state::{
-    CompletionState, LspDebounceTimers, LspSyncState, PendingLspRequest, RenameState,
-    SignatureHelpState,
+use bevy_lsp::{
+    CompletionState, LspClient, LspDebounceTimers, LspMessage, LspSyncState, PendingLspRequest,
+    RenameState, SignatureHelpState,
 };
 use crate::text_view::TextViewState;
 use crate::types::events::{

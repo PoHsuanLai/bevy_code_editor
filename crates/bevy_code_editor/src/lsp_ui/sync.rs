@@ -12,8 +12,10 @@ use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::{CodeEditor, CursorState};
 
 use super::components::*;
-use super::messages::CodeActionOrCommand;
-use super::state::*;
+use bevy_lsp::{
+    CodeActionOrCommand, CodeActionState, CompletionState, DocumentHighlightState, HoverState,
+    InlayHintState, RenameState, SignatureHelpState,
+};
 
 /// Sync completion state to marker entity
 pub fn sync_completion_popup(

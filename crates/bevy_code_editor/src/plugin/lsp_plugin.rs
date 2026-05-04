@@ -1,51 +1,65 @@
-//! LSP (Language Server Protocol) core plugin
+//! Editor-side LSP UI / adapter plugin.
 //!
-//! This plugin provides LSP integration as an optional, decoupled component.
-//! It listens to editor events and provides language server features like
-//! completion, hover, diagnostics, etc.
+//! The transport (`LspClient`, JSON-RPC over stdio, request routing, document
+//! sync state) lives in the peer crate `bevy_lsp`. **Hosts must add
+//! `bevy_lsp::LspPlugin` themselves** alongside this plugin — we don't auto-add
+//! it, mirroring the Phase-5 idiom used for `bevy_text_engine` and
+//! `bevy_tree_sitter`. Doing so would make `bevy_lsp` effectively part of
+//! `LspPlugin`'s surface, and hosts couldn't disable / replace it via standard
+//! plugin tooling.
 //!
-//! This plugin handles the LSP communication and state management only.
-//! For UI rendering, use LspUiPlugin.
+//! What this plugin *does* do:
+//! - Register editor-only events (input requests like `RequestCompletionEvent`,
+//!   output events like `NavigateToFileEvent`, `MultipleLocationsEvent`,
+//!   `WorkspaceEditEvent`).
+//! - Drive `process_lsp_messages` (translates `LspResponse` → editor effects:
+//!   move cursor, apply text edits, store hover content).
+//! - Drive `sync_lsp_document` (debounced editor `did_change` notifications).
+//! - Drive `request_inlay_hints` / `request_document_highlights` (cursor- and
+//!   viewport-driven request fanout).
+//! - Drive `tick_lsp_debounce_timers` (Zed-style tiered request debouncing).
+//! - Drive sync systems that materialize state into marker components for the
+//!   render systems (`LspUiPlugin` / `LspEguiUiPlugin`) to query.
+//! - Drive event-listener systems that translate editor events into
+//!   `LspMessage::DidChange` / `LspMessage::Completion` / etc.
 
 use bevy::prelude::*;
 
-use crate::lsp::event_listeners::{
+use crate::lsp_ui::event_listeners::{
     listen_apply_completion, listen_completion_requests, listen_dismiss_completion,
     listen_hover_requests, listen_rename_requests, listen_signature_help_requests,
     listen_text_edit_events, tick_lsp_debounce_timers,
 };
-use crate::lsp::prelude::*;
-use crate::lsp::state::{
-    CodeActionState, CompletionState, DocumentHighlightState, HoverState, InlayHintState,
-    LspDebounceTimers, LspSyncState, RenameState, SignatureHelpState,
-};
-use crate::lsp::sync::{
+use crate::lsp_ui::sync::{
     sync_code_actions_popup, sync_completion_popup, sync_document_highlights, sync_hover_popup,
     sync_inlay_hints, sync_rename_input, sync_signature_help_popup,
 };
-use crate::lsp::systems::{
+use crate::lsp_ui::systems::{
     cleanup_lsp_timeouts, process_lsp_messages, request_document_highlights, request_inlay_hints,
     sync_lsp_document, MultipleLocationsEvent, NavigateToFileEvent, WorkspaceEditEvent,
 };
-use crate::lsp::{LspUiRenderSet, LspUiSyncSet};
+use crate::lsp_ui::{LspUiRenderSet, LspUiSyncSet};
 
-/// LSP core plugin providing language server integration
+/// LSP adapter plugin: bridges editor events to LSP requests, drains LSP
+/// responses into editor state, and materializes state into marker components
+/// for renderer plugins.
 ///
-/// This plugin must be added AFTER CodeEditorPlugin.
-/// It handles LSP communication and state management.
+/// Must be added **after** `CodeEditorPlugin` and alongside `bevy_lsp::LspPlugin`.
 ///
-/// For UI rendering, add LspUiPlugin after this plugin.
-/// For custom UI, query the marker components created by this plugin.
+/// For UI rendering, add `LspUiPlugin` after this plugin (sprite-based) or
+/// `LspEguiUiPlugin` (egui-based). For fully custom UI, query the marker
+/// components materialized by this plugin's sync systems.
 ///
 /// # Example
 /// ```no_run
 /// use bevy::prelude::*;
 /// use bevy_code_editor::prelude::*;
+/// use bevy_lsp::LspPlugin as LspTransportPlugin;
 ///
 /// App::new()
-///     .add_plugins(CodeEditorPlugin::default())
-///     .add_plugins(LspPlugin::default())
-///     .add_plugins(LspUiPlugin::default())  // Optional: for default UI
+///     .add_plugins(CodeEditorPlugin)
+///     .add_plugins(LspTransportPlugin)              // transport
+///     .add_plugins(bevy_code_editor::plugin::LspPlugin)  // editor adapter
 ///     .run();
 /// ```
 pub struct LspPlugin;
@@ -65,24 +79,24 @@ impl LspPlugin {
 
 impl Plugin for LspPlugin {
     fn build(&self, app: &mut App) {
-        // Core LSP resources
-        app.insert_resource(LspClient::default());
-        app.insert_resource(CompletionState::default());
-        app.insert_resource(HoverState::default());
-        app.insert_resource(LspSyncState::default());
-        app.insert_resource(SignatureHelpState::default());
-        app.insert_resource(CodeActionState::default());
-        app.insert_resource(InlayHintState::default());
-        app.insert_resource(DocumentHighlightState::default());
-        app.insert_resource(RenameState::default());
-        app.insert_resource(LspDebounceTimers::default());
+        // The transport layer (LspClient + state resources) lives in `bevy_lsp`.
+        // Add it idempotently so that hosts that wire `CodeEditorPlugin` (which
+        // auto-adds *this* plugin under the `lsp` feature) get a working
+        // setup out of the box. Hosts that prefer to compose explicitly can
+        // add `bevy_lsp::LspPlugin` themselves first; this no-ops in that case.
+        if !app.is_plugin_added::<bevy_lsp::LspPlugin>() {
+            app.add_plugins(bevy_lsp::LspPlugin);
+        }
 
-        // Register LSP output events (LSP -> user code)
+        // Editor-side output events (LSP responses → editor effects user code may observe).
         app.add_message::<NavigateToFileEvent>();
         app.add_message::<MultipleLocationsEvent>();
         app.add_message::<WorkspaceEditEvent>();
 
-        // Register LSP input events (editor -> LSP)
+        // Editor-side input events (user keypress / mouse hover → LSP request).
+        // These are intentionally *editor-side*: they're the host's vocabulary
+        // for "I want a completion at this cursor position", which the listener
+        // systems below translate into bevy_lsp::LspMessage variants.
         app.add_message::<crate::types::events::RequestCompletionEvent>();
         app.add_message::<crate::types::events::RequestHoverEvent>();
         app.add_message::<crate::types::events::RequestRenameEvent>();
@@ -93,7 +107,9 @@ impl Plugin for LspPlugin {
         // Configure system set ordering
         app.configure_sets(Update, LspUiSyncSet.before(LspUiRenderSet));
 
-        // Core LSP systems (always enabled)
+        // Core LSP-driven systems. These need both the editor entity (to read
+        // CursorState / TextViewState / apply edits) and the bevy_lsp resources
+        // (LspClient, LspSyncState, etc.) — so they're editor-side adapters.
         app.add_systems(
             Update,
             (
@@ -106,8 +122,8 @@ impl Plugin for LspPlugin {
             ),
         );
 
-        // LSP UI sync systems (state -> marker components)
-        // These always run so users can query marker components
+        // LSP UI sync systems (state -> marker components).
+        // These always run so users can query marker components.
         app.add_systems(
             Update,
             (
@@ -122,7 +138,7 @@ impl Plugin for LspPlugin {
                 .in_set(LspUiSyncSet),
         );
 
-        // Event listener systems (listen to editor events)
+        // Event listener systems (listen to editor events, fire LSP requests).
         app.add_systems(
             Update,
             (

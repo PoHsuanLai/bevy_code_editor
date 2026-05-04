@@ -7,11 +7,10 @@ use crate::settings::*;
 use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::{CodeEditor, CursorState};
 
-use super::client::LspClient;
-use super::messages::{CodeActionOrCommand, LspMessage, LspResponse};
-use super::state::{
-    CodeActionState, CompletionState, DocumentHighlightState, HoverState, InlayHintState,
-    LspSyncState, RenameState, SignatureHelpState,
+use bevy_lsp::{
+    CodeActionOrCommand, CodeActionState, CompletionState, DocumentHighlightState, HoverState,
+    InlayHintState, LspClient, LspMessage, LspResponse, LspSyncState, RenameState,
+    SignatureHelpState,
 };
 
 /// Diagnostic marker for rendering in editor

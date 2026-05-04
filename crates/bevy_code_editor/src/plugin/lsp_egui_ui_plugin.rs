@@ -8,10 +8,10 @@
 
 use bevy::prelude::*;
 
-use crate::lsp::egui_render::*;
-use crate::lsp::render::{render_document_highlights, render_inlay_hints};
-use crate::lsp::theme::LspUiTheme;
-use crate::lsp::LspUiRenderSet;
+use crate::lsp_ui::egui_render::*;
+use crate::lsp_ui::render::{render_document_highlights, render_inlay_hints};
+use crate::lsp_ui::theme::LspUiTheme;
+use crate::lsp_ui::LspUiRenderSet;
 
 /// LSP UI plugin using egui/armas overlays for popup rendering.
 ///

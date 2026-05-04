@@ -34,7 +34,7 @@
 
 use bevy::prelude::*;
 
-use super::state::UnifiedCompletionItem;
+use bevy_lsp::UnifiedCompletionItem;
 
 /// Marker component for the completion popup entity.
 /// Contains all data needed to render the completion UI.
