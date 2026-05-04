@@ -28,6 +28,7 @@
 
 mod fold_map;
 pub mod layout;
+pub mod plugin;
 mod point;
 mod snapshot;
 mod tab_map;
@@ -35,6 +36,7 @@ mod wrap_map;
 
 pub use fold_map::*;
 pub use layout::build_display_layout;
+pub use plugin::{DisplayMapPlugin, DisplayMapSet};
 pub use point::*;
 pub use snapshot::*;
 pub use tab_map::*;

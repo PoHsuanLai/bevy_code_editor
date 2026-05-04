@@ -6,7 +6,6 @@ pub mod cursor;
 pub mod editor_ui_plugin;
 pub mod folding;
 pub mod gpu_line_numbers;
-pub mod gpu_text_instanced;
 #[cfg(feature = "egui-overlays")]
 pub mod lsp_egui_ui_plugin;
 #[cfg(feature = "lsp")]
@@ -46,7 +45,6 @@ pub(crate) use self::cursor::update_cursor_line_highlight;
 #[cfg(feature = "folding")]
 pub(crate) use self::folding::update_fold_indicators;
 pub(crate) use self::gpu_line_numbers::update_gpu_line_numbers;
-pub(crate) use self::gpu_text_instanced::update_gpu_text_instanced;
 pub(crate) use self::ui_elements::{update_indent_guides, update_selection_highlight};
 
 /// Marker component for the entity that handles editor input (InputManager)
@@ -183,11 +181,15 @@ impl Plugin for CodeEditorPlugin {
         #[cfg(feature = "lsp")]
         app.add_plugins(LspPlugin);
 
-        // Add main rendering system. Runs after overlay-producing systems
-        // (cursor, selection) so it can read this frame's overlays.
+        // Display-map snapshot — runs between input/state and rendering.
+        app.add_plugins(crate::display_map::DisplayMapPlugin);
+
+        // Renderer: text_view::update_text_views consumes the DisplayLayout the
+        // display-map system wrote, plus the overlays cursor/selection systems wrote.
+        // Runs after all overlay producers so it sees this frame's overlays.
         app.add_systems(
             Update,
-            update_gpu_text_instanced
+            crate::text_view::plugin::update_text_views
                 .run_if(crate::gpu_text::atlas_ready)
                 .in_set(RenderingSet)
                 .after(crate::plugin::cursor::push_cursor_overlays)
@@ -249,9 +251,11 @@ fn spawn_editor_entity(mut commands: Commands) {
         SyntaxCacheState::default(),
         EditorDisplayState::default(),
         CursorState::default(),
+        crate::text_view::TextView,
         crate::text_view::TextViewState::default(),
         crate::text_view::TextViewViewport::default(),
         crate::text_view::TextViewOverlays::default(),
+        crate::text_view::DisplayLayout::default(),
         Name::new("CodeEditor"),
     ));
 }

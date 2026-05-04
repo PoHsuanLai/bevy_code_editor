@@ -146,7 +146,11 @@ fn animate_text_view_scroll(mut query: Query<&mut TextViewState, With<TextView>>
 /// + `DisplayLayout` and renders each one using `render_layout()`. The legacy
 /// `render_text_view` path is gone — consumers must provide a `DisplayLayout`
 /// (e.g. via `text_view::trivial_layout` for static content).
-fn update_text_views(
+///
+/// Exposed `pub(crate)` so the editor plugin can register it directly without
+/// adding `TextViewPlugin` (which would double-add scroll/input systems the
+/// editor handles itself).
+pub(crate) fn update_text_views(
     mut commands: Commands,
     mut text_views: Query<
         (

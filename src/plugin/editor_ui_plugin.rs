@@ -29,7 +29,7 @@ use bevy_camera::Viewport;
 pub struct EditorCamera;
 use super::{
     to_bevy_coords_left_aligned, update_cursor_line_highlight,
-    update_gpu_line_numbers, update_gpu_text_instanced, update_indent_guides,
+    update_gpu_line_numbers, update_indent_guides,
     update_selection_highlight, EditorSetupSet,
 };
 use crate::gpu_text::GlyphAtlas;
@@ -121,6 +121,7 @@ impl Plugin for EditorUiPlugin {
                 setup_editor_camera,
                 compute_viewport_layout,
                 setup_editor_ui,
+                stamp_editor_render_layers,
             )
                 .chain()
                 .after(EditorSetupSet),
@@ -155,7 +156,7 @@ impl Plugin for EditorUiPlugin {
         app.add_systems(
             Update,
             update_gpu_line_numbers
-                .after(update_gpu_text_instanced)
+                .after(crate::text_view::plugin::update_text_views)
                 .run_if(crate::gpu_text::atlas_ready)
                 .in_set(super::RenderingSet),
         );
@@ -326,6 +327,26 @@ fn compute_viewport_layout(
 fn apply_render_layers(entity: &mut EntityCommands, config: &EditorRenderConfig) {
     if let Some(ref layers) = config.render_layers {
         entity.insert(layers.clone());
+    }
+}
+
+/// Stamp the configured `RenderLayers` onto the `CodeEditor` entity at startup.
+///
+/// `text_view::update_text_views` reads `RenderLayers` from the source entity
+/// to propagate them to the spawned batch entity, which is how multi-viewport
+/// camera filtering works. Without this, the editor's text would render to all
+/// cameras (including the host app's main camera) when `EditorRenderConfig`
+/// configures a dedicated layer.
+fn stamp_editor_render_layers(
+    mut commands: Commands,
+    editor_query: Query<Entity, With<CodeEditor>>,
+    config: Res<EditorRenderConfig>,
+) {
+    let Some(layers) = config.render_layers.as_ref() else {
+        return;
+    };
+    for entity in &editor_query {
+        commands.entity(entity).insert(layers.clone());
     }
 }
 
