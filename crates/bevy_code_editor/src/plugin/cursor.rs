@@ -8,7 +8,7 @@ use crate::settings::{
     CursorLineSettings, CursorSettings, IndentationSettings, ThemeSettings, WrappingSettings,
 };
 use crate::text_view::{
-    RectOverlay, RowVertical, TextViewOverlays, TextViewState, TextViewViewport,
+    DisplayLayout, RectOverlay, RowVertical, TextViewOverlays, TextViewState, TextViewViewport,
 };
 use crate::types::*;
 use bevy::prelude::*;
@@ -69,6 +69,7 @@ pub(crate) fn push_cursor_overlays(
             &mut TextViewOverlays,
             &FoldState,
             &FontConfig,
+            Option<&DisplayLayout>,
         ),
         With<CodeEditor>,
     >,
@@ -78,7 +79,9 @@ pub(crate) fn push_cursor_overlays(
     indentation: Res<IndentationSettings>,
     time: Res<Time>,
 ) {
-    for (display, cursor, tv, _vp, mut overlays, fold_state, font) in editor_query.iter_mut() {
+    for (display, cursor, tv, _vp, mut overlays, fold_state, font, layout) in
+        editor_query.iter_mut()
+    {
         // Drain any caret rects from the previous frame. We mark them with z=+1 so
         // we can identify them; selection rects use z=-1 (added in step 6b).
         overlays.rects.retain(|r| r.z != 1);
@@ -129,7 +132,18 @@ pub(crate) fn push_cursor_overlays(
                 0.0
             };
 
-            let x_left = extra_indent + (display_col as f32 * char_width);
+            // Pixel x: prefer shaped advance from the display layout for the
+            // unwrapped path; the wrapped path's display rows aren't aligned
+            // with the new layout yet, so it stays on char_width.
+            let glyph_x = if !use_wrapping {
+                let line = tv.rope.line(line_index);
+                let col_clamped = display_col.min(line.len_chars());
+                let byte = line.slice(..col_clamped).len_bytes();
+                layout.and_then(|l| l.x_at_byte(display_row as u32, byte))
+            } else {
+                None
+            };
+            let x_left = extra_indent + glyph_x.unwrap_or(display_col as f32 * char_width);
             let x_right = x_left + cursor_settings.width;
 
             overlays.rects.push(RectOverlay {
@@ -157,6 +171,7 @@ pub(crate) fn update_cursor_line_highlight(
             &mut TextViewOverlays,
             &FoldState,
             &FontConfig,
+            Option<&DisplayLayout>,
         ),
         With<CodeEditor>,
     >,
@@ -164,7 +179,9 @@ pub(crate) fn update_cursor_line_highlight(
     theme: Res<ThemeSettings>,
     wrapping: Res<WrappingSettings>,
 ) {
-    for (display, cursor, tv, vp, mut overlays, fold_state, font) in editor_query.iter_mut() {
+    for (display, cursor, tv, vp, mut overlays, fold_state, font, layout) in
+        editor_query.iter_mut()
+    {
         // Drain previous-frame line-border / word rects (z = 0 reserved for cursor-line decoration).
         overlays.rects.retain(|r| r.z != 0);
 
@@ -263,8 +280,26 @@ pub(crate) fn update_cursor_line_highlight(
             };
 
             if word_end > word_start {
-                let x_left = word_start as f32 * char_width;
-                let x_right = word_end as f32 * char_width;
+                let (x_left, x_right) = if !use_wrapping {
+                    let line_for_byte = tv.rope.line(line_index);
+                    let ws_clamped = word_start.min(line_for_byte.len_chars());
+                    let we_clamped = word_end.min(line_for_byte.len_chars());
+                    let ws_byte = line_for_byte.slice(..ws_clamped).len_bytes();
+                    let we_byte = line_for_byte.slice(..we_clamped).len_bytes();
+                    let row = display_row as u32;
+                    let xl = layout
+                        .and_then(|l| l.x_at_byte(row, ws_byte))
+                        .unwrap_or(word_start as f32 * char_width);
+                    let xr = layout
+                        .and_then(|l| l.x_at_byte(row, we_byte))
+                        .unwrap_or(word_end as f32 * char_width);
+                    (xl, xr)
+                } else {
+                    (
+                        word_start as f32 * char_width,
+                        word_end as f32 * char_width,
+                    )
+                };
                 overlays.rects.push(RectOverlay {
                     display_row: display_row as u32,
                     x_range: x_left..x_right,

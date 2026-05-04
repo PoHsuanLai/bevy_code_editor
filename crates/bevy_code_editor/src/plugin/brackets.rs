@@ -156,6 +156,7 @@ pub(crate) fn update_bracket_highlight(
             &BracketMatchState,
             &FoldState,
             &FontConfig,
+            Option<&crate::text_view::DisplayLayout>,
         ),
         With<CodeEditor>,
     >,
@@ -174,7 +175,7 @@ pub(crate) fn update_bracket_highlight(
     let mut entity_index_global: usize = 0;
     let mut any_match = false;
 
-    for (tv, viewport, bracket_state, fold_state, font) in editor_query.iter() {
+    for (tv, viewport, bracket_state, fold_state, font, layout) in editor_query.iter() {
     match &bracket_state.current_match {
         Some(bracket_match) => {
             any_match = true;
@@ -203,13 +204,33 @@ pub(crate) fn update_bracket_highlight(
 
                 let display_row = fold_state.actual_to_display_line(line_idx);
 
-                let x_offset = viewport.text_area_left + (col_idx as f32 * char_width);
+                // Pixel x of the bracket glyph and its visual width. Prefer
+                // shaped advances; fall back to column math when the layout
+                // doesn't cover this row (off-screen, or trivial layout).
+                let line = tv.rope.line(line_idx);
+                let col_clamped = col_idx.min(line.len_chars());
+                let next_col = (col_idx + 1).min(line.len_chars());
+                let start_byte = line.slice(..col_clamped).len_bytes();
+                let end_byte = line.slice(..next_col).len_bytes();
+                let row = display_row as u32;
+                let glyph_x = layout
+                    .and_then(|l| l.x_at_byte(row, start_byte))
+                    .unwrap_or(col_idx as f32 * char_width);
+                let glyph_width = layout
+                    .and_then(|l| {
+                        let s = l.x_at_byte(row, start_byte)?;
+                        let e = l.x_at_byte(row, end_byte)?;
+                        Some((e - s).max(0.0))
+                    })
+                    .unwrap_or(char_width);
+
+                let x_offset = viewport.text_area_left + glyph_x;
                 let y_offset =
                     viewport.text_area_top + tv.scroll_offset + (display_row as f32 * line_height);
 
                 // Calculate base position (center of the bracket character cell)
                 // Camera viewport handles panel positioning, so no offset_x here
-                let base_x = viewport.world_left() + x_offset + char_width / 2.0
+                let base_x = viewport.world_left() + x_offset + glyph_width / 2.0
                     - tv.horizontal_scroll_offset;
                 let base_y = viewport.world_top() - y_offset;
 
@@ -221,26 +242,26 @@ pub(crate) fn update_bracket_highlight(
                         (
                             0.0,
                             line_height / 2.0 - border_thickness / 2.0,
-                            char_width,
+                            glyph_width,
                             border_thickness,
                         ),
                         // Bottom edge
                         (
                             0.0,
                             -line_height / 2.0 + border_thickness / 2.0,
-                            char_width,
+                            glyph_width,
                             border_thickness,
                         ),
                         // Left edge
                         (
-                            -char_width / 2.0 + border_thickness / 2.0,
+                            -glyph_width / 2.0 + border_thickness / 2.0,
                             0.0,
                             border_thickness,
                             line_height,
                         ),
                         // Right edge
                         (
-                            char_width / 2.0 - border_thickness / 2.0,
+                            glyph_width / 2.0 - border_thickness / 2.0,
                             0.0,
                             border_thickness,
                             line_height,
@@ -282,7 +303,7 @@ pub(crate) fn update_bracket_highlight(
                 } else {
                     // Filled style: single sprite per bracket
                     let translation = Vec3::new(base_x, base_y, 0.4);
-                    let size = Vec2::new(char_width, line_height);
+                    let size = Vec2::new(glyph_width, line_height);
 
                     if entity_index_global < highlights.len() {
                         let (_, _, ref mut transform, ref mut sprite, ref mut visibility) =

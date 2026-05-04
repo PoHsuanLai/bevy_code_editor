@@ -3,7 +3,7 @@
 use super::editor_ui_plugin::EditorRenderConfig;
 use crate::settings::*;
 use crate::text_view::{
-    RectOverlay, RowVertical, TextViewOverlays, TextViewState, TextViewViewport,
+    DisplayLayout, RectOverlay, RowVertical, TextViewOverlays, TextViewState, TextViewViewport,
 };
 use crate::types::*;
 use bevy::prelude::*;
@@ -26,6 +26,7 @@ pub(crate) fn update_selection_highlight(
             &mut TextViewOverlays,
             &FoldState,
             &FontConfig,
+            Option<&DisplayLayout>,
         ),
         With<CodeEditor>,
     >,
@@ -33,7 +34,7 @@ pub(crate) fn update_selection_highlight(
     wrapping: Res<WrappingSettings>,
     indentation: Res<IndentationSettings>,
 ) {
-    for (tv, _vp, sel, display, cursor, mut overlays, fold_state, font) in
+    for (tv, _vp, sel, display, cursor, mut overlays, fold_state, font, layout) in
         editor_query.iter_mut()
     {
     // Drain any selection rects from the previous frame (z = -1 marks selection;
@@ -47,8 +48,8 @@ pub(crate) fn update_selection_highlight(
     let use_wrapping = wrapping.enabled && display.display_map.wrap_width > 0;
 
     // Collect all selection ranges from all cursors
-    // (cursor_idx, display_row, start_col, end_col, is_continuation)
-    let mut selection_rects: Vec<(usize, usize, usize, usize, bool)> = Vec::new();
+    // (cursor_idx, display_row, buffer_line, start_col, end_col, is_continuation)
+    let mut selection_rects: Vec<(usize, usize, usize, usize, usize, bool)> = Vec::new();
 
     for (cursor_idx, cur) in cursor.cursors.iter().enumerate() {
         if let Some((start, end)) = cur.selection_range() {
@@ -98,6 +99,7 @@ pub(crate) fn update_selection_highlight(
                                 selection_rects.push((
                                     cursor_idx,
                                     row_idx,
+                                    line_idx,
                                     display_start,
                                     display_end,
                                     row.is_continuation,
@@ -110,6 +112,7 @@ pub(crate) fn update_selection_highlight(
                         selection_rects.push((
                             cursor_idx,
                             display_row,
+                            line_idx,
                             sel_start_in_line,
                             sel_end_in_line,
                             false,
@@ -169,6 +172,7 @@ pub(crate) fn update_selection_highlight(
                                     selection_rects.push((
                                         0,
                                         row_idx,
+                                        line_idx,
                                         display_start,
                                         display_end,
                                         row.is_continuation,
@@ -181,6 +185,7 @@ pub(crate) fn update_selection_highlight(
                             selection_rects.push((
                                 0,
                                 display_row,
+                                line_idx,
                                 sel_start_in_line,
                                 sel_end_in_line,
                                 false,
@@ -195,17 +200,39 @@ pub(crate) fn update_selection_highlight(
     // Push selection rects into TextViewOverlays. Done after draining any
     // previous-frame selection rects above; an empty `selection_rects` is
     // equivalent to "no selections this frame".
-    for (_cursor_idx, row_idx, sel_start_col, sel_end_col, is_continuation) in selection_rects {
+    for (_cursor_idx, row_idx, buffer_line, sel_start_col, sel_end_col, is_continuation) in
+        selection_rects
+    {
         let extra_indent = if use_wrapping && is_continuation && wrapping.indent_wrapped_lines {
             indentation.indent_size as f32 * char_width
         } else {
             0.0
         };
-        let x_left = extra_indent + (sel_start_col as f32 * char_width);
-        let x_right = extra_indent + (sel_end_col as f32 * char_width);
+        // Pixel x: prefer shaped advance from the layout for the unwrapped path;
+        // wrapped-mode display rows aren't aligned with the new layout yet.
+        let (x_left, x_right) = if !use_wrapping {
+            let line = tv.rope.line(buffer_line);
+            let s = sel_start_col.min(line.len_chars());
+            let e = sel_end_col.min(line.len_chars());
+            let s_byte = line.slice(..s).len_bytes();
+            let e_byte = line.slice(..e).len_bytes();
+            let row = row_idx as u32;
+            let xl = layout
+                .and_then(|l| l.x_at_byte(row, s_byte))
+                .unwrap_or(sel_start_col as f32 * char_width);
+            let xr = layout
+                .and_then(|l| l.x_at_byte(row, e_byte))
+                .unwrap_or(sel_end_col as f32 * char_width);
+            (xl, xr)
+        } else {
+            (
+                sel_start_col as f32 * char_width,
+                sel_end_col as f32 * char_width,
+            )
+        };
         overlays.rects.push(RectOverlay {
             display_row: row_idx as u32,
-            x_range: x_left..x_right,
+            x_range: (extra_indent + x_left)..(extra_indent + x_right),
             vertical: RowVertical::Full,
             color: theme.selection_background,
             z: -1, // below text
