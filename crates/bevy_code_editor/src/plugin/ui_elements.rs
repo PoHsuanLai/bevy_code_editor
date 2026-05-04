@@ -384,14 +384,16 @@ pub(crate) fn update_indent_guides(
 
 /// Animate smooth scrolling by interpolating towards target scroll offset
 pub(crate) fn animate_smooth_scroll(
-    mut editor_query: Query<&mut TextViewState, With<CodeEditor>>,
+    mut editor_query: Query<
+        (&mut TextViewState, &super::scrollbar::ScrollbarDragState),
+        With<CodeEditor>,
+    >,
     time: Res<Time>,
     scrolling: Res<ScrollingSettings>,
     _font: Res<crate::settings::FontSettings>,
     _viewport: Res<crate::types::ViewportDimensions>,
-    scrollbar_drag: Res<super::scrollbar::ScrollbarDragState>,
 ) {
-    let Ok(mut tv) = editor_query.single_mut() else {
+    let Ok((mut tv, scrollbar_drag)) = editor_query.single_mut() else {
         return;
     };
 
@@ -438,23 +440,29 @@ pub(crate) fn animate_smooth_scroll(
 
 /// Run condition: only run auto_scroll_to_cursor when cursor has moved and not dragging scrollbar
 pub(crate) fn should_auto_scroll(
-    editor_query: Query<(&TextViewState, &CursorState), With<CodeEditor>>,
-    scrollbar_drag: Res<super::scrollbar::ScrollbarDragState>,
+    editor_query: Query<
+        (
+            &TextViewState,
+            &CursorState,
+            &super::scrollbar::ScrollbarDragState,
+        ),
+        With<CodeEditor>,
+    >,
     mouse_drag: Res<crate::input::MouseDragState>,
 ) -> bool {
-    // Don't run when dragging scrollbar
-    if scrollbar_drag.is_dragging {
-        return false;
-    }
-
     // Don't run when mouse dragging (causes selection issues due to scroll animation)
     if mouse_drag.is_dragging {
         return false;
     }
 
-    let Ok((tv, cursor)) = editor_query.single() else {
+    let Ok((tv, cursor, scrollbar_drag)) = editor_query.single() else {
         return false;
     };
+
+    // Don't run when dragging scrollbar
+    if scrollbar_drag.is_dragging {
+        return false;
+    }
 
     // Only run when cursor has moved
     let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());

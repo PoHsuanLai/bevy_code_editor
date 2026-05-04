@@ -54,9 +54,6 @@ impl Plugin for TextViewPlugin {
             app.add_plugins(bevy_text_engine::gpu::InstancedTextRenderPlugin);
         }
 
-        // Interaction resources
-        app.init_resource::<super::interaction::TextViewDragState>();
-
         // Text view systems
         app.add_systems(
             Update,
@@ -87,7 +84,14 @@ impl Plugin for TextViewPlugin {
 /// `TextView` alone is enough to get a usable text-rendering entity
 /// (mirror of `bevy_text::Text2d`).
 #[derive(Component, Default)]
-#[require(TextViewState, TextViewViewport, DisplayLayout, TextViewOverlays)]
+#[require(
+    TextViewState,
+    TextViewViewport,
+    DisplayLayout,
+    TextViewOverlays,
+    super::interaction::TextViewDragState,
+    super::interaction::TextViewSelectionState,
+)]
 pub struct TextView;
 
 /// Component that links a text view to its batch rendering entity.

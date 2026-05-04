@@ -12,7 +12,6 @@ pub struct ScrollbarPlugin;
 
 impl Plugin for ScrollbarPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ScrollbarDragState::default());
         // Scrollbar mouse input goes in InputSet
         app.add_systems(
             Update,
@@ -29,8 +28,8 @@ impl Plugin for ScrollbarPlugin {
     }
 }
 
-/// Resource to track scrollbar drag state
-#[derive(Resource, Default)]
+/// Per-editor scrollbar drag state.
+#[derive(Component, Default)]
 pub struct ScrollbarDragState {
     /// Whether we're currently dragging a scrollbar
     pub is_dragging: bool,
@@ -135,13 +134,13 @@ pub struct ScrollbarThumb {
 fn handle_scrollbar_mouse(
     windows: Query<&Window>,
     mouse_button: Res<ButtonInput<MouseButton>>,
-    mut drag_state: ResMut<ScrollbarDragState>,
     mut editor_query: Query<
         (
             &mut crate::types::CodeEditorState,
             &mut crate::types::CursorState,
             &mut TextViewState,
             &TextViewViewport,
+            &mut ScrollbarDragState,
         ),
         With<CodeEditor>,
     >,
@@ -150,7 +149,9 @@ fn handle_scrollbar_mouse(
     thumb_query: Query<(&ScrollbarThumb, &Transform, &Sprite)>,
     font: Res<crate::settings::FontSettings>,
 ) {
-    let Ok((_state, mut cursor_state, mut tv, viewport)) = editor_query.single_mut() else {
+    let Ok((_state, mut cursor_state, mut tv, viewport, mut drag_state)) =
+        editor_query.single_mut()
+    else {
         return;
     };
     let Ok(window) = windows.single() else {
@@ -294,15 +295,15 @@ fn update_scrollbars(
             &crate::types::CodeEditorState,
             &TextViewState,
             &TextViewViewport,
+            &ScrollbarDragState,
         ),
         With<CodeEditor>,
     >,
     font: Res<crate::settings::FontSettings>,
-    drag_state: Res<ScrollbarDragState>,
     render_config: Res<EditorRenderConfig>,
     mut last_scroll: Local<f32>,
 ) {
-    let Ok((_state, tv, viewport)) = editor_query.single() else {
+    let Ok((_state, tv, viewport, drag_state)) = editor_query.single() else {
         return;
     };
     // Only update if scroll offset changed (but always update during drag for smooth thumb movement)

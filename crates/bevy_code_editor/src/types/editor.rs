@@ -117,6 +117,7 @@ impl Default for ViewportDimensions {
     BracketMatchState,
     crate::types::fold::GotoLineState,
     crate::types::fold::FoldState,
+    crate::plugin::scrollbar::ScrollbarDragState,
 )]
 pub struct CodeEditor;
 

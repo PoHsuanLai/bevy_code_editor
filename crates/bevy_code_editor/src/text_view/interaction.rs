@@ -24,8 +24,8 @@ pub struct TextViewSelectionState {
     pub selection_end: Option<usize>,
 }
 
-/// Mouse drag tracking for text selection.
-#[derive(Resource, Default)]
+/// Per-view mouse drag tracking for text selection.
+#[derive(Component, Default)]
 pub struct TextViewDragState {
     pub is_dragging: bool,
     pub drag_start_pos: Option<usize>,
@@ -149,16 +149,19 @@ pub fn handle_text_view_scroll(
 }
 
 /// Mouse click + drag selection for all `TextView` entities.
+///
+/// Drag state is per-view; each entity tracks its own selection drag so two
+/// text views can be interacted with independently.
 pub fn handle_text_view_mouse(
     mut views: Query<
         (
             &mut TextViewSelectionState,
+            &mut TextViewDragState,
             &TextViewState,
             &TextViewViewport,
         ),
         With<TextView>,
     >,
-    mut drag_state: ResMut<TextViewDragState>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
     font: Res<FontSettings>,
@@ -168,15 +171,17 @@ pub fn handle_text_view_mouse(
         return;
     };
 
-    // Handle release
+    // Handle release: clear drag flag on every view that thought it was dragging.
     if mouse_button.just_released(MouseButton::Left) {
-        drag_state.is_dragging = false;
+        for (_, mut drag_state, _, _) in views.iter_mut() {
+            drag_state.is_dragging = false;
+        }
         return;
     }
 
-    // Handle press — start selection
+    // Handle press: hit-test each view; the one under the cursor begins a drag.
     if mouse_button.just_pressed(MouseButton::Left) {
-        for (mut sel, tv, viewport) in views.iter_mut() {
+        for (mut sel, mut drag_state, tv, viewport) in views.iter_mut() {
             let vp_pos = viewport.hit_test_position;
             let vp_rect = bevy::math::Rect::new(
                 vp_pos.x,
@@ -203,16 +208,19 @@ pub fn handle_text_view_mouse(
         return;
     }
 
-    // Handle drag — extend selection
-    if drag_state.is_dragging && mouse_button.pressed(MouseButton::Left) {
-        // Check for minimum movement
-        if let Some(last_pos) = drag_state.last_screen_pos {
-            if (cursor_pos - last_pos).length() < 2.0 {
-                return;
+    // Handle drag — only the view that started the drag extends its selection.
+    if mouse_button.pressed(MouseButton::Left) {
+        for (mut sel, mut drag_state, tv, viewport) in views.iter_mut() {
+            if !drag_state.is_dragging {
+                continue;
             }
-        }
+            // Skip tiny movements to avoid jitter.
+            if let Some(last_pos) = drag_state.last_screen_pos {
+                if (cursor_pos - last_pos).length() < 2.0 {
+                    continue;
+                }
+            }
 
-        for (mut sel, tv, viewport) in views.iter_mut() {
             let vp_pos = viewport.hit_test_position;
             let local_pos = Vec2::new(cursor_pos.x - vp_pos.x, cursor_pos.y - vp_pos.y);
             let char_pos = screen_to_char_pos(
@@ -226,8 +234,8 @@ pub fn handle_text_view_mouse(
 
             sel.selection_start = drag_state.drag_start_pos;
             sel.selection_end = Some(char_pos);
+            drag_state.last_screen_pos = Some(cursor_pos);
         }
-        drag_state.last_screen_pos = Some(cursor_pos);
     }
 }
 
