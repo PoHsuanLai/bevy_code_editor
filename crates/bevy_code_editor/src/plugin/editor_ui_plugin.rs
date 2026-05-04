@@ -527,11 +527,13 @@ fn update_separator_on_resize(
 fn update_font_metrics(
     mut editors: Query<&mut FontConfig, With<CodeEditor>>,
     mut atlas: ResMut<GlyphAtlas>,
+    fonts: Res<Assets<bevy::text::Font>>,
 ) {
     for mut font in editors.iter_mut() {
-        // Measure '0' for monospace width (standard for code). Shape a one-glyph
-        // line through cosmic-text — `shape.width` is the exact advance.
-        let width = atlas.shape_line("0", font.size).width;
+        // Measure '0' for monospace width. Shape via cosmic-text — shape.width
+        // is the exact advance. Resolves the entity's Handle<Font> if set.
+        let font_id = font.font.as_ref().and_then(|h| atlas.ensure_font(h, &fonts));
+        let width = atlas.shape_line("0", font.size, font_id).width;
         if width > 0.0 && (font.char_width - width).abs() > 0.01 {
             info!(
                 "Updating font char_width from {:.3} to {:.3} (measured)",

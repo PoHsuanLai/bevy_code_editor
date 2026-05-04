@@ -13,22 +13,24 @@
 //! ```
 
 use bevy::prelude::*;
+use bevy::text::Font;
 
-/// Font sizing for a single text view entity.
+/// Font sizing + optional `bevy_text::Font` handle. The atlas registers
+/// the handle's bytes into its cosmic-text font system on first use, so
+/// the same `asset_server.load("foo.ttf")` works in both `Text2d` and
+/// `TextView`. `font: None` falls back to system fonts.
 ///
-/// `char_width` is a scalar fallback advance — the renderer prefers per-glyph
-/// shaped advances from `LineShape.glyphs[*].x` and only falls back to the
-/// scalar for `trivial_layout` consumers that ship `shape: None`. For monospace
-/// faces the scalar matches the shaped advance bit-for-bit.
+/// `char_width` is a scalar fallback advance — the renderer prefers
+/// per-glyph shaped advances from `LineShape.glyphs[*].x` and only
+/// falls back to the scalar for `trivial_layout` consumers shipping
+/// `shape: None`.
 #[derive(Component, Clone, Debug, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct FontConfig {
-    /// Glyph height in pixels.
     pub size: f32,
-    /// Vertical distance between baselines, in pixels.
     pub line_height: f32,
-    /// Monospace advance per character, in pixels.
     pub char_width: f32,
+    pub font: Option<Handle<Font>>,
 }
 
 impl Default for FontConfig {
@@ -39,29 +41,32 @@ impl Default for FontConfig {
 
 impl FontConfig {
     /// `size`-derived defaults: `line_height = size * 1.5`, `char_width = size * 0.6`.
-    pub const fn from_size(size: f32) -> Self {
+    pub fn from_size(size: f32) -> Self {
         Self {
             size,
             line_height: size * 1.5,
             char_width: size * 0.6,
+            font: None,
         }
     }
 
-    /// Override the line height with an explicit pixel value.
-    pub const fn with_line_height(mut self, line_height: f32) -> Self {
+    pub fn with_line_height(mut self, line_height: f32) -> Self {
         self.line_height = line_height;
         self
     }
 
-    /// Override the line height as a multiple of `size`.
-    pub const fn with_line_height_multiplier(mut self, multiplier: f32) -> Self {
+    pub fn with_line_height_multiplier(mut self, multiplier: f32) -> Self {
         self.line_height = self.size * multiplier;
         self
     }
 
-    /// Override the monospace character advance.
-    pub const fn with_char_width(mut self, char_width: f32) -> Self {
+    pub fn with_char_width(mut self, char_width: f32) -> Self {
         self.char_width = char_width;
+        self
+    }
+
+    pub fn with_font(mut self, handle: Handle<Font>) -> Self {
+        self.font = Some(handle);
         self
     }
 }

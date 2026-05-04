@@ -73,6 +73,7 @@ pub fn render_layout(
     content_start_x: f32,
     horizontal_scroll_offset: f32,
     font_size: f32,
+    font_id: Option<cosmic_text::fontdb::ID>,
 ) -> Vec<GlyphInstance> {
     let default_line_height = layout.line_height;
     let char_width = layout.char_width;
@@ -194,6 +195,7 @@ pub fn render_layout(
                         start_x: 0.0,
                     },
                     atlas,
+                    font_id,
                     &mut text_instances,
                 );
             }
@@ -256,6 +258,7 @@ pub fn render_layout(
                             start_x: seg_x_start,
                         },
                         atlas,
+                        font_id,
                         &mut text_instances,
                     );
                 }
@@ -386,6 +389,7 @@ fn emit_unshaped_run_glyphs(
     style: RunStyle,
     metrics: RunMetrics,
     atlas: &mut GlyphAtlas,
+    font_id: Option<cosmic_text::fontdb::ID>,
     out: &mut Vec<GlyphInstance>,
 ) {
     let Some(slice) = line.text.get(range) else {
@@ -394,7 +398,7 @@ fn emit_unshaped_run_glyphs(
     // Strip a trailing newline — the rope line includes it but cosmic-text
     // would just emit a zero-advance glyph. Matches the producer's behavior.
     let shape_text = slice.strip_suffix('\n').unwrap_or(slice);
-    let shape = atlas.shape_line(shape_text, metrics.font_size);
+    let shape = atlas.shape_line(shape_text, metrics.font_size, font_id);
     for g in &shape.glyphs {
         let Some((info, _)) = atlas.get_or_rasterize_glyph(g.cache_key) else {
             continue;

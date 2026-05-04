@@ -1,8 +1,9 @@
 //! Glyph atlas: rasterizes glyphs once via cosmic_text and caches them in a GPU texture.
 
-use bevy::asset::RenderAssetUsages;
+use bevy::asset::{AssetId, RenderAssetUsages};
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy::text::Font;
 use cosmic_text::{FontSystem, SwashCache};
 use std::collections::HashMap;
 
@@ -43,6 +44,9 @@ pub struct GlyphAtlas {
     font_system: FontSystem,
     swash_cache: SwashCache,
     configured_font_id: Option<cosmic_text::fontdb::ID>,
+    /// `bevy_text::Font` handles registered with the cosmic-text fontdb,
+    /// keyed by AssetId so re-registration is a no-op on subsequent frames.
+    loaded_fonts: HashMap<AssetId<Font>, cosmic_text::fontdb::ID>,
     /// Cache keyed by cosmic_text CacheKey — populated by `get_or_rasterize_glyph`.
     cache: HashMap<cosmic_text::CacheKey, GlyphInfo>,
     /// Generation counter — incremented on atlas clear for cache invalidation
@@ -96,6 +100,7 @@ impl GlyphAtlas {
             font_system,
             swash_cache,
             configured_font_id,
+            loaded_fonts: HashMap::new(),
             cache: HashMap::new(),
             generation: 0,
             dirty_min_y: ATLAS_SIZE,
@@ -196,6 +201,28 @@ impl GlyphAtlas {
             font_path
         );
         None
+    }
+
+    /// Register a `bevy_text::Font` asset's bytes into the cosmic-text font
+    /// system on first use; subsequent calls are O(1) cache hits. Returns
+    /// the `fontdb::ID` to feed into `shape_line`.
+    pub fn ensure_font(
+        &mut self,
+        handle: &Handle<Font>,
+        fonts: &Assets<Font>,
+    ) -> Option<cosmic_text::fontdb::ID> {
+        let id = handle.id();
+        if let Some(font_id) = self.loaded_fonts.get(&id) {
+            return Some(*font_id);
+        }
+        let font = fonts.get(handle)?;
+        let bytes: Vec<u8> = (*font.data).clone();
+        let db = self.font_system.db_mut();
+        let count_before = db.faces().count();
+        db.load_font_data(bytes);
+        let font_id = db.faces().nth(count_before).map(|f| f.id)?;
+        self.loaded_fonts.insert(id, font_id);
+        Some(font_id)
     }
 
     /// Allocate space in the atlas using shelf packing
@@ -409,32 +436,27 @@ mod instanced_extensions {
             self.dirty = true;
         }
 
-        /// Shape a line into the engine's owned `LineShape`, ready to attach to a
-        /// `ShapedLine.shape` field.
-        ///
-        /// Uses cosmic-text shaping with `Shaping::Advanced` (ligatures, complex
-        /// scripts) and a fixed tab width of 4 — the renderer trusts the shaped
-        /// advance for `\t` rather than special-casing it. `cache_key` is computed
-        /// at `DPI_SCALE` so it round-trips through `get_or_rasterize_glyph`.
+        /// Shape a line into the engine's owned `LineShape`. Pass a
+        /// `fontdb::ID` to pin shaping to a specific face (e.g. one
+        /// returned by [`GlyphAtlas::ensure_font`]); pass `None` to use
+        /// the constructor's `font_path` font, falling back to system fonts.
         pub fn shape_line(
             &mut self,
             text: &str,
             font_size: f32,
+            font_id: Option<cosmic_text::fontdb::ID>,
         ) -> crate::view::snapshot::LineShape {
             use crate::view::snapshot::{LineShape, ShapedGlyph};
 
-            // If a font was explicitly configured via `new_with_font`, pin
-            // shaping to its family name so cosmic-text doesn't fall back to
-            // the system default for unicode coverage cases.
+            let pinned = font_id.or(self.configured_font_id);
             let mut attrs = Attrs::new();
-            let configured_family =
-                self.configured_font_id.and_then(|id| {
-                    self.font_system
-                        .db()
-                        .face(id)
-                        .and_then(|f| f.families.first().map(|fam| fam.0.clone()))
-                });
-            if let Some(ref family) = configured_family {
+            let pinned_family = pinned.and_then(|id| {
+                self.font_system
+                    .db()
+                    .face(id)
+                    .and_then(|f| f.families.first().map(|fam| fam.0.clone()))
+            });
+            if let Some(ref family) = pinned_family {
                 attrs = attrs.family(cosmic_text::Family::Name(family.as_str()));
             }
             let attrs_list = AttrsList::new(attrs);

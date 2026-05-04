@@ -41,6 +41,7 @@ pub fn build_display_layout(
     syntax: Option<&mut crate::plugin::SyntaxResource>,
     syntax_theme: Option<&SyntaxTheme>,
     atlas: Option<&mut GlyphAtlas>,
+    fonts: Option<&Assets<bevy::text::Font>>,
 ) -> DisplayLayout {
     let line_height = font.line_height;
     let char_width = font.char_width;
@@ -182,7 +183,11 @@ pub fn build_display_layout(
         // emit a zero-advance glyph for it.
         let shape = atlas_opt.as_deref_mut().map(|atlas| {
             let shape_text = render_text.strip_suffix('\n').unwrap_or(&render_text);
-            Arc::new(atlas.shape_line(shape_text, font.size))
+            let font_id = match (font.font.as_ref(), fonts) {
+                (Some(h), Some(fs)) => atlas.ensure_font(h, fs),
+                _ => None,
+            };
+            Arc::new(atlas.shape_line(shape_text, font.size, font_id))
         });
 
         // Discover horizontal-scrollbar extent: track the widest shaped line

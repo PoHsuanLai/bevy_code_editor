@@ -46,6 +46,7 @@ pub(crate) fn update_gpu_line_numbers(
     mut atlas: ResMut<GlyphAtlas>,
     render_config: Res<EditorRenderConfig>,
     mut images: ResMut<Assets<Image>>,
+    fonts: Res<Assets<bevy::text::Font>>,
     batch_query: Query<(Entity, &GpuLineNumbersBatch)>,
 ) {
     // Hide if line numbers are disabled
@@ -169,7 +170,8 @@ pub(crate) fn update_gpu_line_numbers(
         // Shape the line number text via cosmic-text. `shape.width` gives an
         // exact pixel width for right-alignment, and `shape.glyphs` carry the
         // per-glyph pen-x and atlas cache_key the renderer needs.
-        let shape = atlas.shape_line(&line_number_text, font_size);
+        let font_id = font.font.as_ref().and_then(|h| atlas.ensure_font(h, &fonts));
+        let shape = atlas.shape_line(&line_number_text, font_size, font_id);
 
         // Right-align: start X so that text ends near the right edge of gutter (with padding)
         let right_padding = 8.0;

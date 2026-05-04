@@ -160,10 +160,15 @@ pub(crate) fn update_text_views(
     >,
     mut atlas: ResMut<GlyphAtlas>,
     mut images: ResMut<Assets<Image>>,
+    fonts: Res<Assets<bevy::text::Font>>,
 ) {
     for (tv_entity, state, viewport, font, layout, overlays, batch_entity_opt, render_layers) in
         text_views.iter_mut()
     {
+        let font_id = font
+            .font
+            .as_ref()
+            .and_then(|h| atlas.ensure_font(h, &fonts));
         // Skip-on-unchanged: if neither the display layout nor the overlays
         // changed since last frame, the GPU batch is still valid — skip the
         // rebuild + atlas upload entirely.
@@ -187,6 +192,7 @@ pub(crate) fn update_text_views(
             content_start_x,
             state.horizontal_scroll_offset,
             font.size,
+            font_id,
         );
 
         atlas.update_texture(&mut images);
