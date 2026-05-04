@@ -22,6 +22,18 @@ pub struct ActionResult {
     pub horizontal_move: bool,
 }
 
+/// Bundled refs to the four LSP pieces that co-travel through `execute_action`:
+/// settings, transport client, completion popup state, and document-sync state.
+/// Mirrors `EditorBuf` but for LSP-specific borrows; only constructed when the
+/// `lsp` feature is enabled.
+#[cfg(feature = "lsp")]
+pub struct LspBuf<'a> {
+    pub settings: &'a LspSettings,
+    pub client: &'a lsp::LspClient,
+    pub completion: &'a mut lsp::CompletionState,
+    pub sync: &'a mut lsp::LspSyncState,
+}
+
 /// Insert a character at cursor position
 pub fn insert_char(
     sel: &mut SelectionState,
@@ -315,19 +327,27 @@ pub fn send_did_change(rope: &Rope, lsp_client: &lsp::LspClient, lsp_sync: &mut 
     }
 }
 
-/// Core action execution - shared between LSP and non-LSP builds
+/// Core action execution - shared between LSP and non-LSP builds.
+///
+/// `buf` bundles the six per-entity buffer refs; taking it by value (the
+/// fields are `&mut`s, so moving the bundle moves the borrows) lets us
+/// destructure into individual `&mut` bindings the body uses verbatim.
+/// Helpers below this dispatcher keep their individual-`&mut` signatures.
 fn execute_action_core(
-    sel: &mut SelectionState,
-    hist: &mut EditHistoryState,
-    syntax: &mut SyntaxCacheState,
-    display: &mut EditorDisplayState,
-    cursor: &mut CursorState,
-    tv: &mut TextViewState,
+    buf: EditorBuf<'_>,
     action: EditorAction,
     indentation: &IndentationSettings,
     goto_line_state: &mut GotoLineState,
     fold_state: &mut FoldState,
 ) -> ActionResult {
+    let EditorBuf {
+        sel,
+        hist,
+        syntax,
+        display,
+        cursor,
+        tv,
+    } = buf;
     let mut result = ActionResult {
         text_changed: false,
         horizontal_move: false,
@@ -754,21 +774,28 @@ fn add_cursor_below(sel: &mut SelectionState, cursor: &mut CursorState, tv: &mut
 
 /// Execute an editor action — unified entry point for all feature combinations.
 pub fn execute_action(
-    sel: &mut SelectionState,
-    hist: &mut EditHistoryState,
-    syntax: &mut SyntaxCacheState,
-    display: &mut EditorDisplayState,
-    cursor: &mut CursorState,
-    tv: &mut TextViewState,
+    buf: EditorBuf<'_>,
     action: EditorAction,
     indentation: &IndentationSettings,
-    #[cfg(feature = "lsp")] lsp: &LspSettings,
     goto_line_state: &mut GotoLineState,
     fold_state: &mut FoldState,
-    #[cfg(feature = "lsp")] lsp_client: &lsp::LspClient,
-    #[cfg(feature = "lsp")] completion_state: &mut lsp::CompletionState,
-    #[cfg(feature = "lsp")] lsp_sync: &mut lsp::LspSyncState,
+    #[cfg(feature = "lsp")] lsp_buf: LspBuf<'_>,
 ) {
+    let EditorBuf {
+        sel,
+        hist,
+        syntax,
+        display,
+        cursor,
+        tv,
+    } = buf;
+    #[cfg(feature = "lsp")]
+    let LspBuf {
+        settings: lsp,
+        client: lsp_client,
+        completion: completion_state,
+        sync: lsp_sync,
+    } = lsp_buf;
     if action == EditorAction::ClearSelection {
         if sel.has_multiple_cursors(cursor) {
             sel.clear_secondary_cursors(cursor, tv);
@@ -828,12 +855,14 @@ pub fn execute_action(
     }
 
     let result = execute_action_core(
-        sel,
-        hist,
-        syntax,
-        display,
-        cursor,
-        tv,
+        EditorBuf {
+            sel,
+            hist,
+            syntax,
+            display,
+            cursor,
+            tv,
+        },
         action,
         indentation,
         goto_line_state,

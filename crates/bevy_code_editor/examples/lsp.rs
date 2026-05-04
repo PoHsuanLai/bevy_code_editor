@@ -14,8 +14,6 @@ use bevy_tree_sitter::Language;
 use bevy_code_editor::lsp::LspClient;
 #[cfg(all(feature = "lsp", not(feature = "egui-overlays")))]
 use bevy_code_editor::plugin::LspUiPlugin;
-#[cfg(all(feature = "lsp", feature = "tree-sitter"))]
-use bevy_tree_sitter::TreeSitterConfig;
 #[cfg(feature = "egui-overlays")]
 use bevy_code_editor::plugin::lsp_egui_ui_plugin::LspEguiUiPlugin;
 use bevy_code_editor::types::editor::{
@@ -110,13 +108,11 @@ fn setup_editor(
     // `bevy_tree_sitter` and is purely structural — LSP wiring is the host's
     // responsibility (we call `lsp_client.start` further down).
     #[cfg(feature = "tree-sitter")]
-    let rust_lang = Language {
-        name: "rust".to_string(),
-        tree_sitter: Some(TreeSitterConfig {
-            grammar: tree_sitter_rust::LANGUAGE.into(),
-            highlights_query: tree_sitter_rust::HIGHLIGHTS_QUERY.to_string(),
-        }),
-    };
+    let rust_lang = Language::from_grammar(
+        "rust",
+        tree_sitter_rust::LANGUAGE.into(),
+        tree_sitter_rust::HIGHLIGHTS_QUERY,
+    );
 
     // Set up tree-sitter syntax highlighting
     #[cfg(feature = "tree-sitter")]

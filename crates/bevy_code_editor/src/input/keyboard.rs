@@ -448,12 +448,14 @@ pub fn handle_keyboard_input(
         }
 
         execute_action(
-            &mut sel,
-            &mut hist,
-            &mut syntax,
-            &mut display,
-            &mut cursor,
-            &mut tv,
+            EditorBuf {
+                sel: &mut sel,
+                hist: &mut hist,
+                syntax: &mut syntax,
+                display: &mut display,
+                cursor: &mut cursor,
+                tv: &mut tv,
+            },
             action,
             &indentation,
             #[cfg(feature = "lsp")]

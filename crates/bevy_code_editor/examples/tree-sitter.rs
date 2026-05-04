@@ -11,7 +11,7 @@ use bevy_code_editor::types::editor::{
 #[cfg(feature = "tree-sitter")]
 use bevy_code_editor::plugin::syntax_highlighting::SyntaxResource;
 #[cfg(feature = "tree-sitter")]
-use bevy_tree_sitter::{Language, TreeSitterConfig};
+use bevy_tree_sitter::Language;
 
 fn main() {
     App::new()
@@ -115,13 +115,11 @@ fn main() {
     hist.set_text(&mut sel, &mut syntax_cache, &mut cursor, &mut tv, rust_code);
 
     // Define Rust language configuration
-    let rust_lang = Language {
-        name: "rust".to_string(),
-        tree_sitter: Some(TreeSitterConfig {
-            grammar: tree_sitter_rust::LANGUAGE.into(),
-            highlights_query: tree_sitter_rust::HIGHLIGHTS_QUERY.to_string(),
-        }),
-    };
+    let rust_lang = Language::from_grammar(
+        "rust",
+        tree_sitter_rust::LANGUAGE.into(),
+        tree_sitter_rust::HIGHLIGHTS_QUERY,
+    );
 
     // Set up tree-sitter highlighting using the language configuration
     if let Some(provider) = rust_lang.create_tree_sitter_provider() {
