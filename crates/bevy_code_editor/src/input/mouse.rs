@@ -4,6 +4,7 @@ use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_text_engine::FontConfig;
+use bevy_text_interaction::ScrollConfig;
 use ropey::Rope;
 
 #[cfg(feature = "lsp")]

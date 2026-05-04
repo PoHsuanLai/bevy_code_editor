@@ -13,6 +13,9 @@ categories = ["game-development", "text-editors"]
 # Text rendering engine: GPU atlas, instanced rendering, DisplayLayout, overlays
 bevy_text_engine = { path = "../bevy_text_engine" }
 
+# TextView interaction: scroll, drag-select, copy systems + ScrollConfig
+bevy_text_interaction = { path = "../bevy_text_interaction" }
+
 # Bevy engine
 bevy = { version = "0.17", default-features = false, features = [
     "bevy_render",

@@ -74,8 +74,12 @@ pub mod prelude {
     };
     pub use crate::text_view::TextInteractionPlugin;
 
-    // Editor marker + per-entity scroll config + save/open events.
-    pub use crate::types::editor::{CodeEditor, OpenRequested, SaveRequested, ScrollConfig};
+    // Editor marker + save/open events.
+    pub use crate::types::editor::{CodeEditor, OpenRequested, SaveRequested};
+
+    // Per-entity scroll config (lives in `bevy_text_interaction` since
+    // Phase 6, re-exported here so prelude users keep getting it).
+    pub use bevy_text_interaction::ScrollConfig;
 
     // Cursor (the editor-side cursor data type) and the EditorAction enum.
     pub use crate::input::EditorAction;

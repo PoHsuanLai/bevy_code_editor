@@ -8,6 +8,7 @@ use crate::text_view::{
 use crate::types::*;
 use bevy::prelude::*;
 use bevy_text_engine::FontConfig;
+use bevy_text_interaction::ScrollConfig;
 
 /// Push selection rectangles into `TextViewOverlays` for all cursors.
 ///

@@ -1,7 +1,7 @@
 //! Shared text view interactions — scroll, selection, copy.
 //!
 //! These systems work on any entity with `TextView` + `TextViewState` + `TextViewViewport`.
-//! Used by both the code editor (via delegation) and standalone text views (chat, logs).
+//! Used by the code editor (via delegation) and standalone text views (chat, logs).
 
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
@@ -10,25 +10,7 @@ use ropey::Rope;
 
 use bevy_text_engine::{FontConfig, TextView, TextViewState, TextViewViewport};
 
-// =============================================================================
-// Components & Resources
-// =============================================================================
-
-/// Selection state for a text view. Tracks character indices into the rope.
-#[derive(Component, Default, Debug, Clone)]
-pub struct TextViewSelectionState {
-    pub selection_start: Option<usize>,
-    pub selection_end: Option<usize>,
-}
-
-/// Per-view mouse drag tracking for text selection.
-#[derive(Component, Default)]
-pub struct TextViewDragState {
-    pub is_dragging: bool,
-    pub drag_start_pos: Option<usize>,
-    pub drag_start_scroll_offset: f32,
-    pub last_screen_pos: Option<Vec2>,
-}
+use crate::components::{ScrollConfig, TextViewDragState, TextViewSelectionState};
 
 // =============================================================================
 // Utilities
@@ -101,7 +83,7 @@ pub fn handle_text_view_scroll(
             &mut TextViewState,
             &TextViewViewport,
             &FontConfig,
-            Option<&crate::types::ScrollConfig>,
+            Option<&ScrollConfig>,
         ),
         With<TextView>,
     >,
@@ -119,7 +101,7 @@ pub fn handle_text_view_scroll(
         return;
     }
 
-    let default_scroll = crate::types::ScrollConfig::default();
+    let default_scroll = ScrollConfig::default();
     for (mut tv, viewport, font, scroll_cfg) in views.iter_mut() {
         let scroll_cfg = scroll_cfg.unwrap_or(&default_scroll);
         // Hit-test: is the cursor within this viewport?

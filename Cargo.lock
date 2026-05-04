@@ -870,6 +870,7 @@ dependencies = [
  "bevy_camera",
  "bevy_egui",
  "bevy_text_engine",
+ "bevy_text_interaction",
  "bytemuck",
  "cosmic-text 0.12.1",
  "eframe",
@@ -1781,6 +1782,16 @@ dependencies = [
  "cosmic-text 0.12.1",
  "ropey",
  "swash 0.1.19",
+]
+
+[[package]]
+name = "bevy_text_interaction"
+version = "0.1.0"
+dependencies = [
+ "arboard",
+ "bevy",
+ "bevy_text_engine",
+ "ropey",
 ]
 
 [[package]]
