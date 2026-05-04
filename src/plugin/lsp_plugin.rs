@@ -59,7 +59,7 @@ impl Default for LspPlugin {
 impl LspPlugin {
     /// Create a new LSP plugin
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 }
 

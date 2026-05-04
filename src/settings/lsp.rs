@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// LSP settings
-#[derive(Clone, Debug, Resource, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Resource, Serialize, Deserialize)]
 pub struct LspSettings {
     /// Auto-completion settings
     pub completion: CompletionSettings,
@@ -70,15 +70,6 @@ pub struct HoverSettings {
 
     /// Hover border width (pixels)
     pub border_width: f32,
-}
-
-impl Default for LspSettings {
-    fn default() -> Self {
-        Self {
-            completion: CompletionSettings::default(),
-            hover: HoverSettings::default(),
-        }
-    }
 }
 
 impl Default for CompletionSettings {

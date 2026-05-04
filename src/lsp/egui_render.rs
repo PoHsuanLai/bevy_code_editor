@@ -155,9 +155,7 @@ pub fn render_completion_egui(
         })
         .max()
         .unwrap_or(20);
-    let popup_width = (max_label_width as f32 * font.char_width + 40.0)
-        .max(200.0)
-        .min(500.0);
+    let popup_width = (max_label_width as f32 * font.char_width + 40.0).clamp(200.0, 500.0);
 
     let pos = position_popup(
         cursor_x,
@@ -588,7 +586,7 @@ pub fn render_rename_egui(
         return;
     }
 
-    let range = match rename_state.range.clone() {
+    let range = match rename_state.range {
         Some(r) => r,
         None => return,
     };

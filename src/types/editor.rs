@@ -148,20 +148,14 @@ impl Default for CursorState {
 /// - `EditorDisplayState` — display_map, entity_pool, line_number_pool, invalidate_lines_from
 /// - `CursorState` — cursor_pos, cursors, etc.
 /// - `TextViewState` — rope, scroll, rendering state
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct CodeEditorState {
     /// Is editor focused
     pub is_focused: bool,
 }
 
-impl Default for CodeEditorState {
-    fn default() -> Self {
-        Self { is_focused: false }
-    }
-}
-
 /// Selection state component — tracks selection positions and the SelectionCollection.
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct SelectionState {
     /// Selection start (None = no selection) - primary cursor for backward compatibility
     pub selection_start: Option<usize>,
@@ -169,16 +163,6 @@ pub struct SelectionState {
     pub selection_end: Option<usize>,
     /// Selection collection for managing multiple selections with edit-awareness
     pub selections: SelectionCollection,
-}
-
-impl Default for SelectionState {
-    fn default() -> Self {
-        Self {
-            selection_start: None,
-            selection_end: None,
-            selections: SelectionCollection::new(),
-        }
-    }
 }
 
 /// Edit history and anchor state component.
@@ -235,7 +219,7 @@ impl Default for SyntaxCacheState {
 }
 
 /// Editor display state component — entity pools, display map, line invalidation.
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct EditorDisplayState {
     /// Display map for soft line wrapping
     pub display_map: DisplayMap,
@@ -246,17 +230,6 @@ pub struct EditorDisplayState {
     /// When line count changes, stores the line index from which all subsequent
     /// line entities should be invalidated.
     pub invalidate_lines_from: Option<usize>,
-}
-
-impl Default for EditorDisplayState {
-    fn default() -> Self {
-        Self {
-            display_map: DisplayMap::default(),
-            entity_pool: Vec::new(),
-            line_number_pool: Vec::new(),
-            invalidate_lines_from: None,
-        }
-    }
 }
 
 /// Component markers for editor entities

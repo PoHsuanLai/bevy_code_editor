@@ -27,7 +27,7 @@ fn main() {
             }),
             ..default()
         }))
-        .add_plugins(CodeEditorPlugin::default())
+        .add_plugins(CodeEditorPlugin)
         .add_plugins(EditorUiPlugin::default())
         .add_systems(PostStartup, setup_editor)
         .add_systems(Update, update_cursor_icon)

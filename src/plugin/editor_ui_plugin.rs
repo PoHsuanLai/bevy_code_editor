@@ -44,20 +44,12 @@ use super::update_fold_indicators;
 use super::scrollbar::update_editor_scrollbar;
 
 /// Resource to store render layer configuration for the editor
-#[derive(Resource, Clone)]
+#[derive(Resource, Clone, Default)]
 pub struct EditorRenderConfig {
     /// Optional render layer for editor entities.
     /// If Some(layer), all editor UI entities will only render to cameras on that layer.
     /// If None, entities render to all cameras (default behavior).
     pub render_layers: Option<RenderLayers>,
-}
-
-impl Default for EditorRenderConfig {
-    fn default() -> Self {
-        Self {
-            render_layers: None,
-        }
-    }
 }
 
 /// Editor UI plugin providing default rendering for editor visual elements
@@ -91,17 +83,10 @@ impl Default for EditorRenderConfig {
 /// # Custom UI
 /// If you want to implement your own UI, simply don't add this plugin
 /// and query CodeEditorState and other resources directly.
+#[derive(Default)]
 pub struct EditorUiPlugin {
     /// Optional render layer for editor entities
     pub render_layers: Option<RenderLayers>,
-}
-
-impl Default for EditorUiPlugin {
-    fn default() -> Self {
-        Self {
-            render_layers: None,
-        }
-    }
 }
 
 impl EditorUiPlugin {
@@ -270,7 +255,7 @@ fn update_camera_viewport(
     // viewport.width/height are the panel dimensions
     let window_width = window.width();
     let window_height = window.height();
-    let scale_factor = window.scale_factor() as f32;
+    let scale_factor = window.scale_factor();
 
     // Calculate top-left corner of panel in window coordinates
     // When offset is (0,0), panel is centered in window (auto-resize mode)

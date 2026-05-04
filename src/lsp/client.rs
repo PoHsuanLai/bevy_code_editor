@@ -210,10 +210,8 @@ impl LspClient {
     /// Stderr logger thread
     fn stderr_thread(stderr: std::process::ChildStderr) {
         let reader = BufReader::new(stderr);
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                warn!("[LSP stderr] {}", line);
-            }
+        for line in reader.lines().flatten() {
+            warn!("[LSP stderr] {}", line);
         }
     }
 

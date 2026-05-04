@@ -47,7 +47,7 @@ impl Default for LspUiPlugin {
 impl LspUiPlugin {
     /// Create a new LSP UI plugin
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 }
 

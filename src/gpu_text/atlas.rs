@@ -593,7 +593,6 @@ impl GlyphRasterizer {
 
 // ============================================================================
 // INSTANCED RENDERING EXTENSIONS
-// These types and methods are only available when instanced-rendering feature is enabled
 // ============================================================================
 
 pub use instanced_extensions::*;

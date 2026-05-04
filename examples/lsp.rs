@@ -39,14 +39,14 @@ fn run_with_lsp() {
         app.add_plugins(bevy_egui::EguiPlugin::default());
     }
 
-    app.add_plugins(CodeEditorPlugin::default())
+    app.add_plugins(CodeEditorPlugin)
         .add_plugins(EditorUiPlugin::default());
 
     // LspPlugin is already added by CodeEditorPlugin when the lsp feature is enabled.
     // Just add the UI layer.
     #[cfg(feature = "egui-overlays")]
     {
-        app.add_plugins(LspEguiUiPlugin::default());
+        app.add_plugins(LspEguiUiPlugin);
     }
     #[cfg(not(feature = "egui-overlays"))]
     {

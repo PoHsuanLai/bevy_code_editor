@@ -112,7 +112,7 @@ pub fn update_completion_ui(
         .unwrap_or(20);
 
     let calculated_width = (max_char_count as f32 * char_width) + 20.0;
-    let box_width = calculated_width.max(200.0).min(600.0);
+    let box_width = calculated_width.clamp(200.0, 600.0);
 
     let max_visible = lsp.completion.max_items;
     let total_items = filtered_items.len();
@@ -281,7 +281,7 @@ pub fn update_hover_ui(
     let hover_char_width = font.char_width * 0.9;
 
     let calculated_width = (max_line_chars as f32 * hover_char_width) + padding * 2.0;
-    let box_width = calculated_width.max(100.0).min(600.0);
+    let box_width = calculated_width.clamp(100.0, 600.0);
 
     let line_count = hover_state.content.lines().count().max(1);
     let box_height = (line_count as f32 * font_size * 1.2) + padding * 2.0;
@@ -388,9 +388,8 @@ pub fn update_signature_help_ui(
 
     // Build signature text with highlighted parameter
     let sig_label = &signature.label;
-    let box_width = (sig_label.chars().count() as f32 * char_width * 0.9 + padding * 2.0)
-        .max(100.0)
-        .min(600.0);
+    let box_width =
+        (sig_label.chars().count() as f32 * char_width * 0.9 + padding * 2.0).clamp(100.0, 600.0);
     let box_height = font_size * 1.4 + padding * 2.0;
 
     let pos = Vec3::new(
@@ -512,9 +511,7 @@ pub fn update_code_action_ui(
         .max()
         .unwrap_or(20);
 
-    let box_width = (max_label_len as f32 * char_width + 20.0)
-        .max(200.0)
-        .min(400.0);
+    let box_width = (max_label_len as f32 * char_width + 20.0).clamp(200.0, 400.0);
     let visible_count = action_state.actions.len().min(10);
     let box_height = (visible_count as f32 * line_height) + 10.0;
 
@@ -850,7 +847,7 @@ pub fn update_rename_ui(
     // Width based on text length, with minimum width
     let text_width =
         (display_text.chars().count().max(8) as f32 * char_width) + padding_x * 2.0 + 4.0;
-    let box_width = text_width.max(100.0).min(300.0);
+    let box_width = text_width.clamp(100.0, 300.0);
     let box_height = line_height + padding_y * 2.0;
 
     let pos = Vec3::new(

@@ -212,7 +212,7 @@ impl CompletionState {
             } else if let Some(start) = word_start {
                 let word = &chunk_text[start..i];
                 if word.len() >= 2
-                    && cursor_word.as_ref().map_or(true, |cw| cw != word)
+                    && cursor_word.as_ref().is_none_or(|cw| cw != word)
                     && !seen.contains(word)
                 {
                     seen.insert(word.to_string());
@@ -228,7 +228,7 @@ impl CompletionState {
         if let Some(start) = word_start {
             let word = &chunk_text[start..];
             if word.len() >= 2
-                && cursor_word.as_ref().map_or(true, |cw| cw != word)
+                && cursor_word.as_ref().is_none_or(|cw| cw != word)
                 && !seen.contains(word)
             {
                 words.push(WordCompletionItem {

@@ -46,6 +46,7 @@ use bevy::prelude::*;
 ///     .theme_dark()
 ///     .build();
 /// ```
+#[derive(Default)]
 pub struct EditorSettingsBuilder {
     font: FontSettings,
     theme: ThemeSettings,
@@ -65,31 +66,6 @@ pub struct EditorSettingsBuilder {
 
     #[cfg(feature = "lsp")]
     lsp: LspSettings,
-}
-
-impl Default for EditorSettingsBuilder {
-    fn default() -> Self {
-        Self {
-            font: FontSettings::default(),
-            theme: ThemeSettings::vscode_dark(),
-            ui: UiSettings::default(),
-            indentation: IndentationSettings::default(),
-            brackets: BracketSettings::default(),
-            cursor: CursorSettings::default(),
-            cursor_line: CursorLineSettings::default(),
-            scrolling: ScrollingSettings::default(),
-            search: SearchSettings::default(),
-            syntax: SyntaxSettings::default(),
-            performance: PerformanceSettings::default(),
-            wrapping: WrappingSettings::default(),
-
-            #[cfg(feature = "scrollbar")]
-            scrollbar: ScrollbarSettings::default(),
-
-            #[cfg(feature = "lsp")]
-            lsp: LspSettings::default(),
-        }
-    }
 }
 
 impl EditorSettingsBuilder {

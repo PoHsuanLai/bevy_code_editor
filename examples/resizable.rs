@@ -100,7 +100,7 @@ fn main() {
             ..default()
         }))
         .insert_resource(EditorPanel::default())
-        .add_plugins(CodeEditorPlugin::default())
+        .add_plugins(CodeEditorPlugin)
         .add_plugins(EditorUiPlugin::default())
         // Disable auto-resize so we can control viewport manually
         // IMPORTANT: Must be AFTER CodeEditorPlugin to override its default

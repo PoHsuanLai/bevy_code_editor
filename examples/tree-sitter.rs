@@ -16,7 +16,7 @@ fn main() {
             }),
             ..default()
         }))
-        .add_plugins(CodeEditorPlugin::default())
+        .add_plugins(CodeEditorPlugin)
         .add_plugins(EditorUiPlugin::default())
         .add_systems(PostStartup, setup_editor_with_treesitter)
         .run();
@@ -42,11 +42,6 @@ fn setup_editor_with_treesitter(
     else {
         return;
     };
-
-    #[cfg(feature = "instanced-rendering")]
-    info!("Instanced rendering enabled! using optimized single-draw-call rendering.");
-    #[cfg(not(feature = "instanced-rendering"))]
-    info!("Using default per-line mesh rendering. Enable 'instanced-rendering' feature for better performance.");
 
     // Sample Rust code to demonstrate syntax highlighting
     let rust_code = r#"// Rust syntax highlighting with tree-sitter

@@ -34,7 +34,7 @@ fn main() {
 }
 
 fn setup_camera(mut commands: Commands) {
-    commands.spawn(Camera2d::default());
+    commands.spawn(Camera2d);
 }
 
 fn setup_text_view(mut commands: Commands, windows: Query<&Window>) {

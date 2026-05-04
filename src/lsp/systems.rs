@@ -416,7 +416,7 @@ pub fn request_inlay_hints(
 
     lsp_client.send(LspMessage::InlayHint {
         uri: uri.clone(),
-        range: range.clone(),
+        range,
     });
 
     hint_state.cached_range = Some(range);

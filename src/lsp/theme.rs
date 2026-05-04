@@ -29,7 +29,7 @@ use bevy::prelude::*;
 ///     });
 /// }
 /// ```
-#[derive(Resource, Clone, Debug)]
+#[derive(Resource, Clone, Debug, Default)]
 pub struct LspUiTheme {
     /// Theme for completion popup
     pub completion: CompletionTheme,
@@ -47,21 +47,6 @@ pub struct LspUiTheme {
     pub rename: RenameTheme,
     /// Common styling
     pub common: CommonTheme,
-}
-
-impl Default for LspUiTheme {
-    fn default() -> Self {
-        Self {
-            completion: CompletionTheme::default(),
-            hover: HoverTheme::default(),
-            signature_help: SignatureHelpTheme::default(),
-            code_actions: CodeActionsTheme::default(),
-            inlay_hints: InlayHintsTheme::default(),
-            document_highlights: DocumentHighlightsTheme::default(),
-            rename: RenameTheme::default(),
-            common: CommonTheme::default(),
-        }
-    }
 }
 
 /// Theme for completion popup

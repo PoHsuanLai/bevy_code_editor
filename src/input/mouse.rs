@@ -133,7 +133,7 @@ pub fn handle_mouse_input(
                 &tv.rope,
                 tv.scroll_offset,
                 &font,
-                &viewport,
+                viewport,
                 #[cfg(feature = "folding")]
                 &fold_state,
                 None, // Use current scroll offset for initial position calculation
@@ -354,7 +354,7 @@ pub fn handle_mouse_input(
                     &tv.rope,
                     tv.scroll_offset,
                     &font,
-                    &viewport,
+                    viewport,
                     #[cfg(feature = "folding")]
                     &fold_state,
                     Some(drag_state.drag_start_scroll_offset),
