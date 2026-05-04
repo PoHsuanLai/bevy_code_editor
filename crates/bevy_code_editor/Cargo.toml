@@ -1,0 +1,98 @@
+[package]
+name = "bevy_code_editor"
+version = "0.1.0"
+edition = "2021"
+authors = ["PoHsuanLai"]
+license = "MIT OR Apache-2.0"
+description = "High-performance GPU-accelerated code editor plugin for Bevy"
+repository = "https://github.com/PoHsuanLai/bevy_code_editor"
+keywords = ["bevy", "editor", "code-editor", "syntax-highlighting"]
+categories = ["game-development", "text-editors"]
+
+[dependencies]
+# Bevy engine
+bevy = { version = "0.17", default-features = false, features = [
+    "bevy_render",
+    "bevy_core_pipeline",
+    "bevy_asset",
+    "bevy_text",
+    "default_font",        # Embedded default font for text rendering
+    "bevy_sprite",
+    "bevy_sprite_render",  # For Material2d and custom shaders
+    "bevy_color",
+    "bevy_mesh",           # For Mesh2d
+    "bevy_camera",         # For RenderLayers (render-to-texture support)
+] }
+
+# Bevy camera for RenderLayers
+bevy_camera = "0.17"
+
+# Text buffer with efficient rope data structure
+ropey = "1.6"
+
+# Serialization for settings
+serde = { version = "1.0", features = ["derive"] }
+
+# Input management (keyboard only - no gamepad/mouse/ui overhead)
+leafwing-input-manager = {version = "0.18", features = ["keyboard"] }
+
+# GPU text rendering - font rasterization (same as Zed uses)
+cosmic-text = "0.12"
+swash = "0.1"  # For accessing Content enum in glyph rasterization
+bytemuck = { version = "1.14", features = ["derive"] }
+
+# Syntax highlighting (optional)
+tree-sitter = { version = "0.24", optional = true }
+streaming-iterator = { version = "0.1", optional = true }
+futures-lite = "2.5"
+
+# Clipboard support (optional)
+arboard = { version = "3.4"}
+
+# egui overlay rendering for LSP popups (optional)
+bevy_egui = { version = "0.38", optional = true }
+armas = { path = "../../../armas/crates/armas", default-features = false, features = ["basic"], optional = true }
+
+# LSP support (optional)
+lsp-types = { version = "0.95", optional = true }
+tower-lsp = { version = "0.20", optional = true }
+tokio = { version = "1.0", features = ["sync", "rt"], optional = true }
+serde_json = { version = "1.0", optional = true }
+fuzzy-matcher = { version = "0.3", optional = true }
+
+[dev-dependencies]
+bevy = { version = "0.17", features = ["bevy_window", "bevy_winit"] }
+tree-sitter-rust = "0.23"
+tree-sitter-c = "0.23"
+
+# egui PoC dependencies
+eframe = { version = "0.30", features = ["wgpu"] }
+egui = "0.30"
+egui-wgpu = "0.30"
+parking_lot = "0.12"
+env_logger = "0.11"
+
+[features]
+default = ["tree-sitter", "scrollbar", "folding", "brackets"]
+
+# Syntax highlighting via tree-sitter
+tree-sitter = ["dep:tree-sitter", "streaming-iterator"]
+
+# LSP support (language server protocol)
+lsp = ["lsp-types", "tower-lsp", "tokio", "serde_json", "fuzzy-matcher"]
+
+# Built-in scrollbar UI (disable to use your own scrollbar implementation)
+scrollbar = []
+
+# Code folding support
+folding = []
+
+# Bracket matching and highlighting
+brackets = []
+
+# Dynamic linking for fast iteration (dev only, not for release builds)
+dynamic_linking = ["bevy/dynamic_linking"]
+
+# egui/armas overlay rendering for LSP popups (completion, hover, etc.)
+egui-overlays = ["bevy_egui", "armas", "lsp"]
+
