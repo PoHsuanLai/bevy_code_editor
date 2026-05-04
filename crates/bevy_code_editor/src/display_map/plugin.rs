@@ -57,7 +57,7 @@ impl Plugin for DisplayMapPlugin {
 pub(crate) fn update_display_map_snapshot(
     mut editor_query: Query<
         (
-            &TextViewState,
+            &mut TextViewState,
             &TextViewViewport,
             &mut DisplayLayout,
             &FoldState,
@@ -72,7 +72,7 @@ pub(crate) fn update_display_map_snapshot(
     mut atlas: ResMut<bevy_text_engine::GlyphAtlas>,
     mut last_fingerprint: Local<Option<LayoutFingerprint>>,
 ) {
-    for (tv_state, tv_viewport, mut layout, fold_state, font) in editor_query.iter_mut() {
+    for (mut tv_state, tv_viewport, mut layout, fold_state, font) in editor_query.iter_mut() {
         let fingerprint = LayoutFingerprint {
             content_version: tv_state.content_version,
             scroll_bits: tv_state.scroll_offset.to_bits(),
@@ -91,7 +91,7 @@ pub(crate) fn update_display_map_snapshot(
         }
 
         let new_layout = build_display_layout(
-            tv_state,
+            &mut *tv_state,
             tv_viewport,
             fold_state,
             font,

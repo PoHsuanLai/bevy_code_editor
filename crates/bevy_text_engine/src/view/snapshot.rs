@@ -32,7 +32,8 @@ pub struct LineShape {
     /// `LayoutLine.glyphs` they were derived from.
     pub glyphs: Vec<ShapedGlyph>,
     /// Total advance of the line in pixels — equals last glyph's pen-x + last advance.
-    /// Consumed by `LineWidthTracker` (W3) for horizontal scrollbar sizing.
+    /// Consumed by the display-map producer to drive `TextViewState.max_content_width`
+    /// (the horizontal scrollbar's content extent).
     pub width: f32,
     /// Font size at which shaping was performed. Renderer compares against its own
     /// font_size and falls back to the char_width path on mismatch.

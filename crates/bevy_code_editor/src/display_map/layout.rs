@@ -27,7 +27,7 @@ use crate::types::{FoldState, LineSegment};
 /// the rendering path; it'll be deleted in step 11.
 #[allow(clippy::too_many_arguments)]
 pub fn build_display_layout(
-    state: &TextViewState,
+    state: &mut TextViewState,
     viewport: &TextViewViewport,
     fold_state: &FoldState,
     font: &FontConfig,
@@ -147,6 +147,16 @@ pub fn build_display_layout(
             let shape_text = render_text.strip_suffix('\n').unwrap_or(&render_text);
             Arc::new(atlas.shape_line(shape_text, font.size))
         });
+
+        // Discover horizontal-scrollbar extent: track the widest shaped line
+        // we've seen so far. Producer-driven so the consumer (h-scroll thumb in
+        // `mouse.rs`/`ui_elements.rs`) reads real pixel widths.
+        if let Some(s) = shape.as_ref() {
+            if s.width > state.max_content_width {
+                state.max_content_width = s.width;
+                state.max_width_line = Some(buffer_line);
+            }
+        }
 
         shaped_lines.push(ShapedLine {
             display_row: current_display_row,

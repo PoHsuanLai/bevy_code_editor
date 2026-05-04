@@ -6,8 +6,6 @@
 use bevy::prelude::*;
 use ropey::Rope;
 
-use super::line_width::LineWidthTracker;
-
 /// Generic text view state — holds the rope buffer and scroll state for a
 /// scrollable text-rendering entity.
 ///
@@ -34,12 +32,12 @@ pub struct TextViewState {
     /// map's fingerprint to decide whether to rebuild the layout.
     pub content_version: u64,
 
-    /// Maximum content width (longest line in pixels)
+    /// Maximum content width seen so far (longest shaped line in pixels).
+    /// Updated by the display-map producer per visible line; consumed by the
+    /// horizontal scrollbar in `bevy_code_editor`.
     pub max_content_width: f32,
-    /// The line index that has the max width
+    /// The buffer line index that produced `max_content_width`.
     pub max_width_line: Option<usize>,
-    /// Line width tracker for O(log n) max line width queries
-    pub line_width_tracker: LineWidthTracker,
 }
 
 impl Default for TextViewState {
@@ -53,7 +51,6 @@ impl Default for TextViewState {
             content_version: 0,
             max_content_width: 0.0,
             max_width_line: None,
-            line_width_tracker: LineWidthTracker::new(),
         }
     }
 }
@@ -61,11 +58,8 @@ impl Default for TextViewState {
 impl TextViewState {
     /// Create a new text view with initial text content
     pub fn with_text(text: &str) -> Self {
-        let rope = Rope::from_str(text);
-        let line_width_tracker = LineWidthTracker::from_rope(&rope);
         Self {
-            rope,
-            line_width_tracker,
+            rope: Rope::from_str(text),
             content_version: 1,
             ..Default::default()
         }
@@ -85,7 +79,8 @@ impl TextViewState {
     pub fn set_text(&mut self, text: &str) {
         self.rope = Rope::from_str(text);
         self.content_version += 1;
-        self.line_width_tracker = LineWidthTracker::from_rope(&self.rope);
+        self.max_content_width = 0.0;
+        self.max_width_line = None;
     }
 
     /// Bump `content_version` to force a layout rebuild on the next frame.

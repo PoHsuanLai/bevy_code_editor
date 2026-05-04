@@ -353,7 +353,8 @@ impl EditHistoryState {
         tv.content_version += 1;
         self.anchors.clear();
         sel.selections = SelectionCollection::with_cursor(cursor.cursor_pos);
-        tv.line_width_tracker.rebuild(&tv.rope);
+        tv.max_content_width = 0.0;
+        tv.max_width_line = None;
 
         #[cfg(feature = "tree-sitter")]
         {

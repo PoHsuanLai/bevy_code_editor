@@ -13,10 +13,10 @@
 //! to resolve after the Phase 6 split.
 
 pub use bevy_text_engine::view::{
-    layout, line_width, overlay, render, snapshot, state, viewport, DisplayLayout,
-    GlyphBatchComponent, GlyphInstance, LineWidthTracker, RectOverlay, RowVertical, ShapedLine,
-    SimpleTheme, StyleRun, TextView, TextViewBatch, TextViewBatchEntity, TextViewOverlays,
-    TextViewRenderSet, TextViewState, TextViewViewport, ViewportOrigin,
+    layout, overlay, render, snapshot, state, viewport, DisplayLayout, GlyphBatchComponent,
+    GlyphInstance, RectOverlay, RowVertical, ShapedLine, SimpleTheme, StyleRun, TextView,
+    TextViewBatch, TextViewBatchEntity, TextViewOverlays, TextViewRenderSet, TextViewState,
+    TextViewViewport, ViewportOrigin,
 };
 
 pub use bevy_text_engine::view::snapshot::trivial_layout;
