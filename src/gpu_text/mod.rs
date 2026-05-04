@@ -11,7 +11,9 @@ mod instanced_render;
 
 use bevy::prelude::*;
 
-pub use atlas::{GlyphAtlas, GlyphInfo, GlyphKey, GlyphRasterizer, RasterizedGlyph, ATLAS_SIZE};
+pub use atlas::{
+    GlyphAtlas, GlyphInfo, GlyphKey, GlyphRasterizer, RasterizedGlyph, ATLAS_SIZE, DPI_SCALE,
+};
 
 pub use atlas::{PlacementInfo, PositionedGlyph};
 

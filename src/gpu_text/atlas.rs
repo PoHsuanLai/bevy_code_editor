@@ -12,7 +12,7 @@ pub const ATLAS_SIZE: u32 = 2048;
 const GLYPH_PADDING: u32 = 2;
 
 /// Rasterize at 2x for crisp text on HiDPI displays.
-const DPI_SCALE: f32 = 2.0;
+pub const DPI_SCALE: f32 = 2.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct GlyphKey {
@@ -233,7 +233,10 @@ impl GlyphAtlas {
         let (x, y) = match self.allocate(glyph.width, glyph.height) {
             Some(pos) => pos,
             None => {
-                warn!("Glyph atlas full, clearing and retrying (generation {})", self.generation);
+                warn!(
+                    "Glyph atlas full, clearing and retrying (generation {})",
+                    self.generation
+                );
                 self.clear();
                 self.allocate(glyph.width, glyph.height)?
             }
@@ -457,8 +460,7 @@ impl GlyphAtlas {
                 let end_byte = max_y as usize * row_bytes;
 
                 if end_byte <= data.len() && end_byte <= self.pixels.len() {
-                    data[start_byte..end_byte]
-                        .copy_from_slice(&self.pixels[start_byte..end_byte]);
+                    data[start_byte..end_byte].copy_from_slice(&self.pixels[start_byte..end_byte]);
                 } else {
                     // Fallback: full copy
                     data.copy_from_slice(&self.pixels);
@@ -624,7 +626,14 @@ mod instanced_extensions {
         }
 
         /// Write glyph data to the atlas
-        pub(crate) fn write_glyph_data(&mut self, x: u32, y: u32, width: u32, height: u32, data: &[u8]) {
+        pub(crate) fn write_glyph_data(
+            &mut self,
+            x: u32,
+            y: u32,
+            width: u32,
+            height: u32,
+            data: &[u8],
+        ) {
             if width == 0 || height == 0 {
                 return;
             }
@@ -637,7 +646,7 @@ mod instanced_extensions {
                     let dst_idx = ((dst_y * ATLAS_SIZE + dst_x) * 4) as usize;
 
                     if dst_idx + 3 < self.pixels.len() && src_idx + 3 < data.len() {
-                        self.pixels[dst_idx] = data[src_idx];         // R
+                        self.pixels[dst_idx] = data[src_idx]; // R
                         self.pixels[dst_idx + 1] = data[src_idx + 1]; // G
                         self.pixels[dst_idx + 2] = data[src_idx + 2]; // B
                         self.pixels[dst_idx + 3] = data[src_idx + 3]; // A
@@ -714,7 +723,7 @@ mod instanced_extensions {
                 // GlyphInfo.offset = Vec2(left / scale, top / scale)
                 // PlacementInfo.left = left / scale, PlacementInfo.top = top / scale
                 // So we can reconstruct PlacementInfo from GlyphInfo.offset!
-                
+
                 let placement = PlacementInfo {
                     left: info.offset.x,
                     top: info.offset.y,
@@ -722,7 +731,10 @@ mod instanced_extensions {
                 return Some((*info, placement));
             }
 
-            let image = self.swash_cache.get_image(&mut self.font_system, cache_key).clone()?;
+            let image = self
+                .swash_cache
+                .get_image(&mut self.font_system, cache_key)
+                .clone()?;
 
             if image.placement.width == 0 || image.placement.height == 0 {
                 return None;
@@ -746,7 +758,10 @@ mod instanced_extensions {
 
             // Pack into atlas, with generation-based recovery on full
             let pack_result = self.pack(width as u32, height as u32).or_else(|| {
-                warn!("Glyph atlas full in get_or_rasterize_glyph, clearing (generation {})", self.generation);
+                warn!(
+                    "Glyph atlas full in get_or_rasterize_glyph, clearing (generation {})",
+                    self.generation
+                );
                 self.clear();
                 self.pack(width as u32, height as u32)
             });
@@ -754,10 +769,7 @@ mod instanced_extensions {
                 self.write_glyph_data(x, y, width as u32, height as u32, &rgba_data);
 
                 let glyph_info = GlyphInfo {
-                    uv_min: Vec2::new(
-                        x as f32 / ATLAS_SIZE as f32,
-                        y as f32 / ATLAS_SIZE as f32,
-                    ),
+                    uv_min: Vec2::new(x as f32 / ATLAS_SIZE as f32, y as f32 / ATLAS_SIZE as f32),
                     uv_max: Vec2::new(
                         (x + width as u32) as f32 / ATLAS_SIZE as f32,
                         (y + height as u32) as f32 / ATLAS_SIZE as f32,
