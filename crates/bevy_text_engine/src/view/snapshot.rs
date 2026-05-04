@@ -152,7 +152,7 @@ pub struct ShapedLine {
     /// `display_row * line_height` — important when `line_height` overrides
     /// produce non-uniform row heights (markdown headings, code blocks).
     pub y_top: f32,
-    /// Per-line X offset (right-align, indent-of-wrap, etc.).
+    /// Per-line X offset (indent, right-align, soft-wrap continuation).
     pub x_offset: f32,
     /// The text to render for this row, post-fold/wrap/tab expansion.
     pub text: String,
@@ -269,6 +269,7 @@ pub struct TrivialBlock {
     pub line_height: Option<f32>,
     pub padding_top: f32,
     pub padding_bottom: f32,
+    pub indent: f32,
     pub line_bg: Option<Color>,
 }
 
@@ -293,6 +294,11 @@ impl TrivialBlock {
     pub fn with_padding(mut self, top: f32, bottom: f32) -> Self {
         self.padding_top = top;
         self.padding_bottom = bottom;
+        self
+    }
+
+    pub fn with_indent(mut self, indent: f32) -> Self {
+        self.indent = indent;
         self
     }
 
@@ -328,7 +334,7 @@ pub fn trivial_layout_blocks(
             buffer_byte_offset: 0,
             is_wrap_continuation: false,
             y_top: y,
-            x_offset: 0.0,
+            x_offset: b.indent,
             text: b.text.clone(),
             runs: b.runs.clone(),
             line_bg: b.line_bg,
@@ -389,6 +395,22 @@ mod tests {
         assert_eq!(lines[2].y_top, 52.0);
         // Row 3: y = 52 + 16 + 0 + 6 = 74
         assert_eq!(lines[3].y_top, 74.0);
+    }
+
+    #[test]
+    fn trivial_layout_blocks_indent_propagates_to_x_offset() {
+        let blocks = vec![
+            TrivialBlock::new("body"),
+            TrivialBlock::new("- list").with_indent(20.0),
+            TrivialBlock::new("  - nested").with_indent(40.0),
+            TrivialBlock::new("> quote").with_indent(16.0),
+        ];
+        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE);
+        let lines = &*layout.lines;
+        assert_eq!(lines[0].x_offset, 0.0);
+        assert_eq!(lines[1].x_offset, 20.0);
+        assert_eq!(lines[2].x_offset, 40.0);
+        assert_eq!(lines[3].x_offset, 16.0);
     }
 
     #[test]
