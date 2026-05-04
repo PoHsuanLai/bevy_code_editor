@@ -2,10 +2,12 @@
 //!
 //! The transport layer (JSON-RPC client, request/response routing, server
 //! capability cache, document-sync state) lives in the peer crate
-//! [`bevy_lsp`]. This module is the editor-coupled adapter: popup rendering
-//! (Sprite or egui), theme, marker components, and the event-listener bridges
+//! [`bevy_lsp`]. This module is the editor-coupled adapter: Sprite-based
+//! popup rendering, theme, marker components, and the event-listener bridges
 //! that translate editor `TextEditEvent`s, cursor moves, and key presses into
-//! `LspMessage` sends.
+//! `LspMessage` sends. Hosts that prefer to drive popup rendering through
+//! their own UI stack (e.g. egui+armas) can skip `LspUiPlugin` and read the
+//! marker components in [`components`] directly — see `examples/lsp.rs`.
 //!
 //! Hosts that want completion / hover / etc. UI must add **both**:
 //! - `bevy_lsp::LspPlugin` — the transport.
@@ -40,8 +42,6 @@
 use bevy::prelude::*;
 
 pub mod components;
-#[cfg(feature = "egui-overlays")]
-pub mod egui_render;
 pub mod event_listeners;
 pub mod render;
 pub mod sync;
@@ -104,9 +104,6 @@ pub mod prelude {
         SignatureHelpUI,
     };
     pub use super::{LspUiRenderSet, LspUiSyncSet};
-
-    #[cfg(feature = "egui-overlays")]
-    pub use super::egui_render::LspEguiViewportOffset;
 }
 
 // Re-export commonly used types at module level for backward compatibility.

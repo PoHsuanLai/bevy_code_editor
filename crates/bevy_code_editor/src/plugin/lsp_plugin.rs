@@ -19,7 +19,7 @@
 //!   viewport-driven request fanout).
 //! - Drive `tick_lsp_debounce_timers` (Zed-style tiered request debouncing).
 //! - Drive sync systems that materialize state into marker components for the
-//!   render systems (`LspUiPlugin` / `LspEguiUiPlugin`) to query.
+//!   render systems (`LspUiPlugin`, or a host-supplied alternative) to query.
 //! - Drive event-listener systems that translate editor events into
 //!   `LspMessage::DidChange` / `LspMessage::Completion` / etc.
 
@@ -46,9 +46,10 @@ use crate::lsp_ui::{LspUiRenderSet, LspUiSyncSet};
 ///
 /// Must be added **after** `CodeEditorPlugin` and alongside `bevy_lsp::LspPlugin`.
 ///
-/// For UI rendering, add `LspUiPlugin` after this plugin (sprite-based) or
-/// `LspEguiUiPlugin` (egui-based). For fully custom UI, query the marker
-/// components materialized by this plugin's sync systems.
+/// For UI rendering, add `LspUiPlugin` after this plugin (sprite-based). For
+/// fully custom UI (e.g. an egui+armas overlay; see `examples/lsp.rs`), skip
+/// `LspUiPlugin` and query the marker components materialized by this
+/// plugin's sync systems instead.
 ///
 /// # Example
 /// ```no_run

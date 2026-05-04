@@ -8,8 +8,6 @@ pub mod cursor;
 pub mod editor_ui_plugin;
 pub mod folding;
 pub mod gpu_line_numbers;
-#[cfg(feature = "egui-overlays")]
-pub mod lsp_egui_ui_plugin;
 #[cfg(feature = "lsp")]
 pub mod lsp_plugin;
 #[cfg(feature = "lsp")]

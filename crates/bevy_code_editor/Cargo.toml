@@ -65,10 +65,6 @@ bytemuck = { version = "1.14", features = ["derive"] }
 # Clipboard support (optional)
 arboard = { version = "3.4"}
 
-# egui overlay rendering for LSP popups (optional)
-bevy_egui = { version = "0.38", optional = true }
-armas = { path = "../../../../../../armas/crates/armas", default-features = false, features = ["basic"], optional = true }
-
 # LSP-types is needed at the editor layer for the `lsp_ui` adapter (popup
 # rendering reads `lsp_types::CompletionItem`, hover reads `lsp_types::Range`,
 # etc.). Pulled in as a regular dep gated on the `lsp` feature, since the
@@ -83,12 +79,10 @@ bevy = { version = "0.17", features = ["bevy_window", "bevy_winit"] }
 tree-sitter-rust = "0.23"
 tree-sitter-c = "0.23"
 
-# egui PoC dependencies
-eframe = { version = "0.30", features = ["wgpu"] }
-egui = "0.30"
-egui-wgpu = "0.30"
-parking_lot = "0.12"
-env_logger = "0.11"
+# egui+armas dev-deps used by `examples/lsp.rs`. The library proper does not
+# depend on these — the LSP egui renderer lives entirely inside the example.
+bevy_egui = "0.38"
+armas = { path = "../../../../../../armas/crates/armas", default-features = false, features = ["basic"] }
 
 [features]
 default = ["tree-sitter"]
@@ -104,6 +98,7 @@ lsp = ["dep:bevy_lsp", "lsp-types", "serde_json"]
 # Dynamic linking for fast iteration (dev only, not for release builds)
 dynamic_linking = ["bevy/dynamic_linking"]
 
-# egui/armas overlay rendering for LSP popups (completion, hover, etc.)
-egui-overlays = ["bevy_egui", "armas", "lsp"]
+[[example]]
+name = "lsp"
+required-features = ["lsp"]
 
