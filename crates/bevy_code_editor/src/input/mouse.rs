@@ -12,9 +12,13 @@ use crate::lsp_ui::reset_hover_state;
 #[cfg(feature = "lsp")]
 use bevy_lsp::LspMessage;
 
-/// Mouse drag state for selection
-#[derive(Resource, Default, Reflect)]
-#[reflect(Resource, Default)]
+/// Per-editor mouse drag state for selection.
+///
+/// Cascaded onto every `CodeEditor` entity via `#[require]` so each editor
+/// owns its own drag — clicking in editor A while dragging in editor B
+/// no longer corrupts a single global drag (the previous Resource shape).
+#[derive(Component, Default, Reflect)]
+#[reflect(Component, Default)]
 pub struct MouseDragState {
     /// Whether we're currently dragging
     pub is_dragging: bool,
@@ -110,6 +114,7 @@ pub fn handle_mouse_input(
             &mut FoldState,
             &FontConfig,
             Option<&DisplayLayout>,
+            &mut MouseDragState,
         ),
         With<CodeEditor>,
     >,
@@ -123,7 +128,6 @@ pub fn handle_mouse_input(
         With<CodeEditor>,
     >,
     mut input_focus: ResMut<bevy::input_focus::InputFocus>,
-    mut drag_state: ResMut<MouseDragState>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
@@ -136,8 +140,17 @@ pub fn handle_mouse_input(
         .next()
         .and_then(|window| window.cursor_position());
 
-    for (editor_entity, mut sel, mut cursor, mut tv, viewport, mut fold_state, font, layout) in
-        editor_query.iter_mut()
+    for (
+        editor_entity,
+        mut sel,
+        mut cursor,
+        mut tv,
+        viewport,
+        mut fold_state,
+        font,
+        layout,
+        mut drag_state,
+    ) in editor_query.iter_mut()
     {
         // LSP-side state for this editor (separate query because the main
         // editor_query already exceeds Bevy's filter tuple size with the

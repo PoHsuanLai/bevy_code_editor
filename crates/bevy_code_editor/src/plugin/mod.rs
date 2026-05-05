@@ -41,8 +41,14 @@ pub(crate) use self::folding::update_fold_indicators;
 pub(crate) use self::gpu_line_numbers::update_gpu_line_numbers;
 pub(crate) use self::ui_elements::{update_indent_guides, update_selection_highlight};
 
-/// Marker component for the entity that handles editor input (InputManager)
+/// Marker component for the entity that handles editor input (InputManager).
+///
+/// The `#[require]` cascade attaches `KeyRepeatState` so the dispatcher
+/// can track held actions per input source — multiple input managers
+/// (different keymap presets, replay, scripted input) get independent
+/// repeat state without a global Resource.
 #[derive(Component)]
+#[require(KeyRepeatState)]
 pub struct EditorInputManager;
 
 // Helper to convert dynamic coordinate based on scroll alignment
@@ -169,11 +175,10 @@ impl Plugin for CodeEditorPlugin {
         // Initialize core resources
         app.init_resource::<ViewportConfig>();
         app.init_resource::<ViewportDimensions>();
-        app.insert_resource(crate::input::MouseDragState::default());
-        app.insert_resource(KeyRepeatState::default());
 
-        // BracketMatchState, GotoLineState, and FoldState are now per-editor
-        // components (cascaded via #[require] on CodeEditor); no global resource init.
+        // BracketMatchState, GotoLineState, FoldState, KeyRepeatState, and
+        // MouseDragState are per-editor / per-input-manager components
+        // (cascaded via #[require]); no global resource init.
 
         // Configure system set ordering
         app.configure_sets(

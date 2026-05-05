@@ -343,9 +343,11 @@ fn is_horizontal_move(action: EditorAction) -> bool {
 #[allow(clippy::too_many_arguments)]
 pub fn dispatch_action_events(
     input_focus: Res<InputFocus>,
-    action_query: Query<&ActionState<EditorAction>, With<EditorInputManager>>,
+    mut action_query: Query<
+        (&ActionState<EditorAction>, &mut KeyRepeatState),
+        With<EditorInputManager>,
+    >,
     cursor_settings: Res<CursorSettings>,
-    mut key_repeat_state: ResMut<KeyRepeatState>,
     #[cfg(feature = "lsp")] mut pending: ResMut<PendingActionFollowup>,
     editor_q: Query<(&CursorState, &crate::text_view::TextViewState), With<CodeEditor>>,
     #[cfg(feature = "lsp")] mut lsp_q: Query<
@@ -361,7 +363,7 @@ pub fn dispatch_action_events(
     let Some(focused) = input_focus.get() else {
         return;
     };
-    let Ok(action_state) = action_query.single() else {
+    let Ok((action_state, mut key_repeat_state)) = action_query.single_mut() else {
         warn!("No EditorInputManager entity found with ActionState");
         return;
     };

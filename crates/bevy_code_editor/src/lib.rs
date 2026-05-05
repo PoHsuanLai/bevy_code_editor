@@ -48,14 +48,6 @@ pub mod types;
 #[cfg(feature = "lsp")]
 pub mod lsp_ui;
 
-/// Backwards-compat alias: pre-Phase-6, the editor-coupled LSP UI module
-/// was named `lsp`. The transport layer now lives in the peer `bevy_lsp`
-/// crate; what's left here is the editor-coupled UI adapter, renamed
-/// [`lsp_ui`]. This alias keeps `bevy_code_editor::lsp::*` import paths
-/// working for existing consumers; new code should use [`lsp_ui`] directly.
-#[cfg(feature = "lsp")]
-pub use lsp_ui as lsp;
-
 pub mod prelude {
     //! Convenient re-exports for common editor usage.
     //!

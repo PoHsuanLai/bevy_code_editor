@@ -427,25 +427,24 @@ pub(crate) fn animate_smooth_scroll(
     }
 }
 
-/// Run condition: only run auto_scroll_to_cursor when cursor has moved and not dragging scrollbar
+/// Run condition: auto-scroll only fires for editors that have moved their
+/// cursor and aren't currently being mouse-dragged or scrollbar-dragged.
+///
+/// Drag suppression is per-entity (Component) — dragging in editor A no
+/// longer blocks auto-scroll in editor B (the previous global Resource shape).
 pub(crate) fn should_auto_scroll(
     editor_query: Query<
         (
             &TextViewState,
             &CursorState,
             &super::scrollbar::ScrollbarDragState,
+            &crate::input::MouseDragState,
         ),
         With<CodeEditor>,
     >,
-    mouse_drag: Res<crate::input::MouseDragState>,
 ) -> bool {
-    // Don't run when mouse dragging (causes selection issues due to scroll animation)
-    if mouse_drag.is_dragging {
-        return false;
-    }
-
-    for (tv, cursor, scrollbar_drag) in editor_query.iter() {
-        if scrollbar_drag.is_dragging {
+    for (tv, cursor, scrollbar_drag, mouse_drag) in editor_query.iter() {
+        if scrollbar_drag.is_dragging || mouse_drag.is_dragging {
             continue;
         }
         let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());

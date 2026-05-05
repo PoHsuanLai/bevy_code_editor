@@ -6,8 +6,8 @@
 //! This module's [`DisplayMapPlugin`] inserts the editor's
 //! [`bevy_text_engine::LineFilter`] / [`bevy_text_engine::LineStyleSource`]
 //! / [`bevy_text_engine::LayoutWrap`] Components on each `CodeEditor`
-//! entity and refreshes their interior state from `FoldState`,
-//! `SyntaxResource`, `WrappingSettings`, etc. The engine's system then
+//! entity and refreshes their interior state from `FoldState`, the per-entity
+//! `EditorSyntaxState`, `WrappingSettings`, etc. The engine's system then
 //! reads those Components on each layout pass.
 //!
 //! Cursor/selection systems map buffer positions to display rows via

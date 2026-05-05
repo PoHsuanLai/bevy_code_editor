@@ -37,11 +37,12 @@ pub struct GenericScrollbarPlugin;
 
 impl Plugin for GenericScrollbarPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(GenericScrollbarDragState::default())
-            .add_systems(
-                Update,
-                (handle_generic_scrollbar_input, update_generic_scrollbars).chain(),
-            );
+        // Drag state is per-scrollbar (cascaded via #[require] on
+        // GenericScrollbar); no global resource init.
+        app.add_systems(
+            Update,
+            (handle_generic_scrollbar_input, update_generic_scrollbars).chain(),
+        );
     }
 }
 
@@ -116,6 +117,7 @@ impl ScrollState {
 /// Generic scrollbar component
 /// Attach this to an entity to create a scrollbar
 #[derive(Component, Clone, Debug)]
+#[require(GenericScrollbarDragState)]
 pub struct GenericScrollbar {
     /// Orientation (vertical or horizontal)
     pub orientation: ScrollbarOrientation,
@@ -182,25 +184,30 @@ pub struct GenericScrollbarThumb {
     pub parent: Entity,
 }
 
-/// Resource to track scrollbar drag state
-#[derive(Resource, Default)]
+/// Per-scrollbar drag state. Cascaded onto every `GenericScrollbar` entity
+/// via `#[require]` — each scrollbar owns its own drag rather than sharing
+/// a global Resource. Multiple scrollbars (vertical + horizontal on the
+/// same view, or separate viewports) drag independently without aliasing.
+#[derive(Component, Default)]
 pub struct GenericScrollbarDragState {
-    /// Whether we're currently dragging a scrollbar
+    /// Whether we're currently dragging this scrollbar
     pub is_dragging: bool,
-    /// The entity of the scrollbar being dragged
-    pub dragging_entity: Option<Entity>,
     /// Initial mouse position when drag started
     pub drag_start_pos: f32,
     /// Initial scroll offset when drag started
     pub drag_start_scroll: f32,
 }
 
-/// Handle mouse input for scrollbar interaction
+/// Handle mouse input for scrollbar interaction.
 fn handle_generic_scrollbar_input(
     windows: Query<&Window>,
     mouse_button: Res<ButtonInput<MouseButton>>,
-    mut drag_state: ResMut<GenericScrollbarDragState>,
-    mut scrollbar_query: Query<(Entity, &GenericScrollbar, &mut ScrollState)>,
+    mut scrollbar_query: Query<(
+        Entity,
+        &GenericScrollbar,
+        &mut ScrollState,
+        &mut GenericScrollbarDragState,
+    )>,
     thumb_query: Query<(&GenericScrollbarThumb, &Transform, &Sprite)>,
 ) {
     let Ok(window) = windows.single() else {
@@ -208,8 +215,9 @@ fn handle_generic_scrollbar_input(
     };
     let Some(cursor_pos_window) = window.cursor_position() else {
         if mouse_button.just_released(MouseButton::Left) {
-            drag_state.is_dragging = false;
-            drag_state.dragging_entity = None;
+            for (_, _, _, mut drag) in scrollbar_query.iter_mut() {
+                drag.is_dragging = false;
+            }
         }
         return;
     };
@@ -218,7 +226,8 @@ fn handle_generic_scrollbar_input(
     let cursor_x = cursor_pos_window.x - window.width() / 2.0;
     let cursor_y = cursor_pos_window.y - window.height() / 2.0;
 
-    // Handle mouse button just pressed
+    // Handle mouse button just pressed: find the scrollbar whose thumb the
+    // cursor is over and arm its per-entity drag state.
     if mouse_button.just_pressed(MouseButton::Left) {
         for (thumb, transform, sprite) in thumb_query.iter() {
             let Some(size) = sprite.custom_size else {
@@ -234,53 +243,56 @@ fn handle_generic_scrollbar_input(
                 && cursor_y >= thumb_y - thumb_half_height
                 && cursor_y <= thumb_y + thumb_half_height
             {
-                if let Ok((entity, scrollbar, scroll_state)) = scrollbar_query.get(thumb.parent) {
-                    drag_state.is_dragging = true;
-                    drag_state.dragging_entity = Some(entity);
-                    drag_state.drag_start_pos = match scrollbar.orientation {
+                if let Ok((_, scrollbar, scroll_state, mut drag)) =
+                    scrollbar_query.get_mut(thumb.parent)
+                {
+                    drag.is_dragging = true;
+                    drag.drag_start_pos = match scrollbar.orientation {
                         ScrollbarOrientation::Vertical => cursor_y,
                         ScrollbarOrientation::Horizontal => cursor_x,
                     };
-                    drag_state.drag_start_scroll = scroll_state.scroll_offset;
+                    drag.drag_start_scroll = scroll_state.scroll_offset;
                     break;
                 }
             }
         }
     }
 
-    // Handle dragging
-    if drag_state.is_dragging && mouse_button.pressed(MouseButton::Left) {
-        if let Some(entity) = drag_state.dragging_entity {
-            if let Ok((_, scrollbar, mut scroll_state)) = scrollbar_query.get_mut(entity) {
-                let current_pos = match scrollbar.orientation {
-                    ScrollbarOrientation::Vertical => cursor_y,
-                    ScrollbarOrientation::Horizontal => cursor_x,
-                };
-                let delta = current_pos - drag_state.drag_start_pos;
+    // Handle dragging — at most one scrollbar should be `is_dragging`, but
+    // looping is the natural Component-side shape and costs nothing extra.
+    if mouse_button.pressed(MouseButton::Left) {
+        for (_, scrollbar, mut scroll_state, drag) in scrollbar_query.iter_mut() {
+            if !drag.is_dragging {
+                continue;
+            }
+            let current_pos = match scrollbar.orientation {
+                ScrollbarOrientation::Vertical => cursor_y,
+                ScrollbarOrientation::Horizontal => cursor_x,
+            };
+            let delta = current_pos - drag.drag_start_pos;
 
-                // Calculate thumb size
-                let visible_fraction =
-                    (scroll_state.viewport_size / scroll_state.content_size).min(1.0);
-                let thumb_size =
-                    (visible_fraction * scrollbar.track_length).max(scrollbar.min_thumb_size);
-                let scrollable_range = scrollbar.track_length - thumb_size;
+            let visible_fraction =
+                (scroll_state.viewport_size / scroll_state.content_size).min(1.0);
+            let thumb_size =
+                (visible_fraction * scrollbar.track_length).max(scrollbar.min_thumb_size);
+            let scrollable_range = scrollbar.track_length - thumb_size;
 
-                if scrollable_range > 0.0 {
-                    let max_scroll = scroll_state.max_scroll();
-                    let scroll_delta = (delta / scrollable_range) * max_scroll;
-                    let new_scroll =
-                        (drag_state.drag_start_scroll + scroll_delta).clamp(max_scroll, 0.0);
-                    scroll_state.scroll_offset = new_scroll;
-                    scroll_state.target_scroll_offset = new_scroll;
-                }
+            if scrollable_range > 0.0 {
+                let max_scroll = scroll_state.max_scroll();
+                let scroll_delta = (delta / scrollable_range) * max_scroll;
+                let new_scroll =
+                    (drag.drag_start_scroll + scroll_delta).clamp(max_scroll, 0.0);
+                scroll_state.scroll_offset = new_scroll;
+                scroll_state.target_scroll_offset = new_scroll;
             }
         }
     }
 
-    // Handle mouse release
+    // Handle mouse release — clear all drags.
     if mouse_button.just_released(MouseButton::Left) {
-        drag_state.is_dragging = false;
-        drag_state.dragging_entity = None;
+        for (_, _, _, mut drag) in scrollbar_query.iter_mut() {
+            drag.is_dragging = false;
+        }
     }
 }
 

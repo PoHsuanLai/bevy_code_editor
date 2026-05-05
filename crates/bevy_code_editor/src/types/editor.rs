@@ -128,6 +128,7 @@ impl Default for ViewportDimensions {
         crate::plugin::scrollbar::ScrollbarDragState,
         bevy_text_interaction::TextViewDragState,
         bevy_text_interaction::TextViewSelectionState,
+        crate::input::MouseDragState,
     )
 )]
 #[cfg_attr(
@@ -146,6 +147,7 @@ impl Default for ViewportDimensions {
         crate::plugin::scrollbar::ScrollbarDragState,
         bevy_text_interaction::TextViewDragState,
         bevy_text_interaction::TextViewSelectionState,
+        crate::input::MouseDragState,
         // LSP-side state. `LspDocument` is NOT in this cascade because it
         // requires a URI which the host must supply.
         bevy_lsp::LspClient,
@@ -370,90 +372,12 @@ pub struct IndentGuide {
     pub line_index: usize,
 }
 
-/// Component marker for the minimap background
+/// Per-input-manager key-repeat state.
+///
+/// Attached to the same entity as `EditorInputManager`. `Instant` isn't
+/// `Reflect`; only the action enum is observable through reflection.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
-pub struct MinimapBackground;
-
-/// Component marker for the minimap viewport slider (appears on hover)
-#[derive(Component, Default, Reflect)]
-#[reflect(Component, Default)]
-pub struct MinimapSlider;
-
-/// Component marker for the minimap viewport highlight (subtle, always visible)
-#[derive(Component, Default, Reflect)]
-#[reflect(Component, Default)]
-pub struct MinimapViewportHighlight;
-
-/// Component marker for the minimap scrollbar
-#[derive(Component, Default, Reflect)]
-#[reflect(Component, Default)]
-pub struct MinimapScrollbar;
-
-/// Component marker for minimap line entities
-#[derive(Component, Reflect)]
-#[reflect(Component)]
-pub struct MinimapLine {
-    /// The line index this represents
-    pub line_index: usize,
-}
-
-/// Component marker for minimap search match highlights
-#[derive(Component, Reflect)]
-#[reflect(Component)]
-pub struct MinimapFindHighlight {
-    /// The line index this highlight represents
-    pub line_index: usize,
-}
-
-/// Component marker for GPU minimap mesh entity
-#[derive(Component, Reflect)]
-#[reflect(Component)]
-pub struct GpuMinimapMesh {
-    /// The content version when this mesh was built
-    pub built_at_version: u64,
-    /// The scroll offset when this mesh was built
-    pub built_at_scroll: f32,
-    /// The viewport width when this mesh was built
-    pub built_at_width: u32,
-    /// The viewport height when this mesh was built
-    pub built_at_height: u32,
-    /// The viewport offset_x when this mesh was built
-    pub built_at_offset_x: f32,
-}
-
-/// Component marker for the minimap camera
-#[derive(Component, Default, Reflect)]
-#[reflect(Component, Default)]
-pub struct MinimapCamera;
-
-/// Resource to track minimap hover state
-#[derive(Resource, Default, Reflect)]
-#[reflect(Resource, Default)]
-pub struct MinimapHoverState {
-    /// Whether the mouse is currently hovering over the minimap
-    pub is_hovered: bool,
-}
-
-/// Resource to track minimap drag state for click-to-scroll and drag-to-scroll
-#[derive(Resource, Default, Reflect)]
-#[reflect(Resource, Default)]
-pub struct MinimapDragState {
-    /// Whether we're currently dragging the minimap slider
-    pub is_dragging: bool,
-    /// Whether we're dragging the viewport highlight (vs clicking elsewhere on minimap)
-    pub is_dragging_highlight: bool,
-    /// Initial mouse Y position when drag started (for highlight dragging)
-    pub drag_start_y: f32,
-    /// Initial scroll offset when drag started (for highlight dragging)
-    pub drag_start_scroll: f32,
-}
-
-/// Resource to track key repeat state for editor actions
-// `Instant` is not Reflect; ignore the timing fields. The action enum is
-// Reflect so the active action is still observable.
-#[derive(Resource, Default, Reflect)]
-#[reflect(Resource, Default)]
 pub struct KeyRepeatState {
     /// The action currently being repeated (if any)
     pub current_action: Option<crate::input::EditorAction>,
