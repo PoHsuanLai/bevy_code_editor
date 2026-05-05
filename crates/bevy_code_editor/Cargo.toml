@@ -88,7 +88,7 @@ tree-sitter-c = "0.23"
 # egui+armas dev-deps used by `examples/lsp.rs`. The library proper does not
 # depend on these — the LSP egui renderer lives entirely inside the example.
 bevy_egui = "0.38"
-armas = { path = "../../../../../../armas/crates/armas", default-features = false, features = ["basic"] }
+armas = { path = "../../../Armas/crates/armas", default-features = false, features = ["basic"] }
 
 [features]
 default = ["tree-sitter"]
