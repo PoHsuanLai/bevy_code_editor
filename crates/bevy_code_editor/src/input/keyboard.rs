@@ -1,21 +1,18 @@
-//! Editor keyboard handling.
+//! Per-event keyboard observer for the focused editor.
 //!
-//! Split into two pieces:
+//! Only one observer lives here: [`on_focused_keyboard`], which runs on
+//! [`bevy::input_focus::FocusedInput<KeyboardInput>`]. It handles
+//! rename-modal routing, character insertion, bracket / quote auto-close,
+//! and LSP completion triggers.
 //!
-//! 1. [`on_focused_keyboard`] — an observer on
-//!    [`bevy::input_focus::FocusedInput<KeyboardInput>`]. Per-event work:
-//!    rename-modal routing, character insertion, bracket / quote auto-close,
-//!    LSP completion triggers. Picking + focus dispatch already routed the
-//!    event to the focused editor entity, so there's no manual focus check.
-//!
-//! 2. [`process_editor_actions`] — a `Res<InputFocus>`-filtered polling
-//!    system that consumes `ActionState<EditorAction>` (leafwing). Handles
-//!    just-pressed actions, key repeat, and dispatches to `execute_action`.
-//!    Stays a polling system because `ActionState` is itself polled state,
-//!    not an event stream.
+//! Action-based input (just-pressed / repeating shortcuts via leafwing's
+//! `ActionState`) was previously also handled here in `process_editor_actions`.
+//! That function is gone — its responsibilities are split between
+//! [`super::dispatch::dispatch_action_events`] (event emission) and the
+//! per-action handler systems under [`super::handlers`].
 
 use super::actions::{
-    execute_action, get_closing_bracket, get_closing_quote, insert_char, insert_closing_char,
+    get_closing_bracket, get_closing_quote, insert_char, insert_closing_char,
     should_skip_auto_close,
 };
 #[cfg(feature = "lsp")]
@@ -23,70 +20,17 @@ use super::actions::{
     find_word_start, request_completion, send_did_change, update_completion_filter,
 };
 use super::editor_ops::move_cursor;
-use super::keybindings::EditorAction;
-use crate::plugin::EditorInputManager;
 #[cfg(feature = "lsp")]
 use crate::settings::LspSettings;
-use crate::settings::{BracketSettings, CursorSettings, IndentationSettings};
-use crate::text_view::{TextViewState, TextViewViewport};
+use crate::settings::BracketSettings;
 use crate::types::*;
 use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
-use bevy::input_focus::{FocusedInput, InputFocus};
+use bevy::input_focus::FocusedInput;
 use bevy::prelude::*;
-use leafwing_input_manager::prelude::*;
-use std::time::Instant;
-
-const ALL_ACTIONS: [EditorAction; 45] = [
-    EditorAction::DeleteBackward,
-    EditorAction::DeleteForward,
-    EditorAction::DeleteWordBackward,
-    EditorAction::DeleteWordForward,
-    EditorAction::DeleteLine,
-    EditorAction::InsertNewline,
-    EditorAction::InsertTab,
-    EditorAction::MoveCursorLeft,
-    EditorAction::MoveCursorRight,
-    EditorAction::MoveCursorUp,
-    EditorAction::MoveCursorDown,
-    EditorAction::MoveCursorWordLeft,
-    EditorAction::MoveCursorWordRight,
-    EditorAction::MoveCursorLineStart,
-    EditorAction::MoveCursorLineEnd,
-    EditorAction::MoveCursorDocumentStart,
-    EditorAction::MoveCursorDocumentEnd,
-    EditorAction::MoveCursorPageUp,
-    EditorAction::MoveCursorPageDown,
-    EditorAction::SelectLeft,
-    EditorAction::SelectRight,
-    EditorAction::SelectUp,
-    EditorAction::SelectDown,
-    EditorAction::SelectWordLeft,
-    EditorAction::SelectWordRight,
-    EditorAction::SelectLineStart,
-    EditorAction::SelectLineEnd,
-    EditorAction::SelectAll,
-    EditorAction::ClearSelection,
-    EditorAction::Copy,
-    EditorAction::Cut,
-    EditorAction::Paste,
-    EditorAction::Undo,
-    EditorAction::Redo,
-    EditorAction::Replace,
-    EditorAction::GotoLine,
-    EditorAction::RequestCompletion,
-    EditorAction::GotoDefinition,
-    EditorAction::RenameSymbol,
-    EditorAction::AddCursorAtNextOccurrence,
-    EditorAction::AddCursorAbove,
-    EditorAction::AddCursorBelow,
-    EditorAction::ClearSecondaryCursors,
-    EditorAction::Save,
-    EditorAction::Open,
-];
 
 /// True when any modifier key is held — used by the char observer to skip
 /// shortcut keystrokes (Ctrl+C, Cmd+S, etc.) that should be handled by
-/// `process_editor_actions` via leafwing's `ActionState`, not inserted as
+/// the action dispatcher via leafwing's `ActionState`, not inserted as
 /// raw characters.
 fn modifier_held(keyboard: &ButtonInput<KeyCode>) -> bool {
     keyboard.pressed(KeyCode::ControlLeft)
@@ -111,7 +55,7 @@ pub fn on_focused_keyboard(
             &mut SyntaxCacheState,
             &mut EditorDisplayState,
             &mut CursorState,
-            &mut TextViewState,
+            &mut crate::text_view::TextViewState,
         ),
         With<CodeEditor>,
     >,
@@ -192,7 +136,7 @@ pub fn on_focused_keyboard(
     }
 
     // Shortcut keystrokes (Ctrl+C, Cmd+S, …) are handled by the action
-    // system; the char observer must not insert their key as text.
+    // dispatcher; the char observer must not insert their key as text.
     if modifier_held(&keyboard) {
         return;
     }
@@ -254,14 +198,13 @@ fn insert_typed_char(
     syntax: &mut SyntaxCacheState,
     display: &mut EditorDisplayState,
     cursor: &mut CursorState,
-    tv: &mut TextViewState,
+    tv: &mut crate::text_view::TextViewState,
     brackets: &BracketSettings,
     #[cfg(feature = "lsp")] lsp: &LspSettings,
     #[cfg(feature = "lsp")] lsp_client: &bevy_lsp::LspClient,
     #[cfg(feature = "lsp")] completion_state: &mut crate::lsp_ui::state::LspCompletionPopup,
     #[cfg(feature = "lsp")] mut lsp_document: Option<&mut bevy_lsp::LspDocument>,
 ) {
-    // Skip over an existing matching close char rather than inserting a duplicate.
     if brackets.auto_close_quotes
         && get_closing_quote(c).is_some()
         && should_skip_auto_close(cursor, &tv.rope, c)
@@ -286,7 +229,6 @@ fn insert_typed_char(
     }
     if brackets.auto_close_quotes {
         if let Some(closing) = get_closing_quote(c) {
-            // Don't auto-close ' mid-word ("don't").
             let should_close = if c == '\'' {
                 let cur_pos = cursor.cursor_pos;
                 if cur_pos >= 2 {
@@ -319,8 +261,7 @@ fn insert_typed_char(
                     }
                 } else if cursor_pos >= trigger.len() {
                     let start = cursor_pos - trigger.len();
-                    let recent_text: String =
-                        tv.rope.slice(start..cursor_pos).chars().collect();
+                    let recent_text: String = tv.rope.slice(start..cursor_pos).chars().collect();
                     if recent_text == *trigger {
                         is_trigger = true;
                         break;
@@ -360,202 +301,4 @@ fn insert_typed_char(
             }
         }
     }
-}
-
-/// Polling system that drives leafwing actions for the focused editor.
-///
-/// Reads `Res<InputFocus>` to pick the editor whose actions should fire,
-/// then runs the standard just-pressed / key-repeat dispatch. Replaces the
-/// pre-Phase-7 iter+skip pattern with a single direct lookup.
-#[allow(clippy::too_many_arguments)]
-pub fn process_editor_actions(
-    mut editor_query: Query<
-        (
-            &mut SelectionState,
-            &mut EditHistoryState,
-            &mut SyntaxCacheState,
-            &mut EditorDisplayState,
-            &mut CursorState,
-            &mut TextViewState,
-            &TextViewViewport,
-            &mut GotoLineState,
-            &mut FoldState,
-        ),
-        With<CodeEditor>,
-    >,
-    #[cfg(feature = "lsp")] mut lsp_query: Query<
-        (
-            &bevy_lsp::LspClient,
-            Option<&mut bevy_lsp::LspDocument>,
-            &bevy_lsp::ServerCapabilities,
-            &mut crate::lsp_ui::state::LspCompletionPopup,
-            &mut crate::lsp_ui::state::LspRenamePopup,
-        ),
-        With<CodeEditor>,
-    >,
-    input_focus: Res<InputFocus>,
-    action_query: Query<&ActionState<EditorAction>, With<EditorInputManager>>,
-    cursor_settings: Res<CursorSettings>,
-    indentation: Res<IndentationSettings>,
-    #[cfg(feature = "lsp")] lsp: Res<LspSettings>,
-    mut key_repeat_state: ResMut<KeyRepeatState>,
-    mut save_events: MessageWriter<crate::types::SaveRequested>,
-    mut open_events: MessageWriter<crate::types::OpenRequested>,
-) {
-    let Some(focused) = input_focus.get() else {
-        return;
-    };
-    let Ok(action_state) = action_query.single() else {
-        warn!("No EditorInputManager entity found with ActionState");
-        return;
-    };
-
-    let Ok((
-        mut sel,
-        mut hist,
-        mut syntax,
-        mut display,
-        mut cursor,
-        mut tv,
-        _viewport,
-        mut goto_line_state,
-        mut fold_state,
-    )) = editor_query.get_mut(focused)
-    else {
-        return;
-    };
-
-    #[cfg(feature = "lsp")]
-    let Ok((lsp_client, mut lsp_document, capabilities, mut completion_state, mut rename_state)) =
-        lsp_query.get_mut(focused)
-    else {
-        return;
-    };
-
-    #[cfg(feature = "lsp")]
-    if rename_state.visible {
-        // Rename modal owns input; the observer routes char events into the
-        // modal's buffer. Skip action processing entirely.
-        return;
-    }
-
-    let mut action_to_execute: Option<EditorAction> = None;
-    let now = Instant::now();
-
-    for action in ALL_ACTIONS {
-        if action_state.just_pressed(&action) {
-            action_to_execute = Some(action);
-
-            if action.is_repeatable() {
-                key_repeat_state.current_action = Some(action);
-                key_repeat_state.press_start = Some(now);
-                key_repeat_state.last_repeat = None;
-            }
-            break;
-        }
-    }
-
-    // Folding actions are checked separately to keep ALL_ACTIONS small.
-    if action_to_execute.is_none() {
-        for action in [
-            EditorAction::ToggleFold,
-            EditorAction::Fold,
-            EditorAction::Unfold,
-            EditorAction::FoldAll,
-            EditorAction::UnfoldAll,
-        ] {
-            if action_state.just_pressed(&action) {
-                action_to_execute = Some(action);
-                break;
-            }
-        }
-    }
-
-    // Key repeat on held actions.
-    if action_to_execute.is_none() {
-        if let Some(current_action) = key_repeat_state.current_action {
-            if action_state.pressed(&current_action) {
-                let initial_delay = cursor_settings.key_repeat.initial_delay_ms as f64 / 1000.0;
-                let repeat_interval = cursor_settings.key_repeat.repeat_delay_ms as f64 / 1000.0;
-
-                if let Some(press_start) = key_repeat_state.press_start {
-                    let elapsed = now.duration_since(press_start).as_secs_f64();
-                    if elapsed >= initial_delay {
-                        let should_repeat = match key_repeat_state.last_repeat {
-                            Some(last) => {
-                                now.duration_since(last).as_secs_f64() >= repeat_interval
-                            }
-                            None => true,
-                        };
-                        if should_repeat {
-                            action_to_execute = Some(current_action);
-                            key_repeat_state.last_repeat = Some(now);
-                        }
-                    }
-                }
-            } else {
-                key_repeat_state.current_action = None;
-                key_repeat_state.press_start = None;
-                key_repeat_state.last_repeat = None;
-            }
-        }
-    }
-
-    let Some(action) = action_to_execute else {
-        return;
-    };
-
-    if action == EditorAction::Save {
-        let content: String = tv.rope.chars().collect();
-        save_events.write(crate::types::SaveRequested { content });
-        return;
-    }
-
-    if action == EditorAction::Open {
-        open_events.write(crate::types::OpenRequested);
-        return;
-    }
-
-    #[cfg(feature = "lsp")]
-    if action == EditorAction::RenameSymbol {
-        if capabilities.supports_rename() {
-            if let Some(doc) = lsp_document.as_deref() {
-                let position = bevy_lsp::rope_char_to_lsp_position(
-                    &tv.rope,
-                    cursor.cursor_pos,
-                    bevy_lsp::PositionEncoding::Utf16,
-                );
-                rename_state.start_prepare(position);
-                crate::lsp_ui::systems::request_prepare_rename(
-                    lsp_client,
-                    capabilities,
-                    &doc.uri,
-                    position,
-                );
-            }
-        }
-        return;
-    }
-
-    execute_action(
-        EditorBuf {
-            sel: &mut sel,
-            hist: &mut hist,
-            syntax: &mut syntax,
-            display: &mut display,
-            cursor: &mut cursor,
-            tv: &mut tv,
-        },
-        action,
-        &indentation,
-        &mut goto_line_state,
-        &mut fold_state,
-        #[cfg(feature = "lsp")]
-        crate::input::actions::LspBuf {
-            settings: &lsp,
-            client: lsp_client,
-            completion: &mut completion_state,
-            document: lsp_document.as_deref_mut(),
-        },
-    );
 }
