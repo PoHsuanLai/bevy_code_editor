@@ -28,6 +28,11 @@ pub use dispatch::dispatch_action_events;
 pub use editing::drain_edit_side_effects;
 pub use keybindings::{default_input_map, EditorAction};
 pub use keyboard::on_focused_keyboard;
-pub use mouse::{handle_mouse_input, handle_mouse_wheel};
+pub use mouse::{on_alt_click, on_fold_gutter_press};
+#[cfg(feature = "lsp")]
+pub use mouse::{
+    on_ctrl_click_goto_definition, on_pointer_move_for_hover, on_pointer_out_for_hover,
+    tick_lsp_hover_timer,
+};
 
 pub use leafwing_input_manager::prelude::{ActionState, Actionlike, ButtonlikeChord, InputMap};

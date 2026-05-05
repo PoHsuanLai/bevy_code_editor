@@ -106,11 +106,17 @@ pub fn copy_selection(sel: &SelectionState, tv: &TextViewState) -> bool {
 // Observers (registered globally by `TextInteractionPlugin`)
 // =============================================================================
 
-/// Pointer scroll observer for `TextView` entities.
+/// Pointer scroll observer for `TextView` entities — handles both vertical
+/// (scroll wheel / two-finger swipe) and horizontal (shift+wheel / two-finger
+/// swipe sideways) scrolling.
 ///
 /// Picking already routed this event to the entity under the cursor, so the
 /// hit-test loop the old `handle_text_view_scroll` did is gone — we just
 /// look up the target entity's components and apply the scroll.
+///
+/// Horizontal scroll only fires when the view's content width exceeds the
+/// available text area (via `TextViewState.max_content_width`); the
+/// display-map producer maintains that field as it shapes lines.
 pub fn on_pointer_scroll(
     trigger: On<Pointer<Scroll>>,
     mut views: Query<
@@ -131,23 +137,40 @@ pub fn on_pointer_scroll(
     let default_scroll = ScrollConfig::default();
     let scroll_cfg = scroll_cfg.unwrap_or(&default_scroll);
 
+    let dx = trigger.event().x;
     let dy = trigger.event().y;
-    if dy.abs() <= 0.0 {
-        return;
+
+    // Horizontal scroll — only when content overflows.
+    if dx.abs() > 0.0 {
+        let viewport_width = viewport.width as f32;
+        let available_text_width = viewport_width - viewport.text_area_left;
+        if tv.max_content_width > available_text_width {
+            let scroll_delta = dx * font.char_width * scroll_cfg.speed;
+            let max_h = (tv.max_content_width - available_text_width).max(0.0);
+            if scroll_cfg.smooth {
+                tv.target_horizontal_scroll_offset =
+                    (tv.target_horizontal_scroll_offset + scroll_delta).clamp(0.0, max_h);
+            } else {
+                tv.horizontal_scroll_offset =
+                    (tv.horizontal_scroll_offset + scroll_delta).clamp(0.0, max_h);
+            }
+        }
     }
 
-    let scroll_delta = dy * font.line_height * scroll_cfg.speed;
-    let line_count = tv.rope.len_lines();
-    let content_height = line_count as f32 * font.line_height;
-    let viewport_height = viewport.height as f32;
-    let max_scroll = (-(content_height - viewport_height + viewport.text_area_top)).min(0.0);
-
-    if scroll_cfg.smooth {
-        tv.target_scroll_offset += scroll_delta;
-        tv.target_scroll_offset = tv.target_scroll_offset.min(0.0).max(max_scroll);
-    } else {
-        tv.scroll_offset += scroll_delta;
-        tv.scroll_offset = tv.scroll_offset.min(0.0).max(max_scroll);
+    // Vertical scroll.
+    if dy.abs() > 0.0 {
+        let scroll_delta = dy * font.line_height * scroll_cfg.speed;
+        let line_count = tv.rope.len_lines();
+        let content_height = line_count as f32 * font.line_height;
+        let viewport_height = viewport.height as f32;
+        let max_scroll =
+            (-(content_height - viewport_height + viewport.text_area_top)).min(0.0);
+        if scroll_cfg.smooth {
+            tv.target_scroll_offset =
+                (tv.target_scroll_offset + scroll_delta).clamp(max_scroll, 0.0);
+        } else {
+            tv.scroll_offset = (tv.scroll_offset + scroll_delta).clamp(max_scroll, 0.0);
+        }
     }
 }
 

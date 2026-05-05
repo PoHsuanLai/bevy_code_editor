@@ -250,16 +250,26 @@ impl Plugin for CodeEditorPlugin {
                 .in_set(InputSet)
                 .in_set(ActionDispatchSet),
         );
-        app.add_systems(
-            Update,
-            (
-                crate::input::handle_mouse_input,
-                crate::input::handle_mouse_wheel,
-            )
-                .chain()
-                .in_set(InputSet)
-                .after(ActionDispatchSet),
-        );
+        // Editor-specific mouse interactions are observer-driven via
+        // `bevy_picking`. Plain-click cursor placement, drag-extend
+        // selection, and scroll wheel are handled by
+        // `bevy_text_editor::interaction`'s observers (registered by
+        // `TextInteractionPlugin`); the editor adds modifier-click
+        // behaviors and the LSP hover trigger on top.
+        app.add_observer(crate::input::on_fold_gutter_press);
+        app.add_observer(crate::input::on_alt_click);
+        #[cfg(feature = "lsp")]
+        {
+            app.add_observer(crate::input::on_ctrl_click_goto_definition);
+            app.add_observer(crate::input::on_pointer_move_for_hover);
+            app.add_observer(crate::input::on_pointer_out_for_hover);
+            app.add_systems(
+                Update,
+                crate::input::tick_lsp_hover_timer
+                    .in_set(InputSet)
+                    .after(ActionDispatchSet),
+            );
+        }
 
         // Per-action IDE handlers — read each `*Requested` event and apply.
         // All handlers run in `InputSet` after the dispatcher.
