@@ -89,6 +89,28 @@ impl DisplayLayout {
         Some(line_byte_at_x(line, x, self.char_width))
     }
 
+    /// Layout-local pixel position `(x, y_top)` of the given byte within
+    /// `display_row`. `x` includes the row's `x_offset` (indent), `y_top`
+    /// is the row's pre-computed top edge in layout-local coords.
+    ///
+    /// Hosts wanting world-space coordinates add the
+    /// [`super::viewport::TextViewViewport`] origin themselves — this
+    /// helper stays viewport-agnostic so it works for hosts that compose
+    /// multiple viewports / RenderLayers.
+    ///
+    /// Use case: anchoring inline decorations (images, buttons, gauges)
+    /// inside a markdown / chat / log view. Producers attach their own
+    /// Components carrying `(buffer_row, byte_offset, …)` and a system
+    /// reads `pos_at_byte(buffer_to_display(...))` to position child
+    /// `Sprite` / `Node` entities.
+    ///
+    /// Returns `None` if `display_row` is not in this layout's visible window.
+    pub fn pos_at_byte(&self, display_row: u32, byte: usize) -> Option<Vec2> {
+        let line = self.lines.iter().find(|l| l.display_row == display_row)?;
+        let x = line.x_offset + line_x_at_byte(line, byte, self.char_width);
+        Some(Vec2::new(x, line.y_top))
+    }
+
     /// Map a `(buffer_row, byte_in_buffer_line)` position to the display row
     /// and the byte offset within that row's `text`. Walks all rows sharing
     /// the buffer line to find the one whose `[buffer_byte_offset .. + text.len()]`

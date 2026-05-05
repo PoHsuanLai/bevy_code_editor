@@ -121,6 +121,39 @@ let layout = Block::layout(&blocks, BlockLayoutConfig {
 
 For dynamic content (an editor, a streaming log viewer), drive the producer via `LineFilter` / `LineStyleSource` Components — see the editor crate for a worked example.
 
+## Anchoring inline content (images, buttons, gauges)
+
+The engine renders text only — inline images / buttons / mini-charts /
+embedded inputs are the host's responsibility. Hosts spawn their own
+`bevy_sprite::Sprite` or `bevy_ui::Node` entities and position them by
+querying `DisplayLayout`:
+
+```rust
+fn position_my_image(
+    layouts: Query<&DisplayLayout>,
+    mut sprites: Query<(&MyInlineImage, &mut Transform)>,
+) {
+    let layout = layouts.single().unwrap();
+    for (img, mut tf) in &mut sprites {
+        // `img.line` is a buffer line; `img.byte` a byte offset into it.
+        let Some((display_row, byte_in_row)) = layout.buffer_to_display(img.line, img.byte)
+        else { continue };
+        let Some(local) = layout.pos_at_byte(display_row, byte_in_row) else { continue };
+        // Add the host's viewport origin to translate to world space.
+        tf.translation.x = local.x;
+        tf.translation.y = -local.y;
+    }
+}
+```
+
+The engine offers no inline-image data type or render path on purpose:
+markdown wants click-to-zoom, chat wants async thumbnails, log viewers
+want graph mini-charts — one engine API can't serve all three. Instead
+the engine exposes `pos_at_byte` and `buffer_to_display`; hosts build
+exactly the inline-content widget they need on top of `bevy_sprite` or
+`bevy_ui`, both of which already do positioning, hot-reload, multi-camera,
+and render-layer routing well.
+
 ## Plugin composition
 
 `TextEnginePlugins` is a `PluginGroup` bundling:

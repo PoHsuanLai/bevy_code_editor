@@ -303,7 +303,6 @@ pub(crate) fn build_display_layout(
                         line_height: None,
                         padding_top: 0.0,
                         padding_bottom: 0.0,
-                        inline_objects: Vec::new(),
                         shape: Some(row_shape),
                     });
                     current_display_row += 1;
@@ -323,7 +322,6 @@ pub(crate) fn build_display_layout(
                     line_height: None,
                     padding_top: 0.0,
                     padding_bottom: 0.0,
-                    inline_objects: Vec::new(),
                     shape,
                 });
                 current_display_row += 1;

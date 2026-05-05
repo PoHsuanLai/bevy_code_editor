@@ -49,24 +49,6 @@ pub enum TextDecoration {
     Squiggle,
 }
 
-/// Inline non-text content placed at a byte offset within `ShapedLine.text`.
-///
-/// The byte offset references a position inside `text` (typically a zero-width
-/// marker character or a placeholder). The renderer reserves horizontal space
-/// matching the object's intrinsic size and skips glyph emission at that offset.
-#[derive(Clone, Debug)]
-pub enum InlineObject {
-    /// An image anchored to a byte offset; `size` is the rendered pixel rect.
-    Image {
-        byte_offset: usize,
-        handle: Handle<Image>,
-        size: Vec2,
-    },
-    /// Reserved horizontal whitespace (no visual). Useful for tab-like indents
-    /// that aren't expressible via the run's text.
-    Spacer { byte_offset: usize, width: f32 },
-}
-
 /// A run of text within a shaped line that shares the same style.
 ///
 /// Byte ranges index into the parent `ShapedLine.text` (post-fold/wrap), so
@@ -173,9 +155,6 @@ pub struct ShapedLine {
     pub padding_top: f32,
     /// Vertical space in pixels below this row. See `padding_top`.
     pub padding_bottom: f32,
-    /// Inline non-text content (images, spacers) anchored at byte offsets in
-    /// `text`. Empty for plain-text consumers.
-    pub inline_objects: Vec<InlineObject>,
     /// Per-glyph advances from cosmic-text shaping. `None` = use the layout's
     /// `char_width` fallback (cheap path for `trivial_layout` consumers like
     /// chat/log demos that don't want to pay shaping cost).
@@ -217,7 +196,6 @@ pub fn trivial_layout(
             line_height: None,
             padding_top: 0.0,
             padding_bottom: 0.0,
-            inline_objects: Vec::new(),
             shape: None,
         })
         .collect();
@@ -448,7 +426,6 @@ fn layout_blocks_inner(blocks: &[Block], cfg: BlockLayoutConfig) -> super::layou
                 // row pays padding_top, only the last row pays padding_bottom.
                 padding_top: if is_continuation { 0.0 } else { b.padding_top },
                 padding_bottom: if is_last { b.padding_bottom } else { 0.0 },
-                inline_objects: Vec::new(),
                 shape: None,
             });
             y += row_h;

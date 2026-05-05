@@ -21,7 +21,7 @@ pub use plugin::{TextEnginePlugin, TextEnginePlugins, TextView, TextViewBatchEnt
 pub use render::{render_layout, GlyphBatchComponent, GlyphInstance, TextViewBatch};
 pub use snapshot::{
     trivial_layout, Block, BlockBorder, BlockDecoration, BlockLayoutConfig, BlockRect,
-    InlineObject, ShapedLine, StyleRun, TextDecoration,
+    ShapedLine, StyleRun, TextDecoration,
 };
 pub use state::TextViewState;
 pub use styling::{
