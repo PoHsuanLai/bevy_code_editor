@@ -132,7 +132,7 @@ impl LspClient {
             use tokio::io::{AsyncBufReadExt, BufReader};
             let mut reader = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = reader.next_line().await {
-                warn!("[LSP stderr] {}", line);
+                debug!("[LSP stderr] {}", line);
             }
         });
 
@@ -304,9 +304,20 @@ where
     tokio::spawn(async move {
         match server.request::<R>(params).await {
             Ok(result) => map(result, &tx),
-            Err(err) => warn!("[LSP] {} failed: {err}", R::METHOD),
+            Err(err) => log_request_error::<R>(err),
         }
     });
+}
+
+fn log_request_error<R: LspRequestTrait>(err: async_lsp::Error) {
+    use async_lsp::{Error, ErrorCode};
+    if let Error::Response(ref resp) = err {
+        if resp.code == ErrorCode::CONTENT_MODIFIED || resp.code == ErrorCode::REQUEST_CANCELLED {
+            debug!("[LSP] {} cancelled by server: {err}", R::METHOD);
+            return;
+        }
+    }
+    warn!("[LSP] {} failed: {err}", R::METHOD);
 }
 
 /// Fire a notification; log on error.

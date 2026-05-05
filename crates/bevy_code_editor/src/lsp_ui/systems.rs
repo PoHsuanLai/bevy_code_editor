@@ -74,6 +74,7 @@ pub fn process_lsp_messages(
     diagnostics_query: Query<Entity, With<DiagnosticMarker>>,
     mut editor_query: Query<
         (
+            Entity,
             &mut LspClient,
             &mut ServerCapabilities,
             &mut CursorState,
@@ -92,12 +93,14 @@ pub fn process_lsp_messages(
     mut navigate_events: MessageWriter<NavigateToFileEvent>,
     mut multi_location_events: MessageWriter<MultipleLocationsEvent>,
     mut workspace_edit_events: MessageWriter<WorkspaceEditEvent>,
+    mut replace_writer: MessageWriter<bevy_text_editor::ReplaceRangeRequested>,
 ) {
     let Ok((
+        editor_entity,
         mut lsp_client,
         mut capabilities,
         mut cursor_state,
-        mut tv,
+        tv,
         lsp_document,
         mut completion_state,
         mut hover_state,
@@ -128,9 +131,13 @@ pub fn process_lsp_messages(
                 uri: _,
                 diagnostics,
             } => {
-                // Clear old diagnostics
+                // Clear old diagnostics. Silenced because another sync
+                // system or hierarchy cleanup may have already despawned
+                // these markers in the same tick.
                 for entity in diagnostics_query.iter() {
-                    commands.entity(entity).despawn();
+                    commands.entity(entity).queue_silenced(
+                        bevy::ecs::system::entity_command::despawn(),
+                    );
                 }
 
                 for diagnostic in diagnostics {
@@ -225,7 +232,7 @@ pub fn process_lsp_messages(
 
             LspResponse::Format { edits } => {
                 trace!("[LSP] Format: {} edit(s)", edits.len());
-                apply_text_edits(&mut tv, edits);
+                apply_text_edits(editor_entity, &tv, edits, &mut replace_writer);
             }
 
             LspResponse::SignatureHelp {
@@ -267,6 +274,7 @@ pub fn process_lsp_messages(
 
                 highlight_state.highlights = highlights;
                 highlight_state.visible = !highlight_state.highlights.is_empty();
+                highlight_state.in_flight_position = None;
             }
 
             LspResponse::PrepareRename { range, placeholder } => {
@@ -287,7 +295,7 @@ pub fn process_lsp_messages(
                 if let Some(changes) = &edit.changes {
                     if let Some(doc) = lsp_document {
                         if let Some(edits) = changes.get(&doc.uri) {
-                            apply_text_edits(&mut tv, edits.clone());
+                            apply_text_edits(editor_entity, &tv, edits.clone(), &mut replace_writer);
                         }
                     }
                 }
@@ -302,9 +310,15 @@ pub fn process_lsp_messages(
     }
 }
 
-/// Apply text edits from formatting
-fn apply_text_edits(tv: &mut TextViewState, edits: Vec<TextEdit>) {
-    // Sort edits in reverse order to preserve positions
+/// Apply text edits by emitting `ReplaceRangeRequested` events. The editor's
+/// handler routes each through `replace_range`, keeping history, anchors,
+/// and `OnEdit` consistent.
+fn apply_text_edits(
+    entity: Entity,
+    tv: &TextViewState,
+    edits: Vec<TextEdit>,
+    writer: &mut MessageWriter<bevy_text_editor::ReplaceRangeRequested>,
+) {
     let mut edits_sorted = edits;
     edits_sorted.sort_by(|a, b| {
         let a_pos = (a.range.start.line, a.range.start.character);
@@ -315,34 +329,29 @@ fn apply_text_edits(tv: &mut TextViewState, edits: Vec<TextEdit>) {
     for edit in edits_sorted {
         let start_line = edit.range.start.line as usize;
         let end_line = edit.range.end.line as usize;
-        let start_char = edit.range.start.character as usize;
-        let end_char = edit.range.end.character as usize;
+        let start_char_col = edit.range.start.character as usize;
+        let end_char_col = edit.range.end.character as usize;
 
-        if start_line < tv.rope.len_lines() {
-            let start_line_char = tv.rope.line_to_char(start_line);
-            let start_pos = start_line_char + start_char;
-
-            let end_pos = if end_line < tv.rope.len_lines() {
-                let end_line_char = tv.rope.line_to_char(end_line);
-                (end_line_char + end_char).min(tv.rope.len_chars())
-            } else {
-                tv.rope.len_chars()
-            };
-
-            let start_pos = start_pos.min(tv.rope.len_chars());
-            let end_pos = end_pos.min(tv.rope.len_chars());
-
-            if start_pos <= end_pos {
-                let start_byte = tv.rope.char_to_byte(start_pos);
-                let end_byte = tv.rope.char_to_byte(end_pos);
-
-                tv.rope.remove(start_byte..end_byte);
-                tv.rope.insert(start_pos, &edit.new_text);
-            }
+        if start_line >= tv.rope.len_lines() {
+            continue;
         }
-    }
+        let start_pos =
+            (tv.rope.line_to_char(start_line) + start_char_col).min(tv.rope.len_chars());
+        let end_pos = if end_line < tv.rope.len_lines() {
+            (tv.rope.line_to_char(end_line) + end_char_col).min(tv.rope.len_chars())
+        } else {
+            tv.rope.len_chars()
+        };
 
-    tv.content_version += 1;
+        writer.write(bevy_text_editor::ReplaceRangeRequested {
+            entity,
+            start_char: start_pos,
+            end_char: end_pos,
+            text: edit.new_text,
+            kind: bevy_text_editor::EditKind::Other,
+            record_history: true,
+        });
+    }
 }
 
 /// System to sync document with LSP (debounced).
@@ -554,31 +563,32 @@ pub fn request_document_highlights(
         return;
     };
 
-    // Check if cursor moved
-    if cursor_state.cursor_pos == highlight_state.cursor_position && highlight_state.visible {
+    let cursor_pos = cursor_state.cursor_pos;
+
+    if highlight_state.in_flight_position == Some(cursor_pos) {
+        return;
+    }
+    if highlight_state.cursor_position == cursor_pos && highlight_state.visible {
         return;
     }
 
-    // Debounce: wait 150ms after cursor stops moving
-    if let Some(ref mut timer) = highlight_state.debounce_timer {
-        timer.tick(time.delta());
-        if !timer.is_finished() {
-            return;
-        }
-    } else {
-        // Start debounce timer
+    if highlight_state.cursor_position != cursor_pos || highlight_state.debounce_timer.is_none() {
+        highlight_state.cursor_position = cursor_pos;
         highlight_state.debounce_timer = Some(Timer::from_seconds(0.15, TimerMode::Once));
-        highlight_state.cursor_position = cursor_state.cursor_pos;
         return;
     }
 
-    // Clear timer and send request
+    let timer = highlight_state.debounce_timer.as_mut().unwrap();
+    timer.tick(time.delta());
+    if !timer.is_finished() {
+        return;
+    }
     highlight_state.debounce_timer = None;
-    highlight_state.cursor_position = cursor_state.cursor_pos;
+    highlight_state.in_flight_position = Some(cursor_pos);
 
     let position = bevy_lsp::rope_char_to_lsp_position(
         &tv.rope,
-        cursor_state.cursor_pos,
+        cursor_pos,
         bevy_lsp::PositionEncoding::Utf16,
     );
     lsp_client.send(LspMessage::DocumentHighlight {

@@ -13,6 +13,8 @@ use crate::text_view::TextViewState;
 #[cfg(feature = "lsp")]
 use crate::settings::LspSettings;
 use crate::types::*;
+#[cfg(feature = "lsp")]
+use bevy::prelude::{Entity, MessageWriter};
 use ropey::Rope;
 
 #[cfg(feature = "lsp")]
@@ -66,27 +68,30 @@ pub fn should_skip_auto_close(cursor: &CursorState, rope: &Rope, closing: char) 
 }
 
 /// Apply selected completion item.
+///
+/// Emits a `ReplaceRangeRequested` event for the editor entity to apply the
+/// completion through `bevy_text_editor`'s handler. Pure ECS — no mutable
+/// editor state in the caller.
 #[cfg(feature = "lsp")]
 pub fn apply_completion(
-    cursor: &mut CursorState,
-    tv: &mut TextViewState,
+    entity: Entity,
+    cursor_pos: usize,
     completion_state: &mut LspCompletionPopup,
+    writer: &mut MessageWriter<bevy_text_editor::ReplaceRangeRequested>,
 ) {
     let filtered = completion_state.filtered_items();
     if let Some(item) = filtered.get(completion_state.selected_index) {
         let start = completion_state.start_char_index;
-        let end = cursor.cursor_pos;
-        let insert_text = item.insert_text().to_string();
-
-        if start <= end && end <= tv.rope.len_chars() {
-            let start_byte = tv.rope.char_to_byte(start);
-            let end_byte = tv.rope.char_to_byte(end);
-
-            tv.rope.remove(start_byte..end_byte);
-            tv.rope.insert(start, &insert_text);
-
-            cursor.cursor_pos = start + insert_text.chars().count();
-            tv.content_version += 1;
+        let end = cursor_pos;
+        if start <= end {
+            writer.write(bevy_text_editor::ReplaceRangeRequested {
+                entity,
+                start_char: start,
+                end_char: end,
+                text: item.insert_text().to_string(),
+                kind: bevy_text_editor::EditKind::Other,
+                record_history: true,
+            });
         }
     }
     completion_state.visible = false;

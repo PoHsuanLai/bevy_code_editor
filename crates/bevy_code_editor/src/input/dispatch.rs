@@ -170,6 +170,9 @@ pub struct ActionEventWriters<'w> {
     // File operations — reuse pre-existing host-facing events.
     save: MessageWriter<'w, SaveRequested>,
     open: MessageWriter<'w, OpenRequested>,
+
+    // Programmatic edits (LSP completion application, etc.)
+    replace_range: MessageWriter<'w, bevy_text_editor::ReplaceRangeRequested>,
 }
 
 impl<'w> ActionEventWriters<'w> {
@@ -466,6 +469,7 @@ pub fn dispatch_action_events(
             lsp_document.as_deref_mut(),
             &mut editor_q,
             &lsp_settings,
+            &mut writers.replace_range,
         ) {
             return;
         }

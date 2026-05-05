@@ -41,6 +41,7 @@ pub mod state;
 pub mod typing;
 
 pub use anchor::{Anchor, AnchorBias, AnchorRange, AnchorSet, TextEdit};
+pub use edit::{point_at_byte, EditOutcome};
 pub use components::{ScrollConfig, TextViewDragState};
 pub use editing_events::*;
 pub use history::{EditHistory, EditKind, EditOperation, EditTransaction};

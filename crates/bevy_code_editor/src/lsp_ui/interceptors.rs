@@ -41,6 +41,7 @@ pub fn completion_popup_intercept(
         With<CodeEditor>,
     >,
     lsp_settings: &LspSettings,
+    replace_writer: &mut MessageWriter<bevy_text_editor::ReplaceRangeRequested>,
 ) -> bool {
     let filtered_count = completion_state.filtered_items().len();
     let max_visible = lsp_settings.completion.max_items;
@@ -67,8 +68,13 @@ pub fn completion_popup_intercept(
             true
         }
         EditorAction::InsertNewline | EditorAction::InsertTab => {
-            if let Ok((mut cursor, mut tv, _)) = editor_q.get_mut(focused) {
-                actions::apply_completion(&mut cursor, &mut tv, completion_state);
+            if let Ok((cursor, tv, _)) = editor_q.get(focused) {
+                actions::apply_completion(
+                    focused,
+                    cursor.cursor_pos,
+                    completion_state,
+                    replace_writer,
+                );
                 actions::send_did_change(&tv.rope, lsp_client, lsp_document);
             }
             true

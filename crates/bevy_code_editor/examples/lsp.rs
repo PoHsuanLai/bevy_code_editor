@@ -26,10 +26,7 @@ use bevy_code_editor::plugin::editor_ui_plugin::EditorRenderConfig;
 use bevy_code_editor::prelude::*;
 use bevy_text_engine::FontConfig;
 use bevy_code_editor::text_view::TextViewViewport;
-use bevy_code_editor::types::{
-    CodeEditor, CursorState, EditHistoryState, EditorDisplayState, SelectionState,
-    SyntaxCacheState, ViewportDimensions,
-};
+use bevy_code_editor::types::{CodeEditor, CursorState, ViewportDimensions};
 use bevy_egui::{egui, EguiContexts};
 use bevy_lsp::{LspClient, LspDocument, LspMessage};
 #[cfg(feature = "tree-sitter")]
@@ -192,26 +189,34 @@ fn render_inlay_hints(
             theme.inlay_hints.z_index,
         );
 
-        let mut entity_cmd = commands.entity(entity);
-        entity_cmd.insert((
-            Text2d::new(&hint.label),
-            TextFont {
-                font: font.font.clone().unwrap_or_default(),
-                font_size: font.size * theme.inlay_hints.font_size_multiplier,
-                ..default()
-            },
-            TextColor(color),
-            Transform::from_translation(pos),
-            Anchor::CENTER_LEFT,
-            InlayHintText {
-                line: hint.line,
-                character: hint.character,
-            },
-            LspUiVisual,
+        let Ok(mut entity_cmd) = commands.get_entity(entity) else {
+            continue;
+        };
+        entity_cmd.queue_silenced(bevy::ecs::system::entity_command::insert(
+            (
+                Text2d::new(&hint.label),
+                TextFont {
+                    font: font.font.clone().unwrap_or_default(),
+                    font_size: font.size * theme.inlay_hints.font_size_multiplier,
+                    ..default()
+                },
+                TextColor(color),
+                Transform::from_translation(pos),
+                Anchor::CENTER_LEFT,
+                InlayHintText {
+                    line: hint.line,
+                    character: hint.character,
+                },
+                LspUiVisual,
+            ),
+            bevy::ecs::bundle::InsertMode::Replace,
         ));
 
         if let Some(layers) = &render_config.render_layers {
-            entity_cmd.insert(layers.clone());
+            entity_cmd.queue_silenced(bevy::ecs::system::entity_command::insert(
+                layers.clone(),
+                bevy::ecs::bundle::InsertMode::Replace,
+            ));
         }
     }
 }
@@ -239,25 +244,33 @@ fn render_document_highlights(
         let pos = Vec3::new(
             viewport.world_left() + highlight.position.x,
             viewport.world_top() - highlight.position.y,
-            5.0, // Behind text
+            5.0,
         );
 
-        let mut entity_cmd = commands.entity(entity);
-        entity_cmd.insert((
-            Sprite {
-                color,
-                custom_size: Some(Vec2::new(highlight.width, highlight.height)),
-                ..default()
-            },
-            Transform::from_translation(pos),
-            DocumentHighlightMarker {
-                line: highlight.line,
-            },
-            LspUiVisual,
+        let Ok(mut entity_cmd) = commands.get_entity(entity) else {
+            continue;
+        };
+        entity_cmd.queue_silenced(bevy::ecs::system::entity_command::insert(
+            (
+                Sprite {
+                    color,
+                    custom_size: Some(Vec2::new(highlight.width, highlight.height)),
+                    ..default()
+                },
+                Transform::from_translation(pos),
+                DocumentHighlightMarker {
+                    line: highlight.line,
+                },
+                LspUiVisual,
+            ),
+            bevy::ecs::bundle::InsertMode::Replace,
         ));
 
         if let Some(layers) = &render_config.render_layers {
-            entity_cmd.insert(layers.clone());
+            entity_cmd.queue_silenced(bevy::ecs::system::entity_command::insert(
+                layers.clone(),
+                bevy::ecs::bundle::InsertMode::Replace,
+            ));
         }
     }
 }
@@ -896,53 +909,23 @@ fn render_rename_egui(
 
 fn setup_editor(
     mut commands: Commands,
-    mut editor_query: Query<
-        (
-            Entity,
-            &mut CursorState,
-            &mut TextViewState,
-            &mut EditHistoryState,
-            &mut SelectionState,
-            &mut SyntaxCacheState,
-            &mut EditorDisplayState,
-            &mut LspClient,
-        ),
-        With<CodeEditor>,
-    >,
+    mut editor_query: Query<(Entity, &mut LspClient), With<CodeEditor>>,
     runtime: Res<bevy_lsp::bevy_tokio_tasks::TokioTasksRuntime>,
+    mut set_text_writer: MessageWriter<bevy_text_editor::SetTextRequested>,
 ) {
-    let Ok((
-        editor_entity,
-        mut cursor,
-        mut tv,
-        mut hist,
-        mut sel,
-        mut syntax_cache,
-        mut display,
-        mut lsp_client,
-    )) = editor_query.single_mut()
-    else {
+    let Ok((editor_entity, mut lsp_client)) = editor_query.single_mut() else {
         return;
     };
 
-    // Read the source code of this example file. CARGO_MANIFEST_DIR is set
-    // by cargo to the package root at build time — use it instead of
-    // current_dir so the example works regardless of where it's launched
-    // from (workspace root vs. package dir).
     let example_file_path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/lsp.rs");
     let rust_code =
         std::fs::read_to_string(&example_file_path).expect("Failed to read example file");
 
-    bevy_code_editor::input::editing::set_text(
-        &mut sel,
-        &mut hist,
-        &mut syntax_cache,
-        &mut display,
-        &mut cursor,
-        &mut tv,
-        &rust_code,
-    );
+    set_text_writer.write(bevy_text_editor::SetTextRequested {
+        entity: editor_entity,
+        text: rust_code.clone(),
+    });
 
     // Component-driven tree-sitter wiring: attach a `Language` to the
     // editor entity. The editor's `react_language_changed` system picks

@@ -28,15 +28,99 @@ pub fn point_at_byte(rope: &Rope, byte_offset: usize) -> EditPoint {
     }
 }
 
+/// Outcome of a [`EditHistoryState::replace_range`] call. The cursor that the
+/// editor wants to "follow" the edit lands at `new_cursor_pos`.
+#[derive(Clone, Debug)]
+pub struct EditOutcome {
+    pub start_char: usize,
+    pub new_cursor_pos: usize,
+    pub removed_text: String,
+}
+
 impl EditHistoryState {
-    /// Record an edit delta. Callers compute pre-edit positions BEFORE
-    /// mutating the rope (start, old_end) and post-edit position
-    /// (new_end_position) AFTER the mutation.
-    fn record_edit_delta(&mut self, delta: EditDelta) {
-        self.pending_byte_edit = Some(delta);
+    /// Replace `[start_char..end_char]` with `text`. The single primitive that
+    /// every editor mutation funnels through — handles char-vs-byte ranges,
+    /// position capture, anchor edits, history recording, content_version
+    /// bumps, and `EditDelta` for downstream reparse / LSP.
+    ///
+    /// `kind` controls the [`EditKind`] recorded in undo history.
+    /// `record_history = false` skips history (for undo/redo replay or
+    /// programmatic edits that shouldn't push a new transaction).
+    pub fn replace_range(
+        &mut self,
+        tv: &mut TextViewState,
+        start_char: usize,
+        end_char: usize,
+        text: &str,
+        kind: EditKind,
+        record_history: bool,
+    ) -> EditOutcome {
+        let len = tv.rope.len_chars();
+        let start = start_char.min(len);
+        let end = end_char.min(len).max(start);
+
+        let removed_text: String = if start < end {
+            tv.rope.slice(start..end).chars().collect()
+        } else {
+            String::new()
+        };
+        let inserted_chars = text.chars().count();
+        let inserted_bytes = text.len();
+
+        let start_byte = tv.rope.char_to_byte(start);
+        let end_byte = tv.rope.char_to_byte(end);
+        let start_position = point_at_byte(&tv.rope, start_byte);
+        let old_end_position = point_at_byte(&tv.rope, end_byte);
+
+        if start < end {
+            self.anchors.record_edit(TextEdit::delete(start, end));
+        }
+        if inserted_chars > 0 {
+            self.anchors.record_edit(TextEdit::insert(start, inserted_chars));
+        }
+
+        if start < end {
+            tv.rope.remove(start..end);
+        }
+        if !text.is_empty() {
+            tv.rope.insert(start, text);
+        }
+        tv.content_version += 1;
+
+        let new_end_byte = start_byte + inserted_bytes;
+        let new_cursor_pos = start + inserted_chars;
+
+        if removed_text.contains('\n') || text.contains('\n') {
+            self.invalidate_lines_from = Some(tv.rope.char_to_line(start));
+        }
+
+        if record_history && (!removed_text.is_empty() || !text.is_empty()) {
+            self.history.record(EditOperation {
+                removed_text: removed_text.clone(),
+                inserted_text: text.to_string(),
+                position: start,
+                cursor_before: start,
+                cursor_after: new_cursor_pos,
+                kind,
+            });
+        }
+
+        self.pending_byte_edit = Some(EditDelta {
+            start_byte,
+            old_end_byte: end_byte,
+            new_end_byte,
+            start_position,
+            old_end_position,
+            new_end_position: point_at_byte(&tv.rope, new_end_byte),
+        });
+
+        EditOutcome {
+            start_char: start,
+            new_cursor_pos,
+            removed_text,
+        }
     }
 
-    /// Insert character at cursor position (with undo recording).
     pub fn insert_char(
         &mut self,
         sel: &mut SelectionState,
@@ -44,248 +128,65 @@ impl EditHistoryState {
         tv: &mut TextViewState,
         c: char,
     ) {
-        self.insert_char_with_history(sel, cursor, tv, c, true);
-    }
-
-    /// Insert character with optional history recording.
-    pub fn insert_char_with_history(
-        &mut self,
-        sel: &mut SelectionState,
-        cursor: &mut CursorState,
-        tv: &mut TextViewState,
-        c: char,
-        record_history: bool,
-    ) {
-        let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
-        let cursor_before = cursor_pos;
-
-        let start_byte = tv.rope.char_to_byte(cursor_pos);
-        let char_byte_len = c.len_utf8();
-        let start_position = point_at_byte(&tv.rope, start_byte);
-
-        self.anchors.record_edit(TextEdit::insert(cursor_pos, 1));
-
-        tv.rope.insert_char(cursor_pos, c);
-        cursor.cursor_pos += 1;
+        let pos = cursor.cursor_pos.min(tv.rope.len_chars());
+        let kind = if c == '\n' { EditKind::Newline } else { EditKind::Insert };
+        let mut buf = [0u8; 4];
+        let s = c.encode_utf8(&mut buf);
+        let outcome = self.replace_range(tv, pos, pos, s, kind, true);
+        cursor.cursor_pos = outcome.new_cursor_pos;
         sel.apply_primary_cursor(cursor);
-        tv.content_version += 1;
-
-        let new_end_byte = start_byte + char_byte_len;
-        self.record_edit_delta(EditDelta {
-            start_byte,
-            old_end_byte: start_byte,
-            new_end_byte,
-            start_position,
-            old_end_position: start_position,
-            new_end_position: point_at_byte(&tv.rope, new_end_byte),
-        });
-
-        if record_history {
-            let kind = if c == '\n' {
-                EditKind::Newline
-            } else {
-                EditKind::Insert
-            };
-            self.history.record(EditOperation {
-                removed_text: String::new(),
-                inserted_text: c.to_string(),
-                position: cursor_before,
-                cursor_before,
-                cursor_after: cursor.cursor_pos,
-                kind,
-            });
-        }
-
-        if c == '\n' {
-            let line_idx = tv.rope.char_to_line(cursor_pos);
-            self.invalidate_lines_from = Some(line_idx);
-        }
     }
 
-    /// Delete character before cursor (with undo recording).
     pub fn delete_backward(
         &mut self,
         sel: &mut SelectionState,
         cursor: &mut CursorState,
         tv: &mut TextViewState,
     ) {
-        self.delete_backward_with_history(sel, cursor, tv, true);
-    }
-
-    /// Delete character before cursor with optional history recording.
-    pub fn delete_backward_with_history(
-        &mut self,
-        sel: &mut SelectionState,
-        cursor: &mut CursorState,
-        tv: &mut TextViewState,
-        record_history: bool,
-    ) {
-        if cursor.cursor_pos > 0 && cursor.cursor_pos <= tv.rope.len_chars() {
-            let cursor_before = cursor.cursor_pos;
-            let line_idx = tv.rope.char_to_line(cursor.cursor_pos - 1);
-            let deleted_char = tv.rope.char(cursor.cursor_pos - 1);
-            let char_idx = tv.rope.char_to_byte(cursor.cursor_pos - 1);
-            let byte_idx_end = tv.rope.char_to_byte(cursor.cursor_pos);
-            let start_position = point_at_byte(&tv.rope, char_idx);
-            let old_end_position = point_at_byte(&tv.rope, byte_idx_end);
-
-            self.anchors
-                .record_edit(TextEdit::delete(cursor.cursor_pos - 1, cursor.cursor_pos));
-
-            tv.rope.remove(char_idx..byte_idx_end);
-            cursor.cursor_pos -= 1;
-            sel.apply_primary_cursor(cursor);
-            tv.content_version += 1;
-
-            self.record_edit_delta(EditDelta {
-                start_byte: char_idx,
-                old_end_byte: byte_idx_end,
-                new_end_byte: char_idx,
-                start_position,
-                old_end_position,
-                new_end_position: start_position,
-            });
-
-            if record_history {
-                self.history.record(EditOperation {
-                    removed_text: deleted_char.to_string(),
-                    inserted_text: String::new(),
-                    position: cursor.cursor_pos,
-                    cursor_before,
-                    cursor_after: cursor.cursor_pos,
-                    kind: EditKind::DeleteBackward,
-                });
-            }
-
-            if deleted_char == '\n' {
-                self.invalidate_lines_from = Some(line_idx);
-            }
+        if cursor.cursor_pos == 0 {
+            return;
         }
+        let outcome = self.replace_range(
+            tv,
+            cursor.cursor_pos - 1,
+            cursor.cursor_pos,
+            "",
+            EditKind::DeleteBackward,
+            true,
+        );
+        cursor.cursor_pos = outcome.new_cursor_pos;
+        sel.apply_primary_cursor(cursor);
     }
 
-    /// Delete character after cursor (with undo recording).
     pub fn delete_forward(
         &mut self,
         sel: &mut SelectionState,
         cursor: &mut CursorState,
         tv: &mut TextViewState,
     ) {
-        self.delete_forward_with_history(sel, cursor, tv, true);
-    }
-
-    /// Delete character after cursor with optional history recording.
-    pub fn delete_forward_with_history(
-        &mut self,
-        sel: &mut SelectionState,
-        cursor: &mut CursorState,
-        tv: &mut TextViewState,
-        record_history: bool,
-    ) {
-        if cursor.cursor_pos < tv.rope.len_chars() {
-            let cursor_before = cursor.cursor_pos;
-            let line_idx = tv.rope.char_to_line(cursor.cursor_pos);
-            let deleted_char = tv.rope.char(cursor.cursor_pos);
-            let char_idx = tv.rope.char_to_byte(cursor.cursor_pos);
-            let byte_idx_end = tv.rope.char_to_byte(cursor.cursor_pos + 1);
-            let start_position = point_at_byte(&tv.rope, char_idx);
-            let old_end_position = point_at_byte(&tv.rope, byte_idx_end);
-
-            self.anchors
-                .record_edit(TextEdit::delete(cursor.cursor_pos, cursor.cursor_pos + 1));
-
-            tv.rope.remove(char_idx..byte_idx_end);
-            sel.apply_primary_cursor(cursor);
-            tv.content_version += 1;
-
-            self.record_edit_delta(EditDelta {
-                start_byte: char_idx,
-                old_end_byte: byte_idx_end,
-                new_end_byte: char_idx,
-                start_position,
-                old_end_position,
-                new_end_position: start_position,
-            });
-
-            if record_history {
-                self.history.record(EditOperation {
-                    removed_text: deleted_char.to_string(),
-                    inserted_text: String::new(),
-                    position: cursor.cursor_pos,
-                    cursor_before,
-                    cursor_after: cursor.cursor_pos,
-                    kind: EditKind::DeleteForward,
-                });
-            }
-
-            if deleted_char == '\n' {
-                self.invalidate_lines_from = Some(line_idx);
-            }
+        if cursor.cursor_pos >= tv.rope.len_chars() {
+            return;
         }
+        self.replace_range(
+            tv,
+            cursor.cursor_pos,
+            cursor.cursor_pos + 1,
+            "",
+            EditKind::DeleteForward,
+            true,
+        );
+        sel.apply_primary_cursor(cursor);
     }
 
-    /// Insert text at a specific position (used for undo/redo).
+    /// Insert text at a specific position (used for undo/redo). Skips
+    /// history recording — the caller already manages the transaction.
     pub fn insert_text_at(&mut self, tv: &mut TextViewState, pos: usize, text: &str) {
-        let pos = pos.min(tv.rope.len_chars());
-        let text_char_len = text.chars().count();
-
-        let start_byte = tv.rope.char_to_byte(pos);
-        let text_byte_len = text.len();
-        let start_position = point_at_byte(&tv.rope, start_byte);
-
-        self.anchors
-            .record_edit(TextEdit::insert(pos, text_char_len));
-
-        tv.rope.insert(pos, text);
-        tv.content_version += 1;
-
-        if text.contains('\n') {
-            let line_idx = tv.rope.char_to_line(pos);
-            self.invalidate_lines_from = Some(line_idx);
-        }
-
-        let new_end_byte = start_byte + text_byte_len;
-        self.record_edit_delta(EditDelta {
-            start_byte,
-            old_end_byte: start_byte,
-            new_end_byte,
-            start_position,
-            old_end_position: start_position,
-            new_end_position: point_at_byte(&tv.rope, new_end_byte),
-        });
+        self.replace_range(tv, pos, pos, text, EditKind::Other, false);
     }
 
-    /// Remove text range (used for undo/redo).
+    /// Remove text range (used for undo/redo). Skips history recording.
     pub fn remove_range(&mut self, tv: &mut TextViewState, start: usize, end: usize) {
-        let start = start.min(tv.rope.len_chars());
-        let end = end.min(tv.rope.len_chars());
-        if start < end {
-            let start_byte = tv.rope.char_to_byte(start);
-            let end_byte = tv.rope.char_to_byte(end);
-            let start_position = point_at_byte(&tv.rope, start_byte);
-            let old_end_position = point_at_byte(&tv.rope, end_byte);
-
-            let removed_text: String = tv.rope.slice(start..end).chars().collect();
-            let has_newlines = removed_text.contains('\n');
-
-            self.anchors.record_edit(TextEdit::delete(start, end));
-
-            tv.rope.remove(start_byte..end_byte);
-            tv.content_version += 1;
-
-            if has_newlines {
-                let line_idx = tv.rope.char_to_line(start);
-                self.invalidate_lines_from = Some(line_idx);
-            }
-
-            self.record_edit_delta(EditDelta {
-                start_byte,
-                old_end_byte: end_byte,
-                new_end_byte: start_byte,
-                start_position,
-                old_end_position,
-                new_end_position: start_position,
-            });
-        }
+        self.replace_range(tv, start, end, "", EditKind::Other, false);
     }
 
     /// Perform undo operation. Returns `true` if anything was undone.
@@ -349,7 +250,7 @@ impl EditHistoryState {
     }
 
     /// Replace all buffer text with `text`. Resets selection to a single
-    /// cursor (clamped) and clears the anchor set.
+    /// cursor (clamped) and clears the anchor set. Skips history.
     pub fn set_text(
         &mut self,
         sel: &mut SelectionState,
@@ -357,27 +258,13 @@ impl EditHistoryState {
         tv: &mut TextViewState,
         text: &str,
     ) {
-        let old_byte_len = tv.rope.len_bytes();
-        let new_byte_len = text.len();
-        let start_position = EditPoint { row: 0, column_byte: 0 };
-        let old_end_position = point_at_byte(&tv.rope, old_byte_len);
-
-        tv.rope = Rope::from_str(text);
-        cursor.cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
-        tv.content_version += 1;
+        let old_len = tv.rope.len_chars();
+        self.replace_range(tv, 0, old_len, text, EditKind::Other, false);
         self.anchors.clear();
+        cursor.cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
         sel.selections = SelectionCollection::with_cursor(cursor.cursor_pos);
         tv.max_content_width = 0.0;
         tv.max_width_line = None;
-
-        self.record_edit_delta(EditDelta {
-            start_byte: 0,
-            old_end_byte: old_byte_len,
-            new_end_byte: new_byte_len,
-            start_position,
-            old_end_position,
-            new_end_position: point_at_byte(&tv.rope, new_byte_len),
-        });
     }
 
     /// Create an anchor at the given position.

@@ -45,7 +45,7 @@ pub fn sync_completion_popup(
     // If not visible or no items, despawn existing
     if !completion_state.visible || filtered_items.is_empty() {
         for entity in existing.iter() {
-            commands.entity(entity).despawn();
+            commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
         }
         return;
     }
@@ -107,7 +107,7 @@ pub fn sync_completion_popup(
 
     // Despawn extra entities if any
     for entity in existing.iter().skip(1) {
-        commands.entity(entity).despawn();
+        commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
     }
 }
 
@@ -127,7 +127,7 @@ pub fn sync_hover_popup(
 
     if !hover_state.visible || hover_state.content.is_empty() {
         for entity in existing.iter() {
-            commands.entity(entity).despawn();
+            commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
         }
         return;
     }
@@ -174,7 +174,7 @@ pub fn sync_hover_popup(
     }
 
     for entity in existing.iter().skip(1) {
-        commands.entity(entity).despawn();
+        commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
     }
 }
 
@@ -200,14 +200,14 @@ pub fn sync_signature_help_popup(
 
     if !sig_state.visible || sig_state.signatures.is_empty() {
         for entity in existing.iter() {
-            commands.entity(entity).despawn();
+            commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
         }
         return;
     }
 
     let Some(signature) = sig_state.current_signature() else {
         for entity in existing.iter() {
-            commands.entity(entity).despawn();
+            commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
         }
         return;
     };
@@ -269,7 +269,7 @@ pub fn sync_signature_help_popup(
     }
 
     for entity in existing.iter().skip(1) {
-        commands.entity(entity).despawn();
+        commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
     }
 }
 
@@ -295,7 +295,7 @@ pub fn sync_code_actions_popup(
 
     if !action_state.visible || action_state.actions.is_empty() {
         for entity in existing.iter() {
-            commands.entity(entity).despawn();
+            commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
         }
         return;
     }
@@ -367,7 +367,7 @@ pub fn sync_code_actions_popup(
     }
 
     for entity in existing.iter().skip(1) {
-        commands.entity(entity).despawn();
+        commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
     }
 }
 
@@ -387,14 +387,14 @@ pub fn sync_rename_input(
 
     if !rename_state.visible {
         for entity in existing.iter() {
-            commands.entity(entity).despawn();
+            commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
         }
         return;
     }
 
     let Some(range) = &rename_state.range else {
         for entity in existing.iter() {
-            commands.entity(entity).despawn();
+            commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
         }
         return;
     };
@@ -439,7 +439,7 @@ pub fn sync_rename_input(
     }
 
     for entity in existing.iter().skip(1) {
-        commands.entity(entity).despawn();
+        commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
     }
 }
 
@@ -469,7 +469,7 @@ pub fn sync_inlay_hints(
 
     // Clear existing hints
     for entity in existing.iter() {
-        commands.entity(entity).despawn();
+        commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
     }
 
     if hint_state.hints.is_empty() {
@@ -549,7 +549,7 @@ pub fn sync_document_highlights(
     }
 
     for entity in existing.iter() {
-        commands.entity(entity).despawn();
+        commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
     }
 
     if !highlight_state.visible || highlight_state.highlights.is_empty() {

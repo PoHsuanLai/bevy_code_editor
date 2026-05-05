@@ -6,9 +6,6 @@
 use bevy::prelude::*;
 use bevy::window::{CursorIcon, SystemCursorIcon};
 use bevy_code_editor::prelude::*;
-use bevy_code_editor::types::{
-    CursorState, EditHistoryState, EditorDisplayState, SelectionState, SyntaxCacheState,
-};
 
 #[cfg(feature = "tree-sitter")]
 use bevy_tree_sitter::Language;
@@ -29,145 +26,40 @@ fn main() {
         .run();
 }
 
-#[cfg(feature = "tree-sitter")]
 fn setup_editor(
-    mut commands: Commands,
-    mut editor_query: Query<
-        (
-            Entity,
-            &mut CursorState,
-            &mut TextViewState,
-            &mut EditHistoryState,
-            &mut SelectionState,
-            &mut SyntaxCacheState,
-            &mut EditorDisplayState,
-        ),
-        With<CodeEditor>,
-    >,
+    #[cfg(feature = "tree-sitter")] mut commands: Commands,
+    editor_query: Query<Entity, With<CodeEditor>>,
     mut input_focus: ResMut<bevy::input_focus::InputFocus>,
+    mut set_text_writer: MessageWriter<bevy_text_editor::SetTextRequested>,
 ) {
-    let Ok((
-        entity,
-        mut cursor,
-        mut tv,
-        mut hist,
-        mut sel,
-        mut syntax_cache,
-        mut display,
-    )) = editor_query.single_mut()
-    else {
+    let Ok(entity) = editor_query.single() else {
         return;
     };
-
-    // Always focused in basic editor (no UI competing for input)
     input_focus.set(entity);
 
-    // Load sqlite3.c from assets folder
-    let file_path = std::env::current_dir()
-        .expect("Failed to get current directory")
-        .join("assets/sqlite3.c");
-
+    let file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/sqlite3.c");
     let content = match std::fs::read_to_string(&file_path) {
         Ok(content) => {
-            println!(
-                "Loaded {} with {} lines",
-                file_path.display(),
-                content.lines().count()
-            );
+            println!("Loaded {} with {} lines", file_path.display(), content.lines().count());
             content
         }
         Err(e) => {
             eprintln!("Failed to load {}: {}", file_path.display(), e);
-            format!(
-                "// Failed to load sqlite3.c: {}\n// Make sure assets/sqlite3.c exists",
-                e
-            )
+            format!("// Failed to load sqlite3.c: {}\n// Make sure assets/sqlite3.c exists", e)
         }
     };
 
-    bevy_code_editor::input::editing::set_text(
-        &mut sel,
-        &mut hist,
-        &mut syntax_cache,
-        &mut display,
-        &mut cursor,
-        &mut tv,
-        &content,
-    );
+    set_text_writer.write(bevy_text_editor::SetTextRequested {
+        entity,
+        text: content,
+    });
 
-    // Component-driven tree-sitter wiring — `Language` Component on the
-    // editor entity drives provider setup + parse pipeline.
+    #[cfg(feature = "tree-sitter")]
     commands.entity(entity).insert(Language::from_grammar(
         "c",
         tree_sitter_c::LANGUAGE.into(),
         tree_sitter_c::HIGHLIGHT_QUERY,
     ));
-}
-
-#[cfg(not(feature = "tree-sitter"))]
-fn setup_editor(
-    mut editor_query: Query<
-        (
-            Entity,
-            &mut CursorState,
-            &mut TextViewState,
-            &mut EditHistoryState,
-            &mut SelectionState,
-            &mut SyntaxCacheState,
-            &mut EditorDisplayState,
-        ),
-        With<CodeEditor>,
-    >,
-    mut input_focus: ResMut<bevy::input_focus::InputFocus>,
-) {
-    let Ok((
-        entity,
-        mut cursor,
-        mut tv,
-        mut hist,
-        mut sel,
-        mut syntax_cache,
-        mut display,
-    )) = editor_query.single_mut()
-    else {
-        return;
-    };
-
-    // Always focused in basic editor (no UI competing for input)
-    input_focus.set(entity);
-
-    // Load sqlite3.c from assets folder
-    let file_path = std::env::current_dir()
-        .expect("Failed to get current directory")
-        .join("assets/sqlite3.c");
-
-    let content = match std::fs::read_to_string(&file_path) {
-        Ok(content) => {
-            println!(
-                "Loaded {} with {} lines (tree-sitter feature not enabled)",
-                file_path.display(),
-                content.lines().count()
-            );
-            content
-        }
-        Err(e) => {
-            eprintln!("Failed to load {}: {}", file_path.display(), e);
-            format!(
-                "// Failed to load sqlite3.c: {}\n// Make sure assets/sqlite3.c exists",
-                e
-            )
-        }
-    };
-
-    bevy_code_editor::input::editing::set_text(
-        &mut sel,
-        &mut hist,
-        &mut syntax_cache,
-        &mut display,
-        &mut cursor,
-        &mut tv,
-        &content,
-    );
 }
 
 fn update_cursor_icon(
@@ -185,14 +77,10 @@ fn update_cursor_icon(
             return;
         };
 
-        // Convert to world coordinates
         let cursor_x = cursor_pos.x - window.width() / 2.0;
-
-        // Calculate code area (from left edge to right before scrollbar)
         let viewport_width = viewport.width as f32;
-        let code_area_right = viewport_width / 2.0 - 20.0; // Leave some margin for scrollbar
+        let code_area_right = viewport_width / 2.0 - 20.0;
 
-        // Show text cursor only over code area when focused
         let over_code = cursor_x < code_area_right;
         let is_focused = input_focus.get() == Some(editor_entity);
         let icon = if is_focused && over_code {

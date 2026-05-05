@@ -7,7 +7,7 @@
 //! their indentation policy is non-default.
 
 use crate::editing_events::*;
-use crate::history::{EditKind, EditOperation};
+use crate::history::EditKind;
 use crate::state::{CursorState, EditHistoryState, IndentConfig, SelectionState, TextEditor};
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
@@ -51,39 +51,9 @@ pub fn delete_selection(
     let Some((start, end)) = sel.primary_range() else {
         return;
     };
-    let cursor_before = cursor.cursor_pos;
-    let deleted_text: String = tv.rope.slice(start..end).chars().collect();
-
-    let start_byte = tv.rope.char_to_byte(start);
-    let end_byte = tv.rope.char_to_byte(end);
-    let start_position = crate::edit::point_at_byte(&tv.rope, start_byte);
-    let old_end_position = crate::edit::point_at_byte(&tv.rope, end_byte);
-
-    tv.rope.remove(start_byte..end_byte);
-    cursor.cursor_pos = start;
-
-    if !deleted_text.is_empty() {
-        hist.history.record(EditOperation {
-            removed_text: deleted_text,
-            inserted_text: String::new(),
-            position: start,
-            cursor_before,
-            cursor_after: start,
-            kind: EditKind::Other,
-        });
-    }
-
-    hist.pending_byte_edit = Some(crate::EditDelta {
-        start_byte,
-        old_end_byte: end_byte,
-        new_end_byte: start_byte,
-        start_position,
-        old_end_position,
-        new_end_position: start_position,
-    });
-
+    let outcome = hist.replace_range(tv, start, end, "", EditKind::Other, true);
+    cursor.cursor_pos = outcome.new_cursor_pos;
     sel.apply_primary_cursor(cursor);
-    tv.content_version += 1;
 }
 
 pub fn handle_insert_newline(
@@ -258,41 +228,20 @@ pub fn delete_word_backward(
     cursor: &mut CursorState,
     tv: &mut TextViewState,
 ) {
-    let cursor_before = cursor.cursor_pos;
     let word_start = crate::cursor_movement::find_word_boundary_left(&tv.rope, cursor.cursor_pos);
-
-    if word_start < cursor_before {
-        let deleted_text: String = tv.rope.slice(word_start..cursor_before).chars().collect();
-
-        let start_byte = tv.rope.char_to_byte(word_start);
-        let end_byte = tv.rope.char_to_byte(cursor_before);
-        let start_position = crate::edit::point_at_byte(&tv.rope, start_byte);
-        let old_end_position = crate::edit::point_at_byte(&tv.rope, end_byte);
-
-        tv.rope.remove(start_byte..end_byte);
-
-        cursor.cursor_pos = word_start;
-        sel.apply_primary_cursor(cursor);
-
-        hist.history.record(EditOperation {
-            removed_text: deleted_text,
-            inserted_text: String::new(),
-            position: word_start,
-            cursor_before,
-            cursor_after: word_start,
-            kind: EditKind::DeleteBackward,
-        });
-        hist.pending_byte_edit = Some(crate::EditDelta {
-            start_byte,
-            old_end_byte: end_byte,
-            new_end_byte: start_byte,
-            start_position,
-            old_end_position,
-            new_end_position: start_position,
-        });
-
-        tv.content_version += 1;
+    if word_start >= cursor.cursor_pos {
+        return;
     }
+    let outcome = hist.replace_range(
+        tv,
+        word_start,
+        cursor.cursor_pos,
+        "",
+        EditKind::DeleteBackward,
+        true,
+    );
+    cursor.cursor_pos = outcome.new_cursor_pos;
+    sel.apply_primary_cursor(cursor);
 }
 
 /// Delete from cursor to word end.
@@ -302,38 +251,57 @@ pub fn delete_word_forward(
     cursor: &mut CursorState,
     tv: &mut TextViewState,
 ) {
-    let cursor_before = cursor.cursor_pos;
     let word_end = crate::cursor_movement::find_word_boundary_right(&tv.rope, cursor.cursor_pos);
+    if word_end <= cursor.cursor_pos {
+        return;
+    }
+    hist.replace_range(
+        tv,
+        cursor.cursor_pos,
+        word_end,
+        "",
+        EditKind::DeleteForward,
+        true,
+    );
+    sel.apply_primary_cursor(cursor);
+}
 
-    if word_end > cursor_before {
-        let deleted_text: String = tv.rope.slice(cursor_before..word_end).chars().collect();
+/// Apply `ReplaceRangeRequested` events. Routes to the requested entity and
+/// uses `replace_range` to mutate, ensuring history + anchors + `OnEdit`
+/// stay correct. Cross-crate consumers (LSP, completion, formatting,
+/// refactoring) emit the event and never touch editor state directly.
+pub fn handle_replace_range(
+    mut events: MessageReader<ReplaceRangeRequested>,
+    mut q: EditorBufQuery,
+) {
+    for event in events.read() {
+        let Ok((mut sel, mut hist, mut cursor, mut tv)) = q.get_mut(event.entity) else {
+            continue;
+        };
+        let outcome = hist.replace_range(
+            &mut tv,
+            event.start_char,
+            event.end_char,
+            &event.text,
+            event.kind,
+            event.record_history,
+        );
+        if cursor.cursor_pos >= event.start_char {
+            cursor.cursor_pos = outcome.new_cursor_pos;
+            sel.apply_primary_cursor(&cursor);
+        }
+    }
+}
 
-        let start_byte = tv.rope.char_to_byte(cursor_before);
-        let end_byte = tv.rope.char_to_byte(word_end);
-        let start_position = crate::edit::point_at_byte(&tv.rope, start_byte);
-        let old_end_position = crate::edit::point_at_byte(&tv.rope, end_byte);
-
-        tv.rope.remove(start_byte..end_byte);
-
-        sel.apply_primary_cursor(cursor);
-
-        hist.history.record(EditOperation {
-            removed_text: deleted_text,
-            inserted_text: String::new(),
-            position: cursor_before,
-            cursor_before,
-            cursor_after: cursor_before,
-            kind: EditKind::DeleteForward,
-        });
-        hist.pending_byte_edit = Some(crate::EditDelta {
-            start_byte,
-            old_end_byte: end_byte,
-            new_end_byte: start_byte,
-            start_position,
-            old_end_position,
-            new_end_position: start_position,
-        });
-
-        tv.content_version += 1;
+/// Apply `SetTextRequested` events. Replaces the whole buffer.
+pub fn handle_set_text(
+    mut events: MessageReader<SetTextRequested>,
+    mut q: EditorBufQuery,
+) {
+    for event in events.read() {
+        let Ok((mut sel, mut hist, mut cursor, mut tv)) = q.get_mut(event.entity) else {
+            continue;
+        };
+        hist.set_text(&mut sel, &mut cursor, &mut tv, &event.text);
     }
 }

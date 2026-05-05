@@ -252,19 +252,18 @@ pub fn tick_lsp_debounce_timers(
     }
 }
 
-/// Listens to ApplyCompletionEvent.
+/// Listens to ApplyCompletionEvent. Emits a `ReplaceRangeRequested` for
+/// `bevy_text_editor` to apply the edit so history / anchors / `OnEdit`
+/// stay correct.
 pub fn listen_apply_completion(
     mut events: MessageReader<ApplyCompletionEvent>,
     mut query: Query<
-        (
-            &mut TextViewState,
-            &mut CursorState,
-            &mut LspCompletionPopup,
-        ),
+        (Entity, &TextViewState, &CursorState, &mut LspCompletionPopup),
         With<CodeEditor>,
     >,
+    mut replace_writer: MessageWriter<bevy_text_editor::ReplaceRangeRequested>,
 ) {
-    let Ok((mut tv, mut cursor_state, mut completion_state)) = query.single_mut() else {
+    let Ok((entity, tv, cursor_state, mut completion_state)) = query.single_mut() else {
         return;
     };
     for event in events.read() {
@@ -277,23 +276,17 @@ pub fn listen_apply_completion(
         let cursor_pos = cursor_state.cursor_pos.min(tv.rope.len_chars());
         let line = tv.rope.char_to_line(cursor_pos);
         let line_start = tv.rope.line_to_char(line);
-        let cursor_char = cursor_pos - line_start;
 
-        let start_offset_in_line = if completion_state.start_char_index >= line_start {
-            completion_state.start_char_index - line_start
-        } else {
-            cursor_char
-        };
-        let start_pos = line_start + start_offset_in_line;
-        if start_pos < cursor_pos {
-            tv.rope.remove(start_pos..cursor_pos);
-            cursor_state.cursor_pos = start_pos;
-        }
+        let start_pos = completion_state.start_char_index.max(line_start).min(cursor_pos);
 
-        let insert_text = item.insert_text();
-        let cursor_pos = cursor_state.cursor_pos;
-        tv.rope.insert(cursor_pos, insert_text);
-        cursor_state.cursor_pos += insert_text.len();
+        replace_writer.write(bevy_text_editor::ReplaceRangeRequested {
+            entity,
+            start_char: start_pos,
+            end_char: cursor_pos,
+            text: item.insert_text().to_string(),
+            kind: bevy_text_editor::EditKind::Other,
+            record_history: true,
+        });
         completion_state.visible = false;
         completion_state.filter.clear();
     }

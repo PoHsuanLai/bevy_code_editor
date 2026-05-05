@@ -10,8 +10,7 @@
 //! editor crate adds behavior via observers, never by reading the lower
 //! crate's mutable fields.
 
-use crate::text_view::TextViewState;
-use crate::types::{EditHistoryState, EditorDisplayState, SyntaxCacheState};
+use crate::types::{EditorDisplayState, SyntaxCacheState};
 use bevy::prelude::*;
 use bevy_text_editor::OnEdit;
 
@@ -46,36 +45,3 @@ pub fn on_edit_invalidate_caches(
     }
 }
 
-/// Set buffer text and eagerly propagate the edit's side effects to the
-/// editor's per-entity caches.
-///
-/// Hosts call this at startup (before any system runs) to load file
-/// contents. The normal observer flow runs at Update time, but a host
-/// loading text in `Startup` and immediately rendering wouldn't see syntax
-/// highlighting on the first frame without this eager drain.
-#[allow(clippy::too_many_arguments)]
-pub fn set_text(
-    sel: &mut crate::types::SelectionState,
-    hist: &mut EditHistoryState,
-    syntax: &mut SyntaxCacheState,
-    display: &mut EditorDisplayState,
-    cursor: &mut crate::types::CursorState,
-    tv: &mut TextViewState,
-    text: &str,
-) {
-    hist.set_text(sel, cursor, tv, text);
-    if let Some(byte_edit) = hist.pending_byte_edit.take() {
-        #[cfg(feature = "tree-sitter")]
-        {
-            syntax.pending_tree_sitter_edit = Some(byte_edit);
-        }
-        #[cfg(not(feature = "tree-sitter"))]
-        {
-            let _ = byte_edit;
-            let _ = syntax;
-        }
-    }
-    if let Some(line_idx) = hist.invalidate_lines_from.take() {
-        display.invalidate_lines_from = Some(line_idx);
-    }
-}

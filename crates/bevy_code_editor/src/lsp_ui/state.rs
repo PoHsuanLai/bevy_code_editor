@@ -511,6 +511,7 @@ pub struct LspDocumentHighlights {
     pub visible: bool,
     /// Timer for debouncing highlight requests
     pub debounce_timer: Option<Timer>,
+    pub in_flight_position: Option<usize>,
 }
 
 impl LspDocumentHighlights {

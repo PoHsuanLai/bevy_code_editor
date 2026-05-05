@@ -7,9 +7,6 @@
 use bevy::prelude::*;
 use bevy::window::{CursorIcon, SystemCursorIcon};
 use bevy_code_editor::prelude::*;
-use bevy_code_editor::types::{
-    CursorState, EditHistoryState, EditorDisplayState, SelectionState, SyntaxCacheState,
-};
 
 fn main() {
     App::new()
@@ -28,41 +25,16 @@ fn main() {
 }
 
 fn setup_editor(
-    mut editor_query: Query<
-        (
-            Entity,
-            &mut CursorState,
-            &mut TextViewState,
-            &mut EditHistoryState,
-            &mut SelectionState,
-            &mut SyntaxCacheState,
-            &mut EditorDisplayState,
-        ),
-        With<CodeEditor>,
-    >,
+    editor_query: Query<Entity, With<CodeEditor>>,
     mut input_focus: ResMut<bevy::input_focus::InputFocus>,
+    mut set_text_writer: MessageWriter<bevy_text_editor::SetTextRequested>,
 ) {
-    let Ok((
-        entity,
-        mut cursor,
-        mut tv,
-        mut hist,
-        mut sel,
-        mut syntax_cache,
-        mut display,
-    )) = editor_query.single_mut()
-    else {
+    let Ok(entity) = editor_query.single() else {
         return;
     };
-
-    // Always focused in basic editor (no UI competing for input)
     input_focus.set(entity);
 
-    // Load sqlite3.c from assets folder
-    let file_path = std::env::current_dir()
-        .expect("Failed to get current directory")
-        .join("assets/sqlite3.c");
-
+    let file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/sqlite3.c");
     let content = match std::fs::read_to_string(&file_path) {
         Ok(content) => {
             println!(
@@ -76,7 +48,6 @@ fn setup_editor(
         Err(e) => {
             eprintln!("Failed to load {}: {}", file_path.display(), e);
             eprintln!("Generating sample content instead...");
-            // Generate sample content for testing
             let mut content = String::new();
             for i in 0..10000 {
                 content.push_str(&format!(
@@ -88,15 +59,10 @@ fn setup_editor(
         }
     };
 
-    bevy_code_editor::input::editing::set_text(
-        &mut sel,
-        &mut hist,
-        &mut syntax_cache,
-        &mut display,
-        &mut cursor,
-        &mut tv,
-        &content,
-    );
+    set_text_writer.write(bevy_text_editor::SetTextRequested {
+        entity,
+        text: content,
+    });
 }
 
 fn update_cursor_icon(

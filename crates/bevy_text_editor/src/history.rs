@@ -1,9 +1,10 @@
 //! Edit history and undo/redo types
 
+use bevy::reflect::Reflect;
 use std::time::Instant;
 
 /// Type of edit for transaction grouping decisions
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Reflect)]
 pub enum EditKind {
     /// Inserting characters (typing)
     Insert,

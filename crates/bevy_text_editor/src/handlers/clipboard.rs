@@ -1,7 +1,7 @@
 //! Clipboard handlers — Copy / Cut / Paste.
 
 use crate::editing_events::*;
-use crate::history::{EditKind, EditOperation};
+use crate::history::EditKind;
 use crate::state::{CursorState, EditHistoryState, SelectionState, TextEditor};
 use arboard::Clipboard;
 use bevy::input_focus::InputFocus;
@@ -57,41 +57,17 @@ pub fn handle_cut(
     let Some((start, end)) = sel.primary_range() else {
         return;
     };
-    let start = start.min(tv.rope.len_chars());
-    let end = end.min(tv.rope.len_chars());
-    let selected_text = tv.rope.slice(start..end).to_string();
-    let cursor_before = cursor.cursor_pos;
+    let selected_text = tv.rope.slice(
+        start.min(tv.rope.len_chars())..end.min(tv.rope.len_chars()),
+    ).to_string();
 
     if let Ok(mut clipboard) = Clipboard::new() {
-        let _ = clipboard.set_text(selected_text.clone());
+        let _ = clipboard.set_text(selected_text);
     }
 
-    let start_byte = tv.rope.char_to_byte(start);
-    let end_byte = tv.rope.char_to_byte(end);
-    let start_position = crate::edit::point_at_byte(&tv.rope, start_byte);
-    let old_end_position = crate::edit::point_at_byte(&tv.rope, end_byte);
-    tv.rope.remove(start_byte..end_byte);
-    cursor.cursor_pos = start;
-
-    hist.history.record(EditOperation {
-        removed_text: selected_text,
-        inserted_text: String::new(),
-        position: start,
-        cursor_before,
-        cursor_after: start,
-        kind: EditKind::Other,
-    });
-    hist.pending_byte_edit = Some(crate::EditDelta {
-        start_byte,
-        old_end_byte: end_byte,
-        new_end_byte: start_byte,
-        start_position,
-        old_end_position,
-        new_end_position: start_position,
-    });
-
+    let outcome = hist.replace_range(&mut tv, start, end, "", EditKind::Other, true);
+    cursor.cursor_pos = outcome.new_cursor_pos;
     sel.apply_primary_cursor(&cursor);
-    tv.content_version += 1;
 }
 
 pub fn handle_paste(
@@ -123,62 +99,8 @@ pub fn handle_paste(
         return;
     };
 
-    let cursor_before = cursor.cursor_pos;
-    let mut deleted_text = String::new();
-    let paste_position;
-    let removed_bytes;
-    let start_byte_pre;
-    let start_position;
-    let old_end_position;
-
-    if let Some((start, end)) = sel.primary_range() {
-        let start = start.min(tv.rope.len_chars());
-        let end = end.min(tv.rope.len_chars());
-        deleted_text = tv.rope.slice(start..end).to_string();
-        let s_byte = tv.rope.char_to_byte(start);
-        let e_byte = tv.rope.char_to_byte(end);
-        start_byte_pre = s_byte;
-        start_position = crate::edit::point_at_byte(&tv.rope, s_byte);
-        old_end_position = crate::edit::point_at_byte(&tv.rope, e_byte);
-        removed_bytes = e_byte - s_byte;
-        tv.rope.remove(s_byte..e_byte);
-        cursor.cursor_pos = start;
-        paste_position = start;
-    } else {
-        paste_position = cursor.cursor_pos.min(tv.rope.len_chars());
-        let s_byte = tv.rope.char_to_byte(paste_position);
-        start_byte_pre = s_byte;
-        start_position = crate::edit::point_at_byte(&tv.rope, s_byte);
-        old_end_position = start_position;
-        removed_bytes = 0;
-    }
-
-    let had_newlines = text.contains('\n') || deleted_text.contains('\n');
-    tv.rope.insert(paste_position, &text);
-    cursor.cursor_pos = paste_position + text.chars().count();
+    let (start, end) = sel.primary_range().unwrap_or((cursor.cursor_pos, cursor.cursor_pos));
+    let outcome = hist.replace_range(&mut tv, start, end, &text, EditKind::Paste, true);
+    cursor.cursor_pos = outcome.new_cursor_pos;
     sel.apply_primary_cursor(&cursor);
-    tv.content_version += 1;
-
-    let new_end_byte = start_byte_pre + text.len();
-    hist.history.record(EditOperation {
-        removed_text: deleted_text,
-        inserted_text: text.clone(),
-        position: paste_position,
-        cursor_before,
-        cursor_after: cursor.cursor_pos,
-        kind: EditKind::Paste,
-    });
-    hist.pending_byte_edit = Some(crate::EditDelta {
-        start_byte: start_byte_pre,
-        old_end_byte: start_byte_pre + removed_bytes,
-        new_end_byte,
-        start_position,
-        old_end_position,
-        new_end_position: crate::edit::point_at_byte(&tv.rope, new_end_byte),
-    });
-
-    if had_newlines {
-        let line_idx = tv.rope.char_to_line(paste_position);
-        hist.invalidate_lines_from = Some(line_idx);
-    }
 }

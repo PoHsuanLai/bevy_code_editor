@@ -6,10 +6,7 @@
 use bevy::prelude::*;
 use bevy::window::{CursorIcon, SystemCursorIcon};
 use bevy_code_editor::prelude::*;
-use bevy_code_editor::types::{
-    CursorState, EditHistoryState, EditorDisplayState, SelectionState, SyntaxCacheState,
-    ViewportConfig,
-};
+use bevy_code_editor::types::ViewportConfig;
 
 /// Which edge/corner is being resized
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -126,33 +123,12 @@ fn main() {
 
 fn setup(
     mut commands: Commands,
-    mut editor_query: Query<
-        (
-            Entity,
-            &mut CursorState,
-            &mut TextViewState,
-            &mut TextViewViewport,
-            &mut EditHistoryState,
-            &mut SelectionState,
-            &mut SyntaxCacheState,
-            &mut EditorDisplayState,
-        ),
-        With<CodeEditor>,
-    >,
+    mut editor_query: Query<(Entity, &mut TextViewViewport), With<CodeEditor>>,
     panel: Res<EditorPanel>,
     mut input_focus: ResMut<bevy::input_focus::InputFocus>,
+    mut set_text_writer: MessageWriter<bevy_text_editor::SetTextRequested>,
 ) {
-    let Ok((
-        entity,
-        mut cursor,
-        mut tv,
-        mut viewport,
-        mut hist,
-        mut sel,
-        mut syntax_cache,
-        mut display,
-    )) = editor_query.single_mut()
-    else {
+    let Ok((entity, mut viewport)) = editor_query.single_mut() else {
         return;
     };
 
@@ -228,14 +204,9 @@ fn setup(
 
     // Set initial content
     input_focus.set(entity);
-    bevy_code_editor::input::editing::set_text(
-        &mut sel,
-        &mut hist,
-        &mut syntax_cache,
-        &mut display,
-        &mut cursor,
-        &mut tv,
-        r#"// Resizable Editor Demo
+    set_text_writer.write(bevy_text_editor::SetTextRequested {
+        entity,
+        text: r#"// Resizable Editor Demo
 //
 // Drag any edge or corner to resize the editor!
 // - Edges: resize in one direction
@@ -297,8 +268,9 @@ mod utils {
         true
     }
 }
-"#,
-    );
+"#
+        .to_string(),
+    });
 }
 
 fn detect_resize_edge(panel: &EditorPanel, cursor_x: f32, cursor_y: f32) -> ResizeEdge {

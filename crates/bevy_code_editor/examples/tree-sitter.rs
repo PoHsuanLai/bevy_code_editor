@@ -5,9 +5,6 @@
 
 use bevy::prelude::*;
 use bevy_code_editor::prelude::*;
-use bevy_code_editor::types::{
-    CursorState, EditHistoryState, EditorDisplayState, SelectionState, SyntaxCacheState,
-};
 #[cfg(feature = "tree-sitter")]
 use bevy_tree_sitter::Language;
 
@@ -26,37 +23,17 @@ fn main() {
         .run();
 }
 
-#[cfg(feature = "tree-sitter")]
 fn setup_editor_with_treesitter(
-    mut commands: Commands,
-    mut editor_query: Query<
-        (
-            Entity,
-            &mut CursorState,
-            &mut TextViewState,
-            &mut EditHistoryState,
-            &mut SelectionState,
-            &mut SyntaxCacheState,
-            &mut EditorDisplayState,
-        ),
-        With<CodeEditor>,
-    >,
+    #[cfg(feature = "tree-sitter")] mut commands: Commands,
+    editor_query: Query<Entity, With<CodeEditor>>,
+    mut set_text_writer: MessageWriter<bevy_text_editor::SetTextRequested>,
 ) {
-    let Ok((
-        entity,
-        mut cursor,
-        mut tv,
-        mut hist,
-        mut sel,
-        mut syntax_cache,
-        mut display,
-    )) = editor_query.single_mut()
-    else {
+    let Ok(entity) = editor_query.single() else {
         return;
     };
 
-    // Sample Rust code to demonstrate syntax highlighting
-    let rust_code = r#"// Rust syntax highlighting with tree-sitter
+    #[cfg(feature = "tree-sitter")]
+    let text = r#"// Rust syntax highlighting with tree-sitter
 use std::collections::HashMap;
 
 /// A simple struct to demonstrate syntax highlighting
@@ -119,66 +96,18 @@ fn main() {
 }
 "#;
 
-    bevy_code_editor::input::editing::set_text(
-        &mut sel,
-        &mut hist,
-        &mut syntax_cache,
-        &mut display,
-        &mut cursor,
-        &mut tv,
-        rust_code,
-    );
+    #[cfg(not(feature = "tree-sitter"))]
+    let text = "Tree-sitter feature is not enabled!\n\nRun with `--features tree-sitter`.";
 
-    // Component-driven tree-sitter wiring: attach a `Language` to the
-    // editor entity. The editor's `react_language_changed` system sees
-    // it and configures the per-entity provider's highlights query;
-    // `bevy_tree_sitter::parse_dirty` then drives parses off the entity's
-    // `ParseSourceComp` and writes results into the `SyntaxTree`.
+    set_text_writer.write(bevy_text_editor::SetTextRequested {
+        entity,
+        text: text.to_string(),
+    });
+
+    #[cfg(feature = "tree-sitter")]
     commands.entity(entity).insert(Language::from_grammar(
         "rust",
         tree_sitter_rust::LANGUAGE.into(),
         tree_sitter_rust::HIGHLIGHTS_QUERY,
     ));
-}
-
-#[cfg(not(feature = "tree-sitter"))]
-fn setup_editor_with_treesitter(
-    mut editor_query: Query<
-        (
-            &mut CursorState,
-            &mut TextViewState,
-            &mut EditHistoryState,
-            &mut SelectionState,
-            &mut SyntaxCacheState,
-            &mut EditorDisplayState,
-        ),
-        With<CodeEditor>,
-    >,
-) {
-    let Ok((mut cursor, mut tv, mut hist, mut sel, mut syntax_cache, mut display)) =
-        editor_query.single_mut()
-    else {
-        return;
-    };
-
-    let message = r#"Tree-sitter feature is not enabled!
-
-To run this example with syntax highlighting, use:
-
-    cargo run --example treesitter_highlighting --features tree-sitter
-
-Or use the default features:
-
-    cargo run --example treesitter_highlighting
-"#;
-
-    bevy_code_editor::input::editing::set_text(
-        &mut sel,
-        &mut hist,
-        &mut syntax_cache,
-        &mut display,
-        &mut cursor,
-        &mut tv,
-        message,
-    );
 }

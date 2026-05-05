@@ -206,6 +206,9 @@ fn register_editing_events(app: &mut App) {
         // Undo / redo
         UndoRequested,
         RedoRequested,
+        // Programmatic edits (LSP, completion, formatting, refactoring, host setup)
+        ReplaceRangeRequested,
+        SetTextRequested,
     );
 }
 
@@ -258,6 +261,8 @@ fn register_handler_systems(app: &mut App) {
             edit::handle_delete_line,
             edit::handle_undo,
             edit::handle_redo,
+            edit::handle_replace_range,
+            edit::handle_set_text,
             clipboard::handle_copy,
             clipboard::handle_cut,
             clipboard::handle_paste,

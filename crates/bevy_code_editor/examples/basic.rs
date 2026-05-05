@@ -16,9 +16,6 @@
 use bevy::prelude::*;
 use bevy::window::{CursorIcon, SystemCursorIcon};
 use bevy_code_editor::prelude::*;
-use bevy_code_editor::types::{
-    CursorState, EditHistoryState, EditorDisplayState, SelectionState, SyntaxCacheState,
-};
 
 fn main() {
     App::new()
@@ -37,34 +34,14 @@ fn main() {
 }
 
 fn setup_editor(
-    mut editor_query: Query<
-        (
-            Entity,
-            &mut CursorState,
-            &mut TextViewState,
-            &mut EditHistoryState,
-            &mut SelectionState,
-            &mut SyntaxCacheState,
-            &mut EditorDisplayState,
-        ),
-        With<CodeEditor>,
-    >,
+    editor_query: Query<Entity, With<CodeEditor>>,
     mut input_focus: ResMut<bevy::input_focus::InputFocus>,
+    mut set_text_writer: MessageWriter<bevy_text_editor::SetTextRequested>,
 ) {
-    let Ok((
-        entity,
-        mut cursor,
-        mut tv,
-        mut hist,
-        mut sel,
-        mut syntax_cache,
-        mut display,
-    )) = editor_query.single_mut()
-    else {
+    let Ok(entity) = editor_query.single() else {
         return;
     };
 
-    // Always focused in basic editor (no UI competing for input)
     input_focus.set(entity);
 
     // Set initial Python code
@@ -117,15 +94,10 @@ if __name__ == "__main__":
     main()
 "#;
 
-    bevy_code_editor::input::editing::set_text(
-        &mut sel,
-        &mut hist,
-        &mut syntax_cache,
-        &mut display,
-        &mut cursor,
-        &mut tv,
-        initial_text,
-    );
+    set_text_writer.write(bevy_text_editor::SetTextRequested {
+        entity,
+        text: initial_text.to_string(),
+    });
 }
 
 fn update_cursor_icon(
