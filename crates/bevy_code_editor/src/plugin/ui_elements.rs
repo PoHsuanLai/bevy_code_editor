@@ -142,6 +142,18 @@ impl<'a> RowMap<'a> {
                 )
             })
     }
+
+    /// Pixel x where the given display row's text ends (line-local).
+    fn row_text_end_x(&self, display_row: u32, char_width: f32) -> f32 {
+        self.layout
+            .and_then(|l| {
+                l.lines
+                    .iter()
+                    .find(|line| line.display_row == display_row)
+                    .and_then(|line| l.x_at_byte(display_row, line.text.len()))
+            })
+            .unwrap_or(char_width)
+    }
 }
 
 /// Push selection rects for one buffer line's slice. With wrap on, the slice
@@ -165,12 +177,12 @@ fn push_selection_for_buffer_range(
         .layout
         .and_then(|l| l.x_at_byte(end_row, end_byte_in_row))
         .unwrap_or(span.sel_end_col as f32 * char_width);
-    // Non-final-line rows extend to the right edge so the multi-line band
-    // looks continuous; the final line uses the resolved end-x.
+    // Non-final-line rows extend to the row's text-end so the selection
+    // hugs the actual text instead of filling the row to the viewport edge.
     let trailing_x = if span.is_last_buffer_line {
         end_x_resolved
     } else {
-        f32::MAX
+        rows.row_text_end_x(end_row, char_width)
     };
 
     if start_row == end_row {
@@ -179,9 +191,11 @@ fn push_selection_for_buffer_range(
     }
 
     // Multi-row span (selection crossed a soft-wrap break).
-    out.push(selection_rect(start_row, start_x..f32::MAX, color));
+    let start_row_end = rows.row_text_end_x(start_row, char_width).max(start_x + char_width);
+    out.push(selection_rect(start_row, start_x..start_row_end, color));
     for r in (start_row + 1)..end_row {
-        out.push(selection_rect(r, 0.0..f32::MAX, color));
+        let r_end = rows.row_text_end_x(r, char_width).max(char_width);
+        out.push(selection_rect(r, 0.0..r_end, color));
     }
     out.push(selection_rect(end_row, 0.0..trailing_x, color));
 }

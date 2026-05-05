@@ -103,6 +103,7 @@ pub fn render_layout(
                 viewport_world_left,
                 viewport_world_top,
                 line_start_x,
+                viewport.width as f32,
                 atlas.solid_uv,
                 &mut below_instances,
             );
@@ -288,6 +289,7 @@ pub fn render_layout(
                 viewport_world_left,
                 viewport_world_top,
                 line_start_x,
+                viewport.width as f32,
                 atlas.solid_uv,
                 &mut above_instances,
             );
@@ -546,6 +548,7 @@ fn push_overlay_quad(
     world_left: f32,
     world_top: f32,
     line_start_x: f32,
+    viewport_width: f32,
     solid_uv: crate::gpu::GlyphInfo,
     out: &mut Vec<GlyphInstance>,
 ) {
@@ -560,9 +563,10 @@ fn push_overlay_quad(
     let baseline_offset = layout.baseline_offset;
     let x0 = rect.x_range.start.max(0.0);
     let x1 = if rect.x_range.end >= f32::MAX / 2.0 {
-        // Full-line: extend to the viewport's right edge from `line_start_x + line.x_offset`.
-        // The layout doesn't carry viewport width here, so callers using f32::MAX get a sentinel.
-        x0 + 1.0
+        // Sentinel: extend to the viewport's right edge.
+        // world_x_right == world_left + viewport_width
+        // world_x_right == world_left + line_start_x + line.x_offset + x1
+        (viewport_width - line_start_x - line.x_offset).max(x0 + 1.0)
     } else {
         rect.x_range.end
     };
