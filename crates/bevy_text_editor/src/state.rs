@@ -61,32 +61,29 @@ pub struct SelectionState {
 
 /// Edit history and anchor state component.
 ///
-/// Carries undo / redo stacks, the anchor set, and two side-channel fields
-/// edit ops record into so editor-level systems (incremental tree-sitter
-/// reparse, line-entity invalidation) can pick up what changed without
-/// re-diffing the rope:
+/// Carries undo / redo stacks, the anchor set, and two transient
+/// pending-edit fields edit ops record into. The
+/// [`crate::plugin::emit_edit_triggers`] system reads those fields each
+/// frame, fires an [`OnEdit`] event on the entity, and clears them.
 ///
-/// - `pending_byte_edit` — the `(start_byte, old_end_byte, new_end_byte)` of
-///   the most recent edit. Tree-sitter incremental parsing wants this; other
-///   consumers can ignore it. Cleared by editor systems after read.
-/// - `invalidate_lines_from` — when an edit changes line count, this records
-///   the line index from which subsequent line entities should be re-spawned.
-///   Cleared by editor systems after read.
-///
-/// Both are `Option`s and harmless to ignore — read-only / non-IDE hosts
-/// don't pay for them.
+/// Editor / consumer crates **observe `OnEdit`** rather than reading the
+/// fields directly. The fields are an implementation detail of how
+/// `EditHistoryState` records what changed within a single edit op; the
+/// public contract for downstream consumers is the [`OnEdit`] event.
 #[derive(Component)]
 pub struct EditHistoryState {
     /// Edit history for undo/redo
     pub history: EditHistory,
     /// Anchor set for edit-resilient position tracking
     pub anchors: AnchorSet,
-    /// Most recent edit, as a byte range. Set by every edit op; cleared by
-    /// downstream consumers (e.g. tree-sitter reparse) after read.
+    /// Most recent edit's byte range `(start_byte, old_end_byte, new_end_byte)`.
+    /// Set by edit ops; drained into an [`OnEdit`] trigger by
+    /// [`crate::plugin::emit_edit_triggers`].
+    #[doc(hidden)]
     pub pending_byte_edit: Option<(usize, usize, usize)>,
     /// Line index from which line-keyed entities should be invalidated.
-    /// Set when an edit changes line structure (newline insert/delete,
-    /// multi-line paste, multi-line undo). Cleared after read.
+    /// Set when an edit changes line structure; drained into [`OnEdit`].
+    #[doc(hidden)]
     pub invalidate_lines_from: Option<usize>,
 }
 
@@ -99,6 +96,34 @@ impl Default for EditHistoryState {
             invalidate_lines_from: None,
         }
     }
+}
+
+/// Emitted on a `TextEditor` entity after every edit operation.
+///
+/// Triggered by [`crate::plugin::emit_edit_triggers`] each Update; consumers
+/// add observers (`app.add_observer(...)`) to react. Carries:
+/// - `byte_edit`: `(start_byte, old_end_byte, new_end_byte)` for incremental
+///   tree-sitter reparse, did_change LSP notifications, etc. Always `Some`
+///   for real edits; may be `None` for trigger-only events that signal
+///   only a line-structure invalidation.
+/// - `invalidate_lines_from`: line index from which line-keyed entities
+///   need re-spawning. `Some` when the edit changed line count (newline
+///   insert/delete, multi-line paste, multi-line undo).
+///
+/// Bevy's per-entity event system: `commands.entity(e).trigger(OnEdit { … })`.
+/// Observers receive `On<OnEdit>` and read `trigger.event_target()` for the
+/// entity, plus the carried fields.
+#[derive(Message, EntityEvent, Clone, Copy, Debug, Reflect)]
+#[reflect(Clone, Debug)]
+pub struct OnEdit {
+    /// The editor entity whose buffer was edited.
+    pub entity: Entity,
+    /// `(start_byte, old_end_byte, new_end_byte)` of the change. `None` if
+    /// this trigger only signals a line-structure invalidation.
+    pub byte_edit: Option<(usize, usize, usize)>,
+    /// Line index from which to invalidate line-keyed entities. `None`
+    /// when no lines were added or removed.
+    pub invalidate_lines_from: Option<usize>,
 }
 
 /// Per-editor indentation policy for tab insertion.

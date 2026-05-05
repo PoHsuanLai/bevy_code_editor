@@ -275,16 +275,13 @@ impl Plugin for CodeEditorPlugin {
         // All handlers run in `InputSet` after the dispatcher.
         register_handler_systems(app);
 
-        // Drain `EditHistoryState`'s side-channel fields (set by
-        // `bevy_text_editor` edit handlers) into the editor's
-        // `SyntaxCacheState` and `EditorDisplayState` so tree-sitter
-        // incremental reparse and line-entity invalidation see the changes.
-        app.add_systems(
-            Update,
-            crate::input::drain_edit_side_effects
-                .in_set(InputSet)
-                .after(ActionDispatchSet),
-        );
+        // `bevy_text_editor` fires `OnEdit` triggers per editor entity after
+        // every edit op. The editor crate observes those triggers to keep
+        // its per-entity caches (`SyntaxCacheState` for incremental tree-
+        // sitter reparse, `EditorDisplayState` for line-entity invalidation)
+        // in sync. No system polls the source state; cross-crate
+        // propagation flows through the event bus.
+        app.add_observer(crate::input::on_edit_invalidate_caches);
 
         // Add state update systems in ApplyStateSet (convert targets to actual state)
         app.add_systems(
@@ -409,8 +406,7 @@ fn register_handler_systems(app: &mut App) {
         Update,
         crate::input::handlers::lsp_followup::lsp_followup
             .in_set(InputSet)
-            .after(lsp::handle_request_completion)
-            .after(crate::input::drain_edit_side_effects),
+            .after(lsp::handle_request_completion),
     );
 }
 

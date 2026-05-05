@@ -47,4 +47,4 @@ pub use history::{EditHistory, EditKind, EditOperation, EditTransaction};
 pub use interaction::{copy_selection, screen_to_char_pos};
 pub use plugin::{TextEditorPlugin, TextInteractionPlugin};
 pub use selection::{Selection, SelectionCollection};
-pub use state::{CursorState, EditHistoryState, IndentConfig, SelectionState, TextEditor};
+pub use state::{CursorState, EditHistoryState, IndentConfig, OnEdit, SelectionState, TextEditor};

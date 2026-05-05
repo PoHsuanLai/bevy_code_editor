@@ -26,7 +26,7 @@ use crate::interaction::{
     on_focused_keyboard, on_pointer_drag, on_pointer_press, on_pointer_release, on_pointer_scroll,
 };
 use crate::picking::text_view_picking_backend;
-use crate::state::{IndentConfig, TextEditor};
+use crate::state::{EditHistoryState, IndentConfig, OnEdit, TextEditor};
 use crate::typing::on_focused_keyboard_typing;
 
 /// Plugin registering pointer + keyboard interaction for `TextView`
@@ -114,6 +114,8 @@ impl Plugin for TextEditorPlugin {
 
         app.register_type::<TextEditor>();
         app.register_type::<IndentConfig>();
+        app.register_type::<OnEdit>();
+        app.add_message::<OnEdit>();
 
         register_editing_events(app);
 
@@ -122,6 +124,32 @@ impl Plugin for TextEditorPlugin {
         }
 
         register_handler_systems(app);
+
+        // Drains EditHistoryState's pending fields into per-entity
+        // `OnEdit` triggers. Consumers add observers on `OnEdit` to react
+        // (incremental tree-sitter reparse, LSP did_change, line entity
+        // invalidation, etc.). Runs after the editing handlers.
+        app.add_systems(Update, emit_edit_triggers);
+    }
+}
+
+/// Drain `EditHistoryState`'s pending-edit fields into per-entity [`OnEdit`]
+/// triggers. Idempotent — once a frame, taking the field clears it.
+pub fn emit_edit_triggers(
+    mut commands: Commands,
+    mut q: Query<(Entity, &mut EditHistoryState), With<TextEditor>>,
+) {
+    for (entity, mut hist) in q.iter_mut() {
+        if hist.pending_byte_edit.is_none() && hist.invalidate_lines_from.is_none() {
+            continue;
+        }
+        let byte_edit = hist.pending_byte_edit.take();
+        let invalidate_lines_from = hist.invalidate_lines_from.take();
+        commands.trigger(OnEdit {
+            entity,
+            byte_edit,
+            invalidate_lines_from,
+        });
     }
 }
 

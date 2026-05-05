@@ -25,7 +25,7 @@ pub mod mouse;
 pub mod selection_ops;
 
 pub use dispatch::dispatch_action_events;
-pub use editing::drain_edit_side_effects;
+pub use editing::on_edit_invalidate_caches;
 pub use keybindings::{default_input_map, EditorAction};
 pub use keyboard::on_focused_keyboard;
 pub use mouse::{on_alt_click, on_fold_gutter_press};

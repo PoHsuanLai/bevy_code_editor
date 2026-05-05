@@ -18,7 +18,6 @@ use super::actions::{
 use super::actions::{
     find_word_start, request_completion, send_did_change, update_completion_filter,
 };
-use super::editing::drain_one;
 use super::editor_ops::move_cursor;
 #[cfg(feature = "lsp")]
 use crate::settings::LspSettings;
@@ -52,8 +51,6 @@ pub fn on_focused_keyboard(
         (
             &mut SelectionState,
             &mut EditHistoryState,
-            &mut SyntaxCacheState,
-            &mut EditorDisplayState,
             &mut CursorState,
             &mut crate::text_view::TextViewState,
         ),
@@ -75,9 +72,7 @@ pub fn on_focused_keyboard(
 ) {
     let entity = trigger.event().focused_entity;
 
-    let Ok((mut sel, mut hist, mut syntax, mut display, mut cursor, mut tv)) =
-        editor_query.get_mut(entity)
-    else {
+    let Ok((mut sel, mut hist, mut cursor, mut tv)) = editor_query.get_mut(entity) else {
         return;
     };
 
@@ -151,8 +146,6 @@ pub fn on_focused_keyboard(
                     c,
                     &mut sel,
                     &mut hist,
-                    &mut syntax,
-                    &mut display,
                     &mut cursor,
                     &mut tv,
                     &brackets,
@@ -171,7 +164,6 @@ pub fn on_focused_keyboard(
             bevy_text_editor::handlers::edit::insert_char(
                 &mut sel, &mut hist, &mut cursor, &mut tv, ' ',
             );
-            drain_one(&mut hist, &mut syntax, &mut display);
             #[cfg(feature = "lsp")]
             {
                 send_did_change(&tv.rope, lsp_client, lsp_document.as_deref_mut());
@@ -190,8 +182,6 @@ fn insert_typed_char(
     c: char,
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
-    syntax: &mut SyntaxCacheState,
-    display: &mut EditorDisplayState,
     cursor: &mut CursorState,
     tv: &mut crate::text_view::TextViewState,
     brackets: &BracketSettings,
@@ -216,7 +206,6 @@ fn insert_typed_char(
     }
 
     bevy_text_editor::handlers::edit::insert_char(sel, hist, cursor, tv, c);
-    drain_one(hist, syntax, display);
 
     if brackets.auto_close {
         if let Some(closing) = get_closing_bracket(c, &brackets.pairs) {
