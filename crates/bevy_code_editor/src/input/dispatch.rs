@@ -172,6 +172,7 @@ pub struct ActionEventWriters<'w> {
     open: MessageWriter<'w, OpenRequested>,
 
     // Programmatic edits (LSP completion application, etc.)
+    #[cfg(feature = "lsp")]
     replace_range: MessageWriter<'w, bevy_text_editor::ReplaceRangeRequested>,
 }
 
