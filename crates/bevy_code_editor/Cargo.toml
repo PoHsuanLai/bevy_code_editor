@@ -28,7 +28,7 @@ bevy_tree_sitter = { path = "../bevy_tree_sitter", optional = true }
 bevy_lsp = { path = "../bevy_lsp", optional = true }
 
 # Bevy engine
-bevy = { version = "0.17", default-features = false, features = [
+bevy = { version = "0.18", default-features = false, features = [
     "bevy_render",
     "bevy_core_pipeline",
     "bevy_asset",
@@ -44,7 +44,7 @@ bevy = { version = "0.17", default-features = false, features = [
 ] }
 
 # Bevy camera for RenderLayers
-bevy_camera = "0.17"
+bevy_camera = "0.18"
 
 # Text buffer with efficient rope data structure
 ropey = "1.6"
@@ -53,7 +53,7 @@ ropey = "1.6"
 serde = { version = "1.0", features = ["derive"] }
 
 # Input management (keyboard only - no gamepad/mouse/ui overhead)
-leafwing-input-manager = {version = "0.18", features = ["keyboard"] }
+leafwing-input-manager = {version = "0.20", features = ["keyboard"] }
 
 # GPU text rendering - font rasterization (same as Zed uses)
 cosmic-text = "0.12"
@@ -81,14 +81,14 @@ serde_json = { version = "1.0", optional = true }
 fuzzy-matcher = { version = "0.3", optional = true }
 
 [dev-dependencies]
-bevy = { version = "0.17", features = ["bevy_window", "bevy_winit"] }
+bevy = { version = "0.18", features = ["bevy_window", "bevy_winit"] }
 tree-sitter-rust = "0.23"
 tree-sitter-c = "0.23"
 
 # egui+armas dev-deps used by `examples/lsp.rs`. The library proper does not
 # depend on these — the LSP egui renderer lives entirely inside the example.
-bevy_egui = "0.38"
-armas = { path = "../../../Armas/crates/armas", default-features = false, features = ["basic"] }
+bevy_egui = "0.39"
+armas = { git = "https://github.com/PoHsuanLai/Armas.git", default-features = false, features = ["basic"] }
 
 [features]
 default = ["tree-sitter"]

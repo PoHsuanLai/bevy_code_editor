@@ -14,7 +14,7 @@ categories = ["game-development"]
 bevy_text_engine = { path = "../bevy_text_engine" }
 
 # Match the editor's bevy feature set so this crate composes cleanly with it.
-bevy = { version = "0.17", default-features = false, features = [
+bevy = { version = "0.18", default-features = false, features = [
     "bevy_render",
     "bevy_core_pipeline",
     "bevy_asset",
@@ -33,5 +33,5 @@ ropey = "1.6"
 arboard = "3.4"
 
 [dev-dependencies]
-bevy = { version = "0.17", features = ["bevy_window", "bevy_winit"] }
+bevy = { version = "0.18", features = ["bevy_window", "bevy_winit"] }
 

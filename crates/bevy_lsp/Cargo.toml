@@ -10,8 +10,8 @@ keywords = ["bevy", "lsp", "language-server"]
 categories = ["game-development", "development-tools"]
 
 [dependencies]
-bevy = { version = "0.17", default-features = false, features = ["bevy_log"] }
-bevy-tokio-tasks = "0.17"
+bevy = { version = "0.18", default-features = false, features = ["bevy_log"] }
+bevy-tokio-tasks = "0.18"
 
 async-lsp = { version = "0.2", features = ["client-monitor", "stdio", "tokio"] }
 tokio = { version = "1", features = ["rt-multi-thread", "process", "io-std", "io-util", "macros", "sync"] }

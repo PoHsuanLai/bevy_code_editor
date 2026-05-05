@@ -10,7 +10,7 @@ keywords = ["bevy", "text", "rendering", "gpu", "engine"]
 categories = ["game-development", "rendering"]
 
 [dependencies]
-bevy = { version = "0.17", default-features = false, features = [
+bevy = { version = "0.18", default-features = false, features = [
     "bevy_render",
     "bevy_core_pipeline",
     "bevy_asset",
@@ -23,7 +23,7 @@ bevy = { version = "0.17", default-features = false, features = [
     "bevy_picking",
     "bevy_text",
 ] }
-bevy_camera = "0.17"
+bevy_camera = "0.18"
 
 ropey = "1.6"
 cosmic-text = "0.12"

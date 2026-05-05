@@ -120,10 +120,12 @@ pub struct TextureBindGroup {
 fn prepare_view_bind_group(
     mut commands: Commands,
     pipeline: Res<InstancedTextPipeline>,
+    pipeline_cache: Res<PipelineCache>,
     render_device: Res<RenderDevice>,
     views: Query<(Entity, &ExtractedView)>,
     globals: Option<Res<ExtractedTextGlobals>>,
 ) {
+    let view_layout = pipeline_cache.get_bind_group_layout(&pipeline.view_bind_group_layout);
     for (entity, view) in &views {
         let m = &view.clip_from_view;
         let is_ortho = (m.w_axis.w - 1.0).abs() < 0.001;
@@ -166,7 +168,7 @@ fn prepare_view_bind_group(
 
         let bind_group = render_device.create_bind_group(
             "text_view_bind_group",
-            &pipeline.view_bind_group_layout,
+            &view_layout,
             &[BindGroupEntry {
                 binding: 0,
                 resource: buffer.as_entire_binding(),
@@ -185,8 +187,11 @@ fn prepare_instance_buffers(
     query: Query<(Entity, &GlyphBatchComponent)>,
     render_device: Res<RenderDevice>,
     pipeline: Res<InstancedTextPipeline>,
+    pipeline_cache: Res<PipelineCache>,
     gpu_images: Res<RenderAssets<GpuImage>>,
 ) {
+    let texture_layout =
+        pipeline_cache.get_bind_group_layout(&pipeline.texture_bind_group_layout);
     // We now expect multiple batches (main text + line numbers), so no warning needed.
     // let batch_count = query.iter().count();
     // if batch_count > 1 {
@@ -231,7 +236,7 @@ fn prepare_instance_buffers(
             // info!("Creating texture bind group for atlas");
             let bind_group = render_device.create_bind_group(
                 "text_texture_bind_group",
-                &pipeline.texture_bind_group_layout,
+                &texture_layout,
                 &BindGroupEntries::sequential((&gpu_image.texture_view, &gpu_image.sampler)),
             );
 
@@ -248,17 +253,12 @@ fn prepare_instance_buffers(
 #[derive(Resource)]
 pub struct InstancedTextPipeline {
     shader: Handle<Shader>,
-    view_bind_group_layout: BindGroupLayout,
-    texture_bind_group_layout: BindGroupLayout,
+    view_bind_group_layout: BindGroupLayoutDescriptor,
+    texture_bind_group_layout: BindGroupLayoutDescriptor,
 }
 
-fn init_instanced_text_pipeline(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    render_device: Res<RenderDevice>,
-) {
-    // Create view bind group layout (for camera/view uniforms)
-    let view_bind_group_layout = render_device.create_bind_group_layout(
+fn init_instanced_text_pipeline(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let view_bind_group_layout = BindGroupLayoutDescriptor::new(
         "text_view_layout",
         &BindGroupLayoutEntries::sequential(
             ShaderStages::VERTEX_FRAGMENT,
@@ -266,8 +266,7 @@ fn init_instanced_text_pipeline(
         ),
     );
 
-    // Create texture bind group layout for atlas
-    let texture_bind_group_layout = render_device.create_bind_group_layout(
+    let texture_bind_group_layout = BindGroupLayoutDescriptor::new(
         "text_texture_layout",
         &BindGroupLayoutEntries::sequential(
             ShaderStages::FRAGMENT,
