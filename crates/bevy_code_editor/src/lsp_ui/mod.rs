@@ -27,6 +27,7 @@
 pub mod components;
 pub mod event_listeners;
 pub mod interceptors;
+pub mod snippet;
 pub mod state;
 pub mod sync;
 pub mod systems;

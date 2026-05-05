@@ -26,7 +26,7 @@ use crate::interaction::{
     on_focused_keyboard, on_pointer_drag, on_pointer_press, on_pointer_release, on_pointer_scroll,
 };
 use crate::picking::text_view_picking_backend;
-use crate::state::{EditHistoryState, IndentConfig, OnEdit, TextEditor};
+use crate::state::{EditHistoryState, IndentConfig, OnEdit, SnapshotPreEdit, TextEditor};
 use crate::typing::on_focused_keyboard_typing;
 
 /// Public ordering hook: `emit_edit_triggers` runs in this set. Consumers
@@ -121,6 +121,7 @@ impl Plugin for TextEditorPlugin {
         app.register_type::<TextEditor>();
         app.register_type::<IndentConfig>();
         app.register_type::<OnEdit>();
+        app.register_type::<SnapshotPreEdit>();
         app.add_message::<OnEdit>();
 
         register_editing_events(app);
@@ -135,7 +136,26 @@ impl Plugin for TextEditorPlugin {
         // `OnEdit` triggers. Runs in EditEmitSet so consumers can order
         // their downstream systems after it.
         app.configure_sets(Update, EditEmitSet);
-        app.add_systems(Update, emit_edit_triggers.in_set(EditEmitSet));
+        app.add_systems(
+            Update,
+            (mirror_snapshot_marker, emit_edit_triggers)
+                .chain()
+                .in_set(EditEmitSet),
+        );
+    }
+}
+
+/// Mirror the [`SnapshotPreEdit`] marker into the `snapshot_pre_edits`
+/// flag on each entity's `EditHistoryState` so the pure `replace_range`
+/// primitive can decide whether to clone the rope without taking a Bevy
+/// query.
+fn mirror_snapshot_marker(
+    mut q: Query<(&mut EditHistoryState, Has<SnapshotPreEdit>), With<TextEditor>>,
+) {
+    for (mut hist, has_marker) in q.iter_mut() {
+        if hist.snapshot_pre_edits != has_marker {
+            hist.snapshot_pre_edits = has_marker;
+        }
     }
 }
 
@@ -146,15 +166,20 @@ pub fn emit_edit_triggers(
     mut q: Query<(Entity, &mut EditHistoryState), With<TextEditor>>,
 ) {
     for (entity, mut hist) in q.iter_mut() {
-        if hist.pending_byte_edit.is_none() && hist.invalidate_lines_from.is_none() {
+        if hist.pending_byte_edit.is_none()
+            && hist.invalidate_lines_from.is_none()
+            && hist.pre_edit_rope.is_none()
+        {
             continue;
         }
         let byte_edit = hist.pending_byte_edit.take();
         let invalidate_lines_from = hist.invalidate_lines_from.take();
+        let pre_edit_rope = hist.pre_edit_rope.take();
         commands.trigger(OnEdit {
             entity,
             byte_edit,
             invalidate_lines_from,
+            pre_edit_rope,
         });
     }
 }

@@ -68,14 +68,14 @@ pub fn lsp_followup(
     let Ok((cursor, tv)) = editor_q.get_mut(entity) else {
         return;
     };
-    let Ok((lsp_client, mut lsp_document, mut completion_state)) = lsp_q.get_mut(entity) else {
+    let Ok((lsp_client, lsp_document, mut completion_state)) = lsp_q.get_mut(entity) else {
         return;
     };
 
-    // (1) Horizontal cursor move dismisses the completion popup.
-    if snapshot.was_horizontal_move {
-        completion_state.visible = false;
-    }
+    // (1) Cursor-move dismissal is handled by
+    //     `dismiss_completion_on_cursor_move` (mirrors Zed's char-kind
+    //     check). Nothing to do here.
+    let _ = snapshot.was_horizontal_move;
 
     // (2) Backspace inside an active completion popup refilters or hides
     //     the popup based on whether the cursor is still past the popup's
@@ -88,20 +88,16 @@ pub fn lsp_followup(
                 &mut completion_state,
             );
         } else if cursor.cursor_pos == completion_state.start_char_index {
-            completion_state.filter.clear();
-            completion_state.selected_index = 0;
+            // Empty prefix: hide (Zed behavior).
+            completion_state.dismiss();
         } else {
-            completion_state.visible = false;
-            completion_state.filter.clear();
+            completion_state.dismiss();
         }
     }
 
-    // (3) Text changed → notify the LSP server. We compare versions rather
-    //     than tracking per-action flags so paste/cut/insert/etc. all flow
-    //     through this single check.
-    if tv.content_version != snapshot.pre_content_version {
-        crate::input::actions::send_did_change(&tv.rope, lsp_client, lsp_document.as_deref_mut());
-    }
+    // didChange is fired by `listen_text_edit_events` whenever the
+    // OnEdit pipeline produces a TextEditEvent — no need here.
+    let _ = (tv, lsp_client, lsp_document, snapshot.pre_content_version);
 }
 
 /// Drain any unhandled action-event queues so they don't accumulate when LSP

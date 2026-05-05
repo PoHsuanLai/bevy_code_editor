@@ -37,8 +37,12 @@ pub fn on_edit_invalidate_caches(
         #[cfg(not(feature = "tree-sitter"))]
         {
             let _ = byte_edit;
-            let _ = &mut syntax;
         }
+        // Forward the pre-edit rope (when SnapshotPreEdit was on the
+        // entity) so LSP incremental sync can resolve byte offsets in
+        // the negotiated wire encoding without re-decoding the
+        // post-edit rope.
+        syntax.pending_pre_edit_rope = trigger.event().pre_edit_rope.clone();
     }
     if let Some(line_idx) = trigger.event().invalidate_lines_from {
         display.invalidate_lines_from = Some(line_idx);

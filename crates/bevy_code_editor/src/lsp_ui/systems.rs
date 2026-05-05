@@ -151,18 +151,72 @@ pub fn process_lsp_messages(
             }
 
             LspResponse::Completion {
+                id,
                 items,
                 is_incomplete,
             } => {
                 trace!(
-                    "[LSP] Completion: {} items, incomplete={}",
+                    "[LSP] Completion(id={}): {} items, incomplete={}",
+                    id,
                     items.len(),
                     is_incomplete
                 );
+                // Drop stale: a newer request was issued (or the popup was
+                // dismissed, which also bumps `request_id`) while this
+                // response was in flight.
+                if id != completion_state.request_id {
+                    continue;
+                }
+                // Drop if cursor is no longer in a position where
+                // completions make sense. Mirrors Zed's `continue_showing`:
+                // keep when (a) cursor at-or-after the menu's anchor and
+                // (b) prefix is all word chars.
+                let cursor_in_prefix = {
+                    let pos = cursor_state.cursor_pos;
+                    let start = completion_state.start_char_index;
+                    let max_prefix_len =
+                        tv.rope.len_chars().saturating_sub(start);
+                    let end_max = start + max_prefix_len;
+                    if pos < start || pos > end_max {
+                        false
+                    } else {
+                        let slice: String =
+                            tv.rope.slice(start..pos).chars().collect();
+                        slice.chars().all(|c| c.is_alphanumeric() || c == '_')
+                    }
+                };
                 completion_state.items = items;
                 completion_state.is_incomplete = is_incomplete;
-                completion_state.visible = !completion_state.items.is_empty();
+                completion_state.visible =
+                    cursor_in_prefix && !completion_state.items.is_empty();
                 completion_state.selected_index = 0;
+                // New item list invalidates any cached resolves keyed by
+                // labels that may no longer be present.
+                completion_state.resolved.clear();
+                completion_state.pending_resolve = None;
+                completion_state.resolve_request_id =
+                    completion_state.resolve_request_id.wrapping_add(1);
+            }
+
+            LspResponse::ResolvedCompletionItem { id, item } => {
+                trace!(
+                    "[LSP] ResolvedCompletionItem(id={}, label={})",
+                    id,
+                    item.label
+                );
+                // Drop stale: a newer resolve was requested or the popup
+                // was dismissed.
+                if id != completion_state.resolve_request_id {
+                    continue;
+                }
+                if let Some((label, pending_id)) = &completion_state.pending_resolve {
+                    if *pending_id == id && label == &item.label {
+                        completion_state
+                            .resolved
+                            .insert(item.label.clone(), item);
+                        completion_state.pending_resolve = None;
+                    }
+                }
             }
 
             LspResponse::Hover { content, range } => {
@@ -236,23 +290,28 @@ pub fn process_lsp_messages(
             }
 
             LspResponse::SignatureHelp {
+                id,
                 signatures,
                 active_signature,
                 active_parameter,
             } => {
                 #[cfg(debug_assertions)]
-                debug!("[LSP] SignatureHelp: {} signature(s)", signatures.len());
-
+                debug!("[LSP] SignatureHelp(id={}): {} signature(s)", id, signatures.len());
+                if id != sig_state.request_id {
+                    continue;
+                }
                 sig_state.signatures = signatures;
                 sig_state.active_signature = active_signature.unwrap_or(0) as usize;
                 sig_state.active_parameter = active_parameter.unwrap_or(0) as usize;
                 sig_state.visible = !sig_state.signatures.is_empty();
             }
 
-            LspResponse::CodeActions { actions } => {
+            LspResponse::CodeActions { id, actions } => {
                 #[cfg(debug_assertions)]
-                debug!("[LSP] CodeActions: {} action(s)", actions.len());
-
+                debug!("[LSP] CodeActions(id={}): {} action(s)", id, actions.len());
+                if id != action_state.request_id {
+                    continue;
+                }
                 action_state.actions = actions;
                 action_state.visible = !action_state.actions.is_empty();
                 action_state.selected_index = 0;
@@ -304,6 +363,21 @@ pub fn process_lsp_messages(
                 workspace_edit_events.write(WorkspaceEditEvent { edit });
 
                 // Close rename dialog
+                rename_state.reset();
+            }
+
+            LspResponse::ShutdownAck { .. } => {
+                // Caller follows up with `Exit`; nothing else to do here.
+                debug!("[LSP] ShutdownAck received");
+            }
+
+            LspResponse::Crashed => {
+                warn!("[LSP] server reported crashed / channel closed");
+                completion_state.dismiss();
+                hover_state.reset();
+                sig_state.dismiss();
+                action_state.dismiss();
+                highlight_state.reset();
                 rename_state.reset();
             }
         }
@@ -475,34 +549,41 @@ pub fn cleanup_lsp_timeouts(query: Query<&LspClient, With<CodeEditor>>) {
     }
 }
 
-/// Helper to send signature help request
+/// Helper to send signature help request. Bumps `sig_state.request_id`
+/// so the response handler can drop stale results.
 pub fn request_signature_help(
     lsp_client: &LspClient,
     capabilities: &ServerCapabilities,
     uri: &Url,
     position: Position,
+    sig_state: &mut LspSignatureHelpPopup,
 ) {
     if capabilities.supports_signature_help() {
+        sig_state.request_id = sig_state.request_id.wrapping_add(1);
         lsp_client.send(LspMessage::SignatureHelp {
             uri: uri.clone(),
             position,
+            id: sig_state.request_id,
         });
     }
 }
 
-/// Helper to send code action request
+/// Helper to send code action request. Bumps `action_state.request_id`.
 pub fn request_code_actions(
     lsp_client: &LspClient,
     capabilities: &ServerCapabilities,
     uri: &Url,
     range: Range,
     diagnostics: Vec<Diagnostic>,
+    action_state: &mut LspCodeActionsPopup,
 ) {
     if capabilities.supports_code_actions() {
+        action_state.request_id = action_state.request_id.wrapping_add(1);
         lsp_client.send(LspMessage::CodeAction {
             uri: uri.clone(),
             range,
             diagnostics,
+            id: action_state.request_id,
         });
     }
 }
@@ -575,6 +656,12 @@ pub fn request_document_highlights(
     if highlight_state.cursor_position != cursor_pos || highlight_state.debounce_timer.is_none() {
         highlight_state.cursor_position = cursor_pos;
         highlight_state.debounce_timer = Some(Timer::from_seconds(0.15, TimerMode::Once));
+        // Cursor moved: hide stale highlights immediately so they don't sit on
+        // the old symbol while we wait for the new response.
+        if highlight_state.visible {
+            highlight_state.highlights.clear();
+            highlight_state.visible = false;
+        }
         return;
     }
 

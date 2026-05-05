@@ -5,12 +5,27 @@
 //! everything needed for a working editable text field.
 
 use bevy::prelude::*;
+use ropey::Rope;
 
 use crate::anchor::AnchorSet;
 use crate::history::EditHistory;
 use crate::selection::SelectionCollection;
 
 use crate::components::{ScrollConfig, TextViewDragState};
+
+/// Marker requesting that [`EditHistoryState`] keep a clone of the rope
+/// from before each edit. Consumers that need pre-edit positions in the
+/// LSP wire encoding (incremental `did_change`) attach this to the
+/// editor entity. Plain text widgets don't need it — adding the marker
+/// is opt-in so we don't pay the structural-clone cost when no one is
+/// listening.
+///
+/// Ropey clones are O(log n) memory because of structural sharing, so
+/// the cost is small per-edit. The snapshot is dropped same-frame, after
+/// the [`OnEdit`] observer chain has read it.
+#[derive(Component, Default, Clone, Copy, Debug, Reflect)]
+#[reflect(Component, Default, Debug)]
+pub struct SnapshotPreEdit;
 
 /// Cursor state component — tracks the primary cursor's position over time.
 ///
@@ -86,6 +101,16 @@ pub struct EditHistoryState {
     /// Set when an edit changes line structure; drained into [`OnEdit`].
     #[doc(hidden)]
     pub invalidate_lines_from: Option<usize>,
+    /// `true` when [`SnapshotPreEdit`] is on the entity. Mirrored each
+    /// frame by the plugin so the pure `replace_range` primitive can
+    /// decide whether to clone the rope without a Bevy query.
+    #[doc(hidden)]
+    pub snapshot_pre_edits: bool,
+    /// Pre-edit rope captured by [`crate::edit::EditHistoryState::replace_range`]
+    /// when `snapshot_pre_edits` is set. Drained into [`OnEdit`] by
+    /// `emit_edit_triggers` and then consumed by LSP incremental sync.
+    #[doc(hidden)]
+    pub pre_edit_rope: Option<Rope>,
 }
 
 impl Default for EditHistoryState {
@@ -95,6 +120,8 @@ impl Default for EditHistoryState {
             anchors: AnchorSet::new(),
             pending_byte_edit: None,
             invalidate_lines_from: None,
+            snapshot_pre_edits: false,
+            pre_edit_rope: None,
         }
     }
 }
@@ -114,7 +141,11 @@ impl Default for EditHistoryState {
 /// Bevy's per-entity event system: `commands.entity(e).trigger(OnEdit { … })`.
 /// Observers receive `On<OnEdit>` and read `trigger.event_target()` for the
 /// entity, plus the carried fields.
-#[derive(Message, EntityEvent, Clone, Copy, Debug, Reflect)]
+///
+/// `pre_edit_rope` is `Some` only when [`SnapshotPreEdit`] is on the entity
+/// — used by LSP incremental sync to convert byte offsets to positions in
+/// the server's negotiated encoding without re-decoding the post-edit rope.
+#[derive(Message, EntityEvent, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct OnEdit {
     /// The editor entity whose buffer was edited.
@@ -125,6 +156,10 @@ pub struct OnEdit {
     /// Line index from which to invalidate line-keyed entities. `None`
     /// when no lines were added or removed.
     pub invalidate_lines_from: Option<usize>,
+    /// Pre-edit rope when [`SnapshotPreEdit`] is enabled. Cloned cheaply
+    /// (structural sharing) and dropped same-frame.
+    #[reflect(ignore)]
+    pub pre_edit_rope: Option<Rope>,
 }
 
 /// A 0-indexed `(row, byte_column)` position into the rope. Mirrors

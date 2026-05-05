@@ -144,6 +144,7 @@ impl Default for ViewportDimensions {
         crate::lsp_ui::state::LspRenamePopup,
         crate::lsp_ui::state::LspDebounceTimers,
         crate::lsp_ui::state::LspSyncStateExtra,
+        crate::lsp_ui::state::TabstopSession,
     )
 )]
 pub struct CodeEditor;
@@ -165,6 +166,10 @@ pub struct SyntaxCacheState {
     /// Pending text edit for tree-sitter incremental parsing.
     #[cfg(feature = "tree-sitter")]
     pub pending_tree_sitter_edit: Option<bevy_text_editor::EditDelta>,
+    /// Pre-edit rope for the most recent edit. Forwarded to consumers
+    /// (LSP incremental sync) via `TextEditEvent`. Populated only when
+    /// the editor has the [`bevy_text_editor::SnapshotPreEdit`] marker.
+    pub pending_pre_edit_rope: Option<ropey::Rope>,
 }
 
 impl Default for SyntaxCacheState {
@@ -178,6 +183,7 @@ impl Default for SyntaxCacheState {
             last_rendered_tree_version: 0,
             #[cfg(feature = "tree-sitter")]
             pending_tree_sitter_edit: None,
+            pending_pre_edit_rope: None,
         }
     }
 }

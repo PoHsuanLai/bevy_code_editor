@@ -4,12 +4,19 @@ use bevy::prelude::*;
 
 /// Notifies plugins (syntax highlighting, LSP, etc.) about text changes for
 /// incremental updates. Positions are captured at edit-time so consumers
-/// don't need the pre-edit rope.
+/// don't need the pre-edit rope for tree-sitter style byte-keyed edits.
+///
+/// `pre_edit_rope` is `Some` when the editor entity has the
+/// [`bevy_text_editor::SnapshotPreEdit`] marker (LSP attaches it). LSP
+/// incremental sync needs the pre-edit rope to convert byte offsets
+/// into LSP positions in the server's negotiated encoding.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct TextEditEvent {
     pub delta: bevy_text_editor::EditDelta,
     pub content_version: u64,
+    #[reflect(ignore)]
+    pub pre_edit_rope: Option<ropey::Rope>,
 }
 
 impl TextEditEvent {
@@ -17,7 +24,13 @@ impl TextEditEvent {
         Self {
             delta,
             content_version,
+            pre_edit_rope: None,
         }
+    }
+
+    pub fn with_pre_edit_rope(mut self, rope: Option<ropey::Rope>) -> Self {
+        self.pre_edit_rope = rope;
+        self
     }
 
     pub fn start_byte(&self) -> usize {

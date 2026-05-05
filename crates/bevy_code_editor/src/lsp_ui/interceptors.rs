@@ -68,21 +68,20 @@ pub fn completion_popup_intercept(
             true
         }
         EditorAction::InsertNewline | EditorAction::InsertTab => {
-            if let Ok((cursor, tv, _)) = editor_q.get(focused) {
+            if let Ok((cursor, _tv, _)) = editor_q.get(focused) {
                 actions::apply_completion(
                     focused,
                     cursor.cursor_pos,
                     completion_state,
                     replace_writer,
                 );
-                actions::send_did_change(&tv.rope, lsp_client, lsp_document);
             }
+            // didChange is sent via the OnEdit pipeline.
+            let _ = (lsp_client, lsp_document);
             true
         }
         EditorAction::ClearSelection => {
-            completion_state.visible = false;
-            completion_state.filter.clear();
-            completion_state.scroll_offset = 0;
+            completion_state.dismiss();
             true
         }
         _ => false,

@@ -488,6 +488,47 @@ fn render_completion_egui(
                     }
                 });
         });
+
+    // Side docs panel: when the server resolved documentation for the
+    // selected item, show it in a panel anchored to the right of the
+    // completion popup. Mirrors Zed's "completion + docs" layout.
+    let selected_label = filtered_items
+        .get(completion_state.selected_index)
+        .map(|item| item.label().to_string());
+    let resolved_docs = selected_label
+        .as_deref()
+        .and_then(|label| completion_state.resolved.get(label))
+        .and_then(|item| item.documentation.as_ref())
+        .map(|doc| match doc {
+            lsp_types::Documentation::String(s) => s.clone(),
+            lsp_types::Documentation::MarkupContent(m) => m.value.clone(),
+        })
+        .filter(|s| !s.is_empty());
+
+    if let Some(docs) = resolved_docs {
+        let docs_pos = egui::pos2(pos.x + popup_width + 4.0, pos.y);
+        egui::Area::new(egui::Id::new("lsp_completion_docs"))
+            .fixed_pos(docs_pos)
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                egui::Frame::NONE
+                    .fill(theme.card())
+                    .stroke(egui::Stroke::new(1.0, theme.border()))
+                    .corner_radius(egui::CornerRadius::same(theme.spacing.corner_radius))
+                    .inner_margin(egui::Margin::same(8))
+                    .show(ui, |ui| {
+                        ui.set_width(360.0);
+                        ui.set_max_height(popup_height);
+                        egui::ScrollArea::vertical().show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new(docs)
+                                    .color(theme.foreground())
+                                    .size(font.size * 0.9),
+                            );
+                        });
+                    });
+            });
+    }
 }
 
 /// Render the hover popup as an egui overlay.

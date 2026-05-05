@@ -33,6 +33,10 @@ pub struct CompletionPopupData {
     pub width: f32,
     /// Calculated popup height
     pub height: f32,
+    /// Resolved documentation for the currently selected item, if the
+    /// server returned any. Plain-text rendering — markdown is passed
+    /// through as the raw `value` per LSP spec.
+    pub selected_documentation: Option<String>,
 }
 
 /// Data for a single completion item

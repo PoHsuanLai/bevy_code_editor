@@ -16,7 +16,7 @@ use super::actions::{
 };
 #[cfg(feature = "lsp")]
 use super::actions::{
-    find_word_start, request_completion, send_did_change, update_completion_filter,
+    find_word_start, request_completion, update_completion_filter,
 };
 use super::editor_ops::move_cursor;
 #[cfg(feature = "lsp")]
@@ -63,6 +63,7 @@ pub fn on_focused_keyboard(
             &bevy_lsp::ServerCapabilities,
             &mut crate::lsp_ui::state::LspCompletionPopup,
             &mut crate::lsp_ui::state::LspRenamePopup,
+            Option<&crate::plugin::syntax_highlighting::EditorSyntaxState>,
         ),
         With<CodeEditor>,
     >,
@@ -80,9 +81,10 @@ pub fn on_focused_keyboard(
     let Ok((
         lsp_client,
         mut lsp_document,
-        _capabilities,
+        capabilities,
         mut completion_state,
         mut rename_state,
+        syntax_state,
     )) = lsp_query.get_mut(entity)
     else {
         return;
@@ -115,7 +117,7 @@ pub fn on_focused_keyboard(
                     {
                         crate::lsp_ui::systems::execute_rename(
                             lsp_client,
-                            _capabilities,
+                            capabilities,
                             &doc.uri,
                             position,
                             rename_state.new_name.clone(),
@@ -154,9 +156,13 @@ pub fn on_focused_keyboard(
                     #[cfg(feature = "lsp")]
                     lsp_client,
                     #[cfg(feature = "lsp")]
+                    capabilities,
+                    #[cfg(feature = "lsp")]
                     &mut completion_state,
                     #[cfg(feature = "lsp")]
                     lsp_document.as_deref_mut(),
+                    #[cfg(feature = "lsp")]
+                    syntax_state,
                 );
             }
         }
@@ -166,8 +172,8 @@ pub fn on_focused_keyboard(
             );
             #[cfg(feature = "lsp")]
             {
-                send_did_change(&tv.rope, lsp_client, lsp_document.as_deref_mut());
-                completion_state.visible = false;
+                let _ = (&lsp_client, &lsp_document);
+                completion_state.dismiss();
             }
         }
         _ => {}
@@ -187,8 +193,12 @@ fn insert_typed_char(
     brackets: &BracketSettings,
     #[cfg(feature = "lsp")] lsp: &LspSettings,
     #[cfg(feature = "lsp")] lsp_client: &bevy_lsp::LspClient,
+    #[cfg(feature = "lsp")] capabilities: &bevy_lsp::ServerCapabilities,
     #[cfg(feature = "lsp")] completion_state: &mut crate::lsp_ui::state::LspCompletionPopup,
-    #[cfg(feature = "lsp")] mut lsp_document: Option<&mut bevy_lsp::LspDocument>,
+    #[cfg(feature = "lsp")] lsp_document: Option<&mut bevy_lsp::LspDocument>,
+    #[cfg(feature = "lsp")] syntax_state: Option<
+        &crate::plugin::syntax_highlighting::EditorSyntaxState,
+    >,
 ) {
     if brackets.auto_close_quotes
         && get_closing_quote(c).is_some()
@@ -232,13 +242,34 @@ fn insert_typed_char(
 
     #[cfg(feature = "lsp")]
     {
-        send_did_change(&tv.rope, lsp_client, lsp_document.as_deref_mut());
+        // didChange is emitted via `listen_text_edit_events` from the
+        // OnEdit pipeline — no need to send it here.
 
         if lsp.completion.enabled {
-            let mut is_trigger = false;
             let cursor_pos = cursor.cursor_pos;
 
-            for trigger in &lsp.completion.trigger_characters {
+            // Suppress completion requests while the cursor is inside a
+            // string or comment per tree-sitter — Zed's "is_completion_context"
+            // gate. When tree-sitter isn't ready, default to allow.
+            let in_completion_context = match syntax_state {
+                Some(state) => {
+                    let byte = tv.rope.char_to_byte(cursor_pos);
+                    state.is_completion_context(byte)
+                }
+                None => true,
+            };
+
+            // Prefer the LSP server's advertised triggers; fall back to the
+            // host's configured list when the server doesn't advertise any.
+            let server_triggers = capabilities.completion_triggers();
+            let triggers: &[String] = if !server_triggers.is_empty() {
+                &server_triggers
+            } else {
+                &lsp.completion.trigger_characters
+            };
+
+            let mut is_trigger = false;
+            for trigger in triggers {
                 if trigger.len() == 1 {
                     if c.to_string() == *trigger {
                         is_trigger = true;
@@ -254,8 +285,8 @@ fn insert_typed_char(
                 }
             }
 
-            if is_trigger {
-                completion_state.visible = false;
+            if is_trigger && in_completion_context {
+                completion_state.dismiss();
                 request_completion(
                     cursor,
                     &tv.rope,
@@ -263,7 +294,7 @@ fn insert_typed_char(
                     completion_state,
                     lsp_document.as_deref(),
                 );
-            } else if c.is_alphanumeric() || c == '_' {
+            } else if (c.is_alphanumeric() || c == '_') && in_completion_context {
                 if completion_state.visible {
                     update_completion_filter(cursor, &tv.rope, completion_state);
                 } else {
@@ -281,8 +312,7 @@ fn insert_typed_char(
                     }
                 }
             } else if completion_state.visible {
-                completion_state.visible = false;
-                completion_state.filter.clear();
+                completion_state.dismiss();
             }
         }
     }

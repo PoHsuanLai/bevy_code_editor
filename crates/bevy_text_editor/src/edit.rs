@@ -72,6 +72,13 @@ impl EditHistoryState {
         let start_position = point_at_byte(&tv.rope, start_byte);
         let old_end_position = point_at_byte(&tv.rope, end_byte);
 
+        // Capture pre-edit rope when an LSP-style consumer asked for it.
+        // Ropey's structural sharing makes this O(log n); the snapshot is
+        // dropped same-frame after the OnEdit observer chain runs.
+        if self.snapshot_pre_edits && self.pre_edit_rope.is_none() {
+            self.pre_edit_rope = Some(tv.rope.clone());
+        }
+
         if start < end {
             self.anchors.record_edit(TextEdit::delete(start, end));
         }

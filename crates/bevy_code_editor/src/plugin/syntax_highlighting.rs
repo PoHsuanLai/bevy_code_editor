@@ -112,6 +112,46 @@ impl EditorSyntaxState {
         guard.provider.as_ref()?.tree().map(f)
     }
 
+    /// True when `byte_offset` is somewhere a completion request makes
+    /// sense — i.e. *not* inside a string literal or comment. Returns
+    /// `true` (allow) when we have no tree or the language doesn't define
+    /// string/comment node kinds; the caller falls back to its prefix /
+    /// trigger heuristics. Mirrors Zed's "skip in string/comment" gate.
+    #[cfg(feature = "tree-sitter")]
+    pub fn is_completion_context(&self, byte_offset: usize) -> bool {
+        let guard = self.inner.read().unwrap();
+        let Some(provider) = guard.provider.as_ref() else {
+            return true;
+        };
+        let Some(tree) = provider.tree() else {
+            return true;
+        };
+        let root = tree.root_node();
+        if byte_offset > root.end_byte() {
+            return true;
+        }
+        let Some(node) = root.descendant_for_byte_range(byte_offset, byte_offset) else {
+            return true;
+        };
+        let mut cur = Some(node);
+        while let Some(n) = cur {
+            let kind = n.kind();
+            // Conservative match: tree-sitter grammars name these consistently
+            // across the languages we ship (rust, javascript, python, …).
+            if kind.contains("string") || kind.contains("comment") || kind == "raw_string_literal"
+            {
+                return false;
+            }
+            cur = n.parent();
+        }
+        true
+    }
+
+    #[cfg(not(feature = "tree-sitter"))]
+    pub fn is_completion_context(&self, _byte_offset: usize) -> bool {
+        true
+    }
+
     pub fn is_available(&self) -> bool {
         #[cfg(feature = "tree-sitter")]
         {
@@ -537,7 +577,11 @@ fn send_text_edit_events(
 ) {
     for (mut syntax_cache, tv) in editor_query.iter_mut() {
         if let Some(delta) = syntax_cache.pending_tree_sitter_edit.take() {
-            writer.write(crate::types::events::TextEditEvent::new(delta, tv.content_version));
+            let pre = syntax_cache.pending_pre_edit_rope.take();
+            writer.write(
+                crate::types::events::TextEditEvent::new(delta, tv.content_version)
+                    .with_pre_edit_rope(pre),
+            );
         }
     }
 }

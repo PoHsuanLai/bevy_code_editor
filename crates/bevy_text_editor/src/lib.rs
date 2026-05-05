@@ -50,5 +50,5 @@ pub use plugin::{EditEmitSet, TextEditorPlugin, TextInteractionPlugin};
 pub use selection::{Selection, SelectionCollection};
 pub use state::{
     CursorState, EditDelta, EditHistoryState, EditPoint, IndentConfig, OnEdit, SelectionState,
-    TextEditor,
+    SnapshotPreEdit, TextEditor,
 };

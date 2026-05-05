@@ -88,6 +88,23 @@ pub fn sync_completion_popup(
         .map(CompletionItemData::from)
         .collect();
 
+    // Surface resolved documentation for the currently selected item.
+    let selected_documentation = filtered_items
+        .get(completion_state.selected_index)
+        .and_then(|item| {
+            let label = item.label();
+            completion_state.resolved.get(label).and_then(|resolved| {
+                resolved
+                    .documentation
+                    .as_ref()
+                    .map(|doc| match doc {
+                        lsp_types::Documentation::String(s) => s.clone(),
+                        lsp_types::Documentation::MarkupContent(m) => m.value.clone(),
+                    })
+                    .filter(|s| !s.is_empty())
+            })
+        });
+
     let popup_data = CompletionPopupData {
         position: Vec2::new(x_offset, y_offset),
         items,
@@ -96,6 +113,7 @@ pub fn sync_completion_popup(
         max_visible,
         width: box_width,
         height: box_height,
+        selected_documentation,
     };
 
     // Update or spawn entity
@@ -530,23 +548,28 @@ pub fn sync_document_highlights(
     query: Query<
         (
             Ref<LspDocumentHighlights>,
-            Ref<TextViewState>,
+            &TextViewState,
             Ref<TextViewViewport>,
             Ref<FontConfig>,
         ),
         With<CodeEditor>,
     >,
-    ui: Res<UiSettings>,
     existing: Query<Entity, With<DocumentHighlightData>>,
+    mut last_scroll: Local<f32>,
 ) {
     let Ok((highlight_state, tv, vp, font)) = query.single() else {
         return;
     };
 
-    if !highlight_state.is_changed() && !tv.is_changed() && !vp.is_changed() && !font.is_changed()
+    let scroll_changed = (tv.scroll_offset - *last_scroll).abs() > 0.01;
+    if !highlight_state.is_changed()
+        && !vp.is_changed()
+        && !font.is_changed()
+        && !scroll_changed
     {
         return;
     }
+    *last_scroll = tv.scroll_offset;
 
     for entity in existing.iter() {
         commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
@@ -577,22 +600,28 @@ pub fn sync_document_highlights(
             Some(lsp_types::DocumentHighlightKind::WRITE)
         );
 
-        // Single-line highlight
+        // Engine row geometry (matches `bevy_text_engine::view::layout_builder::y_top_for`):
+        //   row_top    = viewport.text_area_top + scroll_offset + line * line_height - line_height/2
+        //   row_center = row_top + line_height/2 = viewport.text_area_top + scroll_offset + line * line_height
+        // The sprite renderer treats `position.y` as a viewport-local offset
+        // below world_top, so we feed in the row center.
+        let row_center = |line_idx: u32| -> f32 {
+            vp.text_area_top + tv.scroll_offset + (line_idx as f32 * line_height)
+        };
+        let col_x = |col: u32| -> f32 {
+            vp.text_area_left + (col as f32 * char_width)
+        };
+
         if start_line == end_line {
             let line = start_line;
             let start_char = highlight.range.start.character;
             let end_char = highlight.range.end.character;
             let width = (end_char - start_char) as f32 * char_width;
-
-            let x_offset = ui.code_margin_left + (start_char as f32 * char_width);
-            let y_offset = ui.margin_top
-                + tv.scroll_offset
-                + (line as f32 * line_height)
-                + (line_height / 2.0);
+            let x_left = col_x(start_char);
 
             commands.spawn((
                 DocumentHighlightData {
-                    position: Vec2::new(x_offset + width / 2.0, y_offset),
+                    position: Vec2::new(x_left + width / 2.0, row_center(line)),
                     width,
                     height: line_height,
                     is_write,
@@ -602,7 +631,6 @@ pub fn sync_document_highlights(
                 Name::new("DocumentHighlight"),
             ));
         } else {
-            // Multi-line highlights
             for line in start_line..=end_line {
                 if line < visible_start_line || line > visible_end_line {
                     continue;
@@ -617,15 +645,11 @@ pub fn sync_document_highlights(
                 };
 
                 let width = (end_char - start_char).min(200) as f32 * char_width;
-                let x_offset = ui.code_margin_left + (start_char as f32 * char_width);
-                let y_offset = ui.margin_top
-                    + tv.scroll_offset
-                    + (line as f32 * line_height)
-                    + (line_height / 2.0);
+                let x_left = col_x(start_char);
 
                 commands.spawn((
                     DocumentHighlightData {
-                        position: Vec2::new(x_offset + width / 2.0, y_offset),
+                        position: Vec2::new(x_left + width / 2.0, row_center(line)),
                         width,
                         height: line_height,
                         is_write,

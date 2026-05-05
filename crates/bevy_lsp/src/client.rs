@@ -17,10 +17,12 @@ use lsp_types::notification::{
     DidChangeTextDocument, DidOpenTextDocument, Initialized as InitializedNotif,
     Notification as LspNotificationTrait, PublishDiagnostics,
 };
+use lsp_types::notification::Exit as ExitNotif;
 use lsp_types::request::{
     CodeActionRequest, Completion, DocumentHighlightRequest, ExecuteCommand, Formatting,
     GotoDefinition, HoverRequest, InlayHintRequest, Initialize as InitializeRequest,
-    PrepareRenameRequest, References, Rename, Request as LspRequestTrait, SignatureHelpRequest,
+    PrepareRenameRequest, References, Rename, Request as LspRequestTrait, ResolveCompletionItem,
+    Shutdown as ShutdownRequest, SignatureHelpRequest,
 };
 use lsp_types::*;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
@@ -47,6 +49,9 @@ pub struct LspClient {
     runtime_handle: Option<tokio::runtime::Handle>,
     init_done: Arc<AtomicBool>,
     pre_init_queue: Arc<Mutex<Vec<LspMessage>>>,
+    /// Set by `shutdown()` so the mainloop watchdog knows the channel
+    /// closing isn't a crash.
+    shutting_down: Arc<AtomicBool>,
 }
 
 impl Default for LspClient {
@@ -69,6 +74,7 @@ impl LspClient {
             runtime_handle: None,
             init_done: Arc::new(AtomicBool::new(false)),
             pre_init_queue: Arc::new(Mutex::new(Vec::new())),
+            shutting_down: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -138,13 +144,23 @@ impl LspClient {
 
         // `run_buffered` wants `futures::AsyncRead/Write`; tokio's ChildStd*
         // only implement the tokio variants. Compat shim bridges them.
+        let watchdog_tx = self.response_tx.clone();
+        let watchdog_flag = self.shutting_down.clone();
         let join = runtime.spawn_background_task(move |_ctx| async move {
             let stdout = stdout.compat();
             let stdin = stdin.compat_write();
-            if let Err(err) = mainloop.run_buffered(stdout, stdin).await {
-                warn!("[LSP] main loop exited with error: {err}");
-            }
+            let outcome = mainloop.run_buffered(stdout, stdin).await;
             let _ = child.wait().await;
+            // Only treat the mainloop exit as a crash if we weren't
+            // explicitly shutting the server down.
+            if !watchdog_flag.load(Ordering::Acquire) {
+                if let Err(err) = outcome {
+                    warn!("[LSP] main loop exited unexpectedly: {err}");
+                } else {
+                    warn!("[LSP] main loop exited unexpectedly");
+                }
+                let _ = watchdog_tx.send(LspResponse::Crashed);
+            }
         });
 
         self.mainloop_abort = Some(Arc::new(join.abort_handle()));
@@ -175,6 +191,11 @@ impl LspClient {
                 self.start_initialize(server.clone(), handle.clone(), root_uri, capabilities);
             }
             LspMessage::Initialized => {}
+            // Shutdown / Exit must always go through, even before init is
+            // done — the host may be exiting on a half-initialized server.
+            other @ (LspMessage::Shutdown { .. } | LspMessage::Exit) => {
+                dispatch(server, &self.response_tx, handle, other);
+            }
             other if !self.init_done.load(Ordering::Acquire) => {
                 self.pre_init_queue.lock().unwrap().push(other);
             }
@@ -232,9 +253,12 @@ impl LspClient {
             | LspMessage::Initialized
             | LspMessage::DidOpen { .. }
             | LspMessage::DidChange { .. }
-            | LspMessage::ExecuteCommand { .. } => true,
+            | LspMessage::ExecuteCommand { .. }
+            | LspMessage::Shutdown { .. }
+            | LspMessage::Exit => true,
 
             LspMessage::Completion { .. } => caps.supports_completion(),
+            LspMessage::ResolveCompletionItem { .. } => caps.supports_completion_resolve(),
             LspMessage::Hover { .. } => caps.supports_hover(),
             LspMessage::GotoDefinition { .. } => caps.supports_definition(),
             LspMessage::References { .. } => caps.supports_references(),
@@ -273,6 +297,32 @@ impl LspClient {
 
     pub fn is_ready(&self) -> bool {
         self.initialized
+    }
+
+    /// Initiate graceful shutdown. Sends `Shutdown` then `Exit` to the
+    /// server; the mainloop watchdog won't surface the channel close as
+    /// a `Crashed` response since `shutting_down` is set first. The
+    /// caller usually wires this from a `bevy::app::AppExit` observer.
+    pub fn shutdown(&self) {
+        if self.server.is_none() {
+            return;
+        }
+        self.shutting_down.store(true, Ordering::Release);
+        // Send `Shutdown` (request) and `Exit` (notification). We don't
+        // wait for the shutdown ack here — async-lsp will handle the
+        // response when it arrives, and the watchdog won't flag it as a
+        // crash either way because of `shutting_down`.
+        // Use `0` for the id since the response handling on
+        // `ShutdownAck` is purely informational.
+        self.send(LspMessage::Shutdown { id: 0 });
+        self.send(LspMessage::Exit);
+    }
+
+    /// `true` after the watchdog has reported the mainloop closing
+    /// without an explicit shutdown — the host should consider
+    /// restarting the client (drop and re-spawn).
+    pub fn is_shutting_down(&self) -> bool {
+        self.shutting_down.load(Ordering::Acquire)
     }
 }
 
@@ -357,18 +407,21 @@ fn dispatch(
         LspMessage::Initialize { .. } | LspMessage::Initialized => {}
         LspMessage::DidOpen { uri, language_id, version, text } => did_open(server, uri, language_id, version, text),
         LspMessage::DidChange { uri, version, changes } => did_change(server, uri, version, changes),
-        LspMessage::Completion { uri, position } => completion(server, tx, uri, position),
+        LspMessage::Completion { uri, position, id } => completion(server, tx, uri, position, id),
+        LspMessage::ResolveCompletionItem { item, id } => resolve_completion(server, tx, item, id),
         LspMessage::Hover { uri, position } => hover(server, tx, uri, position),
         LspMessage::GotoDefinition { uri, position } => goto_definition(server, tx, uri, position),
         LspMessage::References { uri, position } => references(server, tx, uri, position),
         LspMessage::Format { uri, options } => format(server, tx, uri, options),
-        LspMessage::SignatureHelp { uri, position } => signature_help(server, tx, uri, position),
-        LspMessage::CodeAction { uri, range, diagnostics } => code_action(server, tx, uri, range, diagnostics),
+        LspMessage::SignatureHelp { uri, position, id } => signature_help(server, tx, uri, position, id),
+        LspMessage::CodeAction { uri, range, diagnostics, id } => code_action(server, tx, uri, range, diagnostics, id),
         LspMessage::InlayHint { uri, range } => inlay_hint(server, tx, uri, range),
         LspMessage::ExecuteCommand { command, arguments } => execute_command(server, tx, command, arguments),
         LspMessage::DocumentHighlight { uri, position } => document_highlight(server, tx, uri, position),
         LspMessage::PrepareRename { uri, position } => prepare_rename(server, tx, uri, position),
         LspMessage::Rename { uri, position, new_name } => rename(server, tx, uri, position, new_name),
+        LspMessage::Shutdown { id } => shutdown(server, tx, id),
+        LspMessage::Exit => fire::<ExitNotif>(server, ()),
     }
 }
 
@@ -401,21 +454,30 @@ fn did_change(
     );
 }
 
-fn completion(server: &ServerSocket, tx: &Tx, uri: Url, position: Position) {
+fn completion(server: &ServerSocket, tx: &Tx, uri: Url, position: Position, id: u64) {
     let params = CompletionParams {
         text_document_position: text_pos(uri, position),
         work_done_progress_params: Default::default(),
         partial_result_params: Default::default(),
         context: None,
     };
-    spawn::<Completion>(server, tx, params, |result, tx| match result {
+    spawn::<Completion>(server, tx, params, move |result, tx| match result {
         Some(CompletionResponse::Array(items)) => {
-            emit(tx, LspResponse::Completion { items, is_incomplete: false });
+            emit(tx, LspResponse::Completion { id, items, is_incomplete: false });
         }
         Some(CompletionResponse::List(list)) => {
-            emit(tx, LspResponse::Completion { items: list.items, is_incomplete: list.is_incomplete });
+            emit(
+                tx,
+                LspResponse::Completion {
+                    id,
+                    items: list.items,
+                    is_incomplete: list.is_incomplete,
+                },
+            );
         }
-        None => {}
+        None => {
+            emit(tx, LspResponse::Completion { id, items: Vec::new(), is_incomplete: false });
+        }
     });
 }
 
@@ -483,20 +545,21 @@ fn format(server: &ServerSocket, tx: &Tx, uri: Url, options: FormattingOptions) 
     });
 }
 
-fn signature_help(server: &ServerSocket, tx: &Tx, uri: Url, position: Position) {
+fn signature_help(server: &ServerSocket, tx: &Tx, uri: Url, position: Position, id: u64) {
     let params = SignatureHelpParams {
         text_document_position_params: text_pos(uri, position),
         work_done_progress_params: Default::default(),
         context: None,
     };
-    spawn::<SignatureHelpRequest>(server, tx, params, |result, tx| {
-        if let Some(sig) = result {
-            emit(tx, LspResponse::SignatureHelp {
-                signatures: sig.signatures,
-                active_signature: sig.active_signature,
-                active_parameter: sig.active_parameter,
-            });
-        }
+    spawn::<SignatureHelpRequest>(server, tx, params, move |result, tx| {
+        let (signatures, active_signature, active_parameter) = match result {
+            Some(sig) => (sig.signatures, sig.active_signature, sig.active_parameter),
+            None => (Vec::new(), None, None),
+        };
+        emit(
+            tx,
+            LspResponse::SignatureHelp { id, signatures, active_signature, active_parameter },
+        );
     });
 }
 
@@ -506,6 +569,7 @@ fn code_action(
     uri: Url,
     range: Range,
     diagnostics: Vec<Diagnostic>,
+    id: u64,
 ) {
     let params = CodeActionParams {
         text_document: TextDocumentIdentifier { uri },
@@ -514,17 +578,16 @@ fn code_action(
         work_done_progress_params: Default::default(),
         partial_result_params: Default::default(),
     };
-    spawn::<CodeActionRequest>(server, tx, params, |result, tx| {
-        if let Some(actions) = result {
-            let actions = actions
-                .into_iter()
-                .map(|a| match a {
-                    lsp_types::CodeActionOrCommand::CodeAction(a) => CodeActionOrCommand::Action(a),
-                    lsp_types::CodeActionOrCommand::Command(c) => CodeActionOrCommand::Command(c),
-                })
-                .collect();
-            emit(tx, LspResponse::CodeActions { actions });
-        }
+    spawn::<CodeActionRequest>(server, tx, params, move |result, tx| {
+        let actions = result
+            .unwrap_or_default()
+            .into_iter()
+            .map(|a| match a {
+                lsp_types::CodeActionOrCommand::CodeAction(a) => CodeActionOrCommand::Action(a),
+                lsp_types::CodeActionOrCommand::Command(c) => CodeActionOrCommand::Command(c),
+            })
+            .collect();
+        emit(tx, LspResponse::CodeActions { id, actions });
     });
 }
 
@@ -552,11 +615,9 @@ fn execute_command(
         arguments: arguments.unwrap_or_default(),
         work_done_progress_params: Default::default(),
     };
-    // Reuse CodeActions{empty} as a round-trip ack (the editor adapter only
-    // listens for the response, not the payload).
-    spawn::<ExecuteCommand>(server, tx, params, |_result, tx| {
-        emit(tx, LspResponse::CodeActions { actions: vec![] });
-    });
+    // Fire-and-forget: no ack expected. If the command produces edits,
+    // the server emits them via workspace/applyEdit (not handled here).
+    spawn::<ExecuteCommand>(server, tx, params, |_result, _tx| {});
 }
 
 fn document_highlight(server: &ServerSocket, tx: &Tx, uri: Url, position: Position) {
@@ -566,9 +627,12 @@ fn document_highlight(server: &ServerSocket, tx: &Tx, uri: Url, position: Positi
         partial_result_params: Default::default(),
     };
     spawn::<DocumentHighlightRequest>(server, tx, params, |result, tx| {
-        if let Some(highlights) = result {
-            emit(tx, LspResponse::DocumentHighlights { highlights });
-        }
+        emit(
+            tx,
+            LspResponse::DocumentHighlights {
+                highlights: result.unwrap_or_default(),
+            },
+        );
     });
 }
 
@@ -583,6 +647,18 @@ fn prepare_rename(server: &ServerSocket, tx: &Tx, uri: Url, position: Position) 
         // DefaultBehavior wants identifier-at-cursor fallback, which the
         // protocol layer can't compute.
         Some(PrepareRenameResponse::DefaultBehavior { .. }) | None => {}
+    });
+}
+
+fn resolve_completion(server: &ServerSocket, tx: &Tx, item: CompletionItem, id: u64) {
+    spawn::<ResolveCompletionItem>(server, tx, item, move |result, tx| {
+        emit(tx, LspResponse::ResolvedCompletionItem { id, item: result });
+    });
+}
+
+fn shutdown(server: &ServerSocket, tx: &Tx, id: u64) {
+    spawn::<ShutdownRequest>(server, tx, (), move |_result, tx| {
+        emit(tx, LspResponse::ShutdownAck { id });
     });
 }
 

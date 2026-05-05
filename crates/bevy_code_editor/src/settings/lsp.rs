@@ -12,6 +12,27 @@ pub struct LspSettings {
 
     /// Hover information settings
     pub hover: HoverSettings,
+
+    /// Force full-document `textDocument/didChange` payloads instead of
+    /// incremental ones. Useful as a recovery flag if a position-encoding
+    /// bug ever surfaces in incremental sync. Default `false` (incremental).
+    pub full_document_sync: bool,
+}
+
+/// How buffer-words feed the completion popup. Mirrors Zed's
+/// `WordsCompletionMode`: words can run alongside LSP results, only
+/// fill in when LSP is silent, or be turned off entirely.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+#[reflect(Default, Debug)]
+pub enum WordsCompletionMode {
+    /// Always merge buffer words with LSP results.
+    Always,
+    /// Only show buffer words when LSP returned no results or marked the
+    /// list as incomplete. This is the default.
+    #[default]
+    Fallback,
+    /// Never show buffer words.
+    Disabled,
 }
 
 /// Auto-completion settings
@@ -47,6 +68,9 @@ pub struct CompletionSettings {
 
     /// Selected item text color
     pub selected_text_color: Color,
+
+    /// How to merge buffer-word completions with LSP results.
+    pub words_mode: WordsCompletionMode,
 }
 
 /// Hover information settings
@@ -88,6 +112,7 @@ impl Default for CompletionSettings {
             selected_background: Color::srgb(0.25, 0.35, 0.5),
             text_color: Color::srgb(0.85, 0.85, 0.85),
             selected_text_color: Color::srgb(1.0, 1.0, 1.0),
+            words_mode: WordsCompletionMode::default(),
         }
     }
 }

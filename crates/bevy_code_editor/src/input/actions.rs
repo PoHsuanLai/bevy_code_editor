@@ -94,9 +94,7 @@ pub fn apply_completion(
             });
         }
     }
-    completion_state.visible = false;
-    completion_state.filter.clear();
-    completion_state.scroll_offset = 0;
+    completion_state.dismiss();
 }
 
 /// Find the start of the current word (for auto-triggering completion).
@@ -163,20 +161,43 @@ pub fn request_completion(
             completion_state.start_char_index
         );
 
-        lsp_client.send(LspMessage::Completion {
-            uri: doc.uri.clone(),
-            position: lsp_position,
-        });
-
         if !completion_state.visible {
             completion_state.start_char_index = cursor_pos;
             completion_state.items.clear();
             completion_state.selected_index = 0;
             completion_state.filter.clear();
+            completion_state.initial_query.clear();
+            completion_state.is_incomplete = false;
         }
 
+        // Skip the LSP round-trip when the previous result was complete and
+        // the new prefix is just an extension of the initial query — local
+        // refilter is enough.
+        let new_query: String = rope
+            .slice(completion_state.start_char_index..cursor_pos)
+            .chars()
+            .collect();
+        let can_refilter_locally = !completion_state.is_incomplete
+            && !completion_state.items.is_empty()
+            && !completion_state.initial_query.is_empty()
+            && new_query.starts_with(&completion_state.initial_query);
+
+        if !can_refilter_locally {
+            completion_state.request_id = completion_state.request_id.wrapping_add(1);
+            lsp_client.send(LspMessage::Completion {
+                uri: doc.uri.clone(),
+                position: lsp_position,
+                id: completion_state.request_id,
+            });
+            if completion_state.initial_query.is_empty() {
+                completion_state.initial_query = new_query.clone();
+            }
+        }
+
+        completion_state.filter = new_query;
         completion_state.update_word_completions(rope, cursor_pos);
-        completion_state.visible = true;
+        completion_state.visible = !completion_state.word_items.is_empty()
+            || !completion_state.items.is_empty();
     } else {
         if !completion_state.visible {
             completion_state.start_char_index = cursor_pos;
@@ -195,25 +216,3 @@ pub fn request_completion(
     }
 }
 
-/// Send `textDocument/didChange` notification to LSP.
-#[cfg(feature = "lsp")]
-pub fn send_did_change(rope: &Rope, lsp_client: &LspClient, lsp_document: Option<&mut LspDocument>) {
-    let Some(doc) = lsp_document else {
-        return;
-    };
-    let version = doc.bump_version();
-
-    let change = lsp_types::TextDocumentContentChangeEvent {
-        range: None,
-        range_length: None,
-        text: rope.chunks().collect(),
-    };
-
-    lsp_client.send(LspMessage::DidChange {
-        uri: doc.uri.clone(),
-        version,
-        changes: vec![change],
-    });
-
-    trace!("[LSP] DidChange sent, version={}", version);
-}

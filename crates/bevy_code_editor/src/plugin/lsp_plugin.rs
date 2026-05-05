@@ -23,10 +23,12 @@
 use bevy::prelude::*;
 
 use crate::lsp_ui::event_listeners::{
-    listen_apply_completion, listen_completion_requests, listen_dismiss_completion,
-    listen_hover_requests, listen_rename_requests, listen_signature_help_requests,
-    listen_text_edit_events, tick_lsp_debounce_timers,
+    advance_tabstop_session, dismiss_completion_on_cursor_move, drive_completion_resolve,
+    end_tabstop_session_on_cursor_leave, listen_apply_completion, listen_completion_requests,
+    listen_dismiss_completion, listen_hover_requests, listen_rename_requests,
+    listen_signature_help_requests, listen_text_edit_events, tick_lsp_debounce_timers,
 };
+use crate::lsp_ui::state::LspCompletionPopup;
 use crate::lsp_ui::sync::{
     sync_code_actions_popup, sync_completion_popup, sync_document_highlights, sync_hover_popup,
     sync_inlay_hints, sync_rename_input, sync_signature_help_popup,
@@ -35,6 +37,8 @@ use crate::lsp_ui::systems::{
     cleanup_lsp_timeouts, process_lsp_messages, request_document_highlights, request_inlay_hints,
     sync_lsp_document, MultipleLocationsEvent, NavigateToFileEvent, WorkspaceEditEvent,
 };
+use crate::settings::LspSettings;
+use crate::types::CodeEditor;
 
 /// LSP adapter plugin: bridges editor events to LSP requests, drains LSP
 /// responses into editor state, and materializes state into marker components
@@ -139,7 +143,58 @@ impl Plugin for LspPlugin {
                 listen_signature_help_requests,
                 listen_dismiss_completion,
                 listen_apply_completion,
+                dismiss_completion_on_cursor_move,
+                drive_completion_resolve,
+                sync_completion_settings,
+                attach_snapshot_pre_edit_marker,
+                end_tabstop_session_on_cursor_leave,
             ),
         );
+
+        // Tabstop interception runs before the bevy_text_editor handler
+        // for `InsertTabRequested` so the session consumes the event
+        // when active. Schedule explicitly via system ordering.
+        app.add_systems(
+            Update,
+            advance_tabstop_session.before(bevy_text_editor::handlers::edit::handle_insert_tab),
+        );
+    }
+}
+
+/// Mirror `LspSettings::completion::words_mode` onto each editor's
+/// `LspCompletionPopup` so the popup can gate its filtering / scanning
+/// without taking a `Res<LspSettings>` dependency on every internal call.
+fn sync_completion_settings(
+    settings: Res<LspSettings>,
+    mut popups: Query<&mut LspCompletionPopup, With<CodeEditor>>,
+) {
+    let target = settings.completion.words_mode;
+    for mut popup in &mut popups {
+        if popup.words_mode != target {
+            popup.words_mode = target;
+        }
+    }
+}
+
+/// Attach [`bevy_text_editor::SnapshotPreEdit`] to any editor that has an
+/// `LspDocument`. The marker tells `EditHistoryState::replace_range` to
+/// snapshot the rope before mutating, so `listen_text_edit_events` can
+/// build incremental `did_change` payloads with positions in the
+/// negotiated wire encoding.
+fn attach_snapshot_pre_edit_marker(
+    mut commands: Commands,
+    q: Query<
+        Entity,
+        (
+            With<CodeEditor>,
+            With<bevy_lsp::LspDocument>,
+            Without<bevy_text_editor::SnapshotPreEdit>,
+        ),
+    >,
+) {
+    for entity in q.iter() {
+        commands
+            .entity(entity)
+            .insert(bevy_text_editor::SnapshotPreEdit);
     }
 }

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 pub enum RequestType {
     Initialize,
     Completion,
+    CompletionItemResolve,
     Hover,
     GotoDefinition,
     References,
@@ -18,6 +19,7 @@ pub enum RequestType {
     DocumentHighlight,
     PrepareRename,
     Rename,
+    Shutdown,
 }
 
 /// Messages sent to language server
@@ -47,8 +49,20 @@ pub enum LspMessage {
         changes: Vec<TextDocumentContentChangeEvent>,
     },
 
-    /// Request completion at position
-    Completion { uri: Url, position: Position },
+    /// Request completion at position. `id` is opaque — `bevy_lsp` echoes
+    /// it back on the matching `LspResponse::Completion` so the consumer
+    /// can drop stale responses.
+    Completion {
+        uri: Url,
+        position: Position,
+        id: u64,
+    },
+
+    /// Resolve additional details for a completion item (docs, additional
+    /// edits, etc.). Server fills in fields that were omitted from the
+    /// initial completion response, gated on
+    /// `completion_provider.resolve_provider`. `id` is opaque.
+    ResolveCompletionItem { item: CompletionItem, id: u64 },
 
     /// Request hover information
     Hover { uri: Url, position: Position },
@@ -66,13 +80,18 @@ pub enum LspMessage {
     },
 
     /// Request signature help
-    SignatureHelp { uri: Url, position: Position },
+    SignatureHelp {
+        uri: Url,
+        position: Position,
+        id: u64,
+    },
 
     /// Request code actions
     CodeAction {
         uri: Url,
         range: Range,
         diagnostics: Vec<Diagnostic>,
+        id: u64,
     },
 
     /// Request inlay hints
@@ -96,6 +115,15 @@ pub enum LspMessage {
         position: Position,
         new_name: String,
     },
+
+    /// Ask the server to shut down. Send before [`LspMessage::Exit`] for
+    /// graceful termination. `id` is opaque; the response arrives as
+    /// [`LspResponse::ShutdownAck`].
+    Shutdown { id: u64 },
+
+    /// Tell the server to exit. Send after `Shutdown` is acknowledged.
+    /// Notification — no response.
+    Exit,
 }
 
 /// Responses from language server
@@ -110,11 +138,18 @@ pub enum LspResponse {
         diagnostics: Vec<Diagnostic>,
     },
 
-    /// Completion response
+    /// Completion response. `id` echoes the request's id so the consumer
+    /// can drop stale responses (cursor moved, more chars typed, etc.).
     Completion {
+        id: u64,
         items: Vec<CompletionItem>,
         is_incomplete: bool,
     },
+
+    /// Resolved completion item — same shape as the input but with
+    /// `documentation`, `detail`, `additional_text_edits` filled in.
+    /// `id` echoes the matching `ResolveCompletionItem` request.
+    ResolvedCompletionItem { id: u64, item: CompletionItem },
 
     /// Hover response
     Hover {
@@ -133,13 +168,17 @@ pub enum LspResponse {
 
     /// Signature help response
     SignatureHelp {
+        id: u64,
         signatures: Vec<SignatureInformation>,
         active_signature: Option<u32>,
         active_parameter: Option<u32>,
     },
 
     /// Code actions response
-    CodeActions { actions: Vec<CodeActionOrCommand> },
+    CodeActions {
+        id: u64,
+        actions: Vec<CodeActionOrCommand>,
+    },
 
     /// Inlay hints response
     InlayHints { hints: Vec<InlayHint> },
@@ -155,6 +194,14 @@ pub enum LspResponse {
 
     /// Rename response (workspace edit)
     Rename { edit: WorkspaceEdit },
+
+    /// Acknowledgement of [`LspMessage::Shutdown`].
+    ShutdownAck { id: u64 },
+
+    /// Server crashed (process exited unexpectedly) or its read channel
+    /// closed without an explicit shutdown. Hosts can react by either
+    /// dropping the client or restarting it.
+    Crashed,
 }
 
 /// Code action or command from LSP

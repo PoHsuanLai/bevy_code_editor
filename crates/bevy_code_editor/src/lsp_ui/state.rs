@@ -10,8 +10,46 @@
 //! etc. The `#[require]` cascade on [`crate::types::CodeEditor`] inserts them
 //! all with `Default`, so a freshly spawned `CodeEditor` is fully usable.
 
+use crate::settings::WordsCompletionMode;
 use bevy::prelude::*;
+use bevy_text_editor::Anchor;
 use lsp_types::*;
+
+/// One tabstop in an active snippet session, anchored so it survives
+/// edits that happen while the session is live (e.g. typing into the
+/// placeholder selection replaces the placeholder, and subsequent
+/// tabstops shift accordingly).
+#[derive(Clone, Debug)]
+pub struct SessionTabstop {
+    pub id: u32,
+    pub start: Anchor,
+    pub end: Anchor,
+}
+
+/// Active snippet tabstop session. Spawned on the editor entity by
+/// `listen_apply_completion` when the inserted item carries snippet
+/// syntax. Ended (despawned via `Option<&mut>` clear) when the cursor
+/// leaves the session, the user presses Esc, or all stops are visited.
+#[derive(Component, Default, Debug)]
+pub struct TabstopSession {
+    /// Stops in walk order: rising `id` values, then `0` (final stop)
+    /// last. Empty when no session is active.
+    pub stops: Vec<SessionTabstop>,
+    /// Index into `stops` of the currently-selected tabstop. The
+    /// session ends when this exceeds `stops.len() - 1`.
+    pub current: usize,
+}
+
+impl TabstopSession {
+    pub fn is_active(&self) -> bool {
+        !self.stops.is_empty() && self.current < self.stops.len()
+    }
+
+    pub fn end(&mut self) {
+        self.stops.clear();
+        self.current = 0;
+    }
+}
 
 /// Default maximum number of visible items in completion popup
 pub const COMPLETION_MAX_VISIBLE_DEFAULT: usize = 10;
@@ -90,25 +128,55 @@ impl UnifiedCompletionItem {
 /// Was `bevy_lsp::CompletionState` (Resource).
 #[derive(Component, Default)]
 pub struct LspCompletionPopup {
-    /// Whether the completion box is currently visible
     pub visible: bool,
-    /// Current list of completion items (unfiltered from LSP)
     pub items: Vec<CompletionItem>,
-    /// Word completions extracted from the document (fallback when LSP is empty)
     pub word_items: Vec<WordCompletionItem>,
-    /// Index of the currently selected item (in filtered list)
     pub selected_index: usize,
-    /// Scroll offset (first visible item index)
     pub scroll_offset: usize,
-    /// Character index in the document where completion started (trigger position)
     pub start_char_index: usize,
-    /// Filter text (what the user has typed since opening completion)
     pub filter: String,
-    /// Whether the completion list is incomplete (should re-query on more typing)
     pub is_incomplete: bool,
+    /// Monotonic id of the most recently dispatched LSP completion request.
+    /// Bumped on every send; the response handler drops anything older.
+    /// Bumped on hide too, so any in-flight request becomes stale.
+    pub request_id: u64,
+    /// Initial filter at the time the menu was opened. When the user keeps
+    /// typing identifier chars (extending this prefix) and the previous
+    /// response was complete, we refilter locally instead of re-querying.
+    pub initial_query: String,
+    /// Mirror of `LspSettings::completion::words_mode`, kept on the
+    /// component so `filtered_items` doesn't need access to the resource.
+    /// Synced once per frame in `sync_completion_settings`.
+    pub words_mode: WordsCompletionMode,
+    /// Cache of `completionItem/resolve` results, keyed by the **label**
+    /// of the original item. Label-keying survives reordering when the
+    /// filter changes; index-keying would not.
+    pub resolved: std::collections::HashMap<String, CompletionItem>,
+    /// Bumped on each resolve request and on every dismiss / item-list
+    /// change so stale resolve responses are dropped before they reach
+    /// the popup data.
+    pub resolve_request_id: u64,
+    /// `(label, request_id)` of the in-flight resolve. None when no
+    /// resolve is in flight.
+    pub pending_resolve: Option<(String, u64)>,
 }
 
 impl LspCompletionPopup {
+    /// Hide the popup and bump `request_id` so any in-flight LSP response
+    /// for this menu is dropped instead of resurrecting it.
+    pub fn dismiss(&mut self) {
+        self.visible = false;
+        self.filter.clear();
+        self.initial_query.clear();
+        self.selected_index = 0;
+        self.scroll_offset = 0;
+        self.is_incomplete = false;
+        self.request_id = self.request_id.wrapping_add(1);
+        self.resolve_request_id = self.resolve_request_id.wrapping_add(1);
+        self.pending_resolve = None;
+        self.resolved.clear();
+    }
+
     /// Ensure the selected item is visible by adjusting scroll_offset
     pub fn ensure_selected_visible(&mut self) {
         self.ensure_selected_visible_with_max(COMPLETION_MAX_VISIBLE_DEFAULT);
@@ -170,23 +238,31 @@ impl LspCompletionPopup {
         // Sort LSP items by score (higher is better)
         lsp_scored.sort_by(|a, b| b.1.cmp(&a.1));
 
+        // Decide whether to merge buffer-word completions based on the mode.
+        let include_words = match self.words_mode {
+            WordsCompletionMode::Disabled => false,
+            WordsCompletionMode::Always => true,
+            WordsCompletionMode::Fallback => self.items.is_empty() || self.is_incomplete,
+        };
+
         // Collect LSP labels to avoid duplicates with word completions
         let lsp_labels: HashSet<&str> = self.items.iter().map(|i| i.label.as_str()).collect();
 
         // Filter and score word completions (only if filter is not empty)
-        let mut word_scored: Vec<(UnifiedCompletionItem, i64)> = if self.filter.is_empty() {
-            Vec::new()
-        } else {
-            self.word_items
-                .iter()
-                .filter(|item| !lsp_labels.contains(item.word.as_str()))
-                .filter_map(|item| {
-                    matcher
-                        .fuzzy_match(&item.word, &self.filter)
-                        .map(|s| (UnifiedCompletionItem::Word(item.clone()), s))
-                })
-                .collect()
-        };
+        let mut word_scored: Vec<(UnifiedCompletionItem, i64)> =
+            if !include_words || self.filter.is_empty() {
+                Vec::new()
+            } else {
+                self.word_items
+                    .iter()
+                    .filter(|item| !lsp_labels.contains(item.word.as_str()))
+                    .filter_map(|item| {
+                        matcher
+                            .fuzzy_match(&item.word, &self.filter)
+                            .map(|s| (UnifiedCompletionItem::Word(item.clone()), s))
+                    })
+                    .collect()
+            };
 
         // Sort word items by score
         word_scored.sort_by(|a, b| b.1.cmp(&a.1));
@@ -199,9 +275,15 @@ impl LspCompletionPopup {
         result
     }
 
-    /// Update word completions from the rope
+    /// Update word completions from the rope. Skips the scan entirely when
+    /// `words_mode == Disabled` so we don't pay the per-keystroke cost.
     pub fn update_word_completions(&mut self, rope: &ropey::Rope, cursor_pos: usize) {
         use std::collections::HashSet;
+
+        if self.words_mode == WordsCompletionMode::Disabled {
+            self.word_items.clear();
+            return;
+        }
 
         let mut seen: HashSet<String> = HashSet::new();
         let mut words: Vec<WordCompletionItem> = Vec::new();
@@ -261,6 +343,8 @@ impl LspCompletionPopup {
         self.scroll_offset = 0;
         self.filter.clear();
         self.is_incomplete = false;
+        self.resolved.clear();
+        self.pending_resolve = None;
     }
 }
 
@@ -340,30 +424,32 @@ impl LspHoverPopup {
 /// Was `bevy_lsp::SignatureHelpState` (Resource).
 #[derive(Component, Default)]
 pub struct LspSignatureHelpPopup {
-    /// Whether the signature help is currently visible
     pub visible: bool,
-    /// Available signatures
     pub signatures: Vec<SignatureInformation>,
-    /// Currently active signature index
     pub active_signature: usize,
-    /// Currently active parameter index
     pub active_parameter: usize,
-    /// Character position where signature help was triggered
     pub trigger_position: usize,
+    /// Bumped on every request and on dismiss; response handler drops
+    /// anything older than the current value.
+    pub request_id: u64,
 }
 
 impl LspSignatureHelpPopup {
-    /// Get the currently active signature
     pub fn current_signature(&self) -> Option<&SignatureInformation> {
         self.signatures.get(self.active_signature)
     }
 
-    /// Reset state
-    pub fn reset(&mut self) {
+    pub fn dismiss(&mut self) {
         self.visible = false;
         self.signatures.clear();
         self.active_signature = 0;
         self.active_parameter = 0;
+        self.request_id = self.request_id.wrapping_add(1);
+    }
+
+    /// Backward-compat alias.
+    pub fn reset(&mut self) {
+        self.dismiss();
     }
 }
 
@@ -372,14 +458,22 @@ impl LspSignatureHelpPopup {
 /// Was `bevy_lsp::CodeActionState` (Resource).
 #[derive(Component, Default)]
 pub struct LspCodeActionsPopup {
-    /// Whether the code action menu is visible
     pub visible: bool,
-    /// Available code actions
     pub actions: Vec<bevy_lsp::CodeActionOrCommand>,
-    /// Selected action index
     pub selected_index: usize,
-    /// The range for which actions were requested
     pub range: Option<Range>,
+    /// Bumped on every request and on dismiss; response handler drops
+    /// anything older than the current value.
+    pub request_id: u64,
+}
+
+impl LspCodeActionsPopup {
+    pub fn dismiss(&mut self) {
+        self.visible = false;
+        self.actions.clear();
+        self.selected_index = 0;
+        self.request_id = self.request_id.wrapping_add(1);
+    }
 }
 
 impl LspCodeActionsPopup {

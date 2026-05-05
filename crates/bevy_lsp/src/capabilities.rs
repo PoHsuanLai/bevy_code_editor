@@ -44,6 +44,18 @@ impl ServerCapabilities {
             .is_some_and(|c| c.completion_provider.is_some())
     }
 
+    /// Check if server supports `completionItem/resolve` (the lazy-load
+    /// path for documentation, additional edits, etc.). Falls back to
+    /// `false` when the provider doesn't advertise resolve support so we
+    /// don't fire requests rust-analyzer would reject as unsupported.
+    pub fn supports_completion_resolve(&self) -> bool {
+        self.inner
+            .as_ref()
+            .and_then(|c| c.completion_provider.as_ref())
+            .and_then(|p| p.resolve_provider)
+            .unwrap_or(false)
+    }
+
     /// Check if server supports hover
     pub fn supports_hover(&self) -> bool {
         self.inner
@@ -127,6 +139,20 @@ impl ServerCapabilities {
                     .and_then(|p| p.trigger_characters.clone())
             })
             .unwrap_or_default()
+    }
+
+    /// Negotiated position encoding. LSP 3.17+: servers advertise their
+    /// preferred encoding in `position_encoding`; the spec default
+    /// (omitted field) is UTF-16. We honor the server's choice when it
+    /// advertises one.
+    pub fn position_encoding(&self) -> crate::pos::PositionEncoding {
+        use lsp_types::PositionEncodingKind;
+        let raw = self.inner.as_ref().and_then(|c| c.position_encoding.clone());
+        match raw {
+            Some(k) if k == PositionEncodingKind::UTF8 => crate::pos::PositionEncoding::Utf8,
+            Some(k) if k == PositionEncodingKind::UTF32 => crate::pos::PositionEncoding::Utf32,
+            _ => crate::pos::PositionEncoding::Utf16,
+        }
     }
 
     /// Get completion trigger characters
