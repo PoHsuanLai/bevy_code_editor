@@ -13,34 +13,27 @@ use bevy_text_engine::FontConfig;
 pub(crate) fn detect_foldable_regions(
     mut editor_query: Query<
         (&TextViewState, &mut FoldState, &bevy_tree_sitter::SyntaxTree),
-        With<CodeEditor>,
+        (With<CodeEditor>, Changed<bevy_tree_sitter::SyntaxTree>),
     >,
 ) {
     for (tv, mut fold_state, syntax_tree) in editor_query.iter_mut() {
-        // Only update when content changes
-        if fold_state.content_version == tv.content_version as usize {
-            continue;
-        }
-
-        fold_state.content_version = tv.content_version as usize;
-
-        let mut regions: Vec<FoldRegion> = Vec::new();
-        // OPTIMIZATION: Use rope chunks instead of full to_string() conversion
-        let chunk_text: String = tv.rope.chunks().collect();
-        let text_bytes = chunk_text.as_bytes();
-
-        // Walk the per-entity `SyntaxTree` Component's tree, if any. Skip
-        // if no tree has been parsed yet (component default is `None`).
         let Some(tree) = syntax_tree.tree.as_ref() else {
             continue;
         };
+        if fold_state.content_version == syntax_tree.tree_version as usize {
+            continue;
+        }
+        fold_state.content_version = syntax_tree.tree_version as usize;
+
+        let mut regions: Vec<FoldRegion> = Vec::new();
+        let chunk_text: String = tv.rope.chunks().collect();
+        let text_bytes = chunk_text.as_bytes();
+
         let root = tree.root_node();
         collect_foldable_regions(&root, text_bytes, &tv.rope, &mut regions, false);
 
-        // Preserve fold state for existing regions
         let old_regions = std::mem::take(&mut fold_state.regions);
         for mut region in regions {
-            // Check if this region was previously folded
             if let Some(old) = old_regions
                 .iter()
                 .find(|r| r.start_line == region.start_line && r.end_line == region.end_line)
