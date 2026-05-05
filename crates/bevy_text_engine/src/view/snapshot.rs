@@ -271,6 +271,9 @@ pub struct TrivialBlock {
     pub padding_bottom: f32,
     pub indent: f32,
     pub line_bg: Option<Color>,
+    /// Soft-wrap budget in characters. `None` = inherit from the
+    /// `trivial_layout_blocks` default. `Some(0)` = no wrap (block stays one row).
+    pub wrap_chars: Option<usize>,
 }
 
 impl TrivialBlock {
@@ -306,6 +309,15 @@ impl TrivialBlock {
         self.line_bg = Some(color);
         self
     }
+
+    /// Wrap this block's text on a per-character budget. Continuation rows
+    /// inherit the block's `indent`. Whitespace-aware: breaks at the last
+    /// space/tab before the budget when one exists; otherwise hard-breaks.
+    /// `chars == 0` disables wrap for this block (overrides the layout default).
+    pub fn with_wrap_chars(mut self, chars: usize) -> Self {
+        self.wrap_chars = Some(chars);
+        self
+    }
 }
 
 /// Like [`trivial_layout`] but accepts per-row line-height + padding.
@@ -313,38 +325,66 @@ impl TrivialBlock {
 /// Stacks rows by accumulating `padding_top + line_height + padding_bottom`
 /// — markdown-style block layout. Rows where `line_height` is `None`
 /// fall back to the layout's global `line_height`.
+///
+/// `default_wrap_chars`: soft-wrap budget in characters applied to blocks
+/// that don't override it. `None` ⇒ no wrap. Per-block override via
+/// [`TrivialBlock::with_wrap_chars`]. Whitespace-aware: breaks at the last
+/// space/tab before the budget when one exists; otherwise hard-breaks at
+/// the budget. Long words with no internal whitespace stay intact and
+/// extend past the budget rather than splitting mid-word.
 pub fn trivial_layout_blocks(
     blocks: &[TrivialBlock],
     line_height: f32,
     char_width: f32,
     baseline_offset: f32,
     default_fg: bevy::prelude::Color,
+    default_wrap_chars: Option<usize>,
 ) -> super::layout::DisplayLayout {
     use super::layout::DisplayLayout;
     use std::sync::Arc;
 
     let mut shaped: Vec<ShapedLine> = Vec::with_capacity(blocks.len());
     let mut y = 0.0_f32;
+    let mut display_row: u32 = 0;
     for (i, b) in blocks.iter().enumerate() {
         let row_h = b.line_height.unwrap_or(line_height);
         y += b.padding_top;
-        shaped.push(ShapedLine {
-            display_row: i as u32,
-            buffer_row: i as u32,
-            buffer_byte_offset: 0,
-            is_wrap_continuation: false,
-            y_top: y,
-            x_offset: b.indent,
-            text: b.text.clone(),
-            runs: b.runs.clone(),
-            line_bg: b.line_bg,
-            line_height: b.line_height,
-            padding_top: b.padding_top,
-            padding_bottom: b.padding_bottom,
-            inline_objects: Vec::new(),
-            shape: None,
-        });
-        y += row_h + b.padding_bottom;
+
+        let wrap = b.wrap_chars.or(default_wrap_chars).filter(|&c| c > 0);
+        let chunks = match wrap {
+            Some(budget) => wrap_text_into_chunks(&b.text, budget),
+            None => vec![(0, b.text.clone())],
+        };
+        let last_idx = chunks.len().saturating_sub(1);
+
+        for (chunk_idx, (byte_offset, chunk_text)) in chunks.into_iter().enumerate() {
+            let is_continuation = chunk_idx > 0;
+            let is_last = chunk_idx == last_idx;
+            let chunk_len = chunk_text.len();
+            let chunk_runs =
+                slice_runs_for_chunk(&b.runs, byte_offset, byte_offset + chunk_len);
+            shaped.push(ShapedLine {
+                display_row,
+                buffer_row: i as u32,
+                buffer_byte_offset: byte_offset,
+                is_wrap_continuation: is_continuation,
+                y_top: y,
+                x_offset: b.indent,
+                text: chunk_text,
+                runs: chunk_runs,
+                line_bg: b.line_bg,
+                line_height: b.line_height,
+                // Padding belongs to the block as a whole; only the first
+                // row pays padding_top, only the last row pays padding_bottom.
+                padding_top: if is_continuation { 0.0 } else { b.padding_top },
+                padding_bottom: if is_last { b.padding_bottom } else { 0.0 },
+                inline_objects: Vec::new(),
+                shape: None,
+            });
+            y += row_h;
+            display_row += 1;
+        }
+        y += b.padding_bottom;
     }
     let total = shaped.len() as u32;
     DisplayLayout {
@@ -358,6 +398,113 @@ pub fn trivial_layout_blocks(
         version: 1,
         scroll_version: 0,
     }
+}
+
+/// Whitespace-aware character-budget wrap. Returns `(byte_offset_in_source, chunk_text)`
+/// pairs. `byte_offset_in_source` is each chunk's start byte within the input `text`.
+///
+/// Algorithm: walk char-by-char up to `budget` chars; if the cap was hit and a
+/// space/tab was seen, break after that whitespace; otherwise hard-break at
+/// the budget. A budget-spanning word with no internal whitespace stays intact
+/// (the row extends past the budget — same as the shaped wrap path).
+fn wrap_text_into_chunks(text: &str, budget: usize) -> Vec<(usize, String)> {
+    if text.is_empty() || budget == 0 {
+        return vec![(0, text.to_string())];
+    }
+
+    let mut out: Vec<(usize, String)> = Vec::new();
+    let mut chunk_start_byte = 0_usize;
+    let mut char_count = 0_usize;
+    let mut last_ws_end_byte: Option<usize> = None;
+
+    let mut iter = text.char_indices().peekable();
+    while let Some((byte_idx, ch)) = iter.next() {
+        // Newlines in the input force a hard break (markdown lists / multi-line
+        // bodies pre-split into blocks should already not contain '\n', but
+        // keep the helper safe if a caller passes one).
+        if ch == '\n' {
+            let chunk_text = text[chunk_start_byte..byte_idx + ch.len_utf8()].to_string();
+            out.push((chunk_start_byte, chunk_text));
+            chunk_start_byte = byte_idx + ch.len_utf8();
+            char_count = 0;
+            last_ws_end_byte = None;
+            continue;
+        }
+
+        char_count += 1;
+        if ch == ' ' || ch == '\t' {
+            last_ws_end_byte = Some(byte_idx + ch.len_utf8());
+        }
+
+        if char_count >= budget {
+            // Try to break at the last whitespace seen *after* chunk_start.
+            let break_byte = match last_ws_end_byte {
+                Some(b) if b > chunk_start_byte => b,
+                _ => {
+                    // No whitespace in this chunk yet. Two options:
+                    // (a) we're mid-word — extend until we hit one (don't split)
+                    // (b) the next char is whitespace — break at the next iteration
+                    // For (a), keep going; the row will exceed the budget but a
+                    // word stays whole.
+                    if let Some(&(next_byte, next_ch)) = iter.peek() {
+                        if next_ch == ' ' || next_ch == '\t' || next_ch == '\n' {
+                            next_byte
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        // End of input — emit the rest as the final chunk below.
+                        break;
+                    }
+                }
+            };
+
+            if break_byte > chunk_start_byte {
+                let chunk_text = text[chunk_start_byte..break_byte].to_string();
+                out.push((chunk_start_byte, chunk_text));
+                chunk_start_byte = break_byte;
+                // Bytes between break_byte and the iterator's current position
+                // (byte_idx + this char's length) belong to the new chunk and
+                // were already consumed by the iterator. Seed char_count with
+                // their count so the budget check stays accurate.
+                let consumed_end = byte_idx + ch.len_utf8();
+                char_count = if consumed_end > chunk_start_byte {
+                    text[chunk_start_byte..consumed_end].chars().count()
+                } else {
+                    0
+                };
+                last_ws_end_byte = None;
+            }
+        }
+    }
+
+    if chunk_start_byte < text.len() {
+        out.push((chunk_start_byte, text[chunk_start_byte..].to_string()));
+    } else if out.is_empty() {
+        out.push((0, String::new()));
+    }
+    out
+}
+
+/// Clip a block's `StyleRun`s to a `[start_byte, end_byte)` window and rebase
+/// to the chunk-local byte numbering. Used when soft-wrap splits a block into
+/// multiple `ShapedLine`s.
+fn slice_runs_for_chunk(runs: &[StyleRun], start: usize, end: usize) -> Vec<StyleRun> {
+    let mut out = Vec::new();
+    for r in runs {
+        if r.byte_range.end <= start || r.byte_range.start >= end {
+            continue;
+        }
+        let s = r.byte_range.start.max(start) - start;
+        let e = r.byte_range.end.min(end) - start;
+        if s >= e {
+            continue;
+        }
+        let mut clone = r.clone();
+        clone.byte_range = s..e;
+        out.push(clone);
+    }
+    out
 }
 
 #[cfg(test)]
@@ -383,7 +530,7 @@ mod tests {
             TrivialBlock::new("fn x() {}").with_padding(6.0, 6.0),
         ];
 
-        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE);
+        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE, None);
         let lines = &*layout.lines;
         assert_eq!(lines.len(), 4);
 
@@ -405,7 +552,7 @@ mod tests {
             TrivialBlock::new("  - nested").with_indent(40.0),
             TrivialBlock::new("> quote").with_indent(16.0),
         ];
-        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE);
+        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE, None);
         let lines = &*layout.lines;
         assert_eq!(lines[0].x_offset, 0.0);
         assert_eq!(lines[1].x_offset, 20.0);
@@ -419,10 +566,111 @@ mod tests {
             .iter()
             .map(|s| TrivialBlock::new(*s))
             .collect();
-        let layout = trivial_layout_blocks(&blocks, 20.0, 8.0, 5.0, Color::WHITE);
+        let layout = trivial_layout_blocks(&blocks, 20.0, 8.0, 5.0, Color::WHITE, None);
         let lines = &*layout.lines;
         assert_eq!(lines[0].y_top, 0.0);
         assert_eq!(lines[1].y_top, 20.0);
         assert_eq!(lines[2].y_top, 40.0);
+    }
+
+    /// `default_wrap_chars = Some(N)` splits a long body block into multiple
+    /// rows. Continuation rows have `is_wrap_continuation = true`, inherit
+    /// the block's `indent`, and get the right `buffer_byte_offset` so callers
+    /// can map clicks back into the source text.
+    #[test]
+    fn trivial_layout_blocks_wraps_at_word_boundary() {
+        let body = "the quick brown fox jumps over the lazy dog and runs away.";
+        let blocks = vec![TrivialBlock::new(body).with_indent(10.0)];
+        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE, Some(30));
+        let lines = &*layout.lines;
+
+        assert!(lines.len() >= 2);
+        assert!(!lines[0].is_wrap_continuation);
+        assert!(lines[1].is_wrap_continuation);
+
+        for line in lines.iter() {
+            assert_eq!(line.buffer_row, 0);
+            assert_eq!(line.x_offset, 10.0);
+        }
+
+        let recomposed: String = lines.iter().map(|l| l.text.clone()).collect();
+        assert_eq!(recomposed, body);
+
+        for line in lines.iter() {
+            let chars = line.text.chars().count();
+            assert!(chars <= 31, "chunk {:?} exceeded budget+1, got {chars}", line.text);
+        }
+    }
+
+    /// A word longer than the wrap budget stays intact rather than splitting
+    /// mid-word. Mirrors the shaped wrap path's behavior for oversized clusters.
+    #[test]
+    fn trivial_layout_blocks_wrap_keeps_long_words_intact() {
+        let body = "short pneumonoultramicroscopicsilicovolcanoconiosis end";
+        let blocks = vec![TrivialBlock::new(body)];
+        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE, Some(10));
+        let lines = &*layout.lines;
+
+        let recomposed: String = lines.iter().map(|l| l.text.clone()).collect();
+        assert_eq!(recomposed, body);
+        assert!(
+            lines.iter().any(|l| l.text.contains("pneumonoultramicroscopicsilicovolcanoconiosis")),
+            "long word was split across rows: {:?}",
+            lines.iter().map(|l| &l.text).collect::<Vec<_>>()
+        );
+    }
+
+    /// Per-block `with_wrap_chars(0)` overrides the layout default and
+    /// disables wrap for that block alone.
+    #[test]
+    fn trivial_layout_blocks_per_block_wrap_override() {
+        let blocks = vec![
+            TrivialBlock::new("alpha bravo charlie delta echo foxtrot"),
+            TrivialBlock::new("uno dos tres cuatro cinco seis siete").with_wrap_chars(0),
+        ];
+        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE, Some(15));
+        let lines = &*layout.lines;
+
+        let block0_rows = lines.iter().filter(|l| l.buffer_row == 0).count();
+        let block1_rows = lines.iter().filter(|l| l.buffer_row == 1).count();
+        assert!(block0_rows >= 2, "block 0 should wrap, got {block0_rows} rows");
+        assert_eq!(block1_rows, 1, "block 1 should not wrap");
+    }
+
+    /// `StyleRun`s on a wrapped block are clipped + rebased to each chunk's
+    /// local byte numbering, so renderers can index into chunk.text directly.
+    #[test]
+    fn trivial_layout_blocks_wrap_clips_runs_to_chunks() {
+        // Crafted so a budget of 10 puts "the quick " on row 0 and
+        // "fox" (with its run) entirely inside row 1.
+        let text = "the quick fox runs";
+        let fox_start = text.find("fox").unwrap();              // 10
+        let fox_end = fox_start + "fox".len();                  // 13
+        let runs = vec![StyleRun {
+            byte_range: fox_start..fox_end,
+            fg: Color::srgb(1.0, 0.0, 0.0),
+            bg: None,
+            font_scale: 0.0,
+            skew: 0.0,
+            corner_radius: 0.0,
+            font_weight: None,
+            font_family: None,
+            decoration: None,
+            link: None,
+        }];
+        let blocks = vec![TrivialBlock::new(text).with_runs(runs)];
+
+        // Budget 10 splits at the space after "quick" (byte 10). Row 0 =
+        // "the quick " (bytes 0..10) — pre-fox, no runs. Row 1 = "fox runs"
+        // (bytes 10..18) — holds the fox run rebased to local 0..3.
+        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE, Some(10));
+        let lines = &*layout.lines;
+        assert_eq!(lines.len(), 2);
+
+        assert!(lines[0].runs.is_empty(), "row 0 runs: {:?}", lines[0].runs);
+
+        assert_eq!(lines[1].runs.len(), 1);
+        assert_eq!(lines[1].runs[0].byte_range, 0..3);
+        assert_eq!(&lines[1].text[0..3], "fox");
     }
 }

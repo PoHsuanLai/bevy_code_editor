@@ -61,18 +61,24 @@ let layout = trivial_layout(
 commands.entity(my_view).insert(layout);
 ```
 
-For markdown-style layout with mixed line heights and padding:
+For markdown-style layout with mixed line heights, padding, and soft-wrap:
 
 ```rust
 use bevy_text_engine::view::snapshot::{trivial_layout_blocks, TrivialBlock};
 
 let blocks = vec![
-    TrivialBlock::new("# Heading").with_line_height(28.0).with_padding(12.0, 6.0),
-    TrivialBlock::new("Body paragraph."),
+    TrivialBlock::new("# Heading")
+        .with_line_height(28.0)
+        .with_padding(12.0, 6.0)
+        .with_wrap_chars(0),                  // headings don't wrap
+    TrivialBlock::new("Lorem ipsum dolor sit amet, consectetur adipiscing elit."),
     TrivialBlock::new("- list item").with_indent(20.0),
     TrivialBlock::new("- another").with_indent(20.0),
 ];
-let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE);
+// 6th arg = default wrap budget in characters (None = no wrap).
+// Long body paragraphs whose char count exceeds the budget split at the
+// last whitespace before the budget; long words stay intact.
+let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE, Some(60));
 ```
 
 For dynamic content (an editor, a streaming log viewer), drive the producer via `LineFilter` / `LineStyleSource` Components — see the editor crate for a worked example.
