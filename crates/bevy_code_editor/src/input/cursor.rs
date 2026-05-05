@@ -4,13 +4,6 @@ use crate::text_view::TextViewState;
 use crate::types::*;
 use ropey::Rope;
 
-pub fn init_selection(sel: &mut SelectionState, cursor: &CursorState) {
-    if sel.selection_start.is_none() {
-        sel.selection_start = Some(cursor.cursor_pos);
-        sel.selection_end = Some(cursor.cursor_pos);
-    }
-}
-
 pub fn move_cursor_up(cursor: &mut CursorState, rope: &Rope) {
     if cursor.cursor_pos > 0 {
         let line_idx = rope.char_to_line(cursor.cursor_pos);
@@ -175,7 +168,7 @@ pub fn move_cursor_word_right(cursor: &mut CursorState, rope: &Rope) {
 }
 
 pub fn delete_word_backward(
-    _sel: &mut SelectionState,
+    sel: &mut SelectionState,
     hist: &mut EditHistoryState,
     cursor: &mut CursorState,
     tv: &mut TextViewState,
@@ -194,6 +187,7 @@ pub fn delete_word_backward(
 
         // Update cursor
         cursor.cursor_pos = word_start;
+        sel.apply_primary_cursor(cursor);
 
         // Record for undo
         hist.history.record(EditOperation {
@@ -212,7 +206,7 @@ pub fn delete_word_backward(
 
 /// Delete from cursor to next word boundary
 pub fn delete_word_forward(
-    _sel: &mut SelectionState,
+    sel: &mut SelectionState,
     hist: &mut EditHistoryState,
     cursor: &mut CursorState,
     tv: &mut TextViewState,
@@ -230,7 +224,8 @@ pub fn delete_word_forward(
 
         tv.rope.remove(start_byte..end_byte);
 
-        // Cursor stays at the same position
+        // Cursor stays at the same position; still re-sync selection.
+        sel.apply_primary_cursor(cursor);
 
         // Record for undo
         hist.history.record(EditOperation {

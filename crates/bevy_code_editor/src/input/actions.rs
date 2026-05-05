@@ -46,7 +46,7 @@ pub fn insert_char(
     tv: &mut TextViewState,
     c: char,
 ) {
-    if sel.selection_start.is_some() && sel.selection_end.is_some() {
+    if sel.selections.primary().has_selection() {
         delete_selection(sel, hist, syntax, display, cursor, tv);
     }
     hist.insert_char(sel, syntax, display, cursor, tv, c);
@@ -103,40 +103,35 @@ fn delete_selection_with_history(
     tv: &mut TextViewState,
     record_history: bool,
 ) {
-    if let (Some(start), Some(end)) = (sel.selection_start, sel.selection_end) {
-        let (start, end) = if start <= end {
-            (start, end)
-        } else {
-            (end, start)
-        };
+    let Some((start, end)) = sel.primary_range() else {
+        return;
+    };
 
-        let cursor_before = cursor.cursor_pos;
+    let cursor_before = cursor.cursor_pos;
 
-        let deleted_text: String = tv.rope.slice(start..end).chars().collect();
+    let deleted_text: String = tv.rope.slice(start..end).chars().collect();
 
-        let start_byte = tv.rope.char_to_byte(start);
-        let end_byte = tv.rope.char_to_byte(end);
+    let start_byte = tv.rope.char_to_byte(start);
+    let end_byte = tv.rope.char_to_byte(end);
 
-        tv.rope.remove(start_byte..end_byte);
+    tv.rope.remove(start_byte..end_byte);
 
-        cursor.cursor_pos = start;
+    cursor.cursor_pos = start;
 
-        if record_history && !deleted_text.is_empty() {
-            hist.history.record(EditOperation {
-                removed_text: deleted_text,
-                inserted_text: String::new(),
-                position: start,
-                cursor_before,
-                cursor_after: start,
-                kind: EditKind::Other,
-            });
-        }
-
-        sel.selection_start = None;
-        sel.selection_end = None;
-
-        tv.content_version += 1;
+    if record_history && !deleted_text.is_empty() {
+        hist.history.record(EditOperation {
+            removed_text: deleted_text,
+            inserted_text: String::new(),
+            position: start,
+            cursor_before,
+            cursor_after: start,
+            kind: EditKind::Other,
+        });
     }
+
+    sel.apply_primary_cursor(cursor);
+
+    tv.content_version += 1;
 }
 
 /// Apply selected completion item.

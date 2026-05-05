@@ -11,7 +11,7 @@ use std::time::Instant;
 use super::anchor::AnchorSet;
 use super::display_map::{HighlightedToken, LineSegment};
 use super::history::EditHistory;
-use super::selection::{Cursor, SelectionCollection};
+use super::selection::SelectionCollection;
 
 /// Configuration for viewport behavior
 #[derive(Resource, Clone, Copy, Debug, Reflect)]
@@ -165,10 +165,21 @@ impl Default for ViewportDimensions {
 )]
 pub struct CodeEditor;
 
-/// Cursor state component — tracks cursor positions and multi-cursor state.
+/// Cursor state component — tracks the primary cursor's position over time.
+///
+/// The set of active cursors and selection ranges lives in
+/// [`SelectionState::selections`]. `cursor_pos` is a convenience mirror of
+/// `selections.primary().head_offset()` that input handlers mutate during
+/// a single keystroke; the matching update to the SelectionCollection is
+/// applied at the end of the handler via
+/// [`SelectionState::apply_primary_cursor`].
+///
+/// `last_cursor_pos` is consumed by `should_auto_scroll` / `auto_scroll_to_cursor`
+/// to detect movement between frames. The blink-tracker fields drive caret
+/// fade-out without racing the auto-scroll system.
 #[derive(Component)]
 pub struct CursorState {
-    /// Cursor position (char index) - primary cursor for backward compatibility
+    /// Primary cursor position (char index). Mirror of `selections.primary().head_offset()`.
     pub cursor_pos: usize,
 
     /// Last cursor position (for detecting cursor movement)
@@ -181,10 +192,6 @@ pub struct CursorState {
     /// Last cursor position for blink reset tracking (separate from last_cursor_pos)
     /// This is tracked independently to avoid race conditions with auto_scroll_to_cursor
     pub last_cursor_pos_for_blink: usize,
-
-    /// All cursors (including primary cursor at index 0)
-    /// The first cursor is the "primary" cursor that maps to cursor_pos/selection_start/selection_end
-    pub cursors: Vec<Cursor>,
 }
 
 impl Default for CursorState {
@@ -194,18 +201,13 @@ impl Default for CursorState {
             last_cursor_pos: 0,
             cursor_moved_time: 0.0,
             last_cursor_pos_for_blink: 0,
-            cursors: vec![Cursor::new(0)],
         }
     }
 }
 
-/// Selection state component — tracks selection positions and the SelectionCollection.
+/// Selection state component — owns the [`SelectionCollection`].
 #[derive(Component, Default)]
 pub struct SelectionState {
-    /// Selection start (None = no selection) - primary cursor for backward compatibility
-    pub selection_start: Option<usize>,
-    /// Selection end - primary cursor for backward compatibility
-    pub selection_end: Option<usize>,
     /// Selection collection for managing multiple selections with edit-awareness
     pub selections: SelectionCollection,
 }

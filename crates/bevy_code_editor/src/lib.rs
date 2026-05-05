@@ -80,7 +80,7 @@ pub mod prelude {
     // Phase 6, re-exported here so prelude users keep getting it).
     pub use bevy_text_interaction::ScrollConfig;
 
-    // Cursor (the editor-side cursor data type) and the EditorAction enum.
+    // Selection / multi-cursor types and the EditorAction enum.
     pub use crate::input::EditorAction;
-    pub use crate::types::selection::Cursor;
+    pub use crate::types::selection::{Selection, SelectionCollection};
 }

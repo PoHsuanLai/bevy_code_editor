@@ -109,18 +109,17 @@ pub fn add_cursor_at_next_occurrence(
     cursor: &mut CursorState,
     tv: &mut TextViewState,
 ) -> bool {
-    let search_text = if let Some(primary) = cursor.cursors.first() {
-        if primary.has_selection() {
-            let (start, end) = (primary.selection_start(), primary.selection_end());
-            tv.rope.slice(start..end).to_string()
-        } else {
-            if let Some((start, end)) = word_at_position(&tv.rope, primary.position) {
-                cursor.cursors[0] = Cursor::with_selection(end, start);
-                sel.sync_primary_cursor(cursor);
-                return true;
-            }
-            return false;
-        }
+    let primary = sel.selections.primary();
+    let search_text = if primary.has_selection() {
+        let (start, end) = primary.range();
+        tv.rope.slice(start..end).to_string()
+    } else if let Some((start, end)) = word_at_position(&tv.rope, primary.head_offset()) {
+        // First Cmd+D on a bare cursor: select the word under the cursor.
+        // Match the legacy behavior of placing the head at `end` (so the
+        // caret sits at the end of the word) and the anchor at `start`.
+        sel.selections.set_selection(end, start);
+        sel.refresh_primary_cursor(cursor);
+        return true;
     } else {
         return false;
     };
@@ -129,21 +128,22 @@ pub fn add_cursor_at_next_occurrence(
         return false;
     }
 
-    let search_from = cursor
-        .cursors
+    let search_from = sel
+        .selections
         .iter()
-        .map(|c| c.selection_end())
+        .map(|s| s.end())
         .max()
         .unwrap_or(0);
 
     if let Some((start, end)) = find_next_occurrence(&tv.rope, &search_text, search_from) {
-        let already_covered = cursor.cursors.iter().any(|c| {
-            let (cs, ce) = (c.selection_start(), c.selection_end());
+        let already_covered = sel.selections.iter().any(|s| {
+            let (cs, ce) = s.range();
             start >= cs && end <= ce
         });
 
         if !already_covered {
-            sel.add_cursor_with_selection(cursor, tv, end, start);
+            sel.add_cursor_with_range(tv, end, start);
+            sel.refresh_primary_cursor(cursor);
             return true;
         }
     }

@@ -95,7 +95,7 @@ pub(crate) fn track_cursor_movement(
     time: Res<Time>,
 ) {
     for mut cursor in editor_query.iter_mut() {
-        let current_pos = cursor.cursors.first().map(|c| c.position).unwrap_or(0);
+        let current_pos = cursor.cursor_pos;
         if current_pos != cursor.last_cursor_pos_for_blink {
             cursor.cursor_moved_time = time.elapsed_secs_f64();
             cursor.last_cursor_pos_for_blink = current_pos;
@@ -116,6 +116,7 @@ pub(crate) fn push_cursor_overlays(
     mut editor_query: Query<
         (
             &EditorDisplayState,
+            &SelectionState,
             &CursorState,
             &TextViewState,
             &TextViewViewport,
@@ -130,7 +131,7 @@ pub(crate) fn push_cursor_overlays(
     theme: Res<ThemeSettings>,
     time: Res<Time>,
 ) {
-    for (_display, cursor, tv, _vp, mut overlays, fold_state, font, layout) in
+    for (_display, sel, cursor, tv, _vp, mut overlays, fold_state, font, layout) in
         editor_query.iter_mut()
     {
         // Drain any caret rects from the previous frame. We mark them with
@@ -159,9 +160,10 @@ pub(crate) fn push_cursor_overlays(
         }
 
         let char_width = font.char_width;
+        let _ = cursor; // unused under the SelectionCollection-driven path
 
-        for c in cursor.cursors.iter() {
-            let cursor_pos = c.position.min(tv.rope.len_chars());
+        for selection in sel.selections.iter() {
+            let cursor_pos = selection.head_offset().min(tv.rope.len_chars());
             let line_index = tv.rope.char_to_line(cursor_pos);
             let line_start = tv.rope.line_to_char(line_index);
             let col_index = cursor_pos - line_start;
@@ -202,6 +204,7 @@ pub(crate) fn update_cursor_line_highlight(
     mut editor_query: Query<
         (
             &EditorDisplayState,
+            &SelectionState,
             &CursorState,
             &TextViewState,
             &TextViewViewport,
@@ -215,7 +218,7 @@ pub(crate) fn update_cursor_line_highlight(
     cursor_line: Res<CursorLineSettings>,
     theme: Res<ThemeSettings>,
 ) {
-    for (_display, cursor, tv, vp, mut overlays, fold_state, font, layout) in
+    for (_display, sel, cursor, tv, vp, mut overlays, fold_state, font, layout) in
         editor_query.iter_mut()
     {
         // Drain previous-frame line-border / word rects (z = 0 reserved for cursor-line decoration).
@@ -237,9 +240,10 @@ pub(crate) fn update_cursor_line_highlight(
         // band stretches from the negative gutter edge to the viewport's right edge.
         let band_x_left = -vp.text_area_left;
         let band_x_right = vp.width as f32 - vp.text_area_left;
+        let _ = cursor; // legacy field kept for blink tracking; iteration uses `sel`
 
-        for c in cursor.cursors.iter() {
-            let cursor_pos = c.position.min(tv.rope.len_chars());
+        for selection in sel.selections.iter() {
+            let cursor_pos = selection.head_offset().min(tv.rope.len_chars());
             let line_index = tv.rope.char_to_line(cursor_pos);
 
             if fold_state.is_line_hidden(line_index) {

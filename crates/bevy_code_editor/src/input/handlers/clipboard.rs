@@ -30,8 +30,7 @@ pub fn handle_copy(
     let Ok((sel, tv)) = q.get(entity) else {
         return;
     };
-    if let (Some(s), Some(e)) = (sel.selection_start, sel.selection_end) {
-        let (start, end) = if s < e { (s, e) } else { (e, s) };
+    if let Some((start, end)) = sel.primary_range() {
         let start = start.min(tv.rope.len_chars());
         let end = end.min(tv.rope.len_chars());
         let text = tv.rope.slice(start..end).to_string();
@@ -63,10 +62,9 @@ pub fn handle_cut(
     let Ok((mut sel, mut hist, mut cursor, mut tv)) = q.get_mut(entity) else {
         return;
     };
-    let (Some(s), Some(e)) = (sel.selection_start, sel.selection_end) else {
+    let Some((start, end)) = sel.primary_range() else {
         return;
     };
-    let (start, end) = if s < e { (s, e) } else { (e, s) };
     let start = start.min(tv.rope.len_chars());
     let end = end.min(tv.rope.len_chars());
     let selected_text = tv.rope.slice(start..end).to_string();
@@ -90,8 +88,7 @@ pub fn handle_cut(
         kind: EditKind::Other,
     });
 
-    sel.selection_start = None;
-    sel.selection_end = None;
+    sel.apply_primary_cursor(&cursor);
     tv.content_version += 1;
 }
 
@@ -128,12 +125,7 @@ pub fn handle_paste(
     let mut deleted_text = String::new();
     let paste_position;
 
-    if let (Some(start), Some(end)) = (sel.selection_start, sel.selection_end) {
-        let (start, end) = if start < end {
-            (start, end)
-        } else {
-            (end, start)
-        };
+    if let Some((start, end)) = sel.primary_range() {
         let start = start.min(tv.rope.len_chars());
         let end = end.min(tv.rope.len_chars());
         deleted_text = tv.rope.slice(start..end).to_string();
@@ -141,8 +133,6 @@ pub fn handle_paste(
         let end_byte = tv.rope.char_to_byte(end);
         tv.rope.remove(start_byte..end_byte);
         cursor.cursor_pos = start;
-        sel.selection_start = None;
-        sel.selection_end = None;
         paste_position = start;
     } else {
         paste_position = cursor.cursor_pos.min(tv.rope.len_chars());
@@ -150,6 +140,7 @@ pub fn handle_paste(
 
     tv.rope.insert(paste_position, &text);
     cursor.cursor_pos = paste_position + text.chars().count();
+    sel.apply_primary_cursor(&cursor);
     tv.content_version += 1;
 
     hist.history.record(EditOperation {

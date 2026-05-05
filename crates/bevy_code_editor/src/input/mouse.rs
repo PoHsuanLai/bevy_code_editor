@@ -144,7 +144,7 @@ pub fn handle_mouse_input(
         editor_entity,
         mut sel,
         mut cursor,
-        mut tv,
+        tv,
         viewport,
         mut fold_state,
         font,
@@ -332,8 +332,8 @@ pub fn handle_mouse_input(
 
             if alt_pressed {
                 // Add cursor at clicked position
-                sel.sync_cursors_from_primary(&mut cursor);
-                sel.add_cursor(&mut cursor, &mut tv, char_pos);
+                sel.add_cursor_at(&tv, char_pos);
+                sel.refresh_primary_cursor(&mut cursor);
                 // Hide hover on click
                 #[cfg(feature = "lsp")]
                 reset_hover_state(&mut hover_state);
@@ -347,15 +347,13 @@ pub fn handle_mouse_input(
             drag_state.last_screen_pos = cursor_pos_screen;
 
             // Clear secondary cursors on regular click
-            if sel.has_multiple_cursors(&cursor) {
-                sel.clear_secondary_cursors(&mut cursor, &mut tv);
+            if sel.has_multiple_cursors() {
+                sel.clear_secondary_cursors(&mut cursor);
             }
 
             // Update cursor and clear selection
             cursor.cursor_pos = char_pos;
-            sel.selection_start = None;
-            sel.selection_end = None;
-            sel.sync_cursors_from_primary(&mut cursor);
+            sel.apply_primary_cursor(&cursor);
 
             // Hide hover on click
             #[cfg(feature = "lsp")]
@@ -414,8 +412,7 @@ pub fn handle_mouse_input(
                 // Only update if position changed
                 if current_pos != cursor.cursor_pos {
                     cursor.cursor_pos = current_pos;
-                    sel.selection_start = Some(start_pos);
-                    sel.selection_end = Some(current_pos);
+                    sel.selections.set_selection(current_pos, start_pos);
                 }
             }
         }

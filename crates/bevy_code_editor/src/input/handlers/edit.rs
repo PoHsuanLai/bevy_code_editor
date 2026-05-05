@@ -156,7 +156,7 @@ pub fn handle_delete_backward(
     else {
         return;
     };
-    if sel.selection_start.is_some() {
+    if sel.selections.primary().has_selection() {
         delete_selection(
             &mut sel,
             &mut hist,
@@ -185,7 +185,7 @@ pub fn handle_delete_forward(
     else {
         return;
     };
-    if sel.selection_start.is_some() {
+    if sel.selections.primary().has_selection() {
         delete_selection(
             &mut sel,
             &mut hist,
@@ -214,7 +214,7 @@ pub fn handle_delete_word_backward(
     else {
         return;
     };
-    if sel.selection_start.is_some() {
+    if sel.selections.primary().has_selection() {
         delete_selection(
             &mut sel,
             &mut hist,
@@ -243,7 +243,7 @@ pub fn handle_delete_word_forward(
     else {
         return;
     };
-    if sel.selection_start.is_some() {
+    if sel.selections.primary().has_selection() {
         delete_selection(
             &mut sel,
             &mut hist,
@@ -279,11 +279,11 @@ pub fn handle_undo(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((_sel, mut hist, mut syntax, mut display, mut cursor, mut tv)) = q.get_mut(entity)
+    let Ok((mut sel, mut hist, mut syntax, mut display, mut cursor, mut tv)) = q.get_mut(entity)
     else {
         return;
     };
-    let _ = hist.undo(&mut syntax, &mut display, &mut cursor, &mut tv);
+    let _ = hist.undo(&mut sel, &mut syntax, &mut display, &mut cursor, &mut tv);
 }
 
 pub fn handle_redo(
@@ -297,9 +297,9 @@ pub fn handle_redo(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((_sel, mut hist, mut syntax, mut display, mut cursor, mut tv)) = q.get_mut(entity)
+    let Ok((mut sel, mut hist, mut syntax, mut display, mut cursor, mut tv)) = q.get_mut(entity)
     else {
         return;
     };
-    let _ = hist.redo(&mut syntax, &mut display, &mut cursor, &mut tv);
+    let _ = hist.redo(&mut sel, &mut syntax, &mut display, &mut cursor, &mut tv);
 }

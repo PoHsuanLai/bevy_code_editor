@@ -21,7 +21,6 @@ pub(crate) fn update_selection_highlight(
             &TextViewState,
             &TextViewViewport,
             &SelectionState,
-            &CursorState,
             &mut TextViewOverlays,
             &FoldState,
             &FontConfig,
@@ -31,7 +30,7 @@ pub(crate) fn update_selection_highlight(
     >,
     theme: Res<ThemeSettings>,
 ) {
-    for (tv, _vp, sel, cursor, mut overlays, fold_state, font, layout) in
+    for (tv, _vp, sel, mut overlays, fold_state, font, layout) in
         editor_query.iter_mut()
     {
     // Drain any selection rects from the previous frame (z = -1 marks selection;
@@ -42,24 +41,14 @@ pub(crate) fn update_selection_highlight(
     let _ = font.line_height;
 
     // Collect (start_char, end_char) for every active selection range. The
-    // legacy `(cursor_idx, ...)` tuple is no longer needed — we emit rects
-    // directly from char ranges.
-    let mut selections: Vec<(usize, usize)> = Vec::new();
-    for cur in cursor.cursors.iter() {
-        if let Some((s, e)) = cur.selection_range() {
-            if s != e {
-                selections.push((s, e));
-            }
-        }
-    }
-    if selections.is_empty() && cursor.cursors.len() <= 1 {
-        if let (Some(s), Some(e)) = (sel.selection_start, sel.selection_end) {
-            let (lo, hi) = if s <= e { (s, e) } else { (e, s) };
-            if lo != hi {
-                selections.push((lo, hi));
-            }
-        }
-    }
+    // SelectionCollection is the single source of truth — emit one rect-set
+    // per non-empty selection.
+    let selections: Vec<(usize, usize)> = sel
+        .selections
+        .iter()
+        .filter(|s| s.has_selection())
+        .map(|s| s.range())
+        .collect();
 
     for (start, end) in selections {
         let start_line = tv.rope.char_to_line(start);

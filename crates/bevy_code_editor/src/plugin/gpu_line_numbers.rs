@@ -32,7 +32,7 @@ pub(crate) fn update_gpu_line_numbers(
     editor_query: Query<
         (
             Entity,
-            &CursorState,
+            &SelectionState,
             &TextViewState,
             &TextViewViewport,
             Ref<FoldState>,
@@ -57,7 +57,7 @@ pub(crate) fn update_gpu_line_numbers(
         return;
     }
 
-    for (editor_entity, cursor, tv, viewport, fold_state, font) in editor_query.iter() {
+    for (editor_entity, sel, tv, viewport, fold_state, font) in editor_query.iter() {
     // Check if we need to update
     let fold_changed = fold_state.is_changed();
 
@@ -86,11 +86,11 @@ pub(crate) fn update_gpu_line_numbers(
     let viewport_height = viewport.height as f32;
 
     // Collect cursor lines for highlighting active line numbers
-    let cursor_lines: std::collections::HashSet<usize> = cursor
-        .cursors
+    let cursor_lines: std::collections::HashSet<usize> = sel
+        .selections
         .iter()
-        .map(|c| {
-            let pos = c.position.min(tv.rope.len_chars());
+        .map(|s| {
+            let pos = s.head_offset().min(tv.rope.len_chars());
             tv.rope.char_to_line(pos)
         })
         .collect();

@@ -1,10 +1,12 @@
 //! Cursor movement handlers — Move{Left,Right,Up,Down,Word*,LineStart,LineEnd,
 //! DocumentStart,DocumentEnd,PageUp,PageDown}.
 //!
-//! Each handler clears any active selection, advances the primary cursor via
-//! the corresponding helper in `super::super::cursor` /
-//! `super::super::editor_ops`, then syncs the multi-cursor collection from
-//! the new primary position.
+//! Each handler advances `cursor.cursor_pos` via the corresponding helper in
+//! `super::super::cursor` / `super::super::editor_ops`, then collapses the
+//! selection collection onto the new primary position. Any secondary cursors
+//! and active selection range are dropped — the legacy code paths did the
+//! same by writing `selection_start = None; selection_end = None;` and
+//! re-syncing `cursors[0]` afterwards.
 
 use crate::input::action_events::*;
 use crate::input::cursor::{
@@ -46,10 +48,8 @@ pub fn handle_move_cursor_left(
     let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
         return;
     };
-    sel.selection_start = None;
-    sel.selection_end = None;
     move_cursor(&mut cursor, &tv.rope, -1);
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_cursor(&cursor);
 }
 
 pub fn handle_move_cursor_right(
@@ -66,10 +66,8 @@ pub fn handle_move_cursor_right(
     let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
         return;
     };
-    sel.selection_start = None;
-    sel.selection_end = None;
     move_cursor(&mut cursor, &tv.rope, 1);
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_cursor(&cursor);
 }
 
 pub fn handle_move_cursor_up(
@@ -86,10 +84,8 @@ pub fn handle_move_cursor_up(
     let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
         return;
     };
-    sel.selection_start = None;
-    sel.selection_end = None;
     move_cursor_up(&mut cursor, &tv.rope);
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_cursor(&cursor);
 }
 
 pub fn handle_move_cursor_down(
@@ -106,10 +102,8 @@ pub fn handle_move_cursor_down(
     let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
         return;
     };
-    sel.selection_start = None;
-    sel.selection_end = None;
     move_cursor_down(&mut cursor, &tv.rope);
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_cursor(&cursor);
 }
 
 pub fn handle_move_cursor_word_left(
@@ -126,10 +120,8 @@ pub fn handle_move_cursor_word_left(
     let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
         return;
     };
-    sel.selection_start = None;
-    sel.selection_end = None;
     move_cursor_word_left(&mut cursor, &tv.rope);
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_cursor(&cursor);
 }
 
 pub fn handle_move_cursor_word_right(
@@ -146,10 +138,8 @@ pub fn handle_move_cursor_word_right(
     let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
         return;
     };
-    sel.selection_start = None;
-    sel.selection_end = None;
     move_cursor_word_right(&mut cursor, &tv.rope);
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_cursor(&cursor);
 }
 
 pub fn handle_move_cursor_line_start(
@@ -166,10 +156,8 @@ pub fn handle_move_cursor_line_start(
     let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
         return;
     };
-    sel.selection_start = None;
-    sel.selection_end = None;
     move_cursor_line_start(&mut cursor, &tv.rope);
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_cursor(&cursor);
 }
 
 pub fn handle_move_cursor_line_end(
@@ -186,10 +174,8 @@ pub fn handle_move_cursor_line_end(
     let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
         return;
     };
-    sel.selection_start = None;
-    sel.selection_end = None;
     move_cursor_line_end(&mut cursor, &tv.rope);
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_cursor(&cursor);
 }
 
 pub fn handle_move_cursor_document_start(
@@ -206,10 +192,8 @@ pub fn handle_move_cursor_document_start(
     let Ok((mut sel, mut cursor, _tv)) = q.get_mut(entity) else {
         return;
     };
-    sel.selection_start = None;
-    sel.selection_end = None;
     cursor.cursor_pos = 0;
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_cursor(&cursor);
 }
 
 pub fn handle_move_cursor_document_end(
@@ -226,10 +210,8 @@ pub fn handle_move_cursor_document_end(
     let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
         return;
     };
-    sel.selection_start = None;
-    sel.selection_end = None;
     cursor.cursor_pos = tv.rope.len_chars();
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_cursor(&cursor);
 }
 
 pub fn handle_move_cursor_page_up(
@@ -243,13 +225,11 @@ pub fn handle_move_cursor_page_up(
     let Some(entity) = focused(&input_focus) else {
         return;
     };
-    let Ok((mut sel, mut cursor, _tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, cursor, _tv)) = q.get_mut(entity) else {
         return;
     };
-    sel.selection_start = None;
-    sel.selection_end = None;
     // TODO: page-up was a TODO pre-refactor too.
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_cursor(&cursor);
 }
 
 pub fn handle_move_cursor_page_down(
@@ -263,11 +243,9 @@ pub fn handle_move_cursor_page_down(
     let Some(entity) = focused(&input_focus) else {
         return;
     };
-    let Ok((mut sel, mut cursor, _tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, cursor, _tv)) = q.get_mut(entity) else {
         return;
     };
-    sel.selection_start = None;
-    sel.selection_end = None;
     // TODO: page-down was a TODO pre-refactor too.
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_cursor(&cursor);
 }

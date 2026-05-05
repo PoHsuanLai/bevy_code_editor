@@ -1,14 +1,16 @@
 //! Selection handlers — Select{Left,Right,Up,Down,WordLeft,WordRight,
 //! LineStart,LineEnd,All}, ClearSelection.
 //!
-//! Selection handlers initialize a selection anchor at the current cursor
-//! (if not already selecting), advance the cursor, then update
-//! `selection_end` to the new cursor position.
+//! Selection handlers capture the current cursor position as the selection
+//! anchor (when no selection is active), advance the cursor, then push the
+//! new (head, anchor) pair into the SelectionCollection. If a selection is
+//! already active the existing anchor is preserved so repeated select-by-
+//! direction extends the same range.
 
 use crate::input::action_events::*;
 use crate::input::cursor::{
-    init_selection, move_cursor_down, move_cursor_line_end, move_cursor_line_start,
-    move_cursor_up, move_cursor_word_left, move_cursor_word_right,
+    move_cursor_down, move_cursor_line_end, move_cursor_line_start, move_cursor_up,
+    move_cursor_word_left, move_cursor_word_right,
 };
 use crate::input::editor_ops::move_cursor;
 use crate::types::*;
@@ -40,10 +42,9 @@ pub fn handle_select_left(
     let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
         return;
     };
-    init_selection(&mut sel, &cursor);
+    let anchor = cursor.cursor_pos;
     move_cursor(&mut cursor, &tv.rope, -1);
-    sel.selection_end = Some(cursor.cursor_pos);
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
 pub fn handle_select_right(
@@ -60,10 +61,9 @@ pub fn handle_select_right(
     let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
         return;
     };
-    init_selection(&mut sel, &cursor);
+    let anchor = cursor.cursor_pos;
     move_cursor(&mut cursor, &tv.rope, 1);
-    sel.selection_end = Some(cursor.cursor_pos);
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
 pub fn handle_select_up(
@@ -80,10 +80,9 @@ pub fn handle_select_up(
     let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
         return;
     };
-    init_selection(&mut sel, &cursor);
+    let anchor = cursor.cursor_pos;
     move_cursor_up(&mut cursor, &tv.rope);
-    sel.selection_end = Some(cursor.cursor_pos);
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
 pub fn handle_select_down(
@@ -100,10 +99,9 @@ pub fn handle_select_down(
     let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
         return;
     };
-    init_selection(&mut sel, &cursor);
+    let anchor = cursor.cursor_pos;
     move_cursor_down(&mut cursor, &tv.rope);
-    sel.selection_end = Some(cursor.cursor_pos);
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
 pub fn handle_select_word_left(
@@ -120,10 +118,9 @@ pub fn handle_select_word_left(
     let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
         return;
     };
-    init_selection(&mut sel, &cursor);
+    let anchor = cursor.cursor_pos;
     move_cursor_word_left(&mut cursor, &tv.rope);
-    sel.selection_end = Some(cursor.cursor_pos);
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
 pub fn handle_select_word_right(
@@ -140,10 +137,9 @@ pub fn handle_select_word_right(
     let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
         return;
     };
-    init_selection(&mut sel, &cursor);
+    let anchor = cursor.cursor_pos;
     move_cursor_word_right(&mut cursor, &tv.rope);
-    sel.selection_end = Some(cursor.cursor_pos);
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
 pub fn handle_select_line_start(
@@ -160,10 +156,9 @@ pub fn handle_select_line_start(
     let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
         return;
     };
-    init_selection(&mut sel, &cursor);
+    let anchor = cursor.cursor_pos;
     move_cursor_line_start(&mut cursor, &tv.rope);
-    sel.selection_end = Some(cursor.cursor_pos);
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
 pub fn handle_select_line_end(
@@ -180,10 +175,9 @@ pub fn handle_select_line_end(
     let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
         return;
     };
-    init_selection(&mut sel, &cursor);
+    let anchor = cursor.cursor_pos;
     move_cursor_line_end(&mut cursor, &tv.rope);
-    sel.selection_end = Some(cursor.cursor_pos);
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
 pub fn handle_select_all(
@@ -200,10 +194,9 @@ pub fn handle_select_all(
     let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
         return;
     };
-    sel.selection_start = Some(0);
-    sel.selection_end = Some(tv.rope.len_chars());
-    cursor.cursor_pos = tv.rope.len_chars();
-    sel.sync_cursors_from_primary(&mut cursor);
+    let end = tv.rope.len_chars();
+    cursor.cursor_pos = end;
+    sel.selections.set_selection(end, 0);
 }
 
 /// Clear-selection has three conditional behaviors that match the original
@@ -235,7 +228,7 @@ pub fn handle_clear_selection(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut cursor, mut tv, mut goto_line_state)) = editor_q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, _tv, mut goto_line_state)) = editor_q.get_mut(entity) else {
         return;
     };
 
@@ -249,8 +242,8 @@ pub fn handle_clear_selection(
         }
     }
 
-    if sel.has_multiple_cursors(&cursor) {
-        sel.clear_secondary_cursors(&mut cursor, &mut tv);
+    if sel.has_multiple_cursors() {
+        sel.clear_secondary_cursors(&mut cursor);
         return;
     }
 
@@ -259,7 +252,5 @@ pub fn handle_clear_selection(
         return;
     }
 
-    sel.selection_start = None;
-    sel.selection_end = None;
-    sel.sync_cursors_from_primary(&mut cursor);
+    sel.apply_primary_cursor(&cursor);
 }

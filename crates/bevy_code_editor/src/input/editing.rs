@@ -50,7 +50,7 @@ impl EditHistoryState {
 
         tv.rope.insert_char(cursor_pos, c);
         cursor.cursor_pos += 1;
-        sel.sync_cursors_from_primary(cursor);
+        sel.apply_primary_cursor(cursor);
         tv.content_version += 1;
 
         #[cfg(feature = "tree-sitter")]
@@ -116,7 +116,7 @@ impl EditHistoryState {
 
             tv.rope.remove(char_idx..byte_idx_end);
             cursor.cursor_pos -= 1;
-            sel.sync_cursors_from_primary(cursor);
+            sel.apply_primary_cursor(cursor);
             tv.content_version += 1;
 
             #[cfg(feature = "tree-sitter")]
@@ -176,7 +176,7 @@ impl EditHistoryState {
                 .record_edit(TextEdit::delete(cursor.cursor_pos, cursor.cursor_pos + 1));
 
             tv.rope.remove(char_idx..byte_idx_end);
-            sel.sync_cursors_from_primary(cursor);
+            sel.apply_primary_cursor(cursor);
             tv.content_version += 1;
 
             #[cfg(feature = "tree-sitter")]
@@ -277,6 +277,7 @@ impl EditHistoryState {
     /// Perform undo operation
     pub fn undo(
         &mut self,
+        sel: &mut SelectionState,
         syntax: &mut SyntaxCacheState,
         display: &mut EditorDisplayState,
         cursor: &mut CursorState,
@@ -295,6 +296,7 @@ impl EditHistoryState {
 
             if let Some(first_op) = transaction.operations.first() {
                 cursor.cursor_pos = first_op.cursor_before;
+                sel.apply_primary_cursor(cursor);
             }
 
             self.history.push_redo(transaction);
@@ -307,6 +309,7 @@ impl EditHistoryState {
     /// Perform redo operation
     pub fn redo(
         &mut self,
+        sel: &mut SelectionState,
         syntax: &mut SyntaxCacheState,
         display: &mut EditorDisplayState,
         cursor: &mut CursorState,
@@ -325,6 +328,7 @@ impl EditHistoryState {
 
             if let Some(last_op) = transaction.operations.last() {
                 cursor.cursor_pos = last_op.cursor_after;
+                sel.apply_primary_cursor(cursor);
             }
 
             self.history.push_undo(transaction);

@@ -39,8 +39,7 @@ impl GotoLineState {
             // Move cursor to the start of the target line
             let char_pos = tv.rope.line_to_char(target_line);
             cursor.cursor_pos = char_pos;
-            sel.selection_start = None;
-            sel.selection_end = None;
+            sel.apply_primary_cursor(cursor);
 
             return true;
         }
