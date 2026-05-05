@@ -8,13 +8,13 @@ pub mod plugin;
 pub mod render;
 pub mod snapshot;
 pub mod state;
+pub mod styling;
 pub mod viewport;
 
 pub use font::FontConfig;
 pub use layout::DisplayLayout;
 pub use layout_builder::{
-    approx_display_rows_for_line, build_display_layout, slice_runs, wrap_into_rows, LayoutInputs,
-    RunWithText, WrapRow,
+    approx_display_rows_for_line, slice_runs, wrap_into_rows, LayoutProduceSet, WrapRow,
 };
 pub use overlay::{RectOverlay, RowVertical, TextViewOverlays};
 pub use plugin::{TextEnginePlugin, TextEnginePlugins, TextView, TextViewBatchEntity, TextViewRenderSet};
@@ -23,4 +23,5 @@ pub use snapshot::{
     trivial_layout, InlineObject, ShapedLine, SimpleTheme, StyleRun, TextDecoration,
 };
 pub use state::TextViewState;
+pub use styling::{LayoutWrap, LineFilter, LineStyleSource, LineStyling, LineVisibility, RunWithText};
 pub use viewport::{TextViewViewport, ViewportOrigin};

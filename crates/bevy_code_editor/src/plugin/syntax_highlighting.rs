@@ -3,41 +3,42 @@
 //! The structural parsing + provider trait live in `bevy_tree_sitter`. This
 //! module owns the editor-only pieces:
 //!
-//! - [`SyntaxResource`]: holds an `Option<TreeSitterProvider>` plus a
-//!   `tree_version` counter the renderer watches for invalidation.
+//! - [`SyntaxResource`]: a thin newtype around `Arc<RwLock<SyntaxInner>>`
+//!   that holds an `Option<TreeSitterProvider>` plus a `tree_version`
+//!   counter the renderer watches for invalidation. The Arc is shared with
+//!   the editor's `LineStyleSource` Component so the styling system reads
+//!   from the same state the parse pipeline writes to.
 //! - [`HighlightCache`]: LRU of structural `HighlightRange` runs per line,
 //!   version-keyed by `content_version`. Theme mapping happens on the read
-//!   path (see [`SyntaxResource::highlight_range_styled`]) so theme hot-swap
-//!   doesn't need a cache flush.
+//!   path so theme hot-swap doesn't need a cache flush.
 //! - The async-parse pipeline: forwards edits to the tree (sync interpolation)
 //!   and consumes [`bevy_tree_sitter::ParseCompleted`] events to keep the
 //!   provider's tree fresh.
 
+use crate::types::LineSegment;
+#[cfg(feature = "tree-sitter")]
 use crate::text_view::TextViewState;
-use crate::types::{CodeEditor, LineSegment, SyntaxCacheState};
+#[cfg(feature = "tree-sitter")]
+use crate::types::{CodeEditor, SyntaxCacheState};
 use bevy::prelude::*;
 use std::collections::VecDeque;
+use std::sync::{Arc, RwLock};
 
 #[cfg(feature = "tree-sitter")]
 use bevy_tree_sitter::{HighlightRange, ParseCompleted, SyntaxProvider, TreeSitterProvider};
 
-/// Resource that holds the syntax highlighting provider
-// not reflectable: holds `TreeSitterProvider` which wraps `tree_sitter::*`
-// types that don't implement `Reflect`.
-#[derive(Resource)]
-pub struct SyntaxResource {
+/// Mutable state inside [`SyntaxResource`]. Held behind an `Arc<RwLock<_>>`
+/// so the editor's parse-pipeline systems and the engine's `LineStyleSource`
+/// can share access without each owning their own copy.
+pub struct SyntaxInner {
     #[cfg(feature = "tree-sitter")]
-    provider: Option<TreeSitterProvider>,
-
-    /// Bumped each time the parse tree is replaced. The display-map plugin
-    /// folds this into its layout fingerprint so a finished parse triggers
-    /// a re-layout (and therefore re-highlight) without explicit signalling.
+    pub(crate) provider: Option<TreeSitterProvider>,
     #[cfg(feature = "tree-sitter")]
-    pub tree_version: u64,
+    pub(crate) tree_version: u64,
 }
 
-impl SyntaxResource {
-    pub fn new() -> Self {
+impl SyntaxInner {
+    fn new() -> Self {
         Self {
             #[cfg(feature = "tree-sitter")]
             provider: None,
@@ -45,27 +46,65 @@ impl SyntaxResource {
             tree_version: 0,
         }
     }
+}
+
+/// Resource that holds the syntax highlighting provider.
+///
+/// Public methods preserve their pre-Arc signatures — locking happens
+/// internally. The wrapping `Arc<RwLock<_>>` is exposed via [`share_arc`]
+/// for components (e.g. `LineStyleSource`) that need to read from the same
+/// state.
+// not reflectable: holds `TreeSitterProvider` which wraps `tree_sitter::*`
+// types that don't implement `Reflect`.
+#[derive(Resource, Clone)]
+pub struct SyntaxResource {
+    pub(crate) inner: Arc<RwLock<SyntaxInner>>,
+}
+
+impl SyntaxResource {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(SyntaxInner::new())),
+        }
+    }
+
+    /// Hand out a clone of the inner `Arc<RwLock<_>>`. Cheap (refcount bump).
+    /// Used by the editor's `LineStyleSource` to share state with the
+    /// engine's `produce_layouts` system.
+    pub fn share_arc(&self) -> Arc<RwLock<SyntaxInner>> {
+        self.inner.clone()
+    }
 
     #[cfg(feature = "tree-sitter")]
     pub fn set_provider(&mut self, provider: TreeSitterProvider) {
-        self.provider = Some(provider);
+        self.inner.write().unwrap().provider = Some(provider);
     }
 
+    /// Bumped each time the parse tree is replaced. The display-map
+    /// fingerprint folds this in so a finished parse triggers a re-layout.
     #[cfg(feature = "tree-sitter")]
-    pub fn provider_mut(&mut self) -> Option<&mut TreeSitterProvider> {
-        self.provider.as_mut()
+    pub fn tree_version(&self) -> u64 {
+        self.inner.read().unwrap().tree_version
     }
 
-    /// Read-only access to the cached tree (for folding, outline, etc.).
+    /// Run a closure with `&Tree` access, if a tree is cached. Returns
+    /// `None` if no provider / no tree.
     #[cfg(feature = "tree-sitter")]
-    pub fn tree(&self) -> Option<&bevy_tree_sitter::ts::Tree> {
-        self.provider.as_ref()?.tree()
+    pub fn with_tree<R>(
+        &self,
+        f: impl FnOnce(&bevy_tree_sitter::ts::Tree) -> R,
+    ) -> Option<R> {
+        let guard = self.inner.read().unwrap();
+        guard.provider.as_ref()?.tree().map(f)
     }
 
     pub fn is_available(&self) -> bool {
         #[cfg(feature = "tree-sitter")]
         {
-            self.provider
+            self.inner
+                .read()
+                .unwrap()
+                .provider
                 .as_ref()
                 .map(|p| p.is_available())
                 .unwrap_or(false)
@@ -94,10 +133,10 @@ impl SyntaxResource {
         theme: &crate::settings::SyntaxTheme,
         default_color: Color,
     ) -> Vec<Vec<LineSegment>> {
-        let Some(provider) = &mut self.provider else {
+        let mut guard = self.inner.write().unwrap();
+        let Some(provider) = &mut guard.provider else {
             return plain_text_segments(text, default_color);
         };
-
         let highlights = provider.highlight_range(text, start_line, end_line, start_byte);
         ranges_to_segments(text, start_byte, &highlights, theme, default_color)
     }
@@ -121,7 +160,7 @@ impl SyntaxResource {
     /// Drop the cached parse tree (e.g. when content shifts catastrophically).
     #[cfg(feature = "tree-sitter")]
     pub fn invalidate_tree(&mut self) {
-        if let Some(provider) = &mut self.provider {
+        if let Some(provider) = &mut self.inner.write().unwrap().provider {
             provider.invalidate_tree();
         }
     }
@@ -129,7 +168,7 @@ impl SyntaxResource {
     /// Re-parse the tree from `rope` synchronously.
     #[cfg(feature = "tree-sitter")]
     pub fn update_tree(&mut self, rope: &ropey::Rope) {
-        if let Some(provider) = &mut self.provider {
+        if let Some(provider) = &mut self.inner.write().unwrap().provider {
             provider.update_tree(rope);
         }
     }
@@ -146,7 +185,8 @@ impl SyntaxResource {
         Option<bevy_tree_sitter::ts::Language>,
         Option<bevy_tree_sitter::ts::Tree>,
     ) {
-        if let Some(provider) = &mut self.provider {
+        let mut guard = self.inner.write().unwrap();
+        if let Some(provider) = &mut guard.provider {
             let parser = if let Some(ref language) = provider.cached_language {
                 let mut new_parser = bevy_tree_sitter::ts::Parser::new();
                 if new_parser.set_language(language).is_ok() {
@@ -170,7 +210,9 @@ impl SyntaxResource {
     /// Bumps `tree_version` so the display-map plugin re-runs.
     #[cfg(feature = "tree-sitter")]
     pub fn set_parsed_tree(&mut self, tree: bevy_tree_sitter::ts::Tree, rope: &ropey::Rope) {
-        if let Some(provider) = &mut self.provider {
+        let mut guard = self.inner.write().unwrap();
+        let inner = &mut *guard;
+        if let Some(provider) = &mut inner.provider {
             provider.cached_tree = Some(tree);
             provider.cached_rope = Some(rope.clone());
             if provider.cached_parser.is_none() {
@@ -182,7 +224,7 @@ impl SyntaxResource {
                 }
             }
 
-            self.tree_version += 1;
+            inner.tree_version += 1;
         }
     }
 
@@ -190,7 +232,7 @@ impl SyntaxResource {
     /// valid for highlight queries while the async re-parse runs.
     #[cfg(feature = "tree-sitter")]
     pub fn apply_sync_edit(&mut self, edit: bevy_tree_sitter::ts::InputEdit, rope: &ropey::Rope) {
-        if let Some(provider) = &mut self.provider {
+        if let Some(provider) = &mut self.inner.write().unwrap().provider {
             provider.apply_sync_edit(edit, rope);
         }
     }

@@ -1,83 +1,163 @@
 //! Wrap-aware layout producer.
 //!
-//! Walks a visible window of `TextViewState.rope`, asks the caller per-line
-//! whether the buffer line is hidden (folding hook) and what its styled runs
-//! are (syntax/markdown hook), shapes each row through cosmic-text, and (when
-//! soft wrap is enabled) splits long lines on a pixel-budget boundary into
+//! [`produce_layouts`] is the engine's per-frame layout system. It walks
+//! every `TextView` entity, asks each for its visibility predicate
+//! ([`LineFilter`]) and styling source ([`LineStyleSource`]), shapes the
+//! visible window through cosmic-text, and (when soft wrap is enabled via
+//! [`LayoutWrap`]) splits long lines on a pixel-budget boundary into
 //! multiple `ShapedLine` rows. The result is the per-frame `DisplayLayout`
 //! consumed by the renderer and by cursor/selection/overlay producers.
 //!
-//! Editor-specific concepts (fold state, syntax provider, theme settings) are
-//! injected via closures so the engine can serve markdown / chat / log-viewer
-//! consumers directly without going through the editor.
+//! The trait Components plug editor-domain concepts (folds, syntax) into
+//! the engine without making the engine depend on them. Markdown / chat /
+//! log-viewer consumers can attach their own implementations.
 
 use bevy::prelude::*;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::font::FontConfig;
 use super::layout::DisplayLayout;
+use super::plugin::TextView;
 use super::snapshot::{LineShape, ShapedGlyph, ShapedLine, StyleRun};
 use super::state::TextViewState;
+use super::styling::{LayoutWrap, LineFilter, LineStyleSource, RunWithText};
 use super::viewport::TextViewViewport;
 use crate::gpu::GlyphAtlas;
 
-/// Inputs for [`build_display_layout`]. Plain primitives only — no editor
-/// settings types — so any consumer (markdown, chat, log viewer) can build
-/// these without depending on `bevy_code_editor`.
-pub struct LayoutInputs<'a> {
-    pub state: &'a mut TextViewState,
-    pub viewport: &'a TextViewViewport,
-    pub font: &'a FontConfig,
-    pub atlas: Option<&'a mut GlyphAtlas>,
-    pub fonts: Option<&'a Assets<bevy::text::Font>>,
-    /// Pixel width budget for soft-wrap. `None` disables wrap and emits one
-    /// `ShapedLine` per (visible) buffer line.
-    pub wrap_budget_px: Option<f32>,
-    /// Continuation-row left inset in pixels.
-    pub wrap_indent_px: f32,
-    /// Foreground color used when a line's styled-run list is empty.
-    pub default_fg: Color,
-    /// Extra rows kept above and below the visible window.
-    pub viewport_buffer_lines: u32,
+/// Extra rows kept above and below the visible window. Tunes the trade-off
+/// between off-screen shaping work and scroll-into-view smoothness.
+const VIEWPORT_BUFFER_LINES: u32 = 4;
+
+/// System set for layout production. Editor-side systems that mutate
+/// trait-Component state (e.g. folding, syntax style version) should run
+/// `.before(LayoutProduceSet)`.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LayoutProduceSet;
+
+/// Per-entity dirty-detection key. Equality means "no rebuild needed".
+/// Floats are compared by bit pattern (NaN comparisons aren't a real
+/// concern — scroll/viewport never produce NaN under normal use).
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct LayoutFingerprint {
+    content_version: u64,
+    scroll_bits: u32,
+    h_scroll_bits: u32,
+    viewport_w: u32,
+    viewport_h: u32,
+    viewport_top_bits: u32,
+    font_size_tenths: u32,
+    line_height_tenths: u32,
+    style_version: u64,
+    wrap_budget_bits: u64,
+    wrap_indent_bits: u32,
 }
 
-/// Build a `DisplayLayout` for the visible viewport.
+/// The engine's layout system. Registered by `TextEnginePlugin`.
 ///
-/// `line_visible`: returns false for buffer lines hidden by folds. Pass
-/// `|_| true` for non-folding consumers.
-///
-/// `line_style`: returns the styled runs for a buffer line, given the line
-/// index and its text. The byte ranges in returned runs index into the
-/// concatenation of run texts (which is what gets shaped). Empty `Vec` means
-/// "render plain — renderer falls back to `default_fg`."
-///
-/// Most consumers will pass `|_, _| Vec::new()`. The editor's adapter wires
-/// `line_style` to its tree-sitter highlighter; markdown consumers wire it to
-/// their inline-styling pass.
-pub fn build_display_layout(
-    inputs: LayoutInputs<'_>,
-    line_visible: impl Fn(usize) -> bool,
-    mut line_style: impl FnMut(usize, &str) -> Vec<RunWithText>,
-) -> DisplayLayout {
-    let LayoutInputs {
-        state,
-        viewport,
-        font,
-        atlas,
-        fonts,
-        wrap_budget_px,
-        wrap_indent_px,
-        default_fg,
-        viewport_buffer_lines,
-    } = inputs;
+/// Walks every `TextView` entity, fingerprints its inputs, skips when
+/// nothing changed, and otherwise rebuilds the entity's `DisplayLayout`.
+/// Editor / consumer systems plug in via the [`LineFilter`] and
+/// [`LineStyleSource`] Components on the same entity.
+#[allow(clippy::type_complexity)]
+pub(crate) fn produce_layouts(
+    mut q: Query<
+        (
+            Entity,
+            &mut TextViewState,
+            &TextViewViewport,
+            &FontConfig,
+            &mut DisplayLayout,
+            Option<&LineFilter>,
+            Option<&LineStyleSource>,
+            Option<&LayoutWrap>,
+        ),
+        With<TextView>,
+    >,
+    mut atlas: ResMut<GlyphAtlas>,
+    fonts: Res<Assets<bevy::text::Font>>,
+    mut last_fingerprints: Local<HashMap<Entity, LayoutFingerprint>>,
+) {
+    let mut alive: std::collections::HashSet<Entity> = std::collections::HashSet::new();
+    for (entity, mut tv_state, tv_viewport, font, mut layout, filter, style_src, wrap) in
+        q.iter_mut()
+    {
+        alive.insert(entity);
+        let wrap = wrap.copied().unwrap_or_default();
+        let style_version = style_src.as_ref().map(|s| s.0.version()).unwrap_or(0);
 
+        let fingerprint = LayoutFingerprint {
+            content_version: tv_state.content_version,
+            scroll_bits: tv_state.scroll_offset.to_bits(),
+            h_scroll_bits: tv_state.horizontal_scroll_offset.to_bits(),
+            viewport_w: tv_viewport.width,
+            viewport_h: tv_viewport.height,
+            viewport_top_bits: tv_viewport.text_area_top.to_bits(),
+            font_size_tenths: (font.size * 10.0) as u32,
+            line_height_tenths: (font.line_height * 10.0) as u32,
+            style_version,
+            wrap_budget_bits: wrap
+                .budget_px
+                .map(|v| v.to_bits() as u64)
+                .unwrap_or(u64::MAX),
+            wrap_indent_bits: wrap.indent_px.to_bits(),
+        };
+
+        if last_fingerprints.get(&entity) == Some(&fingerprint) {
+            continue;
+        }
+
+        let new_layout = build_display_layout(
+            &mut tv_state,
+            tv_viewport,
+            font,
+            wrap,
+            layout.default_fg,
+            filter.map(|f| f.0.as_ref()),
+            style_src.map(|s| s.0.as_ref()),
+            Some(&mut atlas),
+            Some(&fonts),
+        );
+
+        *layout = new_layout;
+        last_fingerprints.insert(entity, fingerprint);
+    }
+    last_fingerprints.retain(|e, _| alive.contains(e));
+}
+
+/// Build a `DisplayLayout` for the visible viewport. Internal — called by
+/// [`produce_layouts`]. Kept as a separate function so consumers wanting a
+/// one-shot non-system build (e.g. tests) can call it directly.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_display_layout(
+    state: &mut TextViewState,
+    viewport: &TextViewViewport,
+    font: &FontConfig,
+    wrap: LayoutWrap,
+    default_fg: Color,
+    line_filter: Option<&dyn super::styling::LineVisibility>,
+    line_styling: Option<&dyn super::styling::LineStyling>,
+    atlas: Option<&mut GlyphAtlas>,
+    fonts: Option<&Assets<bevy::text::Font>>,
+) -> DisplayLayout {
+    let LayoutWrap {
+        budget_px: wrap_budget_px,
+        indent_px: wrap_indent_px,
+    } = wrap;
     let line_height = font.line_height;
     let char_width = font.char_width;
     let baseline_offset = font.size * 0.32;
     let total_buffer_lines = state.line_count();
 
+    let line_visible = |buffer_line: usize| -> bool {
+        line_filter.map(|f| f.is_visible(buffer_line)).unwrap_or(true)
+    };
+    let line_style_runs = |buffer_line: usize, text: &str| -> Vec<RunWithText> {
+        line_styling.map(|s| s.style(buffer_line, text)).unwrap_or_default()
+    };
+
     // Visible range — same math as render_text_view.
-    let buffer = line_height * viewport_buffer_lines as f32;
+    let buffer = line_height * VIEWPORT_BUFFER_LINES as f32;
     let scroll_dist = state.scroll_offset.abs();
     let start_pixels = scroll_dist - viewport.text_area_top - buffer;
     let first_visible_display_row = (start_pixels / line_height).floor().max(0.0) as u32;
@@ -93,9 +173,7 @@ pub fn build_display_layout(
     // Walking is the safe path: it's correct under both wrap and folds. We
     // skip it (taking the O(1) display_row == buffer_line shortcut) only
     // when we can prove neither shifts the mapping, by probing
-    // `line_visible` along the prefix. The probe is `O(first_visible_row)`
-    // and short-circuits on the first hidden line, so on un-folded buffers
-    // it's a tight loop.
+    // `line_visible` along the prefix.
     let approx_wrap_chars = wrap_budget_px.map(|px| (px / char_width).max(1.0) as usize);
     let fast_path_start = (first_visible_display_row as usize).min(total_buffer_lines);
     let folding_in_play = approx_wrap_chars.is_none()
@@ -136,9 +214,7 @@ pub fn build_display_layout(
         let rope_line = state.rope.line(buffer_line);
         let line_text: String = rope_line.to_string();
 
-        // Caller produces styled runs (with their text payloads) for this
-        // line. Empty list → render plain.
-        let styled = line_style(buffer_line, &line_text);
+        let styled = line_style_runs(buffer_line, &line_text);
         let line_bg = styled.iter().find_map(|s| s.run.bg);
 
         let mut runs: Vec<StyleRun> = Vec::with_capacity(styled.len());
@@ -273,20 +349,6 @@ pub fn build_display_layout(
         version: 0,
         scroll_version: 0,
     }
-}
-
-/// One styled run plus its text payload, returned by the `line_style` closure
-/// in [`build_display_layout`]. The producer concatenates `text` payloads to
-/// form the line that gets shaped, then rebases each run's `byte_range` to
-/// match.
-///
-/// `run.byte_range` on input is ignored — the producer overwrites it with the
-/// correct range based on the position of `text` in the concatenation. Set it
-/// to `0..0` (or anything) when constructing.
-#[derive(Clone, Debug)]
-pub struct RunWithText {
-    pub text: String,
-    pub run: StyleRun,
 }
 
 /// One soft-wrap row's worth of post-shape data, ready to be packaged into a

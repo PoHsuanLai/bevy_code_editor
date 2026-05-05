@@ -22,20 +22,23 @@ pub(crate) fn detect_foldable_regions(
 
         fold_state.content_version = tv.content_version as usize;
 
-        // Get the tree-sitter tree from syntax resource
-        let tree = match syntax.tree() {
-            Some(t) => t,
-            None => continue,
-        };
-
         let mut regions: Vec<FoldRegion> = Vec::new();
-        let root = tree.root_node();
         // OPTIMIZATION: Use rope chunks instead of full to_string() conversion
         let chunk_text: String = tv.rope.chunks().collect();
         let text_bytes = chunk_text.as_bytes();
 
-        // Walk the tree and find foldable nodes
-        collect_foldable_regions(&root, text_bytes, &tv.rope, &mut regions, false);
+        // Walk the tree-sitter tree and find foldable nodes. Skip if no
+        // tree is cached. `with_tree` takes a read-lock on the shared
+        // `SyntaxInner`; the closure body returns nothing — we mutate
+        // `regions` (captured) directly, which the closure can do because
+        // it's `FnOnce`.
+        let any_tree = syntax.with_tree(|tree| {
+            let root = tree.root_node();
+            collect_foldable_regions(&root, text_bytes, &tv.rope, &mut regions, false);
+        });
+        if any_tree.is_none() {
+            continue;
+        }
 
         // Preserve fold state for existing regions
         let old_regions = std::mem::take(&mut fold_state.regions);

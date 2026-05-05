@@ -12,9 +12,11 @@ use bevy::prelude::*;
 
 use super::font::FontConfig;
 use super::layout::DisplayLayout;
+use super::layout_builder::{produce_layouts, LayoutProduceSet};
 use super::overlay::TextViewOverlays;
 use super::render::{render_layout, GlyphBatchComponent, TextViewBatch};
 use super::state::TextViewState;
+use super::styling::LayoutWrap;
 use super::viewport::TextViewViewport;
 use crate::gpu::{atlas_ready, GlyphAtlas, GlyphAtlasPlugin, InstancedTextRenderPlugin};
 
@@ -50,6 +52,7 @@ pub struct TextViewRenderSet;
     DisplayLayout,
     TextViewOverlays,
     FontConfig,
+    LayoutWrap,
     bevy::picking::Pickable,
 )]
 pub struct TextView;
@@ -74,6 +77,7 @@ impl Plugin for TextEnginePlugin {
         app.register_type::<FontConfig>()
             .register_type::<super::overlay::RectOverlay>()
             .register_type::<super::overlay::RowVertical>()
+            .register_type::<LayoutWrap>()
             .register_type::<TextView>()
             .register_type::<TextViewBatchEntity>()
             .register_type::<TextViewOverlays>()
@@ -85,6 +89,10 @@ impl Plugin for TextEnginePlugin {
             Update,
             (
                 animate_text_view_scroll,
+                produce_layouts
+                    .run_if(atlas_ready)
+                    .in_set(LayoutProduceSet)
+                    .before(prewarm_atlas_for_layout),
                 prewarm_atlas_for_layout
                     .run_if(atlas_ready)
                     .before(update_text_views),
