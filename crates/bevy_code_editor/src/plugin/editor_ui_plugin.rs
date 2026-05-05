@@ -439,22 +439,28 @@ fn setup_editor_camera(
     }
 }
 
-/// Setup UI entities (line numbers, cursor, separator)
+/// Setup UI entities (line numbers, cursor, separator) and load the default
+/// font handle into each `CodeEditor` entity's `FontConfig` if it doesn't
+/// already have one.
 fn setup_editor_ui(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut font: ResMut<FontSettings>,
+    default_font: Res<EditorDefaultFont>,
     theme: Res<ThemeSettings>,
     _cursor_settings: Res<CursorSettings>,
     ui: Res<UiSettings>,
-    viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
+    mut editor_query: Query<(&TextViewViewport, &mut FontConfig), With<CodeEditor>>,
     render_config: Res<EditorRenderConfig>,
 ) {
-    // Load font
-    let font_handle: Handle<Font> = asset_server.load(&font.family);
-    font.handle = Some(font_handle.clone());
+    // Load the default font once. Editors keep their own handle in
+    // FontConfig.font; we only fill it in if the host didn't supply one
+    // via FontConfig::with_font().
+    let font_handle: Handle<Font> = asset_server.load(&default_font.family);
 
-    for viewport in viewport_query.iter() {
+    for (viewport, mut font_config) in editor_query.iter_mut() {
+        if font_config.font.is_none() {
+            font_config.font = Some(font_handle.clone());
+        }
         let viewport_width = viewport.width as f32;
         let viewport_height = viewport.height as f32;
 

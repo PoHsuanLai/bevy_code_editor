@@ -11,6 +11,7 @@ use bevy::prelude::*;
 use crate::settings::*;
 use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::{CodeEditor, CursorState};
+use bevy_text_engine::FontConfig;
 
 use super::components::*;
 use super::state::{
@@ -28,15 +29,15 @@ pub fn sync_completion_popup(
             &CursorState,
             &TextViewState,
             &TextViewViewport,
+            &FontConfig,
         ),
         With<CodeEditor>,
     >,
-    font: Res<FontSettings>,
     ui: Res<UiSettings>,
     lsp: Res<LspSettings>,
     existing: Query<Entity, With<CompletionPopupData>>,
 ) {
-    let Ok((completion_state, cursor_state, tv, _vp)) = query.single() else {
+    let Ok((completion_state, cursor_state, tv, _vp, font)) = query.single() else {
         return;
     };
     let filtered_items = completion_state.filtered_items();
@@ -113,12 +114,14 @@ pub fn sync_completion_popup(
 /// Sync hover state to marker entity
 pub fn sync_hover_popup(
     mut commands: Commands,
-    query: Query<(&LspHoverPopup, &TextViewState, &TextViewViewport), With<CodeEditor>>,
-    font: Res<FontSettings>,
+    query: Query<
+        (&LspHoverPopup, &TextViewState, &TextViewViewport, &FontConfig),
+        With<CodeEditor>,
+    >,
     ui: Res<UiSettings>,
     existing: Query<Entity, With<HoverPopupData>>,
 ) {
-    let Ok((hover_state, tv, _vp)) = query.single() else {
+    let Ok((hover_state, tv, _vp, font)) = query.single() else {
         return;
     };
 
@@ -184,14 +187,14 @@ pub fn sync_signature_help_popup(
             &CursorState,
             &TextViewState,
             &TextViewViewport,
+            &FontConfig,
         ),
         With<CodeEditor>,
     >,
-    font: Res<FontSettings>,
     ui: Res<UiSettings>,
     existing: Query<Entity, With<SignatureHelpPopupData>>,
 ) {
-    let Ok((sig_state, cursor_state, tv, _vp)) = query.single() else {
+    let Ok((sig_state, cursor_state, tv, _vp, font)) = query.single() else {
         return;
     };
 
@@ -279,14 +282,14 @@ pub fn sync_code_actions_popup(
             &CursorState,
             &TextViewState,
             &TextViewViewport,
+            &FontConfig,
         ),
         With<CodeEditor>,
     >,
-    font: Res<FontSettings>,
     ui: Res<UiSettings>,
     existing: Query<Entity, With<CodeActionsPopupData>>,
 ) {
-    let Ok((action_state, cursor_state, tv, _vp)) = query.single() else {
+    let Ok((action_state, cursor_state, tv, _vp, font)) = query.single() else {
         return;
     };
 
@@ -371,12 +374,14 @@ pub fn sync_code_actions_popup(
 /// Sync rename state to marker entity
 pub fn sync_rename_input(
     mut commands: Commands,
-    query: Query<(&LspRenamePopup, &TextViewState, &TextViewViewport), With<CodeEditor>>,
-    font: Res<FontSettings>,
+    query: Query<
+        (&LspRenamePopup, &TextViewState, &TextViewViewport, &FontConfig),
+        With<CodeEditor>,
+    >,
     ui: Res<UiSettings>,
     existing: Query<Entity, With<RenameInputData>>,
 ) {
-    let Ok((rename_state, tv, _vp)) = query.single() else {
+    let Ok((rename_state, tv, _vp, font)) = query.single() else {
         return;
     };
 
@@ -442,19 +447,23 @@ pub fn sync_rename_input(
 pub fn sync_inlay_hints(
     mut commands: Commands,
     query: Query<
-        (Ref<LspInlayHints>, Ref<TextViewState>, Ref<TextViewViewport>),
+        (
+            Ref<LspInlayHints>,
+            Ref<TextViewState>,
+            Ref<TextViewViewport>,
+            Ref<FontConfig>,
+        ),
         With<CodeEditor>,
     >,
-    font: Res<FontSettings>,
     ui: Res<UiSettings>,
     existing: Query<Entity, With<InlayHintData>>,
 ) {
-    let Ok((hint_state, tv, vp)) = query.single() else {
+    let Ok((hint_state, tv, vp, font)) = query.single() else {
         return;
     };
 
     // Only update if something changed
-    if !hint_state.is_changed() && !tv.is_changed() && !vp.is_changed() {
+    if !hint_state.is_changed() && !tv.is_changed() && !vp.is_changed() && !font.is_changed() {
         return;
     }
 
@@ -523,18 +532,19 @@ pub fn sync_document_highlights(
             Ref<LspDocumentHighlights>,
             Ref<TextViewState>,
             Ref<TextViewViewport>,
+            Ref<FontConfig>,
         ),
         With<CodeEditor>,
     >,
-    font: Res<FontSettings>,
     ui: Res<UiSettings>,
     existing: Query<Entity, With<DocumentHighlightData>>,
 ) {
-    let Ok((highlight_state, tv, vp)) = query.single() else {
+    let Ok((highlight_state, tv, vp, font)) = query.single() else {
         return;
     };
 
-    if !highlight_state.is_changed() && !tv.is_changed() && !vp.is_changed() {
+    if !highlight_state.is_changed() && !tv.is_changed() && !vp.is_changed() && !font.is_changed()
+    {
         return;
     }
 

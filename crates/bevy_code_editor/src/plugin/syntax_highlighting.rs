@@ -8,9 +8,6 @@
 //!   Stored behind an `Arc<RwLock<_>>` shared between the editor's
 //!   `LineStyleSource` Component (which reads it for highlight queries) and
 //!   the editor's pipeline systems (which write tree updates into it).
-//! - [`HighlightCache`]: LRU of structural `HighlightRange` runs per line,
-//!   version-keyed by `content_version`. Theme mapping happens on the read
-//!   path so theme hot-swap doesn't need a cache flush.
 //! - [`EditorParseSource`] / [`EditorBufferSnapshot`]: bridge between the
 //!   editor's `TextViewState` (per-entity rope + version) and
 //!   `bevy_tree_sitter`'s [`bevy_tree_sitter::ParseSource`] trait. The
@@ -19,9 +16,8 @@
 //! - [`mirror_syntax_tree_to_provider`]: editor system that filters on
 //!   `Changed<bevy_tree_sitter::SyntaxTree>` and mirrors the freshly-parsed
 //!   tree (plus its rope snapshot) into the per-entity provider so the
-//!   styling layer's highlight queries find it. Also clears
-//!   `HighlightCache` and bumps `TextViewState.content_version` to fully
-//!   invalidate the glyph cache.
+//!   styling layer's highlight queries find it. Also bumps
+//!   `TextViewState.content_version` to fully invalidate the glyph cache.
 //! - [`init_editor_syntax`]: startup system that attaches the per-entity
 //!   `SyntaxInner` Arc + the `EditorParseSource` Component and configures
 //!   the provider's highlights query from a [`bevy_tree_sitter::Language`]
@@ -34,7 +30,6 @@ use crate::text_view::TextViewState;
 #[cfg(feature = "tree-sitter")]
 use crate::types::SyntaxCacheState;
 use bevy::prelude::*;
-use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
 
 #[cfg(feature = "tree-sitter")]
@@ -303,115 +298,6 @@ fn ranges_to_segments(
     out
 }
 
-// ========== Highlight Cache ==========
-
-/// A cached range of highlighted lines
-/// NOTE: We only cache by content_version, not tree_version.
-/// When tree updates, stale entity detection handles re-highlighting.
-#[derive(Clone)]
-struct CachedRange {
-    start_line: usize,
-    end_line: usize,
-    content_version: u64,
-    lines: Vec<Vec<LineSegment>>,
-}
-
-// not reflectable: `CachedRange` (private) holds `Vec<Vec<LineSegment>>`
-// and the cache is hot-path internal state, not user-facing data.
-#[derive(Resource)]
-pub struct HighlightCache {
-    ranges: VecDeque<CachedRange>,
-    max_ranges: usize,
-    pub last_highlight_time: f64,
-    pub debounce_ms: f64,
-}
-
-impl Default for HighlightCache {
-    fn default() -> Self {
-        Self {
-            ranges: VecDeque::new(),
-            max_ranges: 20,
-            last_highlight_time: 0.0,
-            debounce_ms: 50.0,
-        }
-    }
-}
-
-impl HighlightCache {
-    pub fn should_debounce(&self, current_time: f64) -> bool {
-        (current_time - self.last_highlight_time) < self.debounce_ms
-    }
-
-    pub fn mark_highlighted(&mut self, current_time: f64) {
-        self.last_highlight_time = current_time;
-    }
-
-    /// Look up a cached highlight slice. Only `content_version` is checked —
-    /// tree version changes are surfaced via the stale-entity rebuild path.
-    pub fn get(
-        &mut self,
-        start_line: usize,
-        end_line: usize,
-        content_version: u64,
-        _tree_version: u64,
-    ) -> Option<Vec<Vec<LineSegment>>> {
-        let mut found_idx: Option<(usize, usize, usize)> = None;
-        for (idx, range) in self.ranges.iter().enumerate() {
-            if range.content_version == content_version
-                && range.start_line <= start_line
-                && range.end_line >= end_line
-            {
-                let offset = start_line - range.start_line;
-                let count = end_line - start_line;
-                found_idx = Some((idx, offset, count));
-                break;
-            }
-        }
-
-        if let Some((idx, offset, count)) = found_idx {
-            let result: Vec<Vec<LineSegment>> = self.ranges[idx]
-                .lines
-                .iter()
-                .skip(offset)
-                .take(count)
-                .cloned()
-                .collect();
-
-            if idx > 0 {
-                let range = self.ranges.remove(idx).unwrap();
-                self.ranges.push_front(range);
-            }
-
-            Some(result)
-        } else {
-            None
-        }
-    }
-
-    pub fn insert(
-        &mut self,
-        start_line: usize,
-        end_line: usize,
-        content_version: u64,
-        _tree_version: u64,
-        lines: Vec<Vec<LineSegment>>,
-    ) {
-        if self.ranges.len() >= self.max_ranges {
-            self.ranges.pop_back();
-        }
-
-        self.ranges.push_front(CachedRange {
-            start_line,
-            end_line,
-            content_version,
-            lines,
-        });
-    }
-
-    pub fn clear(&mut self) {
-        self.ranges.clear();
-    }
-}
 
 // ========== ParseSource bridge ==========
 
@@ -578,11 +464,10 @@ pub(crate) fn sync_editor_parse_source(
 /// by mirroring the new tree (and its rope) into the per-entity provider
 /// so highlight queries find it.
 ///
-/// Mirrors the old `handle_parse_completed`: clears `HighlightCache` and
-/// bumps `content_version` so the line-glyph cache fully invalidates
-/// (otherwise pre-parse plain-color glyph runs persist on screen). Sets
-/// `last_highlighted_version` to match the bumped version so we don't
-/// trigger an immediate re-parse loop.
+/// Mirrors the old `handle_parse_completed`: bumps `content_version` so the
+/// line-glyph cache fully invalidates (otherwise pre-parse plain-color glyph
+/// runs persist on screen). Sets `last_highlighted_version` to match the
+/// bumped version so we don't trigger an immediate re-parse loop.
 pub(crate) fn mirror_syntax_tree_to_provider(
     mut editor_query: Query<
         (
@@ -593,7 +478,6 @@ pub(crate) fn mirror_syntax_tree_to_provider(
         ),
         (With<CodeEditor>, Changed<bevy_tree_sitter::SyntaxTree>),
     >,
-    mut highlight_cache: ResMut<HighlightCache>,
 ) {
     for (syntax_tree, syntax_state, mut syntax_cache, mut tv) in editor_query.iter_mut() {
         let Some(tree) = syntax_tree.tree.as_ref() else {
@@ -618,7 +502,6 @@ pub(crate) fn mirror_syntax_tree_to_provider(
         drop(guard);
 
         syntax_cache.last_highlighted_version = syntax_tree.content_version;
-        highlight_cache.clear();
 
         // Bump content_version so the line glyph cache is fully invalidated
         // (otherwise cached uncolored glyphs from the pre-parse render persist).
@@ -695,8 +578,6 @@ pub struct SyntaxPlugin;
 
 impl Plugin for SyntaxPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(HighlightCache::default());
-
         // TextEditEvent is editor-wide: LSP and other plugins listen for it.
         app.add_message::<crate::types::events::TextEditEvent>();
 

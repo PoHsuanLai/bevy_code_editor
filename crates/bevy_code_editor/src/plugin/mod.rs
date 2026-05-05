@@ -32,7 +32,7 @@ pub use self::folding::FoldingPlugin;
 pub use self::scrollbar::ScrollbarPlugin;
 
 // Re-export syntax highlighting resources publicly for external use
-pub use self::syntax_highlighting::{EditorSyntaxState, HighlightCache, SyntaxPlugin};
+pub use self::syntax_highlighting::{EditorSyntaxState, SyntaxPlugin};
 
 // Re-export helper functions and systems for internal plugin use (crate-visible only)
 pub(crate) use self::brackets::{update_bracket_highlight, update_bracket_match};
@@ -156,7 +156,7 @@ impl Plugin for CodeEditorPlugin {
         // FontConfig / ScrollConfig components on the editor entity; what
         // remains here is genuinely-global config like theme, UI toggles,
         // indentation rules, etc.
-        app.init_resource::<FontSettings>();
+        app.init_resource::<EditorDefaultFont>();
         app.init_resource::<ThemeSettings>();
         app.init_resource::<UiSettings>();
         app.init_resource::<IndentationSettings>();

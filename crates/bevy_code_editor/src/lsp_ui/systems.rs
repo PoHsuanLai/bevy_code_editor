@@ -8,7 +8,7 @@
 use bevy::prelude::*;
 use lsp_types::*;
 
-use crate::settings::*;
+use bevy_text_engine::FontConfig;
 use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::{CodeEditor, CursorState};
 
@@ -407,12 +407,13 @@ pub fn request_inlay_hints(
             Ref<TextViewViewport>,
             Option<&LspDocument>,
             &mut LspInlayHints,
+            &FontConfig,
         ),
         With<CodeEditor>,
     >,
-    font: Res<FontSettings>,
 ) {
-    let Ok((lsp_client, capabilities, tv, vp, lsp_document, mut hint_state)) = query.single_mut()
+    let Ok((lsp_client, capabilities, tv, vp, lsp_document, mut hint_state, font)) =
+        query.single_mut()
     else {
         return;
     };

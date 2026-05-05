@@ -24,7 +24,7 @@ use bevy_code_editor::lsp_ui::state::{
 };
 use bevy_code_editor::plugin::editor_ui_plugin::EditorRenderConfig;
 use bevy_code_editor::prelude::*;
-use bevy_code_editor::settings::FontSettings;
+use bevy_text_engine::FontConfig;
 use bevy_code_editor::text_view::TextViewViewport;
 use bevy_code_editor::types::editor::{
     CursorState, EditHistoryState, SelectionState, SyntaxCacheState,
@@ -171,12 +171,11 @@ impl Default for DocumentHighlightsTheme {
 fn render_inlay_hints(
     mut commands: Commands,
     hint_query: Query<(Entity, &InlayHintData), Added<InlayHintData>>,
-    font: Res<FontSettings>,
-    viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
+    editor_query: Query<(&TextViewViewport, &FontConfig), With<CodeEditor>>,
     theme: Res<InlineDecorationsTheme>,
     render_config: Res<EditorRenderConfig>,
 ) {
-    let Ok(viewport) = viewport_query.single() else {
+    let Ok((viewport, font)) = editor_query.single() else {
         return;
     };
 
@@ -197,7 +196,7 @@ fn render_inlay_hints(
         entity_cmd.insert((
             Text2d::new(&hint.label),
             TextFont {
-                font: font.handle.clone().unwrap_or_default(),
+                font: font.font.clone().unwrap_or_default(),
                 font_size: font.size * theme.inlay_hints.font_size_multiplier,
                 ..default()
             },
@@ -277,7 +276,7 @@ struct LspEguiViewportOffset {
 fn cursor_screen_pos(
     char_index: usize,
     tv: &TextViewState,
-    font: &FontSettings,
+    font: &FontConfig,
     viewport_offset: &LspEguiViewportOffset,
     viewport: &ViewportDimensions,
 ) -> (f32, f32) {
@@ -340,12 +339,14 @@ fn position_popup(
 /// Render the completion popup as an egui overlay using armas styling.
 fn render_completion_egui(
     mut contexts: EguiContexts,
-    query: Query<(&LspCompletionPopup, &CursorState, &TextViewState), With<CodeEditor>>,
-    font: Res<FontSettings>,
+    query: Query<
+        (&LspCompletionPopup, &CursorState, &TextViewState, &FontConfig),
+        With<CodeEditor>,
+    >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Res<ViewportDimensions>,
 ) {
-    let Ok((completion_state, cursor_state, tv)) = query.single() else {
+    let Ok((completion_state, cursor_state, tv, font)) = query.single() else {
         return;
     };
     let filtered_items = completion_state.filtered_items();
@@ -364,7 +365,7 @@ fn render_completion_egui(
     let (cursor_x, cursor_y) = cursor_screen_pos(
         cursor_state.cursor_pos,
         tv,
-        &font,
+        font,
         &viewport_offset,
         &viewport,
     );
@@ -479,12 +480,14 @@ fn render_completion_egui(
 /// Render the hover popup as an egui overlay.
 fn render_hover_egui(
     mut contexts: EguiContexts,
-    query: Query<(&LspHoverPopup, &LspCompletionPopup, &TextViewState), With<CodeEditor>>,
-    font: Res<FontSettings>,
+    query: Query<
+        (&LspHoverPopup, &LspCompletionPopup, &TextViewState, &FontConfig),
+        With<CodeEditor>,
+    >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Res<ViewportDimensions>,
 ) {
-    let Ok((hover_state, completion_state, tv)) = query.single() else {
+    let Ok((hover_state, completion_state, tv, font)) = query.single() else {
         return;
     };
     if !hover_state.visible || hover_state.content.is_empty() {
@@ -502,7 +505,7 @@ fn render_hover_egui(
     let (cursor_x, cursor_y) = cursor_screen_pos(
         hover_state.trigger_char_index,
         tv,
-        &font,
+        font,
         &viewport_offset,
         &viewport,
     );
@@ -549,12 +552,19 @@ fn render_hover_egui(
 /// Render the signature help popup as an egui overlay.
 fn render_signature_help_egui(
     mut contexts: EguiContexts,
-    query: Query<(&LspSignatureHelpPopup, &CursorState, &TextViewState), With<CodeEditor>>,
-    font: Res<FontSettings>,
+    query: Query<
+        (
+            &LspSignatureHelpPopup,
+            &CursorState,
+            &TextViewState,
+            &FontConfig,
+        ),
+        With<CodeEditor>,
+    >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Res<ViewportDimensions>,
 ) {
-    let Ok((sig_state, cursor_state, tv)) = query.single() else {
+    let Ok((sig_state, cursor_state, tv, font)) = query.single() else {
         return;
     };
     if !sig_state.visible || sig_state.signatures.is_empty() {
@@ -576,7 +586,7 @@ fn render_signature_help_egui(
     let (cursor_x, cursor_y) = cursor_screen_pos(
         cursor_state.cursor_pos,
         tv,
-        &font,
+        font,
         &viewport_offset,
         &viewport,
     );
@@ -678,12 +688,14 @@ fn render_signature_help_egui(
 /// Render the code actions popup as an egui overlay.
 fn render_code_actions_egui(
     mut contexts: EguiContexts,
-    query: Query<(&LspCodeActionsPopup, &CursorState, &TextViewState), With<CodeEditor>>,
-    font: Res<FontSettings>,
+    query: Query<
+        (&LspCodeActionsPopup, &CursorState, &TextViewState, &FontConfig),
+        With<CodeEditor>,
+    >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Res<ViewportDimensions>,
 ) {
-    let Ok((action_state, cursor_state, tv)) = query.single() else {
+    let Ok((action_state, cursor_state, tv, font)) = query.single() else {
         return;
     };
     if !action_state.visible || action_state.actions.is_empty() {
@@ -697,7 +709,7 @@ fn render_code_actions_egui(
     let (_, cursor_y) = cursor_screen_pos(
         cursor_state.cursor_pos,
         tv,
-        &font,
+        font,
         &viewport_offset,
         &viewport,
     );
@@ -793,14 +805,14 @@ fn render_rename_egui(
             &TextViewState,
             &LspClient,
             Option<&LspDocument>,
+            &FontConfig,
         ),
         With<CodeEditor>,
     >,
-    font: Res<FontSettings>,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Res<ViewportDimensions>,
 ) {
-    let Ok((mut rename_state, tv, lsp_client, lsp_document)) = query.single_mut() else {
+    let Ok((mut rename_state, tv, lsp_client, lsp_document, font)) = query.single_mut() else {
         return;
     };
     if !rename_state.visible {
@@ -825,7 +837,7 @@ fn render_rename_egui(
     };
 
     let (cursor_x, cursor_y) =
-        cursor_screen_pos(char_index, tv, &font, &viewport_offset, &viewport);
+        cursor_screen_pos(char_index, tv, font, &viewport_offset, &viewport);
 
     let theme = ctx.armas_theme();
     let rename_width = (rename_state.new_name.len() as f32 * font.char_width + 40.0).max(150.0);

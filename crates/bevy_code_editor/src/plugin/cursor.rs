@@ -62,7 +62,7 @@ impl Plugin for CursorPlugin {
             .register_type::<crate::settings::CursorLineStyle>()
             .register_type::<crate::settings::CursorSettings>()
             .register_type::<crate::settings::CursorStyle>()
-            .register_type::<crate::settings::FontSettings>()
+            .register_type::<crate::settings::EditorDefaultFont>()
             .register_type::<crate::settings::IndentationSettings>()
             .register_type::<crate::settings::KeyRepeatSettings>()
             .register_type::<crate::settings::PerformanceSettings>()

@@ -1,46 +1,35 @@
-//! Core editor settings: Font and Theme
+//! Core editor settings: Theme + the default font path.
+//!
+//! Font sizing / handle / line-height live on the per-entity
+//! [`bevy_text_engine::FontConfig`] Component (multi-editor with
+//! different fonts requires per-entity, not global). The only
+//! genuinely global font-related thing is "where does the default
+//! font come from" — captured here as [`EditorDefaultFont`] so a
+//! host can override the asset path before `CodeEditorPlugin` adds.
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// Font settings - shared across all text rendering
+/// Asset path of the default font loaded into every `CodeEditor`
+/// entity that doesn't already have a `FontConfig.font` handle.
+///
+/// Hosts override by inserting this resource before adding
+/// `CodeEditorPlugin`:
+/// ```rust,ignore
+/// app.insert_resource(EditorDefaultFont {
+///     family: "fonts/JetBrainsMono-Regular.ttf".to_string(),
+/// });
+/// ```
 #[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
 #[reflect(Resource, Default, Debug)]
-pub struct FontSettings {
-    /// Font family path or name
+pub struct EditorDefaultFont {
     pub family: String,
-
-    /// Font size in pixels
-    pub size: f32,
-
-    /// Character width (for monospace calculations)
-    pub char_width: f32,
-
-    /// Line height in pixels
-    pub line_height: f32,
-
-    /// Font weight (100-900)
-    pub weight: u16,
-
-    /// Letter spacing adjustment
-    pub letter_spacing: f32,
-
-    /// Cached font handle (set at runtime)
-    #[serde(skip)]
-    pub handle: Option<Handle<Font>>,
 }
 
-impl Default for FontSettings {
+impl Default for EditorDefaultFont {
     fn default() -> Self {
-        let size = 14.0;
         Self {
             family: "fonts/FiraMono-Regular.ttf".to_string(),
-            size,
-            char_width: size * 0.6,
-            line_height: size * 1.5,
-            weight: 400,
-            letter_spacing: 0.0,
-            handle: None,
         }
     }
 }

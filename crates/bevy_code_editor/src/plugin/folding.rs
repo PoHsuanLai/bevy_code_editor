@@ -3,7 +3,7 @@
 
 use super::editor_ui_plugin::EditorRenderConfig;
 use super::to_bevy_coords_left_aligned;
-use crate::settings::{FontSettings, ThemeSettings, UiSettings};
+use crate::settings::{ThemeSettings, UiSettings};
 use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::*;
 use bevy::prelude::*;
@@ -300,7 +300,6 @@ pub(crate) fn update_fold_indicators(
         (&TextViewState, &TextViewViewport, &FoldState, &FontConfig),
         With<CodeEditor>,
     >,
-    font_settings: Res<FontSettings>,
     theme: Res<ThemeSettings>,
     ui: Res<UiSettings>,
     render_config: Res<EditorRenderConfig>,
@@ -393,7 +392,7 @@ pub(crate) fn update_fold_indicators(
             } else {
                 // Spawn new indicator
                 let text_font = TextFont {
-                    font: font_settings.handle.clone().unwrap_or_default(),
+                    font: font.font.clone().unwrap_or_default(),
                     font_size: font_size * 0.7,
                     ..default()
                 };
