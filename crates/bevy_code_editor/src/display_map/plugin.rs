@@ -23,7 +23,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use super::styling::{FoldFilter, SyntaxStyling};
-use crate::plugin::syntax_highlighting::SyntaxResource;
+use crate::plugin::syntax_highlighting::EditorSyntaxState;
 use crate::settings::{IndentationSettings, SyntaxSettings, ThemeSettings, WrappingSettings};
 use crate::text_view::TextViewViewport;
 use crate::types::{CodeEditor, FoldState};
@@ -65,7 +65,14 @@ impl Plugin for DisplayMapPlugin {
         // observers (cursor / selection) see the freshly-built layout.
         app.configure_sets(Update, LayoutProduceSet.in_set(crate::plugin::RenderingSet));
 
-        app.add_systems(Startup, insert_styling_components);
+        // Must run after `init_editor_syntax` (in `SyntaxPlugin`) so the
+        // per-entity `EditorSyntaxState` is queryable when we wire up
+        // `LineStyleSource`.
+        app.add_systems(
+            Startup,
+            insert_styling_components
+                .after(crate::plugin::syntax_highlighting::init_editor_syntax),
+        );
         app.add_systems(
             Update,
             (sync_fold_filter, sync_syntax_styling, sync_layout_wrap)
@@ -76,19 +83,29 @@ impl Plugin for DisplayMapPlugin {
 
 /// On startup, attach the editor's trait-Component impls to every
 /// `CodeEditor` entity. `LineFilter` / `LineStyleSource` need
-/// configuration (the editor's specific impls + the shared `SyntaxResource`
-/// Arc), so they're not part of `CodeEditor`'s `#[require]` cascade.
+/// configuration (the editor's specific impls + the per-entity
+/// `EditorSyntaxState` Arc), so they're not part of `CodeEditor`'s
+/// `#[require]` cascade.
+///
+/// Runs after `init_editor_syntax` so the per-entity `EditorSyntaxState`
+/// exists; we share its inner `Arc<RwLock<SyntaxInner>>` with the styling
+/// component so the engine's `produce_layouts` reads from the same state
+/// the parse pipeline writes to.
+///
 /// `LayoutWrap` IS in the cascade (via `TextView`'s `#[require]`) and
 /// starts with the no-wrap default; `sync_layout_wrap` updates it as
 /// `WrappingSettings` change.
 pub(crate) fn insert_styling_components(
     mut commands: Commands,
-    syntax: Res<SyntaxResource>,
-    editors: Query<Entity, (With<CodeEditor>, Without<EditorStylingArcs>)>,
+    editors: Query<
+        (Entity, &EditorSyntaxState),
+        (With<CodeEditor>, Without<EditorStylingArcs>),
+    >,
 ) {
-    for entity in editors.iter() {
+    for (entity, syntax_state) in editors.iter() {
         let fold_filter: Arc<FoldFilter> = Arc::new(FoldFilter::new());
-        let syntax_styling: Arc<SyntaxStyling> = Arc::new(SyntaxStyling::new(syntax.share_arc()));
+        let syntax_styling: Arc<SyntaxStyling> =
+            Arc::new(SyntaxStyling::new(syntax_state.share_arc()));
 
         commands.entity(entity).insert((
             LineFilter(fold_filter.clone()),

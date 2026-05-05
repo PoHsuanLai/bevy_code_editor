@@ -1,11 +1,23 @@
-//! Language definitions used to wire tree-sitter grammars into a `TreeSitterProvider`.
+//! Language descriptor + tree-sitter grammar configuration.
+
+use bevy::prelude::*;
 
 use crate::tree_sitter::TreeSitterProvider;
 
 /// A language descriptor — name plus optional tree-sitter configuration.
 ///
+/// Used as a Component on parse-target entities: the [`crate::parse_dirty`]
+/// system reads the grammar off this Component to build a parser. Cheap
+/// to clone: name is a `String` (Arc-backed under the hood for short
+/// strings via SSO; clone is small either way), and `tree_sitter::Language`
+/// is itself an `Arc`-like pointer to the shared grammar.
+///
 /// LSP wiring (when applicable) lives in the consumer crate; this struct
 /// stays pure tree-sitter so consumers that don't need LSP don't pay for it.
+///
+/// Not Reflect: `tree_sitter::Language` doesn't impl Reflect (it owns
+/// FFI-side state). The Component name is still observable through Bevy's
+/// component registry; the grammar pointer is opaque.
 ///
 /// Hosts add their preferred grammar crate directly. Common pattern:
 ///
@@ -18,7 +30,7 @@ use crate::tree_sitter::TreeSitterProvider;
 ///     tree_sitter_rust::HIGHLIGHTS_QUERY,
 /// );
 /// ```
-#[derive(Clone)]
+#[derive(Component, Clone)]
 pub struct Language {
     pub name: String,
     pub tree_sitter: Option<TreeSitterConfig>,

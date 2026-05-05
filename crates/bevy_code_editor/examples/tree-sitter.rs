@@ -9,8 +9,6 @@ use bevy_code_editor::types::editor::{
     CursorState, EditHistoryState, SelectionState, SyntaxCacheState,
 };
 #[cfg(feature = "tree-sitter")]
-use bevy_code_editor::plugin::syntax_highlighting::SyntaxResource;
-#[cfg(feature = "tree-sitter")]
 use bevy_tree_sitter::Language;
 
 fn main() {
@@ -30,8 +28,10 @@ fn main() {
 
 #[cfg(feature = "tree-sitter")]
 fn setup_editor_with_treesitter(
+    mut commands: Commands,
     mut editor_query: Query<
         (
+            Entity,
             &mut CursorState,
             &mut TextViewState,
             &mut EditHistoryState,
@@ -40,9 +40,8 @@ fn setup_editor_with_treesitter(
         ),
         With<CodeEditor>,
     >,
-    mut syntax: ResMut<SyntaxResource>,
 ) {
-    let Ok((mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
+    let Ok((entity, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
         editor_query.single_mut()
     else {
         return;
@@ -114,18 +113,16 @@ fn main() {
 
     hist.set_text(&mut sel, &mut syntax_cache, &mut cursor, &mut tv, rust_code);
 
-    // Define Rust language configuration
-    let rust_lang = Language::from_grammar(
+    // Component-driven tree-sitter wiring: attach a `Language` to the
+    // editor entity. The editor's `react_language_changed` system sees
+    // it and configures the per-entity provider's highlights query;
+    // `bevy_tree_sitter::parse_dirty` then drives parses off the entity's
+    // `ParseSourceComp` and writes results into the `SyntaxTree`.
+    commands.entity(entity).insert(Language::from_grammar(
         "rust",
         tree_sitter_rust::LANGUAGE.into(),
         tree_sitter_rust::HIGHLIGHTS_QUERY,
-    );
-
-    // Set up tree-sitter highlighting using the language configuration
-    if let Some(provider) = rust_lang.create_tree_sitter_provider() {
-        syntax.set_provider(provider);
-    }
-
+    ));
 }
 
 #[cfg(not(feature = "tree-sitter"))]

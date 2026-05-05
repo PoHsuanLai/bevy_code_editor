@@ -32,7 +32,7 @@ pub use self::folding::FoldingPlugin;
 pub use self::scrollbar::ScrollbarPlugin;
 
 // Re-export syntax highlighting resources publicly for external use
-pub use self::syntax_highlighting::{HighlightCache, SyntaxPlugin, SyntaxResource};
+pub use self::syntax_highlighting::{EditorSyntaxState, HighlightCache, SyntaxPlugin};
 
 // Re-export helper functions and systems for internal plugin use (crate-visible only)
 pub(crate) use self::brackets::{update_bracket_highlight, update_bracket_match};

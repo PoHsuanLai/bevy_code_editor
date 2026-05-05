@@ -896,7 +896,6 @@ fn setup_editor(
         ),
         With<CodeEditor>,
     >,
-    #[cfg(feature = "tree-sitter")] mut syntax: ResMut<bevy_code_editor::plugin::SyntaxResource>,
     runtime: Res<bevy_lsp::bevy_tokio_tasks::TokioTasksRuntime>,
 ) {
     let Ok((
@@ -926,22 +925,17 @@ fn setup_editor(
         &rust_code,
     );
 
-    // Define Rust language configuration. Note: `Language` lives in
-    // `bevy_tree_sitter` and is purely structural — LSP wiring is the host's
-    // responsibility (we call `lsp_client.start` further down).
+    // Component-driven tree-sitter wiring: attach a `Language` to the
+    // editor entity. The editor's `react_language_changed` system picks
+    // it up and configures the per-entity highlight provider. LSP wiring
+    // is the host's responsibility (we call `lsp_client.start` further
+    // down).
     #[cfg(feature = "tree-sitter")]
-    let rust_lang = Language::from_grammar(
+    commands.entity(editor_entity).insert(Language::from_grammar(
         "rust",
         tree_sitter_rust::LANGUAGE.into(),
         tree_sitter_rust::HIGHLIGHTS_QUERY,
-    );
-
-    #[cfg(feature = "tree-sitter")]
-    {
-        if let Some(provider) = rust_lang.create_tree_sitter_provider() {
-            syntax.set_provider(provider);
-        }
-    }
+    ));
 
     let file_uri_str = format!("file://{}", example_file_path.to_string_lossy());
     #[cfg(target_os = "windows")]

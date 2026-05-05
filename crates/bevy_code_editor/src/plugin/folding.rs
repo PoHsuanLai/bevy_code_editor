@@ -11,10 +11,12 @@ use bevy_text_engine::FontConfig;
 
 #[cfg(feature = "tree-sitter")]
 pub(crate) fn detect_foldable_regions(
-    mut editor_query: Query<(&TextViewState, &mut FoldState), With<CodeEditor>>,
-    syntax: Res<super::SyntaxResource>,
+    mut editor_query: Query<
+        (&TextViewState, &mut FoldState, &bevy_tree_sitter::SyntaxTree),
+        With<CodeEditor>,
+    >,
 ) {
-    for (tv, mut fold_state) in editor_query.iter_mut() {
+    for (tv, mut fold_state, syntax_tree) in editor_query.iter_mut() {
         // Only update when content changes
         if fold_state.content_version == tv.content_version as usize {
             continue;
@@ -27,18 +29,13 @@ pub(crate) fn detect_foldable_regions(
         let chunk_text: String = tv.rope.chunks().collect();
         let text_bytes = chunk_text.as_bytes();
 
-        // Walk the tree-sitter tree and find foldable nodes. Skip if no
-        // tree is cached. `with_tree` takes a read-lock on the shared
-        // `SyntaxInner`; the closure body returns nothing — we mutate
-        // `regions` (captured) directly, which the closure can do because
-        // it's `FnOnce`.
-        let any_tree = syntax.with_tree(|tree| {
-            let root = tree.root_node();
-            collect_foldable_regions(&root, text_bytes, &tv.rope, &mut regions, false);
-        });
-        if any_tree.is_none() {
+        // Walk the per-entity `SyntaxTree` Component's tree, if any. Skip
+        // if no tree has been parsed yet (component default is `None`).
+        let Some(tree) = syntax_tree.tree.as_ref() else {
             continue;
-        }
+        };
+        let root = tree.root_node();
+        collect_foldable_regions(&root, text_bytes, &tv.rope, &mut regions, false);
 
         // Preserve fold state for existing regions
         let old_regions = std::mem::take(&mut fold_state.regions);

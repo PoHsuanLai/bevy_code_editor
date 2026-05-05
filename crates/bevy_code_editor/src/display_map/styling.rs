@@ -4,7 +4,7 @@
 //! - [`FoldFilter`] holds a snapshot of buffer-line indices hidden by the
 //!   editor's [`FoldState`]. The `sync_fold_filter` system in
 //!   `display_map::plugin` refreshes it on `Changed<FoldState>`.
-//! - [`SyntaxStyling`] wraps a clone of `SyntaxResource`'s
+//! - [`SyntaxStyling`] wraps a clone of the per-entity `EditorSyntaxState`'s
 //!   `Arc<RwLock<SyntaxInner>>` plus the foreground color + theme. It
 //!   produces styled runs for the engine's `produce_layouts` system.
 //!
@@ -58,7 +58,7 @@ impl LineVisibility for FoldFilter {
     }
 }
 
-/// `LineStyling` impl backed by the shared `SyntaxResource` Arc.
+/// `LineStyling` impl backed by the per-entity `EditorSyntaxState` Arc.
 ///
 /// Holds the styling-relevant pieces of editor state behind an `RwLock`
 /// (theme, foreground color) so the editor's `sync_syntax_styling` system

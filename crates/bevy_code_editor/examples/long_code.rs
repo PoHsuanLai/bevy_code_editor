@@ -11,9 +11,7 @@ use bevy_code_editor::types::editor::{
 };
 
 #[cfg(feature = "tree-sitter")]
-use bevy_code_editor::plugin::syntax_highlighting::SyntaxResource;
-#[cfg(feature = "tree-sitter")]
-use bevy_tree_sitter::TreeSitterProvider;
+use bevy_tree_sitter::Language;
 
 fn main() {
     App::new()
@@ -33,6 +31,7 @@ fn main() {
 
 #[cfg(feature = "tree-sitter")]
 fn setup_editor(
+    mut commands: Commands,
     mut editor_query: Query<
         (
             Entity,
@@ -44,7 +43,6 @@ fn setup_editor(
         ),
         With<CodeEditor>,
     >,
-    mut syntax: ResMut<SyntaxResource>,
     mut input_focus: ResMut<bevy::input_focus::InputFocus>,
 ) {
     let Ok((entity, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
@@ -81,18 +79,13 @@ fn setup_editor(
 
     hist.set_text(&mut sel, &mut syntax_cache, &mut cursor, &mut tv, &content);
 
-    // Set up tree-sitter highlighting for C
-    let language = tree_sitter_c::LANGUAGE.into();
-
-    // Create a TreeSitterProvider and set it up with the C query
-    let mut provider = TreeSitterProvider::new();
-    provider
-        .set_query(tree_sitter_c::HIGHLIGHT_QUERY, language)
-        .expect("Failed to create highlight query");
-
-    // Set the provider in the syntax resource
-    syntax.set_provider(provider);
-
+    // Component-driven tree-sitter wiring — `Language` Component on the
+    // editor entity drives provider setup + parse pipeline.
+    commands.entity(entity).insert(Language::from_grammar(
+        "c",
+        tree_sitter_c::LANGUAGE.into(),
+        tree_sitter_c::HIGHLIGHT_QUERY,
+    ));
 }
 
 #[cfg(not(feature = "tree-sitter"))]
