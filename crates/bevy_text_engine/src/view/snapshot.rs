@@ -243,6 +243,7 @@ pub fn trivial_layout(
     let total = shaped.len() as u32;
     DisplayLayout {
         lines: Arc::new(shaped),
+        block_rects: Arc::new(Vec::new()),
         visible_rows: 0..total,
         total_display_rows: total,
         line_height,
@@ -261,6 +262,52 @@ pub fn trivial_layout(
 /// padding for paragraph breaks, heading margins, code-block separators,
 /// and call [`trivial_layout_blocks`] to get a `DisplayLayout` with
 /// correctly-stacked `y_top` values.
+/// A border applied around a block's outer rect.
+///
+/// `width` is in pixels and applies uniformly to all four sides — uniform-width
+/// is enough for code blocks, blockquotes, and panels which is what markdown /
+/// chat consumers ask for. Per-side widths are out of scope until a consumer
+/// actually needs them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BlockBorder {
+    pub color: Color,
+    pub width: f32,
+}
+
+/// Block-level decoration: background fill spanning the block's full vertical
+/// extent (including `padding_top` + all wrap rows + `padding_bottom`), plus
+/// an optional border.
+///
+/// Distinct from per-row `ShapedLine.line_bg`, which paints one row at a time
+/// and visually splits a wrapped paragraph. Use a `BlockDecoration` when you
+/// want a fenced code block / blockquote / chat-message bubble to render as
+/// one panel.
+#[derive(Clone, Debug, Default)]
+pub struct BlockDecoration {
+    pub background: Option<Color>,
+    pub border: Option<BlockBorder>,
+    /// Corner radius applied to the block rect (and inset by border width
+    /// on the inside). 0 = sharp corners.
+    pub corner_radius: f32,
+}
+
+/// One block's footprint inside a [`super::layout::DisplayLayout`]. The
+/// renderer uses this to draw block-level backgrounds and borders before any
+/// per-row backgrounds or glyphs.
+///
+/// `display_row_end` is inclusive. `indent` is the block's left x (also stored
+/// on each row's `x_offset`); the rect extends to the right edge of the
+/// content area, computed by the renderer from the viewport width.
+#[derive(Clone, Debug)]
+pub struct BlockRect {
+    pub display_row_start: u32,
+    pub display_row_end: u32,
+    pub indent: f32,
+    pub padding_top: f32,
+    pub padding_bottom: f32,
+    pub decoration: BlockDecoration,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct TrivialBlock {
     pub text: String,
@@ -274,6 +321,11 @@ pub struct TrivialBlock {
     /// Soft-wrap budget in characters. `None` = inherit from the
     /// `trivial_layout_blocks` default. `Some(0)` = no wrap (block stays one row).
     pub wrap_chars: Option<usize>,
+    /// Block-level background (spans padding + all wrap rows). Distinct from
+    /// `line_bg`; both can coexist (the line bg paints over the block bg).
+    pub block_bg: Option<Color>,
+    pub block_border: Option<BlockBorder>,
+    pub block_corner_radius: f32,
 }
 
 impl TrivialBlock {
@@ -318,6 +370,27 @@ impl TrivialBlock {
         self.wrap_chars = Some(chars);
         self
     }
+
+    /// Block-level background fill. Spans padding_top + all wrap rows +
+    /// padding_bottom — the entire block's footprint, not per-row. Use this
+    /// for fenced code blocks, blockquotes, chat-message bubbles.
+    pub fn with_block_background(mut self, color: Color) -> Self {
+        self.block_bg = Some(color);
+        self
+    }
+
+    /// Border drawn at the outer edge of the block's rect.
+    pub fn with_block_border(mut self, color: Color, width: f32) -> Self {
+        self.block_border = Some(BlockBorder { color, width });
+        self
+    }
+
+    /// Corner radius for `with_block_background` / `with_block_border`.
+    /// 0 = sharp corners.
+    pub fn with_block_corner_radius(mut self, radius: f32) -> Self {
+        self.block_corner_radius = radius;
+        self
+    }
 }
 
 /// Like [`trivial_layout`] but accepts per-row line-height + padding.
@@ -344,6 +417,7 @@ pub fn trivial_layout_blocks(
     use std::sync::Arc;
 
     let mut shaped: Vec<ShapedLine> = Vec::with_capacity(blocks.len());
+    let mut block_rects: Vec<BlockRect> = Vec::new();
     let mut y = 0.0_f32;
     let mut display_row: u32 = 0;
     for (i, b) in blocks.iter().enumerate() {
@@ -357,6 +431,7 @@ pub fn trivial_layout_blocks(
         };
         let last_idx = chunks.len().saturating_sub(1);
 
+        let block_first_row = display_row;
         for (chunk_idx, (byte_offset, chunk_text)) in chunks.into_iter().enumerate() {
             let is_continuation = chunk_idx > 0;
             let is_last = chunk_idx == last_idx;
@@ -385,10 +460,26 @@ pub fn trivial_layout_blocks(
             display_row += 1;
         }
         y += b.padding_bottom;
+
+        if b.block_bg.is_some() || b.block_border.is_some() {
+            block_rects.push(BlockRect {
+                display_row_start: block_first_row,
+                display_row_end: display_row.saturating_sub(1),
+                indent: b.indent,
+                padding_top: b.padding_top,
+                padding_bottom: b.padding_bottom,
+                decoration: BlockDecoration {
+                    background: b.block_bg,
+                    border: b.block_border,
+                    corner_radius: b.block_corner_radius,
+                },
+            });
+        }
     }
     let total = shaped.len() as u32;
     DisplayLayout {
         lines: Arc::new(shaped),
+        block_rects: Arc::new(block_rects),
         visible_rows: 0..total,
         total_display_rows: total,
         line_height,
@@ -672,5 +763,56 @@ mod tests {
         assert_eq!(lines[1].runs.len(), 1);
         assert_eq!(lines[1].runs[0].byte_range, 0..3);
         assert_eq!(&lines[1].text[0..3], "fox");
+    }
+
+    /// Blocks with `with_block_background` / `with_block_border` get a
+    /// matching `BlockRect` in `DisplayLayout::block_rects`. Blocks without
+    /// either don't.
+    #[test]
+    fn trivial_layout_blocks_emits_block_rect_for_decorated_blocks() {
+        let blocks = vec![
+            TrivialBlock::new("plain body"),
+            TrivialBlock::new("fenced code")
+                .with_padding(8.0, 8.0)
+                .with_block_background(Color::srgb(0.1, 0.1, 0.1))
+                .with_block_corner_radius(4.0),
+            TrivialBlock::new("> blockquote line").with_block_border(Color::srgb(0.5, 0.5, 0.5), 1.0),
+        ];
+        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE, None);
+
+        // Two decorated blocks → two rects (the plain body has neither).
+        assert_eq!(layout.block_rects.len(), 2);
+        let [code, quote] = &layout.block_rects[..] else { panic!("expected 2 rects"); };
+
+        // The code block lives at display_row 1 (after the plain body).
+        assert_eq!(code.display_row_start, 1);
+        assert_eq!(code.display_row_end, 1);
+        assert_eq!(code.padding_top, 8.0);
+        assert_eq!(code.padding_bottom, 8.0);
+        assert_eq!(code.decoration.background, Some(Color::srgb(0.1, 0.1, 0.1)));
+        assert_eq!(code.decoration.corner_radius, 4.0);
+        assert!(code.decoration.border.is_none());
+
+        // Blockquote is at display_row 2.
+        assert_eq!(quote.display_row_start, 2);
+        assert_eq!(quote.display_row_end, 2);
+        assert_eq!(quote.decoration.border.map(|b| b.width), Some(1.0));
+    }
+
+    /// Wrapping a decorated block keeps it as one `BlockRect` spanning all
+    /// continuation rows — a code block that wraps stays one panel.
+    #[test]
+    fn trivial_layout_blocks_block_rect_spans_wrap_continuation() {
+        let body = "alpha bravo charlie delta echo foxtrot golf hotel";
+        let blocks = vec![TrivialBlock::new(body)
+            .with_block_background(Color::srgb(0.2, 0.2, 0.3))];
+        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE, Some(10));
+
+        assert_eq!(layout.block_rects.len(), 1);
+        let rect = &layout.block_rects[0];
+        assert_eq!(rect.display_row_start, 0);
+        // End row index = total wrap rows - 1.
+        assert_eq!(rect.display_row_end, layout.lines.len() as u32 - 1);
+        assert!(rect.decoration.background.is_some());
     }
 }

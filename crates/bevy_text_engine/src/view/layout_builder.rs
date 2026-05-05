@@ -340,6 +340,7 @@ pub(crate) fn build_display_layout(
 
     DisplayLayout {
         lines: Arc::new(shaped_lines),
+        block_rects: Arc::new(Vec::new()),
         visible_rows: visible_rows_start..visible_rows_end,
         total_display_rows,
         line_height,

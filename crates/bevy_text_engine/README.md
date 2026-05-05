@@ -61,7 +61,9 @@ let layout = trivial_layout(
 commands.entity(my_view).insert(layout);
 ```
 
-For markdown-style layout with mixed line heights, padding, and soft-wrap:
+For markdown-style layout with mixed line heights, padding, soft-wrap, and
+block-level decoration (background fills + borders for code blocks /
+blockquotes / chat-message bubbles):
 
 ```rust
 use bevy_text_engine::view::snapshot::{trivial_layout_blocks, TrivialBlock};
@@ -70,16 +72,24 @@ let blocks = vec![
     TrivialBlock::new("# Heading")
         .with_line_height(28.0)
         .with_padding(12.0, 6.0)
-        .with_wrap_chars(0),                  // headings don't wrap
+        .with_wrap_chars(0),                          // headings don't wrap
     TrivialBlock::new("Lorem ipsum dolor sit amet, consectetur adipiscing elit."),
-    TrivialBlock::new("- list item").with_indent(20.0),
-    TrivialBlock::new("- another").with_indent(20.0),
+    TrivialBlock::new("fn main() { println!(\"hi\"); }")
+        .with_padding(8.0, 8.0)
+        .with_block_background(Color::srgb(0.12, 0.12, 0.14))
+        .with_block_corner_radius(4.0),
+    TrivialBlock::new("> a quoted line")
+        .with_padding(4.0, 4.0)
+        .with_block_border(Color::srgb(0.5, 0.5, 0.5), 1.0),
 ];
 // 6th arg = default wrap budget in characters (None = no wrap).
-// Long body paragraphs whose char count exceeds the budget split at the
-// last whitespace before the budget; long words stay intact.
 let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE, Some(60));
 ```
+
+`with_block_background` paints a filled quad spanning the block's full
+vertical extent (padding_top + all wrap rows + padding_bottom), distinct
+from per-row `line_bg`. `with_block_border(color, width)` adds a uniform
+border drawn from four edge quads. Blocks with no decoration cost zero.
 
 For dynamic content (an editor, a streaming log viewer), drive the producer via `LineFilter` / `LineStyleSource` Components — see the editor crate for a worked example.
 

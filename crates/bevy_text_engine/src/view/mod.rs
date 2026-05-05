@@ -20,7 +20,8 @@ pub use overlay::{RectOverlay, RowVertical, TextViewOverlays};
 pub use plugin::{TextEnginePlugin, TextEnginePlugins, TextView, TextViewBatchEntity, TextViewRenderSet};
 pub use render::{render_layout, GlyphBatchComponent, GlyphInstance, TextViewBatch};
 pub use snapshot::{
-    trivial_layout, InlineObject, ShapedLine, SimpleTheme, StyleRun, TextDecoration,
+    trivial_layout, BlockBorder, BlockDecoration, BlockRect, InlineObject, ShapedLine,
+    SimpleTheme, StyleRun, TextDecoration,
 };
 pub use state::TextViewState;
 pub use styling::{LayoutWrap, LineFilter, LineStyleSource, LineStyling, LineVisibility, RunWithText};
