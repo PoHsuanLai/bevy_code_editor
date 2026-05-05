@@ -1,6 +1,6 @@
 # bevy_tree_sitter
 
-Text-rendering-agnostic tree-sitter integration for Bevy. Returns capture names, not colors.
+Component-driven tree-sitter integration for Bevy. Returns capture names, not colors.
 
 What this crate is for: code editors mapping captures to a theme, code-outline panels, AI agents reasoning about syntactic structure, structural search tools, log viewers highlighting stack traces — anything that wants tree-sitter parsing without dragging in a renderer.
 
@@ -8,61 +8,59 @@ What this crate is **not** for: deciding what color a `keyword` should be (that'
 
 ## Architecture
 
-The integration is two layers:
+The integration is per-entity Components. Attach `Language` + `ParseSourceComp` + `SyntaxTree` to your entity; the `parse_dirty` system drives async parsing in the background; you observe results by filtering on `Changed<SyntaxTree>`.
 
-| Layer | What it does |
+| Component | What it carries |
 |---|---|
-| **`SyntaxProvider` trait** | Pluggable structural-highlight backend. `highlight_range(text, start_line, end_line, start_byte) -> Vec<Vec<HighlightRange>>` returns capture-name byte ranges. The trait knows nothing about Bevy or rendering. |
-| **`TreeSitterProvider` struct** | The canonical impl. Wraps a `tree_sitter::Parser`, `tree_sitter::Language`, query, and the cached `Tree`. `apply_sync_edit` keeps the tree valid for query work while re-parsing happens off-thread. |
+| **`Language`** | Grammar + highlight query. Cheap to clone (tree-sitter language is internally `Arc`-like). |
+| **`ParseSourceComp(Arc<dyn ParseSource>)`** | Consumer-supplied buffer adapter. The trait gives `content_version() -> u64`, `snapshot() -> Rope`, and an optional `apply_edit(InputEdit)` for tree interpolation. Same `Arc<dyn Trait>` Component shape as `bevy_text_engine::LineFilter`. |
+| **`SyntaxTree`** | `Option<ts::Tree>` + `content_version` + `tree_version`. Written by `parse_dirty`. Consumers read it via `Query<&SyntaxTree>` and use `Changed<SyntaxTree>` for invalidation. Not `Reflect` (`tree_sitter::Tree` doesn't impl it). |
 
-Async parsing runs on `AsyncComputeTaskPool`. `spawn_parse` attaches a `ParseTask` Component to a transient entity; `poll_parse_tasks` (registered by `TreeSitterPlugin`) polls it and emits `ParseCompleted { target, content_version, tree }`. The consumer routes the new tree back into its `TreeSitterProvider`.
+Async parsing runs on `AsyncComputeTaskPool`. `parse_dirty` (in `ParseSet`) detects per-entity drift between `ParseSource::content_version()` and `SyntaxTree::content_version`, kicks off a child-entity `ParseTask`, and on completion writes the new tree back into the parent's `SyntaxTree`. Single-flight per entity — multiple editors can parse concurrently.
 
 ## Quick start
 
 ```rust
+use std::sync::{Arc, RwLock};
 use bevy::prelude::*;
 use bevy_tree_sitter::prelude::*;
+use ropey::Rope;
+
+struct MyBuffer { rope: Rope, version: u64 }
+
+struct MyParseSource(Arc<RwLock<MyBuffer>>);
+impl ParseSource for MyParseSource {
+    fn content_version(&self) -> u64 { self.0.read().unwrap().version }
+    fn snapshot(&self) -> Rope { self.0.read().unwrap().rope.clone() }
+}
+
+fn setup(mut commands: Commands) {
+    let buf = Arc::new(RwLock::new(MyBuffer {
+        rope: Rope::from_str("fn main() {}"),
+        version: 1,
+    }));
+    commands.spawn((
+        Language::rust(),
+        SyntaxTree::default(),
+        ParseSourceComp::new(MyParseSource(buf)),
+    ));
+}
+
+fn react(q: Query<&SyntaxTree, Changed<SyntaxTree>>) {
+    for tree in &q {
+        if let Some(t) = tree.tree() {
+            // Walk the tree, query highlights, invalidate caches.
+        }
+    }
+}
 
 fn main() {
     App::new()
         .add_plugins(MinimalPlugins)
         .add_plugins(TreeSitterPlugin)
+        .add_systems(Startup, setup)
+        .add_systems(Update, react)
         .run();
-}
-```
-
-To parse a file:
-
-```rust
-use bevy_tree_sitter::{spawn_parse, ParseCompleted, TreeSitterProvider};
-use ropey::Rope;
-
-fn kick_off_parse(mut commands: Commands, q: Query<(Entity, &TreeSitterProvider, &MyBuffer)>) {
-    for (entity, provider, buf) in &q {
-        let parser = provider.clone_parser();    // borrowed just long enough to spawn
-        let language = provider.language();
-        let cached = provider.cached_tree_with_edits();
-        spawn_parse(
-            &mut commands,
-            entity,
-            buf.content_version,
-            buf.rope.clone(),
-            parser,
-            language,
-            cached,
-        );
-    }
-}
-
-fn apply_completed(
-    mut events: MessageReader<ParseCompleted>,
-    mut q: Query<&mut TreeSitterProvider>,
-) {
-    for event in events.read() {
-        if let Ok(mut provider) = q.get_mut(event.target) {
-            provider.set_parsed_tree(event.content_version, event.tree.clone());
-        }
-    }
 }
 ```
 
@@ -74,21 +72,56 @@ fn apply_completed(
 
 The editor's `bevy_code_editor::syntax_highlighting` module is a worked example: it holds a `Theme` HashMap from capture name to `Color` and converts `HighlightRange` runs into engine `StyleRun`s on the fly.
 
-## Languages
+## Querying highlights from a tree
 
-`Language { config: TreeSitterConfig, source }` carries the language descriptor + canonical highlight query. The `bevy_tree_sitter::languages` convenience module provides built-in `Language` constructors for Rust, Python, JavaScript, TypeScript, etc.
+`SyntaxTree` carries the parsed tree; running a highlight query is the consumer's responsibility (since the consumer owns the `TreeSitterProvider` that holds the compiled query). Pattern in the editor:
 
 ```rust
-use bevy_tree_sitter::languages;
-
-let lang = languages::rust();
-let provider = TreeSitterProvider::new(lang);
+fn run_highlights(
+    q: Query<(&SyntaxTree, &TreeSitterProvider)>,
+) {
+    for (tree, provider) in &q {
+        if tree.tree().is_some() {
+            let ranges: Vec<Vec<HighlightRange>> =
+                provider.highlight_range(/* text, lines, start_byte */);
+            // map ranges -> StyleRuns
+        }
+    }
+}
 ```
+
+## Incremental parsing
+
+`ParseSource::apply_edit(InputEdit)` is the tree-interpolation hook. Implement it to forward the edit into your `TreeSitterProvider::apply_sync_edit` so the cached tree stays valid for highlight queries while the async re-parse runs:
+
+```rust
+impl ParseSource for MyParseSource {
+    fn apply_edit(&self, edit: bevy_tree_sitter::ts::InputEdit) {
+        if let Some(provider) = self.0.read().unwrap().provider.as_mut() {
+            provider.apply_sync_edit(edit, &self.snapshot());
+        }
+    }
+    // content_version, snapshot as above
+}
+```
+
+`byte_to_point` (re-exported at the crate root) computes a `ts::Point` from a rope + byte offset for building `InputEdit`s.
+
+## Languages
+
+The `bevy_tree_sitter::languages` convenience module provides built-in `Language` constructors for Rust, Python, JavaScript, TypeScript, etc.
+
+```rust
+let lang = Language::rust();
+commands.spawn((lang, SyntaxTree::default(), ParseSourceComp::new(...)));
+```
+
+For custom languages, `Language::from_grammar(name, ts_language, highlights_query)` builds one from your own grammar.
 
 ## What's not here
 
 - **Themes.** The crate emits capture names; theming is the consumer's job. `bevy_code_editor` ships a default theme; AI / outline consumers can ignore colors entirely.
-- **Buffer storage.** Consumers hand a `&str` or `Rope` to `highlight_range` / `spawn_parse`. The crate doesn't own the buffer.
+- **Buffer storage.** Consumers expose their buffer via `ParseSource`. The crate doesn't own a `Rope` or `String` itself.
 - **Bevy reflection on `Tree` / `Parser` / `Task`.** Tree-sitter's C-binding types don't implement `Reflect`. The capture-name `Arc<str>` strings are reachable via the consumer's own reflected types.
 
 ## Re-export
