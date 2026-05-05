@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 
-use super::editor::{CursorState, SelectionState};
+use crate::types::{CursorState, SelectionState};
 use crate::text_view::TextViewState;
 
 /// Per-editor "go to line" dialog state.

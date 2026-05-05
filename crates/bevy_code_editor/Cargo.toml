@@ -13,8 +13,9 @@ categories = ["game-development", "text-editors"]
 # Text rendering engine: GPU atlas, instanced rendering, DisplayLayout, overlays
 bevy_text_engine = { path = "../bevy_text_engine" }
 
-# TextView interaction: scroll, drag-select, copy systems + ScrollConfig
-bevy_text_interaction = { path = "../bevy_text_interaction" }
+# Editable-text widget layer: scroll, drag-select, cursor, selection, edit
+# history, undo/redo, clipboard. Built on bevy_text_engine.
+bevy_text_editor = { path = "../bevy_text_editor" }
 
 # Tree-sitter integration (engine-tier, rendering-agnostic). Optional: gated
 # behind the editor's `tree-sitter` feature.

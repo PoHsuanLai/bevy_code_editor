@@ -1,20 +1,23 @@
 //! `EditorAction` → typed event dispatcher.
 //!
-//! Replaces the pre-refactor `process_editor_actions` 400-line match. This
-//! system polls leafwing's `ActionState`, picks the just-pressed-or-repeating
+//! Polls leafwing's `ActionState`, picks the just-pressed-or-repeating
 //! action for the focused editor, and emits the corresponding
-//! `super::action_events::*Requested` event. Handler systems consume those
-//! events one-by-one elsewhere.
+//! `*Requested` event. Per-action handler systems consume those events
+//! one-by-one elsewhere (basic editing handlers in `bevy_text_editor`,
+//! IDE-specific handlers in this crate).
 //!
 //! Three responsibilities live here that don't fit individual handlers:
-//!   - **Key repeat.** The `KeyRepeatState` resource tracks the held action;
+//!   - **Key repeat.** The `KeyRepeatState` Component tracks the held action;
 //!     when its repeat timer fires we re-emit the same event.
 //!   - **LSP completion popup navigation.** When the popup is visible, the
-//!     up/down arrows navigate items instead of moving the cursor. The
-//!     dispatcher swallows those actions silently — handlers never see them.
-//!   - **Save / Open / Rename modal.** `Save` and `Open` reuse the existing
-//!     host-facing events from `crate::types::events`. The rename modal eats
-//!     all input until dismissed.
+//!     up/down arrows navigate items, Enter / Tab apply the selected item,
+//!     and Escape dismisses the popup — instead of being treated as cursor
+//!     moves / newline / tab / clear-selection. The dispatcher swallows
+//!     those actions and applies the popup behavior directly. Handlers
+//!     never see the swallowed event.
+//!   - **Save / Open / Rename modal / GotoLine.** `Save` and `Open` reuse
+//!     the existing host-facing events from `crate::types::events`. The
+//!     rename modal eats all input until dismissed.
 
 use super::action_events::*;
 #[cfg(feature = "lsp")]
@@ -160,10 +163,7 @@ pub struct ActionEventWriters<'w> {
 }
 
 impl<'w> ActionEventWriters<'w> {
-    /// Emit the event corresponding to `action`. The grand fan-out table:
-    /// 50 arms, one per `EditorAction` variant. Save/Open need extra
-    /// payload-construction context (Save carries the buffer text), so they
-    /// are emitted by the dispatcher directly, not through this helper.
+    /// Emit the event corresponding to `action`.
     fn emit(&mut self, action: EditorAction) {
         match action {
             EditorAction::DeleteBackward => {
@@ -336,10 +336,6 @@ fn is_horizontal_move(action: EditorAction) -> bool {
 }
 
 /// `EditorAction` → typed event dispatcher.
-///
-/// Polls `ActionState`, finds the just-pressed-or-repeating action, then
-/// emits the matching `*Requested` event. The followup snapshot is set
-/// in `Res<PendingActionFollowup>` for the LSP follow-up system.
 #[allow(clippy::too_many_arguments)]
 pub fn dispatch_action_events(
     input_focus: Res<InputFocus>,
@@ -349,9 +345,26 @@ pub fn dispatch_action_events(
     >,
     cursor_settings: Res<CursorSettings>,
     #[cfg(feature = "lsp")] mut pending: ResMut<PendingActionFollowup>,
-    editor_q: Query<(&CursorState, &crate::text_view::TextViewState), With<CodeEditor>>,
+    #[cfg(feature = "lsp")] mut editor_q: Query<
+        (
+            &mut CursorState,
+            &mut crate::text_view::TextViewState,
+            &mut GotoLineState,
+        ),
+        With<CodeEditor>,
+    >,
+    #[cfg(not(feature = "lsp"))] mut editor_q: Query<
+        (
+            &CursorState,
+            &crate::text_view::TextViewState,
+            &mut GotoLineState,
+        ),
+        With<CodeEditor>,
+    >,
     #[cfg(feature = "lsp")] mut lsp_q: Query<
         (
+            &bevy_lsp::LspClient,
+            Option<&mut bevy_lsp::LspDocument>,
             &mut crate::lsp_ui::state::LspCompletionPopup,
             &crate::lsp_ui::state::LspRenamePopup,
         ),
@@ -370,7 +383,7 @@ pub fn dispatch_action_events(
 
     // Rename modal eats all action input until dismissed.
     #[cfg(feature = "lsp")]
-    if let Ok((_, rename_state)) = lsp_q.get(focused) {
+    if let Ok((_, _, _, rename_state)) = lsp_q.get(focused) {
         if rename_state.visible {
             return;
         }
@@ -424,11 +437,14 @@ pub fn dispatch_action_events(
         return;
     };
 
-    // LSP completion popup intercepts up/down arrow navigation. Enter / Tab
-    // / Escape pass through to the corresponding handlers, which check the
-    // popup themselves before applying the buffer-edit behavior.
+    // LSP completion popup intercepts: up/down navigate items; Enter/Tab apply
+    // the selected item; Escape (mapped to ClearSelection) dismisses the popup.
+    // Each intercept swallows the action so the bevy_text_editor handler never
+    // sees the event.
     #[cfg(feature = "lsp")]
-    if let Ok((mut completion_state, _)) = lsp_q.get_mut(focused) {
+    if let Ok((lsp_client, mut lsp_document, mut completion_state, _)) =
+        lsp_q.get_mut(focused)
+    {
         let filtered_count = completion_state.filtered_items().len();
         let max_visible = lsp_settings.completion.max_items;
         if completion_state.visible && filtered_count > 0 {
@@ -451,7 +467,39 @@ pub fn dispatch_action_events(
                     completion_state.ensure_selected_visible_with_max(max_visible);
                     return;
                 }
+                EditorAction::InsertNewline | EditorAction::InsertTab => {
+                    if let Ok((mut cursor, mut tv, _)) = editor_q.get_mut(focused) {
+                        crate::input::actions::apply_completion(
+                            &mut cursor,
+                            &mut tv,
+                            &mut completion_state,
+                        );
+                        crate::input::actions::send_did_change(
+                            &tv.rope,
+                            lsp_client,
+                            lsp_document.as_deref_mut(),
+                        );
+                    }
+                    return;
+                }
+                EditorAction::ClearSelection => {
+                    completion_state.visible = false;
+                    completion_state.filter.clear();
+                    completion_state.scroll_offset = 0;
+                    return;
+                }
                 _ => {}
+            }
+        }
+    }
+
+    // ClearSelection: when no popup is visible, also close goto-line dialog
+    // before falling through to the editing event.
+    if matches!(action, EditorAction::ClearSelection) {
+        if let Ok((_, _, mut goto_line_state)) = editor_q.get_mut(focused) {
+            if goto_line_state.active {
+                goto_line_state.clear();
+                return;
             }
         }
     }
@@ -460,7 +508,7 @@ pub fn dispatch_action_events(
     // editor's current state.
     match action {
         EditorAction::Save => {
-            if let Ok((_cursor, tv)) = editor_q.get(focused) {
+            if let Ok((_cursor, tv, _)) = editor_q.get(focused) {
                 let content: String = tv.rope.chars().collect();
                 writers.save.write(SaveRequested { content });
             }
@@ -473,12 +521,10 @@ pub fn dispatch_action_events(
         _ => {}
     }
 
-    // Snapshot for the LSP follow-up system before handlers run. The
-    // followup runs only when LSP is enabled; without it the snapshot is a
-    // no-op.
+    // Snapshot for the LSP follow-up system before handlers run.
     #[cfg(feature = "lsp")]
     {
-        if let Ok((cursor, tv)) = editor_q.get(focused) {
+        if let Ok((cursor, tv, _)) = editor_q.get(focused) {
             pending.pre_cursor_pos = cursor.cursor_pos;
             pending.pre_content_version = tv.content_version;
         }

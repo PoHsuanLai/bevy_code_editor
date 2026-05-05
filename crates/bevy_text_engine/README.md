@@ -17,7 +17,7 @@ This is the rendering layer. It owns no input model, no UI framework choice, no 
 
 ## What's NOT in the box
 
-- No selection model, multi-cursor, undo/redo. (See [`bevy_text_interaction`](../bevy_text_interaction) for pointer interaction; the editor crate has the rest.)
+- No selection model, multi-cursor, undo/redo. (See [`bevy_text_editor`](../bevy_text_editor) for the editable-text widget layer; the editor crate has the IDE-specific extras.)
 - No syntax highlighting. The engine takes pre-computed `StyleRun`s. (See [`bevy_tree_sitter`](../bevy_tree_sitter) for tree-sitter integration.)
 - No `bevy_ui::Node` integration. `TextView` renders to a world-space transform inside a `TextViewViewport` rect; embedding inside a flexbox tree requires writing the rect from `ComputedNode` yourself.
 

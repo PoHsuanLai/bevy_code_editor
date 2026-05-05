@@ -1,26 +1,34 @@
 //! Typed events emitted by `dispatch_action_events` — one per
 //! [`super::EditorAction`] variant.
 //!
-//! Hosts and plugins consume these events instead of the giant action match
-//! that used to live in `actions.rs::execute_action_core`. Every variant of
-//! `EditorAction` corresponds to exactly one event here, with two exceptions
-//! that reuse pre-existing public events:
-//!   - `EditorAction::Save`  → [`crate::types::SaveRequested`]
-//!   - `EditorAction::Open`  → [`crate::types::OpenRequested`]
+//! The 33 editing events (cursor movement, selection, delete / insert /
+//! clipboard / undo / redo) are defined in [`bevy_text_editor`] and
+//! registered by `TextEditorPlugin`; they're re-exported here so dispatcher
+//! code stays at `crate::input::action_events::*`.
 //!
-//! The keymap currency stays an `EditorAction` enum (leafwing-input-manager
-//! requires an `Actionlike`); these events are an additional layer that the
-//! dispatch system fans out into.
+//! The IDE-only events (replace, goto-line, multi-cursor, folding, LSP
+//! request, save / open) live in this module.
 //!
-//! All events are unit-style structs today. Future events that need
-//! parameters (e.g. `MoveCursorTo { position: usize }`) can grow fields
-//! without breaking the dispatch macro: just write the field-bearing
-//! variant by hand and skip the macro for it.
+//! All events are unit-style structs today.
 
 use bevy::prelude::*;
 
-/// Compact event definition. Each invocation generates a `Message`-deriving,
-/// `Default`-deriving unit struct ready to be registered with `add_message`.
+// Re-export the editing events from bevy_text_editor (moved as part of the
+// editable-text-widget refactor).
+pub use bevy_text_editor::{
+    ClearSelectionRequested, CopyRequested, CutRequested, DeleteBackwardRequested,
+    DeleteForwardRequested, DeleteLineRequested, DeleteWordBackwardRequested,
+    DeleteWordForwardRequested, InsertNewlineRequested, InsertTabRequested,
+    MoveCursorDocumentEndRequested, MoveCursorDocumentStartRequested, MoveCursorDownRequested,
+    MoveCursorLeftRequested, MoveCursorLineEndRequested, MoveCursorLineStartRequested,
+    MoveCursorPageDownRequested, MoveCursorPageUpRequested, MoveCursorRightRequested,
+    MoveCursorUpRequested, MoveCursorWordLeftRequested, MoveCursorWordRightRequested,
+    PasteRequested, RedoRequested, SelectAllRequested, SelectDownRequested,
+    SelectLeftRequested, SelectLineEndRequested, SelectLineStartRequested,
+    SelectRightRequested, SelectUpRequested, SelectWordLeftRequested,
+    SelectWordRightRequested, UndoRequested,
+};
+
 macro_rules! action_event {
     ($($name:ident),* $(,)?) => {
         $(
@@ -30,54 +38,6 @@ macro_rules! action_event {
         )*
     };
 }
-
-// Deletion
-action_event!(
-    DeleteBackwardRequested,
-    DeleteForwardRequested,
-    DeleteWordBackwardRequested,
-    DeleteWordForwardRequested,
-    DeleteLineRequested,
-);
-
-// Special insertion
-action_event!(InsertNewlineRequested, InsertTabRequested);
-
-// Cursor movement
-action_event!(
-    MoveCursorLeftRequested,
-    MoveCursorRightRequested,
-    MoveCursorUpRequested,
-    MoveCursorDownRequested,
-    MoveCursorWordLeftRequested,
-    MoveCursorWordRightRequested,
-    MoveCursorLineStartRequested,
-    MoveCursorLineEndRequested,
-    MoveCursorDocumentStartRequested,
-    MoveCursorDocumentEndRequested,
-    MoveCursorPageUpRequested,
-    MoveCursorPageDownRequested,
-);
-
-// Selection
-action_event!(
-    SelectLeftRequested,
-    SelectRightRequested,
-    SelectUpRequested,
-    SelectDownRequested,
-    SelectWordLeftRequested,
-    SelectWordRightRequested,
-    SelectLineStartRequested,
-    SelectLineEndRequested,
-    SelectAllRequested,
-    ClearSelectionRequested,
-);
-
-// Clipboard
-action_event!(CopyRequested, CutRequested, PasteRequested);
-
-// Undo/Redo
-action_event!(UndoRequested, RedoRequested);
 
 // Search
 action_event!(ReplaceRequested);

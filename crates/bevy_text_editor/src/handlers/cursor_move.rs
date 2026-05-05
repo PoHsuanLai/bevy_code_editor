@@ -1,22 +1,15 @@
 //! Cursor movement handlers — Move{Left,Right,Up,Down,Word*,LineStart,LineEnd,
 //! DocumentStart,DocumentEnd,PageUp,PageDown}.
-//!
-//! Each handler advances `cursor.cursor_pos` via the corresponding helper in
-//! `super::super::cursor` / `super::super::editor_ops`, then collapses the
-//! selection collection onto the new primary position. Any secondary cursors
-//! and active selection range are dropped — the legacy code paths did the
-//! same by writing `selection_start = None; selection_end = None;` and
-//! re-syncing `cursors[0]` afterwards.
 
-use crate::input::action_events::*;
-use crate::input::cursor::{
-    move_cursor_down, move_cursor_line_end, move_cursor_line_start, move_cursor_up,
+use crate::cursor_movement::{
+    move_cursor, move_cursor_down, move_cursor_line_end, move_cursor_line_start, move_cursor_up,
     move_cursor_word_left, move_cursor_word_right,
 };
-use crate::input::editor_ops::move_cursor;
-use crate::types::*;
+use crate::editing_events::*;
+use crate::state::{CursorState, SelectionState, TextEditor};
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
+use bevy_text_engine::TextViewState;
 
 type EditorView<'w, 's> = Query<
     'w,
@@ -24,12 +17,11 @@ type EditorView<'w, 's> = Query<
     (
         &'static mut SelectionState,
         &'static mut CursorState,
-        &'static mut crate::text_view::TextViewState,
+        &'static mut TextViewState,
     ),
-    With<CodeEditor>,
+    With<TextEditor>,
 >;
 
-/// Resolve the focused editor entity, returning `None` if not focused.
 fn focused(input_focus: &InputFocus) -> Option<Entity> {
     input_focus.get()
 }

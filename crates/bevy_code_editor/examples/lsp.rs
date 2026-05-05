@@ -26,10 +26,10 @@ use bevy_code_editor::plugin::editor_ui_plugin::EditorRenderConfig;
 use bevy_code_editor::prelude::*;
 use bevy_text_engine::FontConfig;
 use bevy_code_editor::text_view::TextViewViewport;
-use bevy_code_editor::types::editor::{
-    CursorState, EditHistoryState, SelectionState, SyntaxCacheState,
+use bevy_code_editor::types::{
+    CodeEditor, CursorState, EditHistoryState, EditorDisplayState, SelectionState,
+    SyntaxCacheState, ViewportDimensions,
 };
-use bevy_code_editor::types::{CodeEditor, ViewportDimensions};
 use bevy_egui::{egui, EguiContexts};
 use bevy_lsp::{LspClient, LspDocument, LspMessage};
 #[cfg(feature = "tree-sitter")]
@@ -904,6 +904,7 @@ fn setup_editor(
             &mut EditHistoryState,
             &mut SelectionState,
             &mut SyntaxCacheState,
+            &mut EditorDisplayState,
             &mut LspClient,
         ),
         With<CodeEditor>,
@@ -917,6 +918,7 @@ fn setup_editor(
         mut hist,
         mut sel,
         mut syntax_cache,
+        mut display,
         mut lsp_client,
     )) = editor_query.single_mut()
     else {
@@ -929,9 +931,11 @@ fn setup_editor(
     let rust_code =
         std::fs::read_to_string(&example_file_path).expect("Failed to read example file");
 
-    hist.set_text(
+    bevy_code_editor::input::editing::set_text(
         &mut sel,
+        &mut hist,
         &mut syntax_cache,
+        &mut display,
         &mut cursor,
         &mut tv,
         &rust_code,

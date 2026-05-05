@@ -6,8 +6,9 @@
 use bevy::prelude::*;
 use bevy::window::{CursorIcon, SystemCursorIcon};
 use bevy_code_editor::prelude::*;
-use bevy_code_editor::types::editor::{
-    CursorState, EditHistoryState, SelectionState, SyntaxCacheState, ViewportConfig,
+use bevy_code_editor::types::{
+    CursorState, EditHistoryState, EditorDisplayState, SelectionState, SyntaxCacheState,
+    ViewportConfig,
 };
 
 /// Which edge/corner is being resized
@@ -134,14 +135,23 @@ fn setup(
             &mut EditHistoryState,
             &mut SelectionState,
             &mut SyntaxCacheState,
+            &mut EditorDisplayState,
         ),
         With<CodeEditor>,
     >,
     panel: Res<EditorPanel>,
     mut input_focus: ResMut<bevy::input_focus::InputFocus>,
 ) {
-    let Ok((entity, mut cursor, mut tv, mut viewport, mut hist, mut sel, mut syntax_cache)) =
-        editor_query.single_mut()
+    let Ok((
+        entity,
+        mut cursor,
+        mut tv,
+        mut viewport,
+        mut hist,
+        mut sel,
+        mut syntax_cache,
+        mut display,
+    )) = editor_query.single_mut()
     else {
         return;
     };
@@ -218,9 +228,11 @@ fn setup(
 
     // Set initial content
     input_focus.set(entity);
-    hist.set_text(
+    bevy_code_editor::input::editing::set_text(
         &mut sel,
+        &mut hist,
         &mut syntax_cache,
+        &mut display,
         &mut cursor,
         &mut tv,
         r#"// Resizable Editor Demo

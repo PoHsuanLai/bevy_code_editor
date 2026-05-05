@@ -6,8 +6,11 @@
 //!      handlers.
 //!   2. [`action_events`] — one typed `*Requested` event per `EditorAction`
 //!      variant. The [`dispatch::dispatch_action_events`] system fans the
-//!      enum out into events; per-action handler systems under [`handlers`]
-//!      consume them.
+//!      enum out into events. Editing events (cursor movement, selection,
+//!      delete / insert / clipboard / undo / redo) are defined in and
+//!      handled by [`bevy_text_editor`]; IDE-only events (multi-cursor,
+//!      folding, LSP, goto-line, save / open) are handled by the per-action
+//!      handler systems under [`handlers`].
 
 pub mod action_events;
 pub mod actions;
@@ -22,6 +25,7 @@ pub mod mouse;
 pub mod selection_ops;
 
 pub use dispatch::dispatch_action_events;
+pub use editing::drain_edit_side_effects;
 pub use keybindings::{default_input_map, EditorAction};
 pub use keyboard::on_focused_keyboard;
 pub use mouse::{handle_mouse_input, handle_mouse_wheel, MouseDragState};

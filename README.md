@@ -7,10 +7,10 @@ This started as a code editor and grew into the underlying primitives. The works
 | Crate | What it does | Depends on |
 |---|---|---|
 | **`bevy_text_engine`** | GPU glyph atlas, instanced rendering, soft-wrap layout producer, overlays | bevy + cosmic-text + swash |
-| **`bevy_text_interaction`** | Pointer + focused-keyboard interaction (scroll, drag-select, copy) for `TextView` entities | `bevy_text_engine` + bevy_picking + bevy_input_focus |
+| **`bevy_text_editor`** | Editable text widget: pointer interaction + cursor / selection / edit history / undo / clipboard for `TextView` entities | `bevy_text_engine` + bevy_picking + bevy_input_focus |
 | **`bevy_tree_sitter`** | Tree-sitter parser + incremental highlights, text-rendering-agnostic | bevy + tree-sitter |
 | **`bevy_lsp`** | Async LSP transport (async-lsp on a shared tokio runtime), per-document Components, position helpers | bevy + async-lsp + lsp-types |
-| **`bevy_code_editor`** | The code-editor consumer: cursor, selection, multi-cursor, syntax adapter, LSP UI, scrollbar, line numbers | all of the above |
+| **`bevy_code_editor`** | The code-editor consumer: IDE features (multi-cursor, folding, brackets, syntax adapter, LSP UI, scrollbar, line numbers) on top of `bevy_text_editor` | all of the above |
 
 ## What you get
 

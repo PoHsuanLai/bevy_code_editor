@@ -35,7 +35,7 @@ pub struct TextViewRenderSet;
 /// (mirror of `bevy_text::Text2d`).
 ///
 /// `Pickable` is also cascaded so a custom `bevy_picking` backend (in
-/// `bevy_text_interaction::picking`) can produce `PointerHits` for this
+/// `bevy_text_editor::picking`) can produce `PointerHits` for this
 /// entity, routing pointer events / scroll / drag observers correctly. The
 /// engine itself doesn't run the backend — adding `Pickable` is a no-op
 /// without `TextInteractionPlugin` (or another picking backend) registered,

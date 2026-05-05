@@ -1,8 +1,8 @@
 # bevy_code_editor
 
-A code editor as a Bevy plugin, built on top of the [`bevy_text_engine`](../bevy_text_engine) rendering primitives.
+A code editor as a Bevy plugin, layered on top of [`bevy_text_engine`](../bevy_text_engine) (rendering) and [`bevy_text_editor`](../bevy_text_editor) (editable-text widget).
 
-This crate is the editor-domain consumer: cursor + selection model, edit history, multi-cursor, syntax-highlight adapter (over [`bevy_tree_sitter`](../bevy_tree_sitter)), LSP UI adapter (over [`bevy_lsp`](../bevy_lsp)), folding, bracket matching, scrollbar, line numbers, gutter.
+This crate adds the IDE-specific extras: multi-cursor, syntax-highlight adapter (over [`bevy_tree_sitter`](../bevy_tree_sitter)), LSP UI adapter (over [`bevy_lsp`](../bevy_lsp)), folding, bracket matching, scrollbar, line numbers, gutter, goto-line dialog. The cursor / selection / edit history / undo / clipboard machinery lives one tier down in `bevy_text_editor` and is shared with simpler hosts (chat boxes, search fields).
 
 ## Hello-world
 
@@ -93,7 +93,7 @@ fn spawn_two(mut commands: Commands) {
 
 - `tree-sitter` (default) — pulls in `bevy_tree_sitter` + the syntax-highlight adapter (`syntax/`).
 - `lsp` — pulls in `bevy_lsp` + the LSP UI adapter (`lsp_ui/`).
-- `clipboard` (default) — system clipboard via `arboard` (always-on; pulled into `bevy_text_interaction`).
+- `clipboard` (default) — system clipboard via `arboard` (always-on; pulled into `bevy_text_editor`).
 
 Minimal build (no syntax highlighting, no LSP):
 

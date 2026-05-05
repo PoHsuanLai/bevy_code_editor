@@ -7,8 +7,8 @@
 use bevy::prelude::*;
 use bevy::window::{CursorIcon, SystemCursorIcon};
 use bevy_code_editor::prelude::*;
-use bevy_code_editor::types::editor::{
-    CursorState, EditHistoryState, SelectionState, SyntaxCacheState,
+use bevy_code_editor::types::{
+    CursorState, EditHistoryState, EditorDisplayState, SelectionState, SyntaxCacheState,
 };
 
 fn main() {
@@ -36,13 +36,21 @@ fn setup_editor(
             &mut EditHistoryState,
             &mut SelectionState,
             &mut SyntaxCacheState,
+            &mut EditorDisplayState,
         ),
         With<CodeEditor>,
     >,
     mut input_focus: ResMut<bevy::input_focus::InputFocus>,
 ) {
-    let Ok((entity, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
-        editor_query.single_mut()
+    let Ok((
+        entity,
+        mut cursor,
+        mut tv,
+        mut hist,
+        mut sel,
+        mut syntax_cache,
+        mut display,
+    )) = editor_query.single_mut()
     else {
         return;
     };
@@ -80,7 +88,15 @@ fn setup_editor(
         }
     };
 
-    hist.set_text(&mut sel, &mut syntax_cache, &mut cursor, &mut tv, &content);
+    bevy_code_editor::input::editing::set_text(
+        &mut sel,
+        &mut hist,
+        &mut syntax_cache,
+        &mut display,
+        &mut cursor,
+        &mut tv,
+        &content,
+    );
 }
 
 fn update_cursor_icon(

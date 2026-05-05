@@ -2,7 +2,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::anchor::{Anchor, AnchorSet, TextEdit};
+use crate::anchor::{Anchor, AnchorSet, TextEdit};
 
 // ========== Selection Collection ==========
 

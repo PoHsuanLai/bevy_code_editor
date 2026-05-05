@@ -1,21 +1,15 @@
 //! Selection handlers — Select{Left,Right,Up,Down,WordLeft,WordRight,
 //! LineStart,LineEnd,All}, ClearSelection.
-//!
-//! Selection handlers capture the current cursor position as the selection
-//! anchor (when no selection is active), advance the cursor, then push the
-//! new (head, anchor) pair into the SelectionCollection. If a selection is
-//! already active the existing anchor is preserved so repeated select-by-
-//! direction extends the same range.
 
-use crate::input::action_events::*;
-use crate::input::cursor::{
-    move_cursor_down, move_cursor_line_end, move_cursor_line_start, move_cursor_up,
+use crate::cursor_movement::{
+    move_cursor, move_cursor_down, move_cursor_line_end, move_cursor_line_start, move_cursor_up,
     move_cursor_word_left, move_cursor_word_right,
 };
-use crate::input::editor_ops::move_cursor;
-use crate::types::*;
+use crate::editing_events::*;
+use crate::state::{CursorState, SelectionState, TextEditor};
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
+use bevy_text_engine::TextViewState;
 
 type EditorView<'w, 's> = Query<
     'w,
@@ -23,9 +17,9 @@ type EditorView<'w, 's> = Query<
     (
         &'static mut SelectionState,
         &'static mut CursorState,
-        &'static mut crate::text_view::TextViewState,
+        &'static mut TextViewState,
     ),
-    With<CodeEditor>,
+    With<TextEditor>,
 >;
 
 pub fn handle_select_left(
@@ -199,28 +193,15 @@ pub fn handle_select_all(
     sel.selections.set_selection(end, 0);
 }
 
-/// Clear-selection has three conditional behaviors that match the original
-/// `execute_action` early-return chain:
-///   1. If the LSP completion popup is visible, hide it (highest priority).
-///   2. Else if multiple cursors are active, drop secondary cursors.
-///   3. Else if a goto-line dialog is active, close it.
-///   4. Otherwise, clear the active selection range.
+/// Generic clear-selection — drops secondary cursors first, otherwise
+/// collapses the selection to a single cursor at the head.
+///
+/// Hosts with extra dismissable UI (LSP popups, goto-line dialogs) should
+/// run their own handler ahead of this one and consume the event there.
 pub fn handle_clear_selection(
     mut events: MessageReader<ClearSelectionRequested>,
     input_focus: Res<InputFocus>,
-    mut editor_q: Query<
-        (
-            &mut SelectionState,
-            &mut CursorState,
-            &mut crate::text_view::TextViewState,
-            &mut GotoLineState,
-        ),
-        With<CodeEditor>,
-    >,
-    #[cfg(feature = "lsp")] mut lsp_q: Query<
-        &mut crate::lsp_ui::state::LspCompletionPopup,
-        With<CodeEditor>,
-    >,
+    mut q: EditorView,
 ) {
     if events.read().next().is_none() {
         return;
@@ -228,27 +209,12 @@ pub fn handle_clear_selection(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut cursor, _tv, mut goto_line_state)) = editor_q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, _tv)) = q.get_mut(entity) else {
         return;
     };
 
-    #[cfg(feature = "lsp")]
-    if let Ok(mut completion_state) = lsp_q.get_mut(entity) {
-        if completion_state.visible {
-            completion_state.visible = false;
-            completion_state.filter.clear();
-            completion_state.scroll_offset = 0;
-            return;
-        }
-    }
-
     if sel.has_multiple_cursors() {
         sel.clear_secondary_cursors(&mut cursor);
-        return;
-    }
-
-    if goto_line_state.active {
-        goto_line_state.clear();
         return;
     }
 

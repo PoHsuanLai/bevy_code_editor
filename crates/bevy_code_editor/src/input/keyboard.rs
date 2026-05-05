@@ -12,13 +12,13 @@
 //! per-action handler systems under [`super::handlers`].
 
 use super::actions::{
-    get_closing_bracket, get_closing_quote, insert_char, insert_closing_char,
-    should_skip_auto_close,
+    get_closing_bracket, get_closing_quote, insert_closing_char, should_skip_auto_close,
 };
 #[cfg(feature = "lsp")]
 use super::actions::{
     find_word_start, request_completion, send_did_change, update_completion_filter,
 };
+use super::editing::insert_char;
 use super::editor_ops::move_cursor;
 #[cfg(feature = "lsp")]
 use crate::settings::LspSettings;

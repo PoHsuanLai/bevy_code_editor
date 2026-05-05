@@ -5,8 +5,8 @@
 
 use bevy::prelude::*;
 use bevy_code_editor::prelude::*;
-use bevy_code_editor::types::editor::{
-    CursorState, EditHistoryState, SelectionState, SyntaxCacheState,
+use bevy_code_editor::types::{
+    CursorState, EditHistoryState, EditorDisplayState, SelectionState, SyntaxCacheState,
 };
 #[cfg(feature = "tree-sitter")]
 use bevy_tree_sitter::Language;
@@ -37,12 +37,20 @@ fn setup_editor_with_treesitter(
             &mut EditHistoryState,
             &mut SelectionState,
             &mut SyntaxCacheState,
+            &mut EditorDisplayState,
         ),
         With<CodeEditor>,
     >,
 ) {
-    let Ok((entity, mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
-        editor_query.single_mut()
+    let Ok((
+        entity,
+        mut cursor,
+        mut tv,
+        mut hist,
+        mut sel,
+        mut syntax_cache,
+        mut display,
+    )) = editor_query.single_mut()
     else {
         return;
     };
@@ -111,7 +119,15 @@ fn main() {
 }
 "#;
 
-    hist.set_text(&mut sel, &mut syntax_cache, &mut cursor, &mut tv, rust_code);
+    bevy_code_editor::input::editing::set_text(
+        &mut sel,
+        &mut hist,
+        &mut syntax_cache,
+        &mut display,
+        &mut cursor,
+        &mut tv,
+        rust_code,
+    );
 
     // Component-driven tree-sitter wiring: attach a `Language` to the
     // editor entity. The editor's `react_language_changed` system sees
@@ -134,11 +150,12 @@ fn setup_editor_with_treesitter(
             &mut EditHistoryState,
             &mut SelectionState,
             &mut SyntaxCacheState,
+            &mut EditorDisplayState,
         ),
         With<CodeEditor>,
     >,
 ) {
-    let Ok((mut cursor, mut tv, mut hist, mut sel, mut syntax_cache)) =
+    let Ok((mut cursor, mut tv, mut hist, mut sel, mut syntax_cache, mut display)) =
         editor_query.single_mut()
     else {
         return;
@@ -155,5 +172,13 @@ Or use the default features:
     cargo run --example treesitter_highlighting
 "#;
 
-    hist.set_text(&mut sel, &mut syntax_cache, &mut cursor, &mut tv, message);
+    bevy_code_editor::input::editing::set_text(
+        &mut sel,
+        &mut hist,
+        &mut syntax_cache,
+        &mut display,
+        &mut cursor,
+        &mut tv,
+        message,
+    );
 }

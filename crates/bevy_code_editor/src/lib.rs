@@ -71,16 +71,17 @@ pub mod prelude {
     pub use crate::plugin::{
         CodeEditorPlugin, CodeEditorStandalone, EditorUiPlugin,
     };
-    pub use crate::text_view::TextInteractionPlugin;
 
     // Editor marker + save/open events.
     pub use crate::types::editor::{CodeEditor, OpenRequested, SaveRequested};
 
-    // Per-entity scroll config (lives in `bevy_text_interaction` since
-    // Phase 6, re-exported here so prelude users keep getting it).
-    pub use bevy_text_interaction::ScrollConfig;
+    // Editable-text widget types from `bevy_text_editor`. Re-exported so
+    // prelude users get them without a separate import.
+    pub use bevy_text_editor::{
+        ScrollConfig, TextEditor, TextEditorPlugin, TextInteractionPlugin,
+    };
 
     // Selection / multi-cursor types and the EditorAction enum.
     pub use crate::input::EditorAction;
-    pub use crate::types::selection::{Selection, SelectionCollection};
+    pub use crate::types::{Selection, SelectionCollection};
 }

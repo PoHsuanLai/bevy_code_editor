@@ -1,17 +1,15 @@
 //! Editor component types — pure data definitions, no logic.
 //!
-//! Operational helpers live in `input/`:
-//! - `input/editor_ops.rs` — free fns for search and cursor movement
-//! - `input/selection_ops.rs` — impl SelectionState (multi-cursor, selection sync)
-//! - `input/editing.rs` — impl EditHistoryState (insert, delete, undo/redo, anchors)
+//! The editable-text Components (`CursorState`, `SelectionState`,
+//! `EditHistoryState`) are defined in [`bevy_text_editor`] and re-exported
+//! through `crate::types`. Operational helpers live in `input/`:
+//! - `input/editor_ops.rs` — free fns for search and editor cursor movement
+//! - `input/multi_cursor.rs` — multi-cursor add/remove
 
 use bevy::prelude::*;
 use std::time::Instant;
 
-use super::anchor::AnchorSet;
 use super::display_map::{HighlightedToken, LineSegment};
-use super::history::EditHistory;
-use super::selection::SelectionCollection;
 
 /// Configuration for viewport behavior
 #[derive(Resource, Clone, Copy, Debug, Reflect)]
@@ -103,50 +101,37 @@ impl Default for ViewportDimensions {
 
 /// Marker component for a code editor entity.
 ///
-/// `#[require]` cascades every supporting component, so spawning a
-/// `CodeEditor` is sufficient to get a fully functional editor entity
-/// (mirror of `bevy_text::Text2d`). The required `TextView` transitively
-/// requires the engine rendering components; the interaction-state
-/// components attached here are read by the editor's input systems and
-/// kept on `CodeEditor` (rather than `TextView`) so plain text views
-/// don't pay for them.
+/// `#[require]` cascades [`bevy_text_editor::TextEditor`] (which transitively
+/// brings the engine `TextView`, cursor / selection / edit-history state,
+/// and pointer-interaction state) plus the IDE-specific Components — fold
+/// state, bracket matching, syntax cache, scrollbar drag, goto-line dialog,
+/// LSP UI state. Spawning a `CodeEditor` is sufficient for a fully
+/// functional editor entity.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 #[cfg_attr(
     not(feature = "lsp"),
     require(
-        bevy_text_engine::TextView,
-        SelectionState,
-        EditHistoryState,
+        bevy_text_editor::TextEditor,
         SyntaxCacheState,
         EditorDisplayState,
-        CursorState,
         BracketMatchState,
-        bevy_text_interaction::ScrollConfig,
         crate::types::fold::GotoLineState,
         crate::types::fold::FoldState,
         crate::plugin::scrollbar::ScrollbarDragState,
-        bevy_text_interaction::TextViewDragState,
-        bevy_text_interaction::TextViewSelectionState,
         crate::input::MouseDragState,
     )
 )]
 #[cfg_attr(
     feature = "lsp",
     require(
-        bevy_text_engine::TextView,
-        SelectionState,
-        EditHistoryState,
+        bevy_text_editor::TextEditor,
         SyntaxCacheState,
         EditorDisplayState,
-        CursorState,
         BracketMatchState,
-        bevy_text_interaction::ScrollConfig,
         crate::types::fold::GotoLineState,
         crate::types::fold::FoldState,
         crate::plugin::scrollbar::ScrollbarDragState,
-        bevy_text_interaction::TextViewDragState,
-        bevy_text_interaction::TextViewSelectionState,
         crate::input::MouseDragState,
         // LSP-side state. `LspDocument` is NOT in this cascade because it
         // requires a URI which the host must supply.
@@ -164,71 +149,6 @@ impl Default for ViewportDimensions {
     )
 )]
 pub struct CodeEditor;
-
-/// Cursor state component — tracks the primary cursor's position over time.
-///
-/// The set of active cursors and selection ranges lives in
-/// [`SelectionState::selections`]. `cursor_pos` is a convenience mirror of
-/// `selections.primary().head_offset()` that input handlers mutate during
-/// a single keystroke; the matching update to the SelectionCollection is
-/// applied at the end of the handler via
-/// [`SelectionState::apply_primary_cursor`].
-///
-/// `last_cursor_pos` is consumed by `should_auto_scroll` / `auto_scroll_to_cursor`
-/// to detect movement between frames. The blink-tracker fields drive caret
-/// fade-out without racing the auto-scroll system.
-#[derive(Component)]
-pub struct CursorState {
-    /// Primary cursor position (char index). Mirror of `selections.primary().head_offset()`.
-    pub cursor_pos: usize,
-
-    /// Last cursor position (for detecting cursor movement)
-    pub last_cursor_pos: usize,
-
-    /// Time (in seconds since app start) when cursor was last moved
-    /// Used to reset cursor blink animation after movement
-    pub cursor_moved_time: f64,
-
-    /// Last cursor position for blink reset tracking (separate from last_cursor_pos)
-    /// This is tracked independently to avoid race conditions with auto_scroll_to_cursor
-    pub last_cursor_pos_for_blink: usize,
-}
-
-impl Default for CursorState {
-    fn default() -> Self {
-        Self {
-            cursor_pos: 0,
-            last_cursor_pos: 0,
-            cursor_moved_time: 0.0,
-            last_cursor_pos_for_blink: 0,
-        }
-    }
-}
-
-/// Selection state component — owns the [`SelectionCollection`].
-#[derive(Component, Default)]
-pub struct SelectionState {
-    /// Selection collection for managing multiple selections with edit-awareness
-    pub selections: SelectionCollection,
-}
-
-/// Edit history and anchor state component.
-#[derive(Component)]
-pub struct EditHistoryState {
-    /// Edit history for undo/redo
-    pub history: EditHistory,
-    /// Anchor set for edit-resilient position tracking
-    pub anchors: AnchorSet,
-}
-
-impl Default for EditHistoryState {
-    fn default() -> Self {
-        Self {
-            history: EditHistory::default(),
-            anchors: AnchorSet::new(),
-        }
-    }
-}
 
 /// Syntax highlighting cache state component.
 #[derive(Component)]
@@ -293,11 +213,11 @@ pub struct EditorDisplayState {
 /// goal here is to slim system signatures and the action dispatcher, not to
 /// rewrite ~145 internal call sites.
 pub struct EditorBuf<'a> {
-    pub sel: &'a mut SelectionState,
-    pub hist: &'a mut EditHistoryState,
+    pub sel: &'a mut crate::types::SelectionState,
+    pub hist: &'a mut crate::types::EditHistoryState,
     pub syntax: &'a mut SyntaxCacheState,
     pub display: &'a mut EditorDisplayState,
-    pub cursor: &'a mut CursorState,
+    pub cursor: &'a mut crate::types::CursorState,
     pub tv: &'a mut crate::text_view::TextViewState,
 }
 
@@ -431,4 +351,3 @@ pub struct SaveRequested {
 #[derive(bevy::prelude::Message, Clone, Debug, Reflect, Default)]
 #[reflect(Clone, Debug, Default)]
 pub struct OpenRequested;
-

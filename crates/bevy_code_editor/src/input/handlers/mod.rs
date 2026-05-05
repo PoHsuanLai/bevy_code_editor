@@ -1,27 +1,20 @@
-//! Per-action handler systems. Each system reads one
-//! `super::action_events::*Requested` event and applies it to the focused
-//! editor entity.
+//! Per-action handler systems for IDE-specific actions.
 //!
-//! The handlers are split by concern (cursor / selection / edit / clipboard /
-//! multi-cursor / folding / file / lsp). They all share the same shape:
-//! resolve the focused entity via `Res<InputFocus>`, fetch the editor's
-//! per-entity components, mutate them, done. They never know about
-//! `EditorAction` and never know about key repeat — those are the dispatch
-//! system's concern.
+//! The basic editing handlers (cursor movement, selection, delete / insert,
+//! clipboard, undo / redo) live in [`bevy_text_editor::handlers`] and are
+//! registered by [`bevy_text_editor::TextEditorPlugin`]. The handlers in
+//! this module cover IDE-only concerns: multi-cursor, folding, the
+//! goto-line dialog, and LSP request handlers.
 //!
 //! `LspFollowup` runs after every Update frame to mirror the post-action
-//! behavior the old `execute_action` had: send `did_change` after edits and
-//! hide / refilter the completion popup on cursor moves.
+//! behavior the legacy `execute_action` had: send `did_change` after edits
+//! and hide / refilter the completion popup on cursor moves.
 
-pub mod clipboard;
-pub mod cursor_move;
-pub mod edit;
 pub mod file;
 pub mod folding;
 #[cfg(feature = "lsp")]
 pub mod lsp;
 pub mod multi_cursor;
-pub mod selection;
 
 #[cfg(feature = "lsp")]
 pub mod lsp_followup;

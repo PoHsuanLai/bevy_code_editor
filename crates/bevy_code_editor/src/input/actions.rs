@@ -1,13 +1,13 @@
-//! Buffer-edit primitives shared by handler systems and the on-focus
-//! keyboard observer.
+//! Editor-specific helpers used by the focused-keyboard observer and LSP
+//! handlers.
 //!
-//! Pre-refactor this file owned a 400-line `execute_action_core` match plus
-//! a wrapper that handled LSP completion popup interception. After the
-//! event-dispatch refactor, the action match is gone — its body lives in
-//! per-action handler systems under `super::handlers`. What remains here
-//! are the small helpers each handler reuses (insert_char, delete_selection,
-//! bracket-skip predicates, LSP completion helpers) plus the LSP follow-up
-//! glue called from `super::handlers::lsp_followup`.
+//! Buffer-edit primitives (`insert_char`, `delete_selection`, `delete_*`,
+//! undo / redo) live in [`super::editing`] — that module wraps the
+//! `bevy_text_editor::EditHistoryState` impl and propagates side-channels
+//! into the editor's `SyntaxCacheState` / `EditorDisplayState`.
+//!
+//! What remains here is the handful of editor-only helpers: bracket
+//! auto-close predicates and LSP completion / `did_change` glue.
 
 use crate::text_view::TextViewState;
 #[cfg(feature = "lsp")]
@@ -26,30 +26,13 @@ use bevy_lsp::{LspClient, LspDocument, LspMessage};
 /// `execute_action`: settings, transport client, completion popup state, and
 /// the per-editor `LspDocument` (URI / version). Retained here for the
 /// keyboard observer that still passes them down its `insert_typed_char`
-/// helper. `document` is `Option` because a freshly spawned editor may not
-/// have an `LspDocument` inserted yet.
+/// helper.
 #[cfg(feature = "lsp")]
 pub struct LspBuf<'a> {
     pub settings: &'a LspSettings,
     pub client: &'a LspClient,
     pub completion: &'a mut LspCompletionPopup,
     pub document: Option<&'a mut LspDocument>,
-}
-
-/// Insert a character at cursor position
-pub fn insert_char(
-    sel: &mut SelectionState,
-    hist: &mut EditHistoryState,
-    syntax: &mut SyntaxCacheState,
-    display: &mut EditorDisplayState,
-    cursor: &mut CursorState,
-    tv: &mut TextViewState,
-    c: char,
-) {
-    if sel.selections.primary().has_selection() {
-        delete_selection(sel, hist, syntax, display, cursor, tv);
-    }
-    hist.insert_char(sel, syntax, display, cursor, tv, c);
 }
 
 /// Insert a closing bracket / quote without moving the cursor (auto-close).
@@ -59,12 +42,12 @@ pub fn insert_closing_char(cursor: &CursorState, tv: &mut TextViewState, c: char
     tv.content_version += 1;
 }
 
-/// Get the closing bracket for an opening bracket
+/// Get the closing bracket for an opening bracket.
 pub fn get_closing_bracket(open: char, pairs: &[(char, char)]) -> Option<char> {
     pairs.iter().find(|(o, _)| *o == open).map(|(_, c)| *c)
 }
 
-/// Get the matching quote character (quotes are self-closing)
+/// Get the matching quote character (quotes are self-closing).
 pub fn get_closing_quote(c: char) -> Option<char> {
     match c {
         '"' | '\'' | '`' => Some(c),
@@ -80,58 +63,6 @@ pub fn should_skip_auto_close(cursor: &CursorState, rope: &Rope, closing: char) 
         return false;
     }
     rope.char(cursor_pos) == closing
-}
-
-/// Delete selected text (with undo recording).
-pub fn delete_selection(
-    sel: &mut SelectionState,
-    hist: &mut EditHistoryState,
-    syntax: &mut SyntaxCacheState,
-    display: &mut EditorDisplayState,
-    cursor: &mut CursorState,
-    tv: &mut TextViewState,
-) {
-    delete_selection_with_history(sel, hist, syntax, display, cursor, tv, true);
-}
-
-fn delete_selection_with_history(
-    sel: &mut SelectionState,
-    hist: &mut EditHistoryState,
-    _syntax: &mut SyntaxCacheState,
-    _display: &mut EditorDisplayState,
-    cursor: &mut CursorState,
-    tv: &mut TextViewState,
-    record_history: bool,
-) {
-    let Some((start, end)) = sel.primary_range() else {
-        return;
-    };
-
-    let cursor_before = cursor.cursor_pos;
-
-    let deleted_text: String = tv.rope.slice(start..end).chars().collect();
-
-    let start_byte = tv.rope.char_to_byte(start);
-    let end_byte = tv.rope.char_to_byte(end);
-
-    tv.rope.remove(start_byte..end_byte);
-
-    cursor.cursor_pos = start;
-
-    if record_history && !deleted_text.is_empty() {
-        hist.history.record(EditOperation {
-            removed_text: deleted_text,
-            inserted_text: String::new(),
-            position: start,
-            cursor_before,
-            cursor_after: start,
-            kind: EditKind::Other,
-        });
-    }
-
-    sel.apply_primary_cursor(cursor);
-
-    tv.content_version += 1;
 }
 
 /// Apply selected completion item.
@@ -281,4 +212,3 @@ pub fn send_did_change(rope: &Rope, lsp_client: &LspClient, lsp_document: Option
 
     trace!("[LSP] DidChange sent, version={}", version);
 }
-

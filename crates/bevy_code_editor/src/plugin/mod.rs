@@ -95,10 +95,14 @@ pub struct EditorSetupSet;
 /// dispatch, the editor's per-frame update pipeline, and the syntax /
 /// folding / cursor / scrollbar / bracket sub-plugins.
 ///
+/// Internally adds `bevy_text_editor::TextEditorPlugin` (with the typed-
+/// character observer disabled — the editor has its own bracket-aware
+/// observer) so the editable-text core (cursor / selection / edit history /
+/// undo / clipboard handlers) is wired up automatically.
+///
 /// **Dependencies (host responsibility):** this plugin does **not** add the
 /// engine GPU pipeline or the `TextView` rendering systems. Hosts must add
-/// [`bevy_text_engine::TextEnginePlugins`] and
-/// [`crate::text_view::TextInteractionPlugin`] separately, e.g.
+/// [`bevy_text_engine::TextEnginePlugins`] separately, e.g.
 ///
 /// ```rust,no_run
 /// # use bevy::prelude::*;
@@ -106,7 +110,7 @@ pub struct EditorSetupSet;
 /// # use bevy_code_editor::prelude::*;
 /// App::new()
 ///     .add_plugins(DefaultPlugins)
-///     .add_plugins((TextEnginePlugins, TextInteractionPlugin, CodeEditorPlugin))
+///     .add_plugins((TextEnginePlugins, CodeEditorPlugin))
 ///     .run();
 /// ```
 ///
@@ -118,9 +122,10 @@ pub struct CodeEditorPlugin;
 impl CodeEditorPlugin {
     /// Returns a [`PluginGroup`] that bundles everything for a runnable
     /// editor demo: [`TextEnginePlugins`] (GPU + view systems),
-    /// [`crate::text_view::TextInteractionPlugin`] (mouse/keyboard for
-    /// text views), [`CodeEditorPlugin`] (editor systems), and
-    /// [`EditorUiPlugin`] (line numbers, separator, camera).
+    /// [`CodeEditorPlugin`] (editor systems — internally adds the
+    /// `bevy_text_editor` plugin which brings pointer interaction +
+    /// editable-text core), and [`EditorUiPlugin`] (line numbers,
+    /// separator, camera).
     ///
     /// Use this when you just want to drop an editor into an app without
     /// thinking about plugin ordering. For embedded use (one panel inside
@@ -132,16 +137,16 @@ impl CodeEditorPlugin {
 
 /// `PluginGroup` returned by [`CodeEditorPlugin::standalone`].
 ///
-/// Bundles the engine, interaction, editor, and default UI plugins into a
-/// single group. Mirror of `bevy::DefaultPlugins`: hosts that want
-/// fine-grained control can `.disable::<X>()` individual plugins.
+/// Bundles the engine, editor (which transitively brings the
+/// `bevy_text_editor` interaction + editable-text plugins), and default UI
+/// plugins into a single group. Mirror of `bevy::DefaultPlugins`: hosts
+/// that want fine-grained control can `.disable::<X>()` individual plugins.
 pub struct CodeEditorStandalone;
 
 impl PluginGroup for CodeEditorStandalone {
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
             .add_group(TextEnginePlugins)
-            .add(crate::text_view::TextInteractionPlugin)
             .add(CodeEditorPlugin)
             .add(EditorUiPlugin::default())
     }
@@ -201,6 +206,13 @@ impl Plugin for CodeEditorPlugin {
             app.add_plugins(bevy::input_focus::InputDispatchPlugin);
         }
 
+        // Editable-text core: registers the 33 editing events, basic editing
+        // handlers (cursor / selection / delete / clipboard / undo), and the
+        // pointer-interaction plugin. We pass `without_typing_observer()`
+        // because the editor has its own bracket / LSP-aware typed-character
+        // observer (`crate::input::on_focused_keyboard`).
+        app.add_plugins(bevy_text_editor::TextEditorPlugin::without_typing_observer());
+
         // Add input manager plugin for action-based input
         app.add_plugins(leafwing_input_manager::plugin::InputManagerPlugin::<
             crate::input::EditorAction,
@@ -213,21 +225,22 @@ impl Plugin for CodeEditorPlugin {
         app.add_systems(Startup, spawn_editor_entity);
         app.add_systems(PostStartup, spawn_default_input_manager);
 
-        // Register editor events (for file operations + every per-action event).
-        // SaveRequested / OpenRequested are public host-facing events; the
-        // remaining `*Requested` events are an internal fan-out layer that
-        // plugins can hook to intercept user actions.
+        // Register editor-side events. The 33 editing events are registered
+        // by `TextEditorPlugin` already; the IDE-only events (replace,
+        // goto-line, multi-cursor, folding, LSP request, save / open) are
+        // registered here.
         app.add_message::<SaveRequested>();
         app.add_message::<OpenRequested>();
-        register_action_events(app);
+        register_ide_action_events(app);
 
         #[cfg(feature = "lsp")]
         app.init_resource::<crate::input::handlers::lsp_followup::PendingActionFollowup>();
 
-        // Per-event keyboard input goes through a FocusedInput observer.
-        // Shortcut input (ActionState) is driven by `dispatch_action_events`
-        // which fans out into typed events; per-action handler systems
-        // consume those events and apply edits.
+        // Per-event keyboard input goes through a FocusedInput observer
+        // (bracket auto-close + LSP completion triggers). Shortcut input
+        // (ActionState) is driven by `dispatch_action_events` which fans out
+        // into typed events; per-action handler systems consume those events
+        // and apply edits.
         app.add_observer(crate::input::on_focused_keyboard);
         app.add_systems(
             Update,
@@ -246,9 +259,20 @@ impl Plugin for CodeEditorPlugin {
                 .after(ActionDispatchSet),
         );
 
-        // Per-action handlers — read each `*Requested` event and apply.
+        // Per-action IDE handlers — read each `*Requested` event and apply.
         // All handlers run in `InputSet` after the dispatcher.
         register_handler_systems(app);
+
+        // Drain `EditHistoryState`'s side-channel fields (set by
+        // `bevy_text_editor` edit handlers) into the editor's
+        // `SyntaxCacheState` and `EditorDisplayState` so tree-sitter
+        // incremental reparse and line-entity invalidation see the changes.
+        app.add_systems(
+            Update,
+            crate::input::drain_edit_side_effects
+                .in_set(InputSet)
+                .after(ActionDispatchSet),
+        );
 
         // Add state update systems in ApplyStateSet (convert targets to actual state)
         app.add_systems(
@@ -293,11 +317,9 @@ impl Plugin for CodeEditorPlugin {
 }
 
 
-/// Register every `*Requested` event (one per `EditorAction` variant minus
-/// Save/Open which are registered explicitly above as host-facing events).
-/// Pulled out of `build` to keep that function focused on the editor's
-/// system-set wiring instead of a wall of `add_message` calls.
-fn register_action_events(app: &mut App) {
+/// Register the IDE-only `*Requested` events. The 33 editing events are
+/// registered by `bevy_text_editor::TextEditorPlugin`.
+fn register_ide_action_events(app: &mut App) {
     use crate::input::action_events::*;
 
     macro_rules! register {
@@ -307,46 +329,6 @@ fn register_action_events(app: &mut App) {
     }
 
     register!(
-        // Deletion
-        DeleteBackwardRequested,
-        DeleteForwardRequested,
-        DeleteWordBackwardRequested,
-        DeleteWordForwardRequested,
-        DeleteLineRequested,
-        // Insertion
-        InsertNewlineRequested,
-        InsertTabRequested,
-        // Cursor movement
-        MoveCursorLeftRequested,
-        MoveCursorRightRequested,
-        MoveCursorUpRequested,
-        MoveCursorDownRequested,
-        MoveCursorWordLeftRequested,
-        MoveCursorWordRightRequested,
-        MoveCursorLineStartRequested,
-        MoveCursorLineEndRequested,
-        MoveCursorDocumentStartRequested,
-        MoveCursorDocumentEndRequested,
-        MoveCursorPageUpRequested,
-        MoveCursorPageDownRequested,
-        // Selection
-        SelectLeftRequested,
-        SelectRightRequested,
-        SelectUpRequested,
-        SelectDownRequested,
-        SelectWordLeftRequested,
-        SelectWordRightRequested,
-        SelectLineStartRequested,
-        SelectLineEndRequested,
-        SelectAllRequested,
-        ClearSelectionRequested,
-        // Clipboard
-        CopyRequested,
-        CutRequested,
-        PasteRequested,
-        // Undo / redo
-        UndoRequested,
-        RedoRequested,
         // Search / navigation
         ReplaceRequested,
         GotoLineRequested,
@@ -368,77 +350,12 @@ fn register_action_events(app: &mut App) {
     );
 }
 
-/// Register every per-action handler system. All run in `InputSet` after
-/// `dispatch_action_events`. Split into two `add_systems` calls because
-/// Bevy's tuple system-set has a max arity below the total number of
-/// handlers (~46).
+/// Register IDE-only per-action handler systems. The basic editing handlers
+/// (cursor / selection / delete / clipboard / undo) are registered by
+/// `bevy_text_editor::TextEditorPlugin`. Handlers here cover multi-cursor,
+/// folding, goto-line, LSP requests, and the LSP follow-up.
 fn register_handler_systems(app: &mut App) {
     use crate::input::handlers::*;
-
-    app.add_systems(
-        Update,
-        (
-            // Cursor movement (12)
-            cursor_move::handle_move_cursor_left,
-            cursor_move::handle_move_cursor_right,
-            cursor_move::handle_move_cursor_up,
-            cursor_move::handle_move_cursor_down,
-            cursor_move::handle_move_cursor_word_left,
-            cursor_move::handle_move_cursor_word_right,
-            cursor_move::handle_move_cursor_line_start,
-            cursor_move::handle_move_cursor_line_end,
-            cursor_move::handle_move_cursor_document_start,
-            cursor_move::handle_move_cursor_document_end,
-            cursor_move::handle_move_cursor_page_up,
-            cursor_move::handle_move_cursor_page_down,
-            // Selection (10) — Bevy's `(...).chain()` arity caps tuples at
-            // 16, so this group fits with cursor movement above kept
-            // separate.
-        )
-            .in_set(InputSet)
-            .after(ActionDispatchSet),
-    );
-
-    app.add_systems(
-        Update,
-        (
-            selection::handle_select_left,
-            selection::handle_select_right,
-            selection::handle_select_up,
-            selection::handle_select_down,
-            selection::handle_select_word_left,
-            selection::handle_select_word_right,
-            selection::handle_select_line_start,
-            selection::handle_select_line_end,
-            selection::handle_select_all,
-            selection::handle_clear_selection,
-        )
-            .in_set(InputSet)
-            .after(ActionDispatchSet),
-    );
-
-    app.add_systems(
-        Update,
-        (
-            // Edit (9)
-            edit::handle_insert_newline,
-            edit::handle_insert_tab,
-            edit::handle_delete_backward,
-            edit::handle_delete_forward,
-            edit::handle_delete_word_backward,
-            edit::handle_delete_word_forward,
-            edit::handle_delete_line,
-            edit::handle_replace,
-            edit::handle_undo,
-            edit::handle_redo,
-            // Clipboard (3)
-            clipboard::handle_copy,
-            clipboard::handle_cut,
-            clipboard::handle_paste,
-        )
-            .in_set(InputSet)
-            .after(ActionDispatchSet),
-    );
 
     app.add_systems(
         Update,
@@ -481,12 +398,7 @@ fn register_handler_systems(app: &mut App) {
         crate::input::handlers::lsp_followup::lsp_followup
             .in_set(InputSet)
             .after(lsp::handle_request_completion)
-            .after(edit::handle_delete_backward)
-            .after(edit::handle_delete_forward)
-            .after(edit::handle_undo)
-            .after(edit::handle_redo)
-            .after(clipboard::handle_cut)
-            .after(clipboard::handle_paste),
+            .after(crate::input::drain_edit_side_effects),
     );
 }
 

@@ -1,396 +1,182 @@
-//! Text editing operations on EditHistoryState.
+//! Editor-side wrappers + side-effect drain for [`bevy_text_editor`] edits.
 //!
-//! Insert, delete, undo/redo, set_text, and anchor management.
+//! The editable-text core (insert / delete / undo / redo / set_text) lives
+//! in `bevy_text_editor`. After every edit op, `EditHistoryState` exposes
+//! two side-channels:
+//! - `pending_byte_edit` — `(start_byte, old_end_byte, new_end_byte)` for
+//!   incremental tree-sitter reparse.
+//! - `invalidate_lines_from` — the line index from which line-keyed entities
+//!   need re-spawning.
+//!
+//! The [`drain_edit_side_effects`] system runs every Update after the
+//! editing handlers, copying these into the editor's `SyntaxCacheState` and
+//! `EditorDisplayState`. The wrappers below also drain the side-channels
+//! eagerly for handlers / observers that mutate edit state imperatively.
 
 use crate::text_view::TextViewState;
-use crate::types::*;
-use ropey::Rope;
+use crate::types::{
+    CursorState, EditHistoryState, EditorDisplayState, SelectionState, SyntaxCacheState,
+};
+use bevy::prelude::*;
 
-impl EditHistoryState {
-    /// Insert character at cursor position (with undo recording)
-    pub fn insert_char(
-        &mut self,
-        sel: &mut SelectionState,
-        syntax: &mut SyntaxCacheState,
-        display: &mut EditorDisplayState,
-        cursor: &mut CursorState,
-        tv: &mut TextViewState,
-        c: char,
-    ) {
-        self.insert_char_with_history(sel, syntax, display, cursor, tv, c, true);
-    }
-
-    /// Insert character at cursor position with optional history recording.
-    ///
-    /// The 8-arg signature is the cost of this method living on
-    /// `EditHistoryState` while needing to mutate selection, syntax cache,
-    /// display, cursor, and rope alongside history. Bundling these into a
-    /// single `EditorBuf` is desirable but would require lifting all 16
-    /// `EditHistoryState` methods to free functions — a separate refactor.
-    #[allow(clippy::too_many_arguments)]
-    pub fn insert_char_with_history(
-        &mut self,
-        sel: &mut SelectionState,
-        syntax: &mut SyntaxCacheState,
-        display: &mut EditorDisplayState,
-        cursor: &mut CursorState,
-        tv: &mut TextViewState,
-        c: char,
-        record_history: bool,
-    ) {
-        let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
-        let cursor_before = cursor_pos;
-
-        #[cfg(feature = "tree-sitter")]
-        let start_byte = tv.rope.char_to_byte(cursor_pos);
-        #[cfg(feature = "tree-sitter")]
-        let char_byte_len = c.len_utf8();
-
-        self.anchors.record_edit(TextEdit::insert(cursor_pos, 1));
-
-        tv.rope.insert_char(cursor_pos, c);
-        cursor.cursor_pos += 1;
-        sel.apply_primary_cursor(cursor);
-        tv.content_version += 1;
-
+/// Drain `EditHistoryState`'s side-channel fields onto the editor's caches.
+/// Idempotent — taking the field clears it.
+pub fn drain_one(
+    hist: &mut EditHistoryState,
+    syntax: &mut SyntaxCacheState,
+    display: &mut EditorDisplayState,
+) {
+    if let Some(byte_edit) = hist.pending_byte_edit.take() {
         #[cfg(feature = "tree-sitter")]
         {
-            syntax.pending_tree_sitter_edit =
-                Some((start_byte, start_byte, start_byte + char_byte_len));
+            syntax.pending_tree_sitter_edit = Some(byte_edit);
         }
-
-        if record_history {
-            let kind = if c == '\n' {
-                EditKind::Newline
-            } else {
-                EditKind::Insert
-            };
-            self.history.record(EditOperation {
-                removed_text: String::new(),
-                inserted_text: c.to_string(),
-                position: cursor_before,
-                cursor_before,
-                cursor_after: cursor.cursor_pos,
-                kind,
-            });
-        }
-
-
-        if c == '\n' {
-            let line_idx = tv.rope.char_to_line(cursor_pos);
-            display.invalidate_lines_from = Some(line_idx);
-        }
-    }
-
-    /// Delete character before cursor (with undo recording)
-    pub fn delete_backward(
-        &mut self,
-        sel: &mut SelectionState,
-        syntax: &mut SyntaxCacheState,
-        display: &mut EditorDisplayState,
-        cursor: &mut CursorState,
-        tv: &mut TextViewState,
-    ) {
-        self.delete_backward_with_history(sel, syntax, display, cursor, tv, true);
-    }
-
-    /// Delete character before cursor with optional history recording
-    pub fn delete_backward_with_history(
-        &mut self,
-        sel: &mut SelectionState,
-        syntax: &mut SyntaxCacheState,
-        display: &mut EditorDisplayState,
-        cursor: &mut CursorState,
-        tv: &mut TextViewState,
-        record_history: bool,
-    ) {
-        if cursor.cursor_pos > 0 && cursor.cursor_pos <= tv.rope.len_chars() {
-            let cursor_before = cursor.cursor_pos;
-            let line_idx = tv.rope.char_to_line(cursor.cursor_pos - 1);
-            let deleted_char = tv.rope.char(cursor.cursor_pos - 1);
-            let char_idx = tv.rope.char_to_byte(cursor.cursor_pos - 1);
-            let byte_idx_end = tv.rope.char_to_byte(cursor.cursor_pos);
-
-            self.anchors
-                .record_edit(TextEdit::delete(cursor.cursor_pos - 1, cursor.cursor_pos));
-
-            tv.rope.remove(char_idx..byte_idx_end);
-            cursor.cursor_pos -= 1;
-            sel.apply_primary_cursor(cursor);
-            tv.content_version += 1;
-
-            #[cfg(feature = "tree-sitter")]
-            {
-                syntax.pending_tree_sitter_edit = Some((char_idx, byte_idx_end, char_idx));
-            }
-
-            if record_history {
-                self.history.record(EditOperation {
-                    removed_text: deleted_char.to_string(),
-                    inserted_text: String::new(),
-                    position: cursor.cursor_pos,
-                    cursor_before,
-                    cursor_after: cursor.cursor_pos,
-                    kind: EditKind::DeleteBackward,
-                });
-            }
-
-
-            if deleted_char == '\n' {
-                display.invalidate_lines_from = Some(line_idx);
-            }
-
-        }
-    }
-
-    /// Delete character after cursor (with undo recording)
-    pub fn delete_forward(
-        &mut self,
-        sel: &mut SelectionState,
-        syntax: &mut SyntaxCacheState,
-        display: &mut EditorDisplayState,
-        cursor: &mut CursorState,
-        tv: &mut TextViewState,
-    ) {
-        self.delete_forward_with_history(sel, syntax, display, cursor, tv, true);
-    }
-
-    /// Delete character after cursor with optional history recording
-    pub fn delete_forward_with_history(
-        &mut self,
-        sel: &mut SelectionState,
-        syntax: &mut SyntaxCacheState,
-        display: &mut EditorDisplayState,
-        cursor: &mut CursorState,
-        tv: &mut TextViewState,
-        record_history: bool,
-    ) {
-        if cursor.cursor_pos < tv.rope.len_chars() {
-            let cursor_before = cursor.cursor_pos;
-            let line_idx = tv.rope.char_to_line(cursor.cursor_pos);
-            let deleted_char = tv.rope.char(cursor.cursor_pos);
-            let char_idx = tv.rope.char_to_byte(cursor.cursor_pos);
-            let byte_idx_end = tv.rope.char_to_byte(cursor.cursor_pos + 1);
-
-            self.anchors
-                .record_edit(TextEdit::delete(cursor.cursor_pos, cursor.cursor_pos + 1));
-
-            tv.rope.remove(char_idx..byte_idx_end);
-            sel.apply_primary_cursor(cursor);
-            tv.content_version += 1;
-
-            #[cfg(feature = "tree-sitter")]
-            {
-                syntax.pending_tree_sitter_edit = Some((char_idx, byte_idx_end, char_idx));
-            }
-
-            if record_history {
-                self.history.record(EditOperation {
-                    removed_text: deleted_char.to_string(),
-                    inserted_text: String::new(),
-                    position: cursor.cursor_pos,
-                    cursor_before,
-                    cursor_after: cursor.cursor_pos,
-                    kind: EditKind::DeleteForward,
-                });
-            }
-
-
-            if deleted_char == '\n' {
-                display.invalidate_lines_from = Some(line_idx);
-            }
-
-        }
-    }
-
-    /// Insert text at a specific position (used for undo/redo)
-    pub fn insert_text_at(
-        &mut self,
-        syntax: &mut SyntaxCacheState,
-        display: &mut EditorDisplayState,
-        tv: &mut TextViewState,
-        pos: usize,
-        text: &str,
-    ) {
-        let pos = pos.min(tv.rope.len_chars());
-        let text_char_len = text.chars().count();
-
-        #[cfg(feature = "tree-sitter")]
-        let start_byte = tv.rope.char_to_byte(pos);
-        #[cfg(feature = "tree-sitter")]
-        let text_byte_len = text.len();
-
-        self.anchors
-            .record_edit(TextEdit::insert(pos, text_char_len));
-
-        tv.rope.insert(pos, text);
-        tv.content_version += 1;
-
-        if text.contains('\n') {
-            let line_idx = tv.rope.char_to_line(pos);
-            display.invalidate_lines_from = Some(line_idx);
-        }
-
-        #[cfg(feature = "tree-sitter")]
+        #[cfg(not(feature = "tree-sitter"))]
         {
-            syntax.pending_tree_sitter_edit =
-                Some((start_byte, start_byte, start_byte + text_byte_len));
+            let _ = byte_edit;
+            let _ = syntax;
         }
     }
+    if let Some(line_idx) = hist.invalidate_lines_from.take() {
+        display.invalidate_lines_from = Some(line_idx);
+    }
+}
 
-    /// Remove text range (used for undo/redo)
-    pub fn remove_range(
-        &mut self,
-        syntax: &mut SyntaxCacheState,
-        display: &mut EditorDisplayState,
-        tv: &mut TextViewState,
-        start: usize,
-        end: usize,
-    ) {
-        let start = start.min(tv.rope.len_chars());
-        let end = end.min(tv.rope.len_chars());
-        if start < end {
-            let start_byte = tv.rope.char_to_byte(start);
-            let end_byte = tv.rope.char_to_byte(end);
-
-            let removed_text: String = tv.rope.slice(start..end).chars().collect();
-            let has_newlines = removed_text.contains('\n');
-
-            self.anchors.record_edit(TextEdit::delete(start, end));
-
-            tv.rope.remove(start_byte..end_byte);
-            tv.content_version += 1;
-
-            if has_newlines {
-                let line_idx = tv.rope.char_to_line(start);
-                display.invalidate_lines_from = Some(line_idx);
-            }
-
-
-            #[cfg(feature = "tree-sitter")]
-            {
-                syntax.pending_tree_sitter_edit = Some((start_byte, end_byte, start_byte));
-            }
+/// Drain side-effects across every editor entity each Update.
+pub fn drain_edit_side_effects(
+    mut q: Query<
+        (&mut EditHistoryState, &mut SyntaxCacheState, &mut EditorDisplayState),
+        With<crate::types::CodeEditor>,
+    >,
+) {
+    for (mut hist, mut syntax, mut display) in q.iter_mut() {
+        if hist.pending_byte_edit.is_some() || hist.invalidate_lines_from.is_some() {
+            drain_one(&mut hist, &mut syntax, &mut display);
         }
     }
+}
 
-    /// Perform undo operation
-    pub fn undo(
-        &mut self,
-        sel: &mut SelectionState,
-        syntax: &mut SyntaxCacheState,
-        display: &mut EditorDisplayState,
-        cursor: &mut CursorState,
-        tv: &mut TextViewState,
-    ) -> bool {
-        if let Some(transaction) = self.history.pop_undo() {
-            for op in transaction.operations.iter().rev() {
-                if !op.inserted_text.is_empty() {
-                    let end_pos = op.position + op.inserted_text.chars().count();
-                    self.remove_range(syntax, display, tv, op.position, end_pos);
-                }
-                if !op.removed_text.is_empty() {
-                    self.insert_text_at(syntax, display, tv, op.position, &op.removed_text);
-                }
-            }
-
-            if let Some(first_op) = transaction.operations.first() {
-                cursor.cursor_pos = first_op.cursor_before;
-                sel.apply_primary_cursor(cursor);
-            }
-
-            self.history.push_redo(transaction);
-            true
-        } else {
-            false
-        }
+/// Insert a character with bevy_code_editor side-effect propagation.
+#[allow(clippy::too_many_arguments)]
+pub fn insert_char(
+    sel: &mut SelectionState,
+    hist: &mut EditHistoryState,
+    syntax: &mut SyntaxCacheState,
+    display: &mut EditorDisplayState,
+    cursor: &mut CursorState,
+    tv: &mut TextViewState,
+    c: char,
+) {
+    if sel.selections.primary().has_selection() {
+        delete_selection(sel, hist, syntax, display, cursor, tv);
     }
+    hist.insert_char(sel, cursor, tv, c);
+    drain_one(hist, syntax, display);
+}
 
-    /// Perform redo operation
-    pub fn redo(
-        &mut self,
-        sel: &mut SelectionState,
-        syntax: &mut SyntaxCacheState,
-        display: &mut EditorDisplayState,
-        cursor: &mut CursorState,
-        tv: &mut TextViewState,
-    ) -> bool {
-        if let Some(transaction) = self.history.pop_redo() {
-            for op in transaction.operations.iter() {
-                if !op.removed_text.is_empty() {
-                    let end_pos = op.position + op.removed_text.chars().count();
-                    self.remove_range(syntax, display, tv, op.position, end_pos);
-                }
-                if !op.inserted_text.is_empty() {
-                    self.insert_text_at(syntax, display, tv, op.position, &op.inserted_text);
-                }
-            }
+/// Delete the active selection range (with side-effect propagation).
+pub fn delete_selection(
+    sel: &mut SelectionState,
+    hist: &mut EditHistoryState,
+    syntax: &mut SyntaxCacheState,
+    display: &mut EditorDisplayState,
+    cursor: &mut CursorState,
+    tv: &mut TextViewState,
+) {
+    bevy_text_editor::handlers::edit::delete_selection(sel, hist, cursor, tv);
+    drain_one(hist, syntax, display);
+}
 
-            if let Some(last_op) = transaction.operations.last() {
-                cursor.cursor_pos = last_op.cursor_after;
-                sel.apply_primary_cursor(cursor);
-            }
+#[allow(clippy::too_many_arguments)]
+pub fn delete_backward(
+    sel: &mut SelectionState,
+    hist: &mut EditHistoryState,
+    syntax: &mut SyntaxCacheState,
+    display: &mut EditorDisplayState,
+    cursor: &mut CursorState,
+    tv: &mut TextViewState,
+) {
+    hist.delete_backward(sel, cursor, tv);
+    drain_one(hist, syntax, display);
+}
 
-            self.history.push_undo(transaction);
-            true
-        } else {
-            false
-        }
-    }
+#[allow(clippy::too_many_arguments)]
+pub fn delete_forward(
+    sel: &mut SelectionState,
+    hist: &mut EditHistoryState,
+    syntax: &mut SyntaxCacheState,
+    display: &mut EditorDisplayState,
+    cursor: &mut CursorState,
+    tv: &mut TextViewState,
+) {
+    hist.delete_forward(sel, cursor, tv);
+    drain_one(hist, syntax, display);
+}
 
-    /// Set text content
-    pub fn set_text(
-        &mut self,
-        sel: &mut SelectionState,
-        syntax: &mut SyntaxCacheState,
-        cursor: &mut CursorState,
-        tv: &mut TextViewState,
-        text: &str,
-    ) {
-        #[cfg(feature = "tree-sitter")]
-        let old_byte_len = tv.rope.len_bytes();
-        #[cfg(feature = "tree-sitter")]
-        let new_byte_len = text.len();
+#[allow(clippy::too_many_arguments)]
+pub fn undo(
+    sel: &mut SelectionState,
+    hist: &mut EditHistoryState,
+    syntax: &mut SyntaxCacheState,
+    display: &mut EditorDisplayState,
+    cursor: &mut CursorState,
+    tv: &mut TextViewState,
+) -> bool {
+    let r = hist.undo(sel, cursor, tv);
+    drain_one(hist, syntax, display);
+    r
+}
 
-        tv.rope = Rope::from_str(text);
-        cursor.cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
-        tv.content_version += 1;
-        self.anchors.clear();
-        sel.selections = SelectionCollection::with_cursor(cursor.cursor_pos);
-        tv.max_content_width = 0.0;
-        tv.max_width_line = None;
+#[allow(clippy::too_many_arguments)]
+pub fn redo(
+    sel: &mut SelectionState,
+    hist: &mut EditHistoryState,
+    syntax: &mut SyntaxCacheState,
+    display: &mut EditorDisplayState,
+    cursor: &mut CursorState,
+    tv: &mut TextViewState,
+) -> bool {
+    let r = hist.redo(sel, cursor, tv);
+    drain_one(hist, syntax, display);
+    r
+}
 
-        #[cfg(feature = "tree-sitter")]
-        {
-            syntax.pending_tree_sitter_edit = Some((0, old_byte_len, new_byte_len));
-        }
-    }
+#[allow(clippy::too_many_arguments)]
+pub fn delete_word_backward(
+    sel: &mut SelectionState,
+    hist: &mut EditHistoryState,
+    syntax: &mut SyntaxCacheState,
+    display: &mut EditorDisplayState,
+    cursor: &mut CursorState,
+    tv: &mut TextViewState,
+) {
+    bevy_text_editor::handlers::edit::delete_word_backward(sel, hist, cursor, tv);
+    drain_one(hist, syntax, display);
+}
 
-    // ========== Anchor methods ==========
+#[allow(clippy::too_many_arguments)]
+pub fn delete_word_forward(
+    sel: &mut SelectionState,
+    hist: &mut EditHistoryState,
+    syntax: &mut SyntaxCacheState,
+    display: &mut EditorDisplayState,
+    cursor: &mut CursorState,
+    tv: &mut TextViewState,
+) {
+    bevy_text_editor::handlers::edit::delete_word_forward(sel, hist, cursor, tv);
+    drain_one(hist, syntax, display);
+}
 
-    /// Create an anchor at the given position
-    pub fn create_anchor(&mut self, rope: &Rope, offset: usize, bias: AnchorBias) -> Anchor {
-        let offset = offset.min(rope.len_chars());
-        self.anchors.anchor_at(offset, bias)
-    }
-
-    /// Create an anchor with left bias
-    pub fn anchor_at(&mut self, rope: &Rope, offset: usize) -> Anchor {
-        self.create_anchor(rope, offset, AnchorBias::Left)
-    }
-
-    /// Resolve an anchor's current position
-    pub fn resolve_anchor(&self, rope: &Rope, anchor: &Anchor) -> usize {
-        self.anchors.resolve(anchor).min(rope.len_chars())
-    }
-
-    /// Apply pending anchor edits
-    pub fn apply_anchor_edits(&mut self) {
-        self.anchors.apply_pending_edits();
-    }
-
-    /// Remove an anchor by its ID
-    pub fn remove_anchor(&mut self, id: u64) -> Option<Anchor> {
-        self.anchors.remove(id)
-    }
+#[allow(clippy::too_many_arguments)]
+pub fn set_text(
+    sel: &mut SelectionState,
+    hist: &mut EditHistoryState,
+    syntax: &mut SyntaxCacheState,
+    display: &mut EditorDisplayState,
+    cursor: &mut CursorState,
+    tv: &mut TextViewState,
+    text: &str,
+) {
+    hist.set_text(sel, cursor, tv, text);
+    drain_one(hist, syntax, display);
 }

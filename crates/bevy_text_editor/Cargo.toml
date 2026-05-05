@@ -1,12 +1,12 @@
 [package]
-name = "bevy_text_interaction"
+name = "bevy_text_editor"
 version = "0.1.0"
 edition = "2021"
 authors = ["PoHsuanLai"]
 license = "MIT OR Apache-2.0"
-description = "Mouse + keyboard interaction (scroll, drag-select, copy) for bevy_text_engine TextView entities."
+description = "Editable text widget for Bevy: pointer interaction, selection, cursor, edit history, undo/redo, clipboard — built on bevy_text_engine."
 repository = "https://github.com/PoHsuanLai/bevy_code_editor"
-keywords = ["bevy", "text", "interaction", "selection", "scroll"]
+keywords = ["bevy", "text", "editor", "input", "selection"]
 categories = ["game-development"]
 
 [dependencies]
@@ -31,3 +31,7 @@ bevy = { version = "0.17", default-features = false, features = [
 
 ropey = "1.6"
 arboard = "3.4"
+
+[dev-dependencies]
+bevy = { version = "0.17", features = ["bevy_window", "bevy_winit"] }
+

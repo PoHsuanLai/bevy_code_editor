@@ -8,7 +8,7 @@
 //!
 //! Interaction (`TextViewSelectionState`, `TextViewDragState`,
 //! `ScrollConfig`, `TextInteractionPlugin`, `screen_to_char_pos`,
-//! `copy_selection`) lives in [`bevy_text_interaction`] and is re-exported
+//! `copy_selection`) lives in [`bevy_text_editor`] and is re-exported
 //! here so the same `use bevy_code_editor::text_view::…;` paths continue
 //! to resolve after the Phase 6 split.
 
@@ -21,7 +21,7 @@ pub use bevy_text_engine::view::{
 
 pub use bevy_text_engine::view::snapshot::trivial_layout;
 
-pub use bevy_text_interaction::{
+pub use bevy_text_editor::{
     copy_selection, screen_to_char_pos, ScrollConfig, TextInteractionPlugin, TextViewDragState,
     TextViewSelectionState,
 };

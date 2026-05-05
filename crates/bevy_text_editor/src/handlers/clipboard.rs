@@ -1,25 +1,17 @@
 //! Clipboard handlers — Copy / Cut / Paste.
-//!
-//! These read selection state from the focused editor and round-trip the
-//! buffer through the system clipboard via `arboard`. Cut and Paste both
-//! mutate the rope and record a single edit operation for undo.
 
-use crate::input::action_events::*;
-use crate::types::*;
+use crate::editing_events::*;
+use crate::history::{EditKind, EditOperation};
+use crate::state::{CursorState, EditHistoryState, SelectionState, TextEditor};
 use arboard::Clipboard;
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
+use bevy_text_engine::TextViewState;
 
 pub fn handle_copy(
     mut events: MessageReader<CopyRequested>,
     input_focus: Res<InputFocus>,
-    q: Query<
-        (
-            &SelectionState,
-            &crate::text_view::TextViewState,
-        ),
-        With<CodeEditor>,
-    >,
+    q: Query<(&SelectionState, &TextViewState), With<TextEditor>>,
 ) {
     if events.read().next().is_none() {
         return;
@@ -48,9 +40,9 @@ pub fn handle_cut(
             &mut SelectionState,
             &mut EditHistoryState,
             &mut CursorState,
-            &mut crate::text_view::TextViewState,
+            &mut TextViewState,
         ),
-        With<CodeEditor>,
+        With<TextEditor>,
     >,
 ) {
     if events.read().next().is_none() {
@@ -87,6 +79,7 @@ pub fn handle_cut(
         cursor_after: start,
         kind: EditKind::Other,
     });
+    hist.pending_byte_edit = Some((start_byte, end_byte, start_byte));
 
     sel.apply_primary_cursor(&cursor);
     tv.content_version += 1;
@@ -100,9 +93,9 @@ pub fn handle_paste(
             &mut SelectionState,
             &mut EditHistoryState,
             &mut CursorState,
-            &mut crate::text_view::TextViewState,
+            &mut TextViewState,
         ),
-        With<CodeEditor>,
+        With<TextEditor>,
     >,
 ) {
     if events.read().next().is_none() {
@@ -124,6 +117,7 @@ pub fn handle_paste(
     let cursor_before = cursor.cursor_pos;
     let mut deleted_text = String::new();
     let paste_position;
+    let removed_bytes;
 
     if let Some((start, end)) = sel.primary_range() {
         let start = start.min(tv.rope.len_chars());
@@ -131,13 +125,17 @@ pub fn handle_paste(
         deleted_text = tv.rope.slice(start..end).to_string();
         let start_byte = tv.rope.char_to_byte(start);
         let end_byte = tv.rope.char_to_byte(end);
+        removed_bytes = end_byte - start_byte;
         tv.rope.remove(start_byte..end_byte);
         cursor.cursor_pos = start;
         paste_position = start;
     } else {
         paste_position = cursor.cursor_pos.min(tv.rope.len_chars());
+        removed_bytes = 0;
     }
 
+    let paste_byte = tv.rope.char_to_byte(paste_position);
+    let had_newlines = text.contains('\n') || deleted_text.contains('\n');
     tv.rope.insert(paste_position, &text);
     cursor.cursor_pos = paste_position + text.chars().count();
     sel.apply_primary_cursor(&cursor);
@@ -151,4 +149,11 @@ pub fn handle_paste(
         cursor_after: cursor.cursor_pos,
         kind: EditKind::Paste,
     });
+    hist.pending_byte_edit =
+        Some((paste_byte, paste_byte + removed_bytes, paste_byte + text.len()));
+
+    if had_newlines {
+        let line_idx = tv.rope.char_to_line(paste_position);
+        hist.invalidate_lines_from = Some(line_idx);
+    }
 }
