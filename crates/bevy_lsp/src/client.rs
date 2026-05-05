@@ -3,6 +3,7 @@
 
 use std::ops::ControlFlow;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_lsp::concurrency::ConcurrencyLayer;
@@ -43,6 +44,9 @@ pub struct LspClient {
     /// Set by consumers on [`LspResponse::Initialized`].
     pub initialized: bool,
     mainloop_abort: Option<Arc<tokio::task::AbortHandle>>,
+    runtime_handle: Option<tokio::runtime::Handle>,
+    init_done: Arc<AtomicBool>,
+    pre_init_queue: Arc<Mutex<Vec<LspMessage>>>,
 }
 
 impl Default for LspClient {
@@ -62,6 +66,9 @@ impl LspClient {
             response_rx: Mutex::new(response_rx),
             initialized: false,
             mainloop_abort: None,
+            runtime_handle: None,
+            init_done: Arc::new(AtomicBool::new(false)),
+            pre_init_queue: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -78,13 +85,21 @@ impl LspClient {
         #[cfg(debug_assertions)]
         debug!("[LSP] Starting server: {} {:?}", command, args);
 
-        let mut child = tokio::process::Command::new(command)
-            .args(args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()?;
+        // tokio::process::Command::spawn needs an active reactor on the
+        // current thread; Bevy systems run outside any. Enter the runtime
+        // for the spawn, then drop the guard.
+        let handle = runtime.runtime().handle().clone();
+        let mut child = {
+            let _guard = handle.enter();
+            tokio::process::Command::new(command)
+                .args(args)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .kill_on_drop(true)
+                .spawn()?
+        };
+        self.runtime_handle = Some(handle);
 
         let stdin = child.stdin.take().expect("Failed to open stdin");
         let stdout = child.stdout.take().expect("Failed to open stdout");
@@ -149,7 +164,64 @@ impl LspClient {
             debug!("[LSP] send() called before start(); dropping message");
             return;
         };
-        dispatch(server, &self.response_tx, message);
+        let Some(handle) = self.runtime_handle.as_ref() else {
+            #[cfg(debug_assertions)]
+            debug!("[LSP] send() called before start(); no runtime handle");
+            return;
+        };
+
+        match message {
+            LspMessage::Initialize { root_uri, capabilities } => {
+                self.start_initialize(server.clone(), handle.clone(), root_uri, capabilities);
+            }
+            LspMessage::Initialized => {}
+            other if !self.init_done.load(Ordering::Acquire) => {
+                self.pre_init_queue.lock().unwrap().push(other);
+            }
+            other => dispatch(server, &self.response_tx, handle, other),
+        }
+    }
+
+    fn start_initialize(
+        &self,
+        server: ServerSocket,
+        handle: tokio::runtime::Handle,
+        root_uri: Url,
+        capabilities: ClientCapabilities,
+    ) {
+        let tx = self.response_tx.clone();
+        let init_done = self.init_done.clone();
+        let queue = self.pre_init_queue.clone();
+        handle.spawn(async move {
+            #[allow(deprecated)]
+            let params = InitializeParams {
+                process_id: Some(std::process::id()),
+                root_uri: Some(root_uri),
+                capabilities,
+                client_info: Some(ClientInfo {
+                    name: "bevy_code_editor".into(),
+                    version: Some(env!("CARGO_PKG_VERSION").into()),
+                }),
+                ..InitializeParams::default()
+            };
+            match server.request::<InitializeRequest>(params).await {
+                Ok(result) => {
+                    if let Err(err) =
+                        server.notify::<InitializedNotif>(InitializedParams {})
+                    {
+                        warn!("[LSP] initialized notify failed: {err}");
+                    }
+                    init_done.store(true, Ordering::Release);
+                    let drained: Vec<LspMessage> = std::mem::take(&mut *queue.lock().unwrap());
+                    let h = tokio::runtime::Handle::current();
+                    for msg in drained {
+                        dispatch(&server, &tx, &h, msg);
+                    }
+                    emit(&tx, LspResponse::Initialized { capabilities: result.capabilities });
+                }
+                Err(err) => warn!("[LSP] {} failed: {err}", InitializeRequest::METHOD),
+            }
+        });
     }
 
     /// Like [`Self::send`] but skips the message if `caps` doesn't advertise
@@ -261,10 +333,17 @@ fn text_pos(uri: Url, position: Position) -> TextDocumentPositionParams {
     }
 }
 
-fn dispatch(server: &ServerSocket, tx: &Tx, message: LspMessage) {
+fn dispatch(
+    server: &ServerSocket,
+    tx: &Tx,
+    handle: &tokio::runtime::Handle,
+    message: LspMessage,
+) {
+    // bare tokio::spawn calls inside need an active reactor.
+    let _guard = handle.enter();
     match message {
-        LspMessage::Initialize { root_uri, capabilities } => initialize(server, tx, root_uri, capabilities),
-        LspMessage::Initialized => fire::<InitializedNotif>(server, InitializedParams {}),
+        // Initialize / Initialized are handled by `LspClient::send` directly.
+        LspMessage::Initialize { .. } | LspMessage::Initialized => {}
         LspMessage::DidOpen { uri, language_id, version, text } => did_open(server, uri, language_id, version, text),
         LspMessage::DidChange { uri, version, changes } => did_change(server, uri, version, changes),
         LspMessage::Completion { uri, position } => completion(server, tx, uri, position),
@@ -286,23 +365,6 @@ fn dispatch(server: &ServerSocket, tx: &Tx, message: LspMessage) {
 // Per-request builders. Each is a trivially small function; the heavy lifting
 // (spawn, error logging, type-level method-name resolution) is in `spawn`.
 // ----------------------------------------------------------------------------
-
-fn initialize(server: &ServerSocket, tx: &Tx, root_uri: Url, capabilities: ClientCapabilities) {
-    #[allow(deprecated)]
-    let params = InitializeParams {
-        process_id: Some(std::process::id()),
-        root_uri: Some(root_uri),
-        capabilities,
-        client_info: Some(ClientInfo {
-            name: "bevy_code_editor".into(),
-            version: Some(env!("CARGO_PKG_VERSION").into()),
-        }),
-        ..InitializeParams::default()
-    };
-    spawn::<InitializeRequest>(server, tx, params, |result, tx| {
-        emit(tx, LspResponse::Initialized { capabilities: result.capabilities });
-    });
-}
 
 fn did_open(server: &ServerSocket, uri: Url, language_id: String, version: i32, text: String) {
     fire::<DidOpenTextDocument>(

@@ -925,9 +925,12 @@ fn setup_editor(
         return;
     };
 
-    // Read the source code of this example file
-    let current_dir = std::env::current_dir().expect("Failed to get current directory");
-    let example_file_path = current_dir.join("examples/lsp.rs");
+    // Read the source code of this example file. CARGO_MANIFEST_DIR is set
+    // by cargo to the package root at build time — use it instead of
+    // current_dir so the example works regardless of where it's launched
+    // from (workspace root vs. package dir).
+    let example_file_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/lsp.rs");
     let rust_code =
         std::fs::read_to_string(&example_file_path).expect("Failed to read example file");
 
@@ -969,7 +972,7 @@ fn setup_editor(
     }
 
     // rootUri is the project root, which is usually the directory containing Cargo.toml
-    let project_root = current_dir;
+    let project_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let root_uri = lsp_types::Url::from_directory_path(&project_root)
         .expect("Failed to get project root URI");
     let capabilities = lsp_types::ClientCapabilities::default();
