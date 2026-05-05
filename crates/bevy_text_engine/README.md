@@ -9,8 +9,8 @@ This is the rendering layer. It owns no input model, no UI framework choice, no 
 - **`TextView`** — marker component for a renderable text view. `#[require]` cascades `TextViewState` (rope + scroll), `TextViewViewport` (rect), `DisplayLayout` (rows of glyphs), `FontConfig`, `TextViewOverlays`, and `Pickable` (for `bevy_picking` integration).
 - **`FontConfig`** — per-entity font sizing + optional `Handle<bevy_text::Font>`. Carries `size`, `line_height`, `char_width`. Same handle works in `bevy_text::Text2d` and `TextView`.
 - **`DisplayLayout`** — the renderer's input. A list of `ShapedLine`s (text + style runs + per-row line height + padding + indent) plus global metrics. Producers write it; the renderer reads it.
-- **Layout producer** — `produce_layouts` system queries entities with `LineFilter` / `LineStyleSource` / `LayoutWrap` Components and writes `DisplayLayout` automatically. Handles soft-wrap with whitespace-aware breaks, fold-aware visibility (via the filter Component), per-row styling (via the styling Component).
-- **Static-content path**: attach a `BlockSource` Component (mirror of `LineStyleSource`) and the engine's `produce_block_layout` system writes the entity's `DisplayLayout` from a `Vec<Block>`. `Block` carries text + runs + per-row line-height + padding + indent + soft-wrap budget + block-level decoration. Headless / one-shot use: `Block::layout(&blocks, BlockLayoutConfig { … })`.
+- **Layout producer** — `produce_layouts` system queries entities with `HiddenLines` / `LineStyles` / `LayoutWrap` Components and writes `DisplayLayout` automatically. Handles soft-wrap with whitespace-aware breaks, fold-aware visibility (via `HiddenLines`), per-row styling (via `LineStyles`). Producers populate these Components via the `visible_buffer_range` helper so the engine and producers agree on which lines are about to render.
+- **Static-content path**: attach a `BlockList(Arc<Vec<Block>>)` Component and the engine's `produce_block_layout` system writes the entity's `DisplayLayout` from the block list. `Block` carries text + runs + per-row line-height + padding + indent + soft-wrap budget + block-level decoration. Headless / one-shot use: `Block::layout(&blocks, BlockLayoutConfig { … })`.
 - **`trivial_layout`** — one-row-per-line helper for static text without block structure (test fixtures, simple panels).
 - **GPU pipeline** — `GlyphAtlasPlugin` (manages the cosmic-text font system + a 2048×2048 R8 atlas with shelf packing) and `InstancedTextRenderPlugin` (one instanced draw per text view, `GlyphInstance` per glyph).
 - **Overlays** — `RectOverlay` rows (cursor caret, selection rectangles, line highlights, find-matches) layered into the same draw call via z-order.
@@ -67,13 +67,7 @@ block-level decoration (background fills + borders for code blocks /
 blockquotes / chat-message bubbles):
 
 ```rust
-use std::sync::{Arc, RwLock};
 use bevy_text_engine::prelude::*;
-
-struct StaticDoc(Arc<RwLock<Vec<Block>>>);
-impl BlockProvider for StaticDoc {
-    fn blocks(&self) -> Vec<Block> { self.0.read().unwrap().clone() }
-}
 
 fn setup(mut commands: Commands) {
     let blocks = vec![
@@ -93,15 +87,16 @@ fn setup(mut commands: Commands) {
     commands.spawn((
         TextView,
         FontConfig::from_size(16.0),
-        BlockSource::new(StaticDoc(Arc::new(RwLock::new(blocks)))),
+        BlockList::new(blocks),
         LayoutWrap { budget_px: Some(480.0), indent_px: 0.0 },
     ));
 }
 ```
 
-`BlockSource` is the static-content peer of `LineStyleSource`. The engine's
-`produce_block_layout` system reads the blocks each frame (gated by the
-provider's `version()`) and writes the entity's `DisplayLayout`.
+`BlockList(Arc<Vec<Block>>)` is the static-content data Component. The
+engine's `produce_block_layout` system reads the blocks each frame (gated
+by Arc-identity change-detection — swap in a fresh `BlockList::new(...)`
+to update) and writes the entity's `DisplayLayout`.
 `with_block_background` paints a filled quad spanning the block's full
 vertical extent (padding_top + all wrap rows + padding_bottom), distinct
 from per-row `line_bg`. `with_block_border(color, width)` adds a uniform
@@ -119,7 +114,7 @@ let layout = Block::layout(&blocks, BlockLayoutConfig {
 });
 ```
 
-For dynamic content (an editor, a streaming log viewer), drive the producer via `LineFilter` / `LineStyleSource` Components — see the editor crate for a worked example.
+For dynamic content (an editor, a streaming log viewer), write your own producer system that calls `visible_buffer_range(...)` for each `TextView` entity, computes styled runs for the visible window, and stores them in `LineStyles::new(by_line, covered)`. The engine reads `Option<&LineStyles>` and `Option<&HiddenLines>` on each layout pass — no traits, no locks. See the `bevy_code_editor` crate for a worked tree-sitter producer.
 
 ## Anchoring inline content (images, buttons, gauges)
 

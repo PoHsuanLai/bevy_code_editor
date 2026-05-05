@@ -1,35 +1,30 @@
 //! `DisplayMapPlugin` — plumbs the editor's fold / syntax / wrap state into
-//! the engine's per-frame layout system via trait Components.
+//! the engine's per-frame layout system via plain-data Components.
 //!
 //! The engine's `produce_layouts` (in `bevy_text_engine::view::layout_builder`)
-//! reads `LineFilter` / `LineStyleSource` / `LayoutWrap` Components off each
+//! reads `HiddenLines` / `LineStyles` / `LayoutWrap` Components off each
 //! `TextView` entity and drives layout production itself. This plugin owns:
 //!
-//! - A startup system that inserts the editor's `FoldFilter` /
-//!   `SyntaxStyling` Components on every `CodeEditor` entity.
-//! - Three sync systems (`sync_fold_filter`, `sync_syntax_styling`,
-//!   `sync_layout_wrap`) that refresh each Component's interior state from
-//!   the editor's domain types when those change. They run in
-//!   [`LayoutSyncSet`], scheduled `.before(LayoutProduceSet)`.
-//!
-//! The trait-Component `Arc<dyn _>` can't be downcast back to a concrete
-//! type without `Any` — so the startup system also stores parallel
-//! `Arc<FoldFilter>` / `Arc<SyntaxStyling>` Components on the editor
-//! entity ([`EditorStylingArcs`]). The sync systems write through those.
+//! - A startup system that inserts default `HiddenLines` / `LineStyles`
+//!   Components on every `CodeEditor` entity.
+//! - Three producer systems (`produce_hidden_lines`, `produce_line_styles`,
+//!   `sync_layout_wrap`) that recompute each Component when the editor's
+//!   domain state changes. They run in [`LayoutSyncSet`], scheduled
+//!   `.before(LayoutProduceSet)`.
 
 use bevy::prelude::*;
-use bevy_text_engine::{LayoutProduceSet, LayoutWrap, LineFilter, LineStyleSource};
-use std::collections::HashSet;
-use std::sync::Arc;
+use bevy_text_engine::{
+    visible_buffer_range, FontConfig, HiddenLines, LayoutProduceSet, LayoutWrap, LineStyles,
+    RunWithText, TextViewState, TextViewViewport,
+};
+use std::collections::{HashMap, HashSet};
 
-use super::styling::{FoldFilter, SyntaxStyling};
+use super::styling::segs_to_runs;
 use crate::plugin::syntax_highlighting::EditorSyntaxState;
 use crate::settings::{IndentationSettings, SyntaxSettings, ThemeSettings, WrappingSettings};
-use crate::text_view::TextViewViewport;
 use crate::types::{CodeEditor, FoldState};
-use bevy_text_engine::FontConfig;
 
-/// System set for sync systems that update trait-Component interior state
+/// System set for sync systems that update the engine's data Components
 /// from editor-domain inputs. Scheduled `.before(LayoutProduceSet)` so the
 /// engine's layout system observes this frame's changes.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -38,17 +33,6 @@ pub struct LayoutSyncSet;
 /// Legacy alias kept so existing call sites that referenced
 /// `DisplayMapSet` for ordering still compile.
 pub type DisplayMapSet = LayoutSyncSet;
-
-/// Concrete `Arc`s for the editor's trait-Component impls. The
-/// `LineFilter` / `LineStyleSource` Components hold the same `Arc`s as
-/// `dyn` upcasts; this Component preserves the concrete type so the sync
-/// systems can call write-through methods (`set_hidden_lines`,
-/// `set_theme`) without an `Any` downcast.
-#[derive(Component)]
-pub(crate) struct EditorStylingArcs {
-    pub fold_filter: Arc<FoldFilter>,
-    pub syntax_styling: Arc<SyntaxStyling>,
-}
 
 pub struct DisplayMapPlugin;
 
@@ -66,8 +50,8 @@ impl Plugin for DisplayMapPlugin {
         app.configure_sets(Update, LayoutProduceSet.in_set(crate::plugin::RenderingSet));
 
         // Must run after `init_editor_syntax` (in `SyntaxPlugin`) so the
-        // per-entity `EditorSyntaxState` is queryable when we wire up
-        // `LineStyleSource`. Runs in both Startup and Update — paired with
+        // per-entity `EditorSyntaxState` is queryable when we wire up the
+        // styling Components. Runs in both Startup and Update — paired with
         // `init_editor_syntax`'s same dual schedule so editors spawned at
         // runtime get their styling Components attached on the next tick.
         app.add_systems(
@@ -83,60 +67,40 @@ impl Plugin for DisplayMapPlugin {
         );
         app.add_systems(
             Update,
-            (sync_fold_filter, sync_syntax_styling, sync_layout_wrap)
+            (produce_hidden_lines, produce_line_styles, sync_layout_wrap)
                 .in_set(LayoutSyncSet),
         );
     }
 }
 
-/// On startup, attach the editor's trait-Component impls to every
-/// `CodeEditor` entity. `LineFilter` / `LineStyleSource` need
-/// configuration (the editor's specific impls + the per-entity
-/// `EditorSyntaxState` Arc), so they're not part of `CodeEditor`'s
-/// `#[require]` cascade.
-///
-/// Runs after `init_editor_syntax` so the per-entity `EditorSyntaxState`
-/// exists; we share its inner `Arc<RwLock<SyntaxInner>>` with the styling
-/// component so the engine's `produce_layouts` reads from the same state
-/// the parse pipeline writes to.
-///
-/// `LayoutWrap` IS in the cascade (via `TextView`'s `#[require]`) and
-/// starts with the no-wrap default; `sync_layout_wrap` updates it as
-/// `WrappingSettings` change.
+/// On startup, attach default `HiddenLines` / `LineStyles` Components to
+/// every `CodeEditor` entity that doesn't already have them. The producer
+/// systems write into these on subsequent ticks.
 pub(crate) fn insert_styling_components(
     mut commands: Commands,
-    editors: Query<
-        (Entity, &EditorSyntaxState),
-        (With<CodeEditor>, Without<EditorStylingArcs>),
-    >,
+    editors: Query<Entity, (With<CodeEditor>, Without<LineStyles>)>,
 ) {
-    for (entity, syntax_state) in editors.iter() {
-        let fold_filter: Arc<FoldFilter> = Arc::new(FoldFilter::new());
-        let syntax_styling: Arc<SyntaxStyling> =
-            Arc::new(SyntaxStyling::new(syntax_state.share_arc()));
-
-        commands.entity(entity).insert((
-            LineFilter(fold_filter.clone()),
-            LineStyleSource(syntax_styling.clone()),
-            EditorStylingArcs {
-                fold_filter,
-                syntax_styling,
-            },
-        ));
+    for entity in editors.iter() {
+        commands
+            .entity(entity)
+            .insert((HiddenLines::default(), LineStyles::default()));
     }
 }
 
-/// Refresh the editor's `FoldFilter` snapshot when `FoldState` changes.
+/// Refresh the `HiddenLines` Component when `FoldState` changes.
 ///
 /// Walks `FoldState.regions`, expands each folded region into its hidden
-/// line indices, and writes the resulting set into the `FoldFilter`'s
-/// interior `RwLock`. The engine's `produce_layouts` then sees the new
-/// visibility on its next call.
-pub(crate) fn sync_fold_filter(
-    editors: Query<(&FoldState, &EditorStylingArcs), (With<CodeEditor>, Changed<FoldState>)>,
+/// line indices, and writes the resulting set into `HiddenLines`. The
+/// engine's `produce_layouts` then sees the new visibility on its next
+/// call (same frame; `LayoutSyncSet` is `.before(LayoutProduceSet)`).
+pub(crate) fn produce_hidden_lines(
+    mut editors: Query<
+        (&FoldState, &mut HiddenLines),
+        (With<CodeEditor>, Changed<FoldState>),
+    >,
 ) {
-    for (fold_state, arcs) in editors.iter() {
-        let mut hidden = HashSet::new();
+    for (fold_state, mut hidden) in editors.iter_mut() {
+        let mut set = HashSet::new();
         for region in &fold_state.regions {
             if !region.is_folded {
                 continue;
@@ -144,38 +108,124 @@ pub(crate) fn sync_fold_filter(
             // The fold hides lines (start_line + 1 ..= end_line) — match
             // `FoldRegion::hides_line`'s semantics.
             for line in (region.start_line + 1)..=region.end_line {
-                hidden.insert(line);
+                set.insert(line);
             }
         }
-        arcs.fold_filter.set_hidden_lines(hidden);
+        *hidden = HiddenLines::new(set);
     }
 }
 
-/// Refresh the `SyntaxStyling` Component's theme/foreground when
-/// `ThemeSettings` or `SyntaxSettings` changes.
+/// Recompute styled runs for each editor's visible buffer-line window and
+/// write them into the entity's `LineStyles` Component.
 ///
-/// The styling's `version()` is driven by the underlying `tree_version`
-/// (parse pipeline). Theme-only changes don't bump `tree_version`, so we
-/// also trigger a layout rebuild by touching `TextViewState.content_version`
-/// indirectly: actually no — theme tweaks change the `style()` output, so
-/// we bump a dedicated `style_epoch` on `SyntaxStyling`. To keep the diff
-/// small, we instead rely on Bevy's `Changed<ThemeSettings>` here and let
-/// the user expect a one-frame lag (theme changes are user-initiated and
-/// rare).
-pub(crate) fn sync_syntax_styling(
-    editors: Query<&EditorStylingArcs, With<CodeEditor>>,
+/// Runs when any input that affects styling output changes:
+/// - `Changed<TextViewState>` — typing, paste, undo
+/// - `Changed<TextViewViewport>` — viewport resize
+/// - `Changed<HiddenLines>` — folds opened/closed (shifts visible window)
+/// - `Changed<EditorSyntaxState>` — parse completion bumps `tree_version`
+///   internally; the surrounding parse system writes a `Changed` tick by
+///   triggering `set_provider` / mutating `inner` via the same Component
+/// - `Changed<ThemeSettings>` / `Changed<SyntaxSettings>` — theme swap
+///
+/// Uses [`visible_buffer_range`] to scope work to lines about to render —
+/// the engine's layout system uses the same helper, so producer and
+/// consumer agree by construction.
+#[allow(clippy::type_complexity)]
+pub(crate) fn produce_line_styles(
+    mut editors: Query<
+        (
+            Entity,
+            &TextViewState,
+            &TextViewViewport,
+            &FontConfig,
+            Option<&LayoutWrap>,
+            Option<&HiddenLines>,
+            &mut EditorSyntaxState,
+            &mut LineStyles,
+        ),
+        With<CodeEditor>,
+    >,
+    #[cfg(feature = "tree-sitter")] state_changed: Query<
+        Entity,
+        (
+            With<CodeEditor>,
+            Or<(
+                Changed<TextViewState>,
+                Changed<TextViewViewport>,
+                Changed<HiddenLines>,
+                Changed<bevy_tree_sitter::SyntaxTree>,
+            )>,
+        ),
+    >,
+    #[cfg(not(feature = "tree-sitter"))] state_changed: Query<
+        Entity,
+        (
+            With<CodeEditor>,
+            Or<(
+                Changed<TextViewState>,
+                Changed<TextViewViewport>,
+                Changed<HiddenLines>,
+            )>,
+        ),
+    >,
     theme: Res<ThemeSettings>,
     syntax_settings: Res<SyntaxSettings>,
 ) {
-    if !theme.is_changed() && !syntax_settings.is_changed() {
+    let theme_changed = theme.is_changed() || syntax_settings.is_changed();
+    let dirty: HashSet<Entity> = state_changed.iter().collect();
+    if !theme_changed && dirty.is_empty() {
         return;
     }
-    for arcs in editors.iter() {
-        arcs.syntax_styling
-            .set_theme(syntax_settings.theme.clone(), theme.foreground);
-        // Bump the styling's invalidation counter so the engine
-        // refingerprints and rebuilds the layout this frame.
-        arcs.syntax_styling.bump_style_epoch();
+
+    for (entity, state, viewport, font, wrap, hidden, mut syntax, mut line_styles) in
+        editors.iter_mut()
+    {
+        if !theme_changed && !dirty.contains(&entity) {
+            continue;
+        }
+
+        let wrap = wrap.copied().unwrap_or_default();
+        let range = visible_buffer_range(state, viewport, font, wrap, hidden);
+        if range.start >= range.end {
+            *line_styles = LineStyles::new(HashMap::new(), 0..0);
+            continue;
+        }
+
+        let mut by_line: HashMap<u32, Vec<RunWithText>> = HashMap::new();
+        let total_lines = state.line_count();
+        for buffer_line in range.start..range.end {
+            if buffer_line >= total_lines {
+                break;
+            }
+            // Skip hidden lines — styling them wastes work since the engine
+            // won't render them anyway.
+            if let Some(h) = hidden {
+                if !h.is_visible(buffer_line) {
+                    continue;
+                }
+            }
+            let line_text: String = state.rope.line(buffer_line).to_string();
+            let line_no_nl = line_text.strip_suffix('\n').unwrap_or(&line_text);
+            let start_byte = state.rope.line_to_byte(buffer_line);
+
+            let mut per_line = syntax.highlight_range(
+                line_no_nl,
+                buffer_line,
+                buffer_line + 1,
+                start_byte,
+                &syntax_settings.theme,
+                theme.foreground,
+            );
+            let segs = per_line.pop().unwrap_or_default();
+            // Whitespace-only lines: the engine renders the rope text in
+            // `default_fg`. Emitting an empty `Vec` matches that contract.
+            if segs.iter().all(|s| s.text.trim().is_empty()) {
+                continue;
+            }
+            by_line.insert(buffer_line as u32, segs_to_runs(&segs));
+        }
+
+        *line_styles = LineStyles::new(by_line, range.start as u32..range.end as u32);
     }
 }
 

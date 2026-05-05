@@ -47,8 +47,7 @@ pub struct ParseTask {
 
 /// Per-line/buffer source the parser reads from.
 ///
-/// Mirror of `LineFilter` / `LineStyleSource` in `bevy_text_engine`: a
-/// trait Component lets the consumer plug their buffer (a `Rope`, a
+/// A trait Component lets the consumer plug their buffer (a `Rope`, a
 /// `String` snapshot, whatever) into the parsing pipeline without forcing
 /// `bevy_tree_sitter` to know about editor-specific buffer types.
 ///
@@ -101,7 +100,7 @@ impl ParseSourceComp {
 /// Not Reflect: `tree_sitter::Tree` doesn't impl `Reflect` (it owns
 /// FFI-side state via the C API), so this Component opts out. Consumers
 /// inspecting via reflection will see the Component name but not its
-/// contents — same trade-off as `LineStyleSource`.
+/// contents.
 #[derive(Component, Default)]
 pub struct SyntaxTree {
     /// The parsed tree, if any. `None` until the first parse completes (or

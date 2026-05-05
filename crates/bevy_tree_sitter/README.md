@@ -13,7 +13,7 @@ The integration is per-entity Components. Attach `Language` + `ParseSourceComp` 
 | Component | What it carries |
 |---|---|
 | **`Language`** | Grammar + highlight query. Cheap to clone (tree-sitter language is internally `Arc`-like). |
-| **`ParseSourceComp(Arc<dyn ParseSource>)`** | Consumer-supplied buffer adapter. The trait gives `content_version() -> u64`, `snapshot() -> Rope`, and an optional `apply_edit(InputEdit)` for tree interpolation. Same `Arc<dyn Trait>` Component shape as `bevy_text_engine::LineFilter`. |
+| **`ParseSourceComp(Arc<dyn ParseSource>)`** | Consumer-supplied buffer adapter. The trait gives `content_version() -> u64`, `snapshot() -> Rope`, and an optional `apply_edit(InputEdit)` for tree interpolation. |
 | **`SyntaxTree`** | `Option<ts::Tree>` + `content_version` + `tree_version`. Written by `parse_dirty`. Consumers read it via `Query<&SyntaxTree>` and use `Changed<SyntaxTree>` for invalidation. Not `Reflect` (`tree_sitter::Tree` doesn't impl it). |
 
 Async parsing runs on `AsyncComputeTaskPool`. `parse_dirty` (in `ParseSet`) detects per-entity drift between `ParseSource::content_version()` and `SyntaxTree::content_version`, kicks off a child-entity `ParseTask`, and on completion writes the new tree back into the parent's `SyntaxTree`. Single-flight per entity — multiple editors can parse concurrently.

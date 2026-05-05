@@ -14,7 +14,8 @@ pub mod viewport;
 pub use font::FontConfig;
 pub use layout::DisplayLayout;
 pub use layout_builder::{
-    approx_display_rows_for_line, slice_runs, wrap_into_rows, LayoutProduceSet, WrapRow,
+    approx_display_rows_for_line, slice_runs, visible_buffer_range, wrap_into_rows,
+    LayoutProduceSet, WrapRow,
 };
 pub use overlay::{RectOverlay, RowVertical, TextViewOverlays};
 pub use plugin::{TextEnginePlugin, TextEnginePlugins, TextView, TextViewBatchEntity, TextViewRenderSet};
@@ -24,8 +25,5 @@ pub use snapshot::{
     ShapedLine, StyleRun, TextDecoration,
 };
 pub use state::TextViewState;
-pub use styling::{
-    BlockProvider, BlockSource, LayoutWrap, LineFilter, LineStyleSource, LineStyling,
-    LineVisibility, RunWithText,
-};
+pub use styling::{BlockList, HiddenLines, LayoutWrap, LineStyles, RunWithText};
 pub use viewport::{TextViewViewport, ViewportOrigin};

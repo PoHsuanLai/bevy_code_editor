@@ -4,10 +4,9 @@
 //! module owns the editor-only pieces:
 //!
 //! - [`SyntaxInner`]: per-editor mutable state, an `Option<TreeSitterProvider>`
-//!   plus a `tree_version` counter the renderer watches for invalidation.
-//!   Stored behind an `Arc<RwLock<_>>` shared between the editor's
-//!   `LineStyleSource` Component (which reads it for highlight queries) and
-//!   the editor's pipeline systems (which write tree updates into it).
+//!   plus a `tree_version` counter. Stored behind an `Arc<RwLock<_>>` so the
+//!   parse pipeline (writers) and the editor's `produce_line_styles`
+//!   producer (reader) can share access without each owning their own copy.
 //! - [`EditorParseSource`] / [`EditorBufferSnapshot`]: bridge between the
 //!   editor's `TextViewState` (per-entity rope + version) and
 //!   `bevy_tree_sitter`'s [`bevy_tree_sitter::ParseSource`] trait. The
@@ -36,8 +35,8 @@ use std::sync::{Arc, RwLock};
 use bevy_tree_sitter::{HighlightRange, SyntaxProvider, TreeSitterProvider};
 
 /// Mutable state inside [`EditorSyntaxState`]. Held behind an `Arc<RwLock<_>>`
-/// so the editor's pipeline systems and the engine's `LineStyleSource` can
-/// share access without each owning their own copy.
+/// so the editor's parse pipeline (writers) and the styling producer
+/// (reader) can share access without each owning their own copy.
 pub struct SyntaxInner {
     #[cfg(feature = "tree-sitter")]
     pub(crate) provider: Option<TreeSitterProvider>,
@@ -560,10 +559,11 @@ pub(crate) fn mirror_syntax_tree_to_provider(
         drop(guard);
 
         syntax_cache.last_highlighted_version = syntax_tree.content_version;
-        // Don't touch `tv.content_version` — the engine's layout fingerprint
-        // already folds in `LineStyleSource::version()` (which we just bumped
-        // via `tree_version`), so the layout rebuilds without a content
-        // version bump. Bumping it here used to feed back through
+        // Don't touch `tv.content_version`. The downstream chain is:
+        // `Changed<SyntaxTree>` (this system's filter writes a fresh tick)
+        // → `produce_line_styles` re-styles → `LineStyles` Arc swaps →
+        // engine refingerprints and rebuilds the layout. Bumping
+        // `content_version` here used to feed back through
         // `sync_editor_parse_source` into a runaway re-parse loop.
     }
 }

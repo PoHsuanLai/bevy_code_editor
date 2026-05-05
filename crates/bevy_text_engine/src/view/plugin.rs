@@ -95,7 +95,7 @@ impl Plugin for TextEnginePlugin {
                     .before(prewarm_atlas_for_layout),
                 // Static-content path. Runs alongside `produce_layouts` —
                 // the two are mutually exclusive at the entity level
-                // (`produce_layouts` filters out entities with `BlockSource`).
+                // (`produce_layouts` filters out entities with `BlockList`).
                 produce_block_layout
                     .in_set(LayoutProduceSet)
                     .before(prewarm_atlas_for_layout),

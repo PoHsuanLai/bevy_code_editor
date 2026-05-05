@@ -60,8 +60,8 @@ per-action handler systems (cursor_move, selection, edit, clipboard,
     ↓
 buffer (rope) + cursor / selection state
     ↓
-display_map: produce_layouts (engine system) reads LineFilter +
-             LineStyleSource trait Components → DisplayLayout
+display_map: produce_layouts (engine system) reads HiddenLines +
+             LineStyles plain-data Components → DisplayLayout
     ↓
 TextEnginePlugin: render_layout → GlyphInstance → instanced GPU draw
 ```
@@ -69,7 +69,7 @@ TextEnginePlugin: render_layout → GlyphInstance → instanced GPU draw
 Three places worth knowing about for hosts:
 
 - **`input/dispatch.rs`** — leafwing `EditorAction` poll fans out into typed `*Requested` events. Per-action handler systems consume those events. Hosts that want to override behavior can send the events themselves, or run a system between the dispatcher and a specific handler that intercepts them.
-- **`display_map/styling.rs`** — the editor's concrete `LineFilter` (`FoldFilter`) and `LineStyleSource` (`SyntaxStyling`) impls. These get inserted on `CodeEditor` entities via `#[require]` and synced from `FoldState` / `SyntaxResource` by `LayoutSyncSet` systems. The engine queries the trait Components directly.
+- **`display_map/plugin.rs`** — producer systems `produce_hidden_lines` (writes `HiddenLines` from `FoldState`) and `produce_line_styles` (writes `LineStyles` from `EditorSyntaxState` for the visible buffer-line window). Both run in `LayoutSyncSet`, before the engine's `LayoutProduceSet`. Helpers in `display_map/styling.rs` convert the editor's `LineSegment` shape into the engine's `RunWithText`.
 - **`lsp_ui/`** (feature `lsp`) — observes `bevy_lsp::LspResponse` messages, drives completion / hover popup state, renders. Popup nav (Up / Down / Enter / Tab / Escape) intercepts the corresponding `*Requested` events when the popup is visible.
 
 ## Two editors at once
