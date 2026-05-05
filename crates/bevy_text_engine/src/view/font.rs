@@ -15,10 +15,17 @@
 use bevy::prelude::*;
 use bevy::text::Font;
 
-/// Font sizing + optional `bevy_text::Font` handle. The atlas registers
-/// the handle's bytes into its cosmic-text font system on first use, so
-/// the same `asset_server.load("foo.ttf")` works in both `Text2d` and
-/// `TextView`. `font: None` falls back to system fonts.
+/// Font sizing + `bevy_text::Font` handle. The atlas registers the
+/// handle's bytes into its cosmic-text font system on first use, so the
+/// same `asset_server.load("foo.ttf")` works in both `Text2d` and
+/// `TextView`.
+///
+/// `font` defaults to `Handle::default()`, which Bevy's `TextPlugin`
+/// (when its `default_font` feature is on, the default for the `bevy`
+/// crate) populates with FiraMono-subset. Hosts that want a different
+/// font set it explicitly via [`Self::with_font`]. Setting `font: None`
+/// falls back to whatever the cosmic-text `FontSystem` discovers in
+/// system fonts.
 ///
 /// `char_width` is a scalar fallback advance — the renderer prefers
 /// per-glyph shaped advances from `LineShape.glyphs[*].x` and only
@@ -40,13 +47,16 @@ impl Default for FontConfig {
 }
 
 impl FontConfig {
-    /// `size`-derived defaults: `line_height = size * 1.5`, `char_width = size * 0.6`.
+    /// `size`-derived defaults: `line_height = size * 1.5`,
+    /// `char_width = size * 0.6`, `font = Handle::default()` (resolves to
+    /// Bevy's slotted FiraMono-subset when `bevy_text`'s `default_font`
+    /// feature is enabled).
     pub fn from_size(size: f32) -> Self {
         Self {
             size,
             line_height: size * 1.5,
             char_width: size * 0.6,
-            font: None,
+            font: Some(Handle::default()),
         }
     }
 

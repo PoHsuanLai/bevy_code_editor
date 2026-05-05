@@ -3,7 +3,7 @@
 
 use super::editor_ui_plugin::EditorRenderConfig;
 use super::to_bevy_coords_left_aligned;
-use crate::settings::{ThemeSettings, UiSettings};
+use crate::settings::{ThemeConfig, UiSettings};
 use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::*;
 use bevy::prelude::*;
@@ -290,10 +290,9 @@ impl Plugin for FoldingPlugin {
 pub(crate) fn update_fold_indicators(
     mut commands: Commands,
     editor_query: Query<
-        (&TextViewState, &TextViewViewport, &FoldState, &FontConfig),
+        (&TextViewState, &TextViewViewport, &FoldState, &FontConfig, &ThemeConfig),
         With<CodeEditor>,
     >,
-    theme: Res<ThemeSettings>,
     ui: Res<UiSettings>,
     render_config: Res<EditorRenderConfig>,
     mut indicator_query: Query<(
@@ -313,7 +312,7 @@ pub(crate) fn update_fold_indicators(
     let mut used_indices: std::collections::HashSet<usize> = std::collections::HashSet::new();
     let mut any_disabled_only = true;
 
-    for (tv, viewport, fold_state, font) in editor_query.iter() {
+    for (tv, viewport, fold_state, font, theme) in editor_query.iter() {
         if !fold_state.enabled || !ui.show_line_numbers {
             continue;
         }

@@ -5,7 +5,7 @@
 //! lives inside `push_cursor_overlays` itself — no separate `animate_cursor`
 //! system.
 
-use crate::settings::{CursorLineSettings, CursorSettings, ThemeSettings};
+use crate::settings::{CursorLineSettings, CursorSettings, ThemeConfig};
 use crate::text_view::{
     DisplayLayout, RectOverlay, RowVertical, TextViewOverlays, TextViewState, TextViewViewport,
 };
@@ -61,14 +61,12 @@ impl Plugin for CursorPlugin {
             .register_type::<crate::settings::CursorLineStyle>()
             .register_type::<crate::settings::CursorSettings>()
             .register_type::<crate::settings::CursorStyle>()
-            .register_type::<crate::settings::EditorDefaultFont>()
             .register_type::<crate::settings::IndentationSettings>()
             .register_type::<crate::settings::KeyRepeatSettings>()
             .register_type::<crate::settings::PerformanceSettings>()
             .register_type::<crate::settings::ScrollbarSettings>()
-            .register_type::<crate::settings::SyntaxSettings>()
             .register_type::<crate::settings::SyntaxTheme>()
-            .register_type::<crate::settings::ThemeSettings>()
+            .register_type::<crate::settings::ThemeConfig>()
             .register_type::<crate::settings::UiSettings>()
             .register_type::<crate::settings::WhitespaceMode>()
             .register_type::<crate::settings::WrappingSettings>();
@@ -123,14 +121,14 @@ pub(crate) fn push_cursor_overlays(
             &FoldState,
             &FontConfig,
             Option<&DisplayLayout>,
+            &ThemeConfig,
         ),
         With<CodeEditor>,
     >,
     cursor_settings: Res<CursorSettings>,
-    theme: Res<ThemeSettings>,
     time: Res<Time>,
 ) {
-    for (_display, sel, cursor, tv, _vp, mut overlays, fold_state, font, layout) in
+    for (_display, sel, cursor, tv, _vp, mut overlays, fold_state, font, layout, theme) in
         editor_query.iter_mut()
     {
         // Drain any caret rects from the previous frame. We mark them with
@@ -211,13 +209,13 @@ pub(crate) fn update_cursor_line_highlight(
             &FoldState,
             &FontConfig,
             Option<&DisplayLayout>,
+            &ThemeConfig,
         ),
         With<CodeEditor>,
     >,
     cursor_line: Res<CursorLineSettings>,
-    theme: Res<ThemeSettings>,
 ) {
-    for (_display, sel, cursor, tv, vp, mut overlays, fold_state, font, layout) in
+    for (_display, sel, cursor, tv, vp, mut overlays, fold_state, font, layout, theme) in
         editor_query.iter_mut()
     {
         // Drain previous-frame line-border / word rects (z = 0 reserved for cursor-line decoration).

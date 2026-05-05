@@ -25,12 +25,12 @@ pub(crate) fn update_selection_highlight(
             &FoldState,
             &FontConfig,
             Option<&DisplayLayout>,
+            &ThemeConfig,
         ),
         With<CodeEditor>,
     >,
-    theme: Res<ThemeSettings>,
 ) {
-    for (tv, _vp, sel, mut overlays, fold_state, font, layout) in
+    for (tv, _vp, sel, mut overlays, fold_state, font, layout, theme) in
         editor_query.iter_mut()
     {
     // Drain any selection rects from the previous frame (z = -1 marks selection;
@@ -215,10 +215,9 @@ fn selection_rect(display_row: u32, x_range: std::ops::Range<f32>, color: Color)
 pub(crate) fn update_indent_guides(
     mut commands: Commands,
     editor_query: Query<
-        (&TextViewState, &TextViewViewport, &FoldState, &FontConfig),
+        (&TextViewState, &TextViewViewport, &FoldState, &FontConfig, &ThemeConfig),
         With<CodeEditor>,
     >,
-    theme: Res<ThemeSettings>,
     ui: Res<UiSettings>,
     indentation: Res<IndentationSettings>,
     render_config: Res<EditorRenderConfig>,
@@ -238,7 +237,7 @@ pub(crate) fn update_indent_guides(
     let mut existing_guides: Vec<_> = guide_query.iter_mut().collect();
     let mut entity_index = 0;
 
-    for (tv, vp, fold_state, font) in editor_query.iter() {
+    for (tv, vp, fold_state, font, theme) in editor_query.iter() {
         let line_height = font.line_height;
         let char_width = font.char_width;
         let viewport_height = vp.height as f32;
