@@ -3,29 +3,31 @@
 use bevy::prelude::*;
 
 /// Notifies plugins (syntax highlighting, LSP, etc.) about text changes for
-/// incremental updates.
+/// incremental updates. Positions are captured at edit-time so consumers
+/// don't need the pre-edit rope.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct TextEditEvent {
-    pub start_byte: usize,
-    pub old_end_byte: usize,
-    pub new_end_byte: usize,
+    pub delta: bevy_text_editor::EditDelta,
     pub content_version: u64,
 }
 
 impl TextEditEvent {
-    pub fn new(
-        start_byte: usize,
-        old_end_byte: usize,
-        new_end_byte: usize,
-        content_version: u64,
-    ) -> Self {
+    pub fn new(delta: bevy_text_editor::EditDelta, content_version: u64) -> Self {
         Self {
-            start_byte,
-            old_end_byte,
-            new_end_byte,
+            delta,
             content_version,
         }
+    }
+
+    pub fn start_byte(&self) -> usize {
+        self.delta.start_byte
+    }
+    pub fn old_end_byte(&self) -> usize {
+        self.delta.old_end_byte
+    }
+    pub fn new_end_byte(&self) -> usize {
+        self.delta.new_end_byte
     }
 }
 

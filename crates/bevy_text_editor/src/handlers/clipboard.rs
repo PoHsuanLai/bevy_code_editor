@@ -68,6 +68,8 @@ pub fn handle_cut(
 
     let start_byte = tv.rope.char_to_byte(start);
     let end_byte = tv.rope.char_to_byte(end);
+    let start_position = crate::edit::point_at_byte(&tv.rope, start_byte);
+    let old_end_position = crate::edit::point_at_byte(&tv.rope, end_byte);
     tv.rope.remove(start_byte..end_byte);
     cursor.cursor_pos = start;
 
@@ -79,7 +81,14 @@ pub fn handle_cut(
         cursor_after: start,
         kind: EditKind::Other,
     });
-    hist.pending_byte_edit = Some((start_byte, end_byte, start_byte));
+    hist.pending_byte_edit = Some(crate::EditDelta {
+        start_byte,
+        old_end_byte: end_byte,
+        new_end_byte: start_byte,
+        start_position,
+        old_end_position,
+        new_end_position: start_position,
+    });
 
     sel.apply_primary_cursor(&cursor);
     tv.content_version += 1;
@@ -118,29 +127,39 @@ pub fn handle_paste(
     let mut deleted_text = String::new();
     let paste_position;
     let removed_bytes;
+    let start_byte_pre;
+    let start_position;
+    let old_end_position;
 
     if let Some((start, end)) = sel.primary_range() {
         let start = start.min(tv.rope.len_chars());
         let end = end.min(tv.rope.len_chars());
         deleted_text = tv.rope.slice(start..end).to_string();
-        let start_byte = tv.rope.char_to_byte(start);
-        let end_byte = tv.rope.char_to_byte(end);
-        removed_bytes = end_byte - start_byte;
-        tv.rope.remove(start_byte..end_byte);
+        let s_byte = tv.rope.char_to_byte(start);
+        let e_byte = tv.rope.char_to_byte(end);
+        start_byte_pre = s_byte;
+        start_position = crate::edit::point_at_byte(&tv.rope, s_byte);
+        old_end_position = crate::edit::point_at_byte(&tv.rope, e_byte);
+        removed_bytes = e_byte - s_byte;
+        tv.rope.remove(s_byte..e_byte);
         cursor.cursor_pos = start;
         paste_position = start;
     } else {
         paste_position = cursor.cursor_pos.min(tv.rope.len_chars());
+        let s_byte = tv.rope.char_to_byte(paste_position);
+        start_byte_pre = s_byte;
+        start_position = crate::edit::point_at_byte(&tv.rope, s_byte);
+        old_end_position = start_position;
         removed_bytes = 0;
     }
 
-    let paste_byte = tv.rope.char_to_byte(paste_position);
     let had_newlines = text.contains('\n') || deleted_text.contains('\n');
     tv.rope.insert(paste_position, &text);
     cursor.cursor_pos = paste_position + text.chars().count();
     sel.apply_primary_cursor(&cursor);
     tv.content_version += 1;
 
+    let new_end_byte = start_byte_pre + text.len();
     hist.history.record(EditOperation {
         removed_text: deleted_text,
         inserted_text: text.clone(),
@@ -149,8 +168,14 @@ pub fn handle_paste(
         cursor_after: cursor.cursor_pos,
         kind: EditKind::Paste,
     });
-    hist.pending_byte_edit =
-        Some((paste_byte, paste_byte + removed_bytes, paste_byte + text.len()));
+    hist.pending_byte_edit = Some(crate::EditDelta {
+        start_byte: start_byte_pre,
+        old_end_byte: start_byte_pre + removed_bytes,
+        new_end_byte,
+        start_position,
+        old_end_position,
+        new_end_position: crate::edit::point_at_byte(&tv.rope, new_end_byte),
+    });
 
     if had_newlines {
         let line_idx = tv.rope.char_to_line(paste_position);

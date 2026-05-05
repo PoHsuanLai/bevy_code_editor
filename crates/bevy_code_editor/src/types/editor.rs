@@ -162,10 +162,9 @@ pub struct SyntaxCacheState {
     /// Last syntax tree version that was rendered (PERFORMANCE)
     #[cfg(feature = "tree-sitter")]
     pub last_rendered_tree_version: u64,
-    /// Pending text edit for tree-sitter incremental parsing
-    /// Format: (start_byte, old_end_byte, new_end_byte)
+    /// Pending text edit for tree-sitter incremental parsing.
     #[cfg(feature = "tree-sitter")]
-    pub pending_tree_sitter_edit: Option<(usize, usize, usize)>,
+    pub pending_tree_sitter_edit: Option<bevy_text_editor::EditDelta>,
 }
 
 impl Default for SyntaxCacheState {

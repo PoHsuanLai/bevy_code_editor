@@ -29,6 +29,12 @@ use crate::picking::text_view_picking_backend;
 use crate::state::{EditHistoryState, IndentConfig, OnEdit, TextEditor};
 use crate::typing::on_focused_keyboard_typing;
 
+/// Public ordering hook: `emit_edit_triggers` runs in this set. Consumers
+/// reading state populated by `OnEdit` observers (e.g. an editor's
+/// per-frame edit-event drain) should schedule themselves `.after(EditEmitSet)`.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EditEmitSet;
+
 /// Plugin registering pointer + keyboard interaction for `TextView`
 /// entities. Pair with [`bevy_text_engine::TextEnginePlugins`] which
 /// supplies the rendering side.
@@ -126,10 +132,10 @@ impl Plugin for TextEditorPlugin {
         register_handler_systems(app);
 
         // Drains EditHistoryState's pending fields into per-entity
-        // `OnEdit` triggers. Consumers add observers on `OnEdit` to react
-        // (incremental tree-sitter reparse, LSP did_change, line entity
-        // invalidation, etc.). Runs after the editing handlers.
-        app.add_systems(Update, emit_edit_triggers);
+        // `OnEdit` triggers. Runs in EditEmitSet so consumers can order
+        // their downstream systems after it.
+        app.configure_sets(Update, EditEmitSet);
+        app.add_systems(Update, emit_edit_triggers.in_set(EditEmitSet));
     }
 }
 

@@ -190,7 +190,8 @@ impl Plugin for CodeEditorPlugin {
             Update,
             (
                 InputSet,
-                ApplyStateSet.after(InputSet),
+                bevy_text_editor::EditEmitSet.after(InputSet),
+                ApplyStateSet.after(bevy_text_editor::EditEmitSet),
                 RenderingSet.after(ApplyStateSet),
             )
                 .chain(),
@@ -412,7 +413,7 @@ fn register_handler_systems(app: &mut App) {
 
 /// Spawn the default editor entity. `CodeEditor`'s `#[require]` cascade
 /// pulls in every supporting component.
-fn spawn_editor_entity(mut commands: Commands) {
+pub(crate) fn spawn_editor_entity(mut commands: Commands) {
     commands.spawn((CodeEditor, Name::new("CodeEditor")));
 }
 

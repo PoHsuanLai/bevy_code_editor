@@ -67,11 +67,19 @@ impl Plugin for DisplayMapPlugin {
 
         // Must run after `init_editor_syntax` (in `SyntaxPlugin`) so the
         // per-entity `EditorSyntaxState` is queryable when we wire up
-        // `LineStyleSource`.
+        // `LineStyleSource`. Runs in both Startup and Update — paired with
+        // `init_editor_syntax`'s same dual schedule so editors spawned at
+        // runtime get their styling Components attached on the next tick.
         app.add_systems(
             Startup,
             insert_styling_components
                 .after(crate::plugin::syntax_highlighting::init_editor_syntax),
+        );
+        app.add_systems(
+            Update,
+            insert_styling_components
+                .after(crate::plugin::syntax_highlighting::init_editor_syntax)
+                .in_set(crate::plugin::ApplyStateSet),
         );
         app.add_systems(
             Update,

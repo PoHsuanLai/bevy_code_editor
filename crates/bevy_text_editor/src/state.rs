@@ -76,11 +76,12 @@ pub struct EditHistoryState {
     pub history: EditHistory,
     /// Anchor set for edit-resilient position tracking
     pub anchors: AnchorSet,
-    /// Most recent edit's byte range `(start_byte, old_end_byte, new_end_byte)`.
-    /// Set by edit ops; drained into an [`OnEdit`] trigger by
+    /// Most recent edit, captured at edit-time so consumers can build
+    /// `tree_sitter::InputEdit` (or LSP `did_change`) without needing the
+    /// pre-edit rope. Drained into an [`OnEdit`] trigger by
     /// [`crate::plugin::emit_edit_triggers`].
     #[doc(hidden)]
-    pub pending_byte_edit: Option<(usize, usize, usize)>,
+    pub pending_byte_edit: Option<EditDelta>,
     /// Line index from which line-keyed entities should be invalidated.
     /// Set when an edit changes line structure; drained into [`OnEdit`].
     #[doc(hidden)]
@@ -118,12 +119,33 @@ impl Default for EditHistoryState {
 pub struct OnEdit {
     /// The editor entity whose buffer was edited.
     pub entity: Entity,
-    /// `(start_byte, old_end_byte, new_end_byte)` of the change. `None` if
-    /// this trigger only signals a line-structure invalidation.
-    pub byte_edit: Option<(usize, usize, usize)>,
+    /// Edit delta with byte offsets and pre/post positions. `None` if this
+    /// trigger only signals a line-structure invalidation.
+    pub byte_edit: Option<EditDelta>,
     /// Line index from which to invalidate line-keyed entities. `None`
     /// when no lines were added or removed.
     pub invalidate_lines_from: Option<usize>,
+}
+
+/// A 0-indexed `(row, byte_column)` position into the rope. Mirrors
+/// `tree_sitter::Point` without depending on tree-sitter.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Reflect)]
+pub struct EditPoint {
+    pub row: u32,
+    pub column_byte: u32,
+}
+
+/// Snapshot of one edit, captured when the edit happens so consumers can
+/// build `tree_sitter::InputEdit` (or LSP `did_change`) without needing
+/// the pre-edit rope.
+#[derive(Clone, Copy, Debug, Reflect)]
+pub struct EditDelta {
+    pub start_byte: usize,
+    pub old_end_byte: usize,
+    pub new_end_byte: usize,
+    pub start_position: EditPoint,
+    pub old_end_position: EditPoint,
+    pub new_end_position: EditPoint,
 }
 
 /// Per-editor indentation policy for tab insertion.

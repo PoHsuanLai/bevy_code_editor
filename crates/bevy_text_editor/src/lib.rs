@@ -45,6 +45,9 @@ pub use components::{ScrollConfig, TextViewDragState};
 pub use editing_events::*;
 pub use history::{EditHistory, EditKind, EditOperation, EditTransaction};
 pub use interaction::{copy_selection, screen_to_char_pos};
-pub use plugin::{TextEditorPlugin, TextInteractionPlugin};
+pub use plugin::{EditEmitSet, TextEditorPlugin, TextInteractionPlugin};
 pub use selection::{Selection, SelectionCollection};
-pub use state::{CursorState, EditHistoryState, IndentConfig, OnEdit, SelectionState, TextEditor};
+pub use state::{
+    CursorState, EditDelta, EditHistoryState, EditPoint, IndentConfig, OnEdit, SelectionState,
+    TextEditor,
+};

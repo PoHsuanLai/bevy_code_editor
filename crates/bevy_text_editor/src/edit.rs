@@ -15,12 +15,25 @@ use ropey::Rope;
 use crate::anchor::{Anchor, AnchorBias, TextEdit};
 use crate::history::{EditKind, EditOperation};
 use crate::selection::SelectionCollection;
-use crate::state::{CursorState, EditHistoryState, SelectionState};
+use crate::state::{CursorState, EditDelta, EditHistoryState, EditPoint, SelectionState};
+
+/// Compute (row, byte_column) for a given byte offset in `rope`.
+pub fn point_at_byte(rope: &Rope, byte_offset: usize) -> EditPoint {
+    let byte_offset = byte_offset.min(rope.len_bytes());
+    let line = rope.byte_to_line(byte_offset);
+    let line_start_byte = rope.line_to_byte(line);
+    EditPoint {
+        row: line as u32,
+        column_byte: (byte_offset - line_start_byte) as u32,
+    }
+}
 
 impl EditHistoryState {
-    /// Record `(start_byte, old_end_byte, new_end_byte)` for the most recent edit.
-    fn record_byte_edit(&mut self, start_byte: usize, old_end_byte: usize, new_end_byte: usize) {
-        self.pending_byte_edit = Some((start_byte, old_end_byte, new_end_byte));
+    /// Record an edit delta. Callers compute pre-edit positions BEFORE
+    /// mutating the rope (start, old_end) and post-edit position
+    /// (new_end_position) AFTER the mutation.
+    fn record_edit_delta(&mut self, delta: EditDelta) {
+        self.pending_byte_edit = Some(delta);
     }
 
     /// Insert character at cursor position (with undo recording).
@@ -48,6 +61,7 @@ impl EditHistoryState {
 
         let start_byte = tv.rope.char_to_byte(cursor_pos);
         let char_byte_len = c.len_utf8();
+        let start_position = point_at_byte(&tv.rope, start_byte);
 
         self.anchors.record_edit(TextEdit::insert(cursor_pos, 1));
 
@@ -56,7 +70,15 @@ impl EditHistoryState {
         sel.apply_primary_cursor(cursor);
         tv.content_version += 1;
 
-        self.record_byte_edit(start_byte, start_byte, start_byte + char_byte_len);
+        let new_end_byte = start_byte + char_byte_len;
+        self.record_edit_delta(EditDelta {
+            start_byte,
+            old_end_byte: start_byte,
+            new_end_byte,
+            start_position,
+            old_end_position: start_position,
+            new_end_position: point_at_byte(&tv.rope, new_end_byte),
+        });
 
         if record_history {
             let kind = if c == '\n' {
@@ -104,6 +126,8 @@ impl EditHistoryState {
             let deleted_char = tv.rope.char(cursor.cursor_pos - 1);
             let char_idx = tv.rope.char_to_byte(cursor.cursor_pos - 1);
             let byte_idx_end = tv.rope.char_to_byte(cursor.cursor_pos);
+            let start_position = point_at_byte(&tv.rope, char_idx);
+            let old_end_position = point_at_byte(&tv.rope, byte_idx_end);
 
             self.anchors
                 .record_edit(TextEdit::delete(cursor.cursor_pos - 1, cursor.cursor_pos));
@@ -113,7 +137,14 @@ impl EditHistoryState {
             sel.apply_primary_cursor(cursor);
             tv.content_version += 1;
 
-            self.record_byte_edit(char_idx, byte_idx_end, char_idx);
+            self.record_edit_delta(EditDelta {
+                start_byte: char_idx,
+                old_end_byte: byte_idx_end,
+                new_end_byte: char_idx,
+                start_position,
+                old_end_position,
+                new_end_position: start_position,
+            });
 
             if record_history {
                 self.history.record(EditOperation {
@@ -156,6 +187,8 @@ impl EditHistoryState {
             let deleted_char = tv.rope.char(cursor.cursor_pos);
             let char_idx = tv.rope.char_to_byte(cursor.cursor_pos);
             let byte_idx_end = tv.rope.char_to_byte(cursor.cursor_pos + 1);
+            let start_position = point_at_byte(&tv.rope, char_idx);
+            let old_end_position = point_at_byte(&tv.rope, byte_idx_end);
 
             self.anchors
                 .record_edit(TextEdit::delete(cursor.cursor_pos, cursor.cursor_pos + 1));
@@ -164,7 +197,14 @@ impl EditHistoryState {
             sel.apply_primary_cursor(cursor);
             tv.content_version += 1;
 
-            self.record_byte_edit(char_idx, byte_idx_end, char_idx);
+            self.record_edit_delta(EditDelta {
+                start_byte: char_idx,
+                old_end_byte: byte_idx_end,
+                new_end_byte: char_idx,
+                start_position,
+                old_end_position,
+                new_end_position: start_position,
+            });
 
             if record_history {
                 self.history.record(EditOperation {
@@ -190,6 +230,7 @@ impl EditHistoryState {
 
         let start_byte = tv.rope.char_to_byte(pos);
         let text_byte_len = text.len();
+        let start_position = point_at_byte(&tv.rope, start_byte);
 
         self.anchors
             .record_edit(TextEdit::insert(pos, text_char_len));
@@ -202,7 +243,15 @@ impl EditHistoryState {
             self.invalidate_lines_from = Some(line_idx);
         }
 
-        self.record_byte_edit(start_byte, start_byte, start_byte + text_byte_len);
+        let new_end_byte = start_byte + text_byte_len;
+        self.record_edit_delta(EditDelta {
+            start_byte,
+            old_end_byte: start_byte,
+            new_end_byte,
+            start_position,
+            old_end_position: start_position,
+            new_end_position: point_at_byte(&tv.rope, new_end_byte),
+        });
     }
 
     /// Remove text range (used for undo/redo).
@@ -212,6 +261,8 @@ impl EditHistoryState {
         if start < end {
             let start_byte = tv.rope.char_to_byte(start);
             let end_byte = tv.rope.char_to_byte(end);
+            let start_position = point_at_byte(&tv.rope, start_byte);
+            let old_end_position = point_at_byte(&tv.rope, end_byte);
 
             let removed_text: String = tv.rope.slice(start..end).chars().collect();
             let has_newlines = removed_text.contains('\n');
@@ -226,7 +277,14 @@ impl EditHistoryState {
                 self.invalidate_lines_from = Some(line_idx);
             }
 
-            self.record_byte_edit(start_byte, end_byte, start_byte);
+            self.record_edit_delta(EditDelta {
+                start_byte,
+                old_end_byte: end_byte,
+                new_end_byte: start_byte,
+                start_position,
+                old_end_position,
+                new_end_position: start_position,
+            });
         }
     }
 
@@ -301,6 +359,8 @@ impl EditHistoryState {
     ) {
         let old_byte_len = tv.rope.len_bytes();
         let new_byte_len = text.len();
+        let start_position = EditPoint { row: 0, column_byte: 0 };
+        let old_end_position = point_at_byte(&tv.rope, old_byte_len);
 
         tv.rope = Rope::from_str(text);
         cursor.cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
@@ -310,7 +370,14 @@ impl EditHistoryState {
         tv.max_content_width = 0.0;
         tv.max_width_line = None;
 
-        self.record_byte_edit(0, old_byte_len, new_byte_len);
+        self.record_edit_delta(EditDelta {
+            start_byte: 0,
+            old_end_byte: old_byte_len,
+            new_end_byte: new_byte_len,
+            start_position,
+            old_end_position,
+            new_end_position: point_at_byte(&tv.rope, new_byte_len),
+        });
     }
 
     /// Create an anchor at the given position.

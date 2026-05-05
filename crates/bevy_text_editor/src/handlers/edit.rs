@@ -56,6 +56,8 @@ pub fn delete_selection(
 
     let start_byte = tv.rope.char_to_byte(start);
     let end_byte = tv.rope.char_to_byte(end);
+    let start_position = crate::edit::point_at_byte(&tv.rope, start_byte);
+    let old_end_position = crate::edit::point_at_byte(&tv.rope, end_byte);
 
     tv.rope.remove(start_byte..end_byte);
     cursor.cursor_pos = start;
@@ -71,7 +73,14 @@ pub fn delete_selection(
         });
     }
 
-    hist.pending_byte_edit = Some((start_byte, end_byte, start_byte));
+    hist.pending_byte_edit = Some(crate::EditDelta {
+        start_byte,
+        old_end_byte: end_byte,
+        new_end_byte: start_byte,
+        start_position,
+        old_end_position,
+        new_end_position: start_position,
+    });
 
     sel.apply_primary_cursor(cursor);
     tv.content_version += 1;
@@ -257,6 +266,8 @@ pub fn delete_word_backward(
 
         let start_byte = tv.rope.char_to_byte(word_start);
         let end_byte = tv.rope.char_to_byte(cursor_before);
+        let start_position = crate::edit::point_at_byte(&tv.rope, start_byte);
+        let old_end_position = crate::edit::point_at_byte(&tv.rope, end_byte);
 
         tv.rope.remove(start_byte..end_byte);
 
@@ -271,7 +282,14 @@ pub fn delete_word_backward(
             cursor_after: word_start,
             kind: EditKind::DeleteBackward,
         });
-        hist.pending_byte_edit = Some((start_byte, end_byte, start_byte));
+        hist.pending_byte_edit = Some(crate::EditDelta {
+            start_byte,
+            old_end_byte: end_byte,
+            new_end_byte: start_byte,
+            start_position,
+            old_end_position,
+            new_end_position: start_position,
+        });
 
         tv.content_version += 1;
     }
@@ -292,6 +310,8 @@ pub fn delete_word_forward(
 
         let start_byte = tv.rope.char_to_byte(cursor_before);
         let end_byte = tv.rope.char_to_byte(word_end);
+        let start_position = crate::edit::point_at_byte(&tv.rope, start_byte);
+        let old_end_position = crate::edit::point_at_byte(&tv.rope, end_byte);
 
         tv.rope.remove(start_byte..end_byte);
 
@@ -305,7 +325,14 @@ pub fn delete_word_forward(
             cursor_after: cursor_before,
             kind: EditKind::DeleteForward,
         });
-        hist.pending_byte_edit = Some((start_byte, end_byte, start_byte));
+        hist.pending_byte_edit = Some(crate::EditDelta {
+            start_byte,
+            old_end_byte: end_byte,
+            new_end_byte: start_byte,
+            start_position,
+            old_end_position,
+            new_end_position: start_position,
+        });
 
         tv.content_version += 1;
     }

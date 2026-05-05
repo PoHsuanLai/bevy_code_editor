@@ -44,11 +44,11 @@ pub fn listen_text_edit_events(
         let uri = lsp_document.uri.clone();
         let version = lsp_document.bump_version();
 
-        let start_pos = rope_byte_to_lsp_position(rope, event.start_byte, ENC);
-        let old_len = event.old_end_byte - event.start_byte;
+        let start_pos = rope_byte_to_lsp_position(rope, event.start_byte(), ENC);
+        let old_len = event.old_end_byte() - event.start_byte();
 
-        let new_text_start = event.start_byte.min(rope.len_bytes());
-        let new_text_end = event.new_end_byte.min(rope.len_bytes());
+        let new_text_start = event.start_byte().min(rope.len_bytes());
+        let new_text_end = event.new_end_byte().min(rope.len_bytes());
         let new_text = if new_text_start < new_text_end {
             let s = rope.byte_to_char(new_text_start);
             let e = rope.byte_to_char(new_text_end);

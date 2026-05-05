@@ -43,6 +43,12 @@ pub struct SyntaxInner {
     pub(crate) provider: Option<TreeSitterProvider>,
     #[cfg(feature = "tree-sitter")]
     pub(crate) tree_version: u64,
+    /// Content version of the rope last fed to the provider's cached tree,
+    /// either via sync re-parse (`record_edits_for_incremental_parsing`)
+    /// or via the async parse mirror. Used by the mirror to skip
+    /// overwriting a fresher cached tree with an older async result.
+    #[cfg(feature = "tree-sitter")]
+    pub(crate) applied_content_version: u64,
 }
 
 impl SyntaxInner {
@@ -52,6 +58,8 @@ impl SyntaxInner {
             provider: None,
             #[cfg(feature = "tree-sitter")]
             tree_version: 0,
+            #[cfg(feature = "tree-sitter")]
+            applied_content_version: 0,
         }
     }
 }
@@ -474,18 +482,27 @@ pub(crate) fn mirror_syntax_tree_to_provider(
             &bevy_tree_sitter::SyntaxTree,
             &EditorSyntaxState,
             &mut SyntaxCacheState,
-            &mut TextViewState,
+            &TextViewState,
         ),
         (With<CodeEditor>, Changed<bevy_tree_sitter::SyntaxTree>),
     >,
 ) {
-    for (syntax_tree, syntax_state, mut syntax_cache, mut tv) in editor_query.iter_mut() {
+    for (syntax_tree, syntax_state, mut syntax_cache, tv) in editor_query.iter_mut() {
         let Some(tree) = syntax_tree.tree.as_ref() else {
             continue;
         };
 
         let mut guard = syntax_state.inner.write().unwrap();
         let inner = &mut *guard;
+        // If a sync re-parse already produced a fresher tree, skip — the
+        // async result is stale relative to the live state. (Initial mirror
+        // always proceeds: provider.cached_tree is None.)
+        let provider_has_tree = inner.provider.as_ref()
+            .map(|p| p.cached_tree.is_some())
+            .unwrap_or(false);
+        if provider_has_tree && syntax_tree.content_version <= inner.applied_content_version {
+            continue;
+        }
         if let Some(provider) = &mut inner.provider {
             provider.cached_tree = Some(tree.clone());
             provider.cached_rope = Some(tv.rope.clone());
@@ -498,16 +515,16 @@ pub(crate) fn mirror_syntax_tree_to_provider(
                 }
             }
             inner.tree_version = inner.tree_version.wrapping_add(1);
+            inner.applied_content_version = syntax_tree.content_version;
         }
         drop(guard);
 
         syntax_cache.last_highlighted_version = syntax_tree.content_version;
-
-        // Bump content_version so the line glyph cache is fully invalidated
-        // (otherwise cached uncolored glyphs from the pre-parse render persist).
-        // Set last_highlighted_version to match so we don't re-trigger a parse.
-        tv.content_version += 1;
-        syntax_cache.last_highlighted_version = tv.content_version;
+        // Don't touch `tv.content_version` — the engine's layout fingerprint
+        // already folds in `LineStyleSource::version()` (which we just bumped
+        // via `tree_version`), so the layout rebuilds without a content
+        // version bump. Bumping it here used to feed back through
+        // `sync_editor_parse_source` into a runaway re-parse loop.
     }
 }
 
@@ -519,15 +536,8 @@ fn send_text_edit_events(
     mut writer: MessageWriter<crate::types::events::TextEditEvent>,
 ) {
     for (mut syntax_cache, tv) in editor_query.iter_mut() {
-        if let Some((start_byte, old_end_byte, new_end_byte)) =
-            syntax_cache.pending_tree_sitter_edit.take()
-        {
-            writer.write(crate::types::events::TextEditEvent::new(
-                start_byte,
-                old_end_byte,
-                new_end_byte,
-                tv.content_version,
-            ));
+        if let Some(delta) = syntax_cache.pending_tree_sitter_edit.take() {
+            writer.write(crate::types::events::TextEditEvent::new(delta, tv.content_version));
         }
     }
 }
@@ -542,32 +552,43 @@ fn send_text_edit_events(
 /// while the async re-parse runs in the background — eliminates the color
 /// flash on keystroke.
 fn record_edits_for_incremental_parsing(
-    editor_query: Query<
-        (&TextViewState, &bevy_tree_sitter::ParseSourceComp),
+    mut editor_query: Query<
+        (
+            &bevy_tree_sitter::ParseSourceComp,
+            &mut bevy_tree_sitter::SyntaxTree,
+            &EditorSyntaxState,
+        ),
         With<CodeEditor>,
     >,
     mut events: MessageReader<crate::types::events::TextEditEvent>,
 ) {
     let collected_events: Vec<_> = events.read().cloned().collect();
-    for (tv, parse_source) in editor_query.iter() {
+    for (parse_source, mut syntax_tree, syntax_state) in editor_query.iter_mut() {
         for event in collected_events.iter() {
-            // Sub-μs O(log n) rope lookups — fine to do on the main thread.
-            let start_position = bevy_tree_sitter::byte_to_point(&tv.rope, event.start_byte);
-            let old_end_position =
-                bevy_tree_sitter::byte_to_point(&tv.rope, event.old_end_byte);
-            let new_end_position =
-                bevy_tree_sitter::byte_to_point(&tv.rope, event.new_end_byte);
-
+            let d = &event.delta;
             let edit = bevy_tree_sitter::ts::InputEdit {
-                start_byte: event.start_byte,
-                old_end_byte: event.old_end_byte,
-                new_end_byte: event.new_end_byte,
-                start_position,
-                old_end_position,
-                new_end_position,
+                start_byte: d.start_byte,
+                old_end_byte: d.old_end_byte,
+                new_end_byte: d.new_end_byte,
+                start_position: bevy_tree_sitter::ts::Point::new(
+                    d.start_position.row as usize,
+                    d.start_position.column_byte as usize,
+                ),
+                old_end_position: bevy_tree_sitter::ts::Point::new(
+                    d.old_end_position.row as usize,
+                    d.old_end_position.column_byte as usize,
+                ),
+                new_end_position: bevy_tree_sitter::ts::Point::new(
+                    d.new_end_position.row as usize,
+                    d.new_end_position.column_byte as usize,
+                ),
             };
-
+            let st = syntax_tree.bypass_change_detection();
+            if let Some(tree) = st.tree.as_mut() {
+                tree.edit(&edit);
+            }
             parse_source.0.apply_edit(edit);
+            syntax_state.inner.write().unwrap().applied_content_version = event.content_version;
         }
     }
 }
@@ -583,8 +604,15 @@ impl Plugin for SyntaxPlugin {
 
         // Always attach `EditorSyntaxState` to each editor entity — the
         // styling plumbing needs an Arc to share regardless of whether
-        // tree-sitter is wired up.
-        app.add_systems(Startup, init_editor_syntax);
+        // tree-sitter is wired up. Runs in both Startup (for editors
+        // spawned during plugin setup) and Update (for editors spawned at
+        // runtime). The query filter `Without<EditorSyntaxState>` makes it
+        // idempotent — once attached, it's a no-op.
+        app.add_systems(
+            Startup,
+            init_editor_syntax.after(crate::plugin::spawn_editor_entity),
+        );
+        app.add_systems(Update, init_editor_syntax.in_set(crate::plugin::ApplyStateSet));
 
         #[cfg(feature = "tree-sitter")]
         {
@@ -594,24 +622,23 @@ impl Plugin for SyntaxPlugin {
                 app.add_plugins(bevy_tree_sitter::TreeSitterPlugin);
             }
 
-            // Edit pipeline: pending edits → events → sync `tree.edit()`
-            // through the editor's `ParseSource::apply_edit`. Must run in
-            // ApplyStateSet so the tree is interpolated BEFORE
-            // RenderingSet calls highlight_range().
+            // Edit pipeline ordering:
+            //   1. react_language_changed: install provider
+            //   2. sync_editor_parse_source: mirror tv.rope into buffer snapshot
+            //   3. send_text_edit_events: drain SyntaxCacheState.pending_tree_sitter_edit
+            //   4. record_edits_for_incremental_parsing: tree.edit() + sync re-parse
+            //   5. parse_dirty (ParseSet): kicks off async re-parse with the synced rope
+            // Steps 2 and 4 must be ordered: 4 reads the rope mirror via
+            // ParseSourceComp::apply_edit, so 2 must mirror the post-edit
+            // rope first.
             app.add_systems(
                 Update,
-                (send_text_edit_events, record_edits_for_incremental_parsing)
-                    .chain()
-                    .in_set(crate::plugin::ApplyStateSet),
-            );
-
-            // Sync the parse source's buffer mirror BEFORE parse_dirty
-            // reads from it; mirror freshly-parsed trees AFTER parse_dirty
-            // writes to `SyntaxTree`. Both stay in `ApplyStateSet` so
-            // they're visible to the renderer in the same frame.
-            app.add_systems(
-                Update,
-                (react_language_changed, sync_editor_parse_source)
+                (
+                    react_language_changed,
+                    sync_editor_parse_source,
+                    send_text_edit_events,
+                    record_edits_for_incremental_parsing,
+                )
                     .chain()
                     .in_set(crate::plugin::ApplyStateSet)
                     .before(bevy_tree_sitter::ParseSet),
