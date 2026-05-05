@@ -1,0 +1,218 @@
+//! Editor-specific helpers used by the focused-keyboard observer and LSP
+//! handlers.
+//!
+//! Buffer-edit primitives (`insert_char`, `delete_selection`, `delete_*`,
+//! undo / redo) live in [`super::editing`] — that module wraps the
+//! `bevy_text_editor::EditHistoryState` impl and propagates side-channels
+//! into the editor's `SyntaxCacheState` / `EditorDisplayState`.
+//!
+//! What remains here is the handful of editor-only helpers: bracket
+//! auto-close predicates and LSP completion / `did_change` glue.
+
+use crate::text_view::TextViewState;
+#[cfg(feature = "lsp")]
+use crate::settings::LspSettings;
+use crate::types::*;
+#[cfg(feature = "lsp")]
+use bevy::prelude::{Entity, MessageWriter};
+use ropey::Rope;
+
+#[cfg(feature = "lsp")]
+use crate::lsp_ui::state::LspCompletionPopup;
+#[cfg(feature = "lsp")]
+use bevy::log::trace;
+#[cfg(feature = "lsp")]
+use bevy_lsp::{LspClient, LspDocument, LspMessage};
+
+/// Bundled refs to the four LSP pieces that previously co-traveled through
+/// `execute_action`: settings, transport client, completion popup state, and
+/// the per-editor `LspDocument` (URI / version). Retained here for the
+/// keyboard observer that still passes them down its `insert_typed_char`
+/// helper.
+#[cfg(feature = "lsp")]
+pub struct LspBuf<'a> {
+    pub settings: &'a LspSettings,
+    pub client: &'a LspClient,
+    pub completion: &'a mut LspCompletionPopup,
+    pub document: Option<&'a mut LspDocument>,
+}
+
+/// Insert a closing bracket / quote without moving the cursor (auto-close).
+pub fn insert_closing_char(cursor: &CursorState, tv: &mut TextViewState, c: char) {
+    let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
+    tv.rope.insert_char(cursor_pos, c);
+    tv.content_version += 1;
+}
+
+/// Get the closing bracket for an opening bracket.
+pub fn get_closing_bracket(open: char, pairs: &[(char, char)]) -> Option<char> {
+    pairs.iter().find(|(o, _)| *o == open).map(|(_, c)| *c)
+}
+
+/// Get the matching quote character (quotes are self-closing).
+pub fn get_closing_quote(c: char) -> Option<char> {
+    match c {
+        '"' | '\'' | '`' => Some(c),
+        _ => None,
+    }
+}
+
+/// Skip auto-close when the cursor already has the closing char in front of
+/// it — typing the close key just steps over it.
+pub fn should_skip_auto_close(cursor: &CursorState, rope: &Rope, closing: char) -> bool {
+    let cursor_pos = cursor.cursor_pos;
+    if cursor_pos >= rope.len_chars() {
+        return false;
+    }
+    rope.char(cursor_pos) == closing
+}
+
+/// Apply selected completion item.
+///
+/// Emits a `ReplaceRangeRequested` event for the editor entity to apply the
+/// completion through `bevy_text_editor`'s handler. Pure ECS — no mutable
+/// editor state in the caller.
+#[cfg(feature = "lsp")]
+pub fn apply_completion(
+    entity: Entity,
+    cursor_pos: usize,
+    completion_state: &mut LspCompletionPopup,
+    writer: &mut MessageWriter<bevy_text_editor::ReplaceRangeRequested>,
+) {
+    let filtered = completion_state.filtered_items();
+    if let Some(item) = filtered.get(completion_state.selected_index) {
+        let start = completion_state.start_char_index;
+        let end = cursor_pos;
+        if start <= end {
+            writer.write(bevy_text_editor::ReplaceRangeRequested {
+                entity,
+                start_char: start,
+                end_char: end,
+                text: item.insert_text().to_string(),
+                kind: bevy_text_editor::EditKind::Other,
+                record_history: true,
+            });
+        }
+    }
+    completion_state.dismiss();
+}
+
+/// Find the start of the current word (for auto-triggering completion).
+#[cfg(feature = "lsp")]
+pub fn find_word_start(rope: &ropey::Rope, cursor_pos: usize) -> usize {
+    if cursor_pos == 0 {
+        return 0;
+    }
+
+    let mut pos = cursor_pos;
+    while pos > 0 {
+        let prev_char = rope.char(pos - 1);
+        if prev_char.is_alphanumeric() || prev_char == '_' {
+            pos -= 1;
+        } else {
+            break;
+        }
+    }
+    pos
+}
+
+/// Update the completion filter based on text typed since `start_char_index`.
+#[cfg(feature = "lsp")]
+pub fn update_completion_filter(
+    cursor: &CursorState,
+    rope: &Rope,
+    completion_state: &mut LspCompletionPopup,
+) {
+    let cursor_pos = cursor.cursor_pos.min(rope.len_chars());
+    let start = completion_state.start_char_index;
+
+    if cursor_pos > start && start <= rope.len_chars() {
+        let filter_text: String = rope.slice(start..cursor_pos).chars().collect();
+        completion_state.filter = filter_text;
+        completion_state.selected_index = 0;
+        completion_state.scroll_offset = 0;
+
+        trace!("[LSP] Filter updated: '{}'", completion_state.filter);
+    } else {
+        completion_state.filter.clear();
+        completion_state.scroll_offset = 0;
+    }
+}
+
+/// Request completion from LSP.
+#[cfg(feature = "lsp")]
+pub fn request_completion(
+    cursor: &CursorState,
+    rope: &Rope,
+    lsp_client: &LspClient,
+    completion_state: &mut LspCompletionPopup,
+    lsp_document: Option<&LspDocument>,
+) {
+    let cursor_pos = cursor.cursor_pos.min(rope.len_chars());
+    let lsp_position =
+        bevy_lsp::rope_char_to_lsp_position(rope, cursor_pos, bevy_lsp::PositionEncoding::Utf16);
+
+    if let Some(doc) = lsp_document {
+        trace!(
+            "[LSP] Requesting completion at line={}, char={}, visible={}, start_idx={}",
+            lsp_position.line,
+            lsp_position.character,
+            completion_state.visible,
+            completion_state.start_char_index
+        );
+
+        if !completion_state.visible {
+            completion_state.start_char_index = cursor_pos;
+            completion_state.items.clear();
+            completion_state.selected_index = 0;
+            completion_state.filter.clear();
+            completion_state.initial_query.clear();
+            completion_state.is_incomplete = false;
+        }
+
+        // Skip the LSP round-trip when the previous result was complete and
+        // the new prefix is just an extension of the initial query — local
+        // refilter is enough.
+        let new_query: String = rope
+            .slice(completion_state.start_char_index..cursor_pos)
+            .chars()
+            .collect();
+        let can_refilter_locally = !completion_state.is_incomplete
+            && !completion_state.items.is_empty()
+            && !completion_state.initial_query.is_empty()
+            && new_query.starts_with(&completion_state.initial_query);
+
+        if !can_refilter_locally {
+            completion_state.request_id = completion_state.request_id.wrapping_add(1);
+            lsp_client.send(LspMessage::Completion {
+                uri: doc.uri.clone(),
+                position: lsp_position,
+                id: completion_state.request_id,
+            });
+            if completion_state.initial_query.is_empty() {
+                completion_state.initial_query = new_query.clone();
+            }
+        }
+
+        completion_state.filter = new_query;
+        completion_state.update_word_completions(rope, cursor_pos);
+        completion_state.visible = !completion_state.word_items.is_empty()
+            || !completion_state.items.is_empty();
+    } else {
+        if !completion_state.visible {
+            completion_state.start_char_index = cursor_pos;
+            completion_state.items.clear();
+            completion_state.selected_index = 0;
+            completion_state.filter.clear();
+        }
+
+        completion_state.update_word_completions(rope, cursor_pos);
+        completion_state.visible = true;
+
+        trace!(
+            "[bevy_code_editor] No LSP document URI - using word completions only ({} words)",
+            completion_state.word_items.len()
+        );
+    }
+}
+

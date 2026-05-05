@@ -1,0 +1,23 @@
+[package]
+name = "bevy_tree_sitter"
+version = "0.1.0"
+edition = "2021"
+authors = ["PoHsuanLai"]
+license = "MIT OR Apache-2.0"
+description = "Text-rendering-agnostic tree-sitter integration for Bevy: parse trees, incremental updates, and structural highlight ranges keyed by capture name. Suitable for editors, code outline panels, AI agents reasoning about syntax, log viewers, and other syntax-aware UI."
+repository = "https://github.com/PoHsuanLai/bevy_code_editor"
+keywords = ["bevy", "tree-sitter", "syntax", "parsing"]
+categories = ["game-development", "parser-implementations"]
+
+[dependencies]
+# Engine-tier crate: ECS + AsyncComputeTaskPool + log only.
+# No rendering — this crate is text-rendering-agnostic.
+bevy = { version = "0.17", default-features = false, features = [
+    "bevy_asset",
+    "bevy_log",
+] }
+
+tree-sitter = "0.24"
+streaming-iterator = "0.1"
+ropey = "1.6"
+futures-lite = "2.5"

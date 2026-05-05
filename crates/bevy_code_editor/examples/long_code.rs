@@ -1,0 +1,93 @@
+//! Performance test example with a very large file (sqlite3.c - 150k+ lines)
+//!
+//! This example loads sqlite3.c to test scrolling performance, viewport culling,
+//! and entity pooling with a massive codebase.
+
+use bevy::prelude::*;
+use bevy::window::{CursorIcon, SystemCursorIcon};
+use bevy_code_editor::prelude::*;
+
+#[cfg(feature = "tree-sitter")]
+use bevy_tree_sitter::Language;
+
+fn main() {
+    App::new()
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Bevy Code Editor - Performance Test (sqlite3.c - 150k lines)".to_string(),
+                resolution: (1400, 900).into(),
+                ..default()
+            }),
+            ..default()
+        }))
+        .add_plugins(CodeEditorPlugin::standalone())
+        .add_systems(PostStartup, setup_editor)
+        .add_systems(Update, update_cursor_icon)
+        .run();
+}
+
+fn setup_editor(
+    #[cfg(feature = "tree-sitter")] mut commands: Commands,
+    editor_query: Query<Entity, With<CodeEditor>>,
+    mut input_focus: ResMut<bevy::input_focus::InputFocus>,
+    mut set_text_writer: MessageWriter<bevy_text_editor::SetTextRequested>,
+) {
+    let Ok(entity) = editor_query.single() else {
+        return;
+    };
+    input_focus.set(entity);
+
+    let file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/sqlite3.c");
+    let content = match std::fs::read_to_string(&file_path) {
+        Ok(content) => {
+            println!("Loaded {} with {} lines", file_path.display(), content.lines().count());
+            content
+        }
+        Err(e) => {
+            eprintln!("Failed to load {}: {}", file_path.display(), e);
+            format!("// Failed to load sqlite3.c: {}\n// Make sure assets/sqlite3.c exists", e)
+        }
+    };
+
+    set_text_writer.write(bevy_text_editor::SetTextRequested {
+        entity,
+        text: content,
+    });
+
+    #[cfg(feature = "tree-sitter")]
+    commands.entity(entity).insert(Language::from_grammar(
+        "c",
+        tree_sitter_c::LANGUAGE.into(),
+        tree_sitter_c::HIGHLIGHT_QUERY,
+    ));
+}
+
+fn update_cursor_icon(
+    editor_query: Query<(Entity, &TextViewViewport), With<CodeEditor>>,
+    input_focus: Res<bevy::input_focus::InputFocus>,
+    mut commands: Commands,
+    windows: Query<(Entity, &Window), With<Window>>,
+) {
+    let Ok((editor_entity, viewport)) = editor_query.single() else {
+        return;
+    };
+
+    if let Ok((window_entity, window)) = windows.single() {
+        let Some(cursor_pos) = window.cursor_position() else {
+            return;
+        };
+
+        let cursor_x = cursor_pos.x - window.width() / 2.0;
+        let viewport_width = viewport.width as f32;
+        let code_area_right = viewport_width / 2.0 - 20.0;
+
+        let over_code = cursor_x < code_area_right;
+        let is_focused = input_focus.get() == Some(editor_entity);
+        let icon = if is_focused && over_code {
+            CursorIcon::System(SystemCursorIcon::Text)
+        } else {
+            CursorIcon::System(SystemCursorIcon::Default)
+        };
+        commands.entity(window_entity).insert(icon);
+    }
+}

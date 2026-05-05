@@ -1,0 +1,222 @@
+//! Selection handlers — Select{Left,Right,Up,Down,WordLeft,WordRight,
+//! LineStart,LineEnd,All}, ClearSelection.
+
+use crate::cursor_movement::{
+    move_cursor, move_cursor_down, move_cursor_line_end, move_cursor_line_start, move_cursor_up,
+    move_cursor_word_left, move_cursor_word_right,
+};
+use crate::editing_events::*;
+use crate::state::{CursorState, SelectionState, TextEditor};
+use bevy::input_focus::InputFocus;
+use bevy::prelude::*;
+use bevy_text_engine::TextViewState;
+
+type EditorView<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut SelectionState,
+        &'static mut CursorState,
+        &'static mut TextViewState,
+    ),
+    With<TextEditor>,
+>;
+
+pub fn handle_select_left(
+    mut events: MessageReader<SelectLeftRequested>,
+    input_focus: Res<InputFocus>,
+    mut q: EditorView,
+) {
+    if events.read().next().is_none() {
+        return;
+    }
+    let Some(entity) = input_focus.get() else {
+        return;
+    };
+    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+        return;
+    };
+    let anchor = cursor.cursor_pos;
+    move_cursor(&mut cursor, &tv.rope, -1);
+    sel.apply_primary_with_anchor(&cursor, anchor);
+}
+
+pub fn handle_select_right(
+    mut events: MessageReader<SelectRightRequested>,
+    input_focus: Res<InputFocus>,
+    mut q: EditorView,
+) {
+    if events.read().next().is_none() {
+        return;
+    }
+    let Some(entity) = input_focus.get() else {
+        return;
+    };
+    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+        return;
+    };
+    let anchor = cursor.cursor_pos;
+    move_cursor(&mut cursor, &tv.rope, 1);
+    sel.apply_primary_with_anchor(&cursor, anchor);
+}
+
+pub fn handle_select_up(
+    mut events: MessageReader<SelectUpRequested>,
+    input_focus: Res<InputFocus>,
+    mut q: EditorView,
+) {
+    if events.read().next().is_none() {
+        return;
+    }
+    let Some(entity) = input_focus.get() else {
+        return;
+    };
+    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+        return;
+    };
+    let anchor = cursor.cursor_pos;
+    move_cursor_up(&mut cursor, &tv.rope);
+    sel.apply_primary_with_anchor(&cursor, anchor);
+}
+
+pub fn handle_select_down(
+    mut events: MessageReader<SelectDownRequested>,
+    input_focus: Res<InputFocus>,
+    mut q: EditorView,
+) {
+    if events.read().next().is_none() {
+        return;
+    }
+    let Some(entity) = input_focus.get() else {
+        return;
+    };
+    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+        return;
+    };
+    let anchor = cursor.cursor_pos;
+    move_cursor_down(&mut cursor, &tv.rope);
+    sel.apply_primary_with_anchor(&cursor, anchor);
+}
+
+pub fn handle_select_word_left(
+    mut events: MessageReader<SelectWordLeftRequested>,
+    input_focus: Res<InputFocus>,
+    mut q: EditorView,
+) {
+    if events.read().next().is_none() {
+        return;
+    }
+    let Some(entity) = input_focus.get() else {
+        return;
+    };
+    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+        return;
+    };
+    let anchor = cursor.cursor_pos;
+    move_cursor_word_left(&mut cursor, &tv.rope);
+    sel.apply_primary_with_anchor(&cursor, anchor);
+}
+
+pub fn handle_select_word_right(
+    mut events: MessageReader<SelectWordRightRequested>,
+    input_focus: Res<InputFocus>,
+    mut q: EditorView,
+) {
+    if events.read().next().is_none() {
+        return;
+    }
+    let Some(entity) = input_focus.get() else {
+        return;
+    };
+    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+        return;
+    };
+    let anchor = cursor.cursor_pos;
+    move_cursor_word_right(&mut cursor, &tv.rope);
+    sel.apply_primary_with_anchor(&cursor, anchor);
+}
+
+pub fn handle_select_line_start(
+    mut events: MessageReader<SelectLineStartRequested>,
+    input_focus: Res<InputFocus>,
+    mut q: EditorView,
+) {
+    if events.read().next().is_none() {
+        return;
+    }
+    let Some(entity) = input_focus.get() else {
+        return;
+    };
+    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+        return;
+    };
+    let anchor = cursor.cursor_pos;
+    move_cursor_line_start(&mut cursor, &tv.rope);
+    sel.apply_primary_with_anchor(&cursor, anchor);
+}
+
+pub fn handle_select_line_end(
+    mut events: MessageReader<SelectLineEndRequested>,
+    input_focus: Res<InputFocus>,
+    mut q: EditorView,
+) {
+    if events.read().next().is_none() {
+        return;
+    }
+    let Some(entity) = input_focus.get() else {
+        return;
+    };
+    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+        return;
+    };
+    let anchor = cursor.cursor_pos;
+    move_cursor_line_end(&mut cursor, &tv.rope);
+    sel.apply_primary_with_anchor(&cursor, anchor);
+}
+
+pub fn handle_select_all(
+    mut events: MessageReader<SelectAllRequested>,
+    input_focus: Res<InputFocus>,
+    mut q: EditorView,
+) {
+    if events.read().next().is_none() {
+        return;
+    }
+    let Some(entity) = input_focus.get() else {
+        return;
+    };
+    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+        return;
+    };
+    let end = tv.rope.len_chars();
+    cursor.cursor_pos = end;
+    sel.selections.set_selection(end, 0);
+}
+
+/// Generic clear-selection — drops secondary cursors first, otherwise
+/// collapses the selection to a single cursor at the head.
+///
+/// Hosts with extra dismissable UI (LSP popups, goto-line dialogs) should
+/// run their own handler ahead of this one and consume the event there.
+pub fn handle_clear_selection(
+    mut events: MessageReader<ClearSelectionRequested>,
+    input_focus: Res<InputFocus>,
+    mut q: EditorView,
+) {
+    if events.read().next().is_none() {
+        return;
+    }
+    let Some(entity) = input_focus.get() else {
+        return;
+    };
+    let Ok((mut sel, mut cursor, _tv)) = q.get_mut(entity) else {
+        return;
+    };
+
+    if sel.has_multiple_cursors() {
+        sel.clear_secondary_cursors(&mut cursor);
+        return;
+    }
+
+    sel.apply_primary_cursor(&cursor);
+}

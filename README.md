@@ -1,141 +1,134 @@
 # bevy_code_editor
 
-A GPU-accelerated code editor for the Bevy game engine. I built this because I thought it would be cool to have a fully-featured text editor running inside a game engine, in case anyone wants their player to code.
+A GPU-accelerated text rendering engine for Bevy, plus a code editor built on top of it.
 
-## Features
+This started as a code editor and grew into the underlying primitives. The workspace is now split into a hermetic engine plus several peer crates a host can compose:
 
-- **GPU-accelerated text rendering** - Uses a custom glyph atlas and per-line mesh system
-- **Syntax highlighting** - Tree-sitter integration for accurate highlighting
-- **Code folding** - Fold functions, classes, and blocks
-- **LSP support** (optional) - Autocomplete, hover info, diagnostics
-- **Multi-cursor editing** - Ctrl+D to add cursors at matching selections
-- **Bracket matching** - Highlights matching brackets
-- **Find/replace** - Standard search functionality
-- **Minimap** - VSCode-style minimap with viewport indicator
-- **Customizable themes** - Built-in VSCode-like and minimal themes
-- **Undo/redo** - Full edit history
-- **Auto-indentation** - Smart indentation and auto-closing brackets
+| Crate | What it does | Depends on |
+|---|---|---|
+| **`bevy_text_engine`** | GPU glyph atlas, instanced rendering, soft-wrap layout producer, overlays | bevy + cosmic-text + swash |
+| **`bevy_text_editor`** | Editable text widget: pointer interaction + cursor / selection / edit history / undo / clipboard for `TextView` entities | `bevy_text_engine` + bevy_picking + bevy_input_focus |
+| **`bevy_tree_sitter`** | Tree-sitter parser + incremental highlights, text-rendering-agnostic | bevy + tree-sitter |
+| **`bevy_lsp`** | Async LSP transport (async-lsp on a shared tokio runtime), per-document Components, position helpers | bevy + async-lsp + lsp-types |
+| **`bevy_code_editor`** | The code-editor consumer: IDE features (multi-cursor, folding, brackets, syntax adapter, LSP UI, scrollbar, line numbers) on top of `bevy_text_editor` | all of the above |
 
-## Quick Start
+## What you get
+
+If you want **a code editor in your Bevy app**:
+
+```rust
+use bevy::prelude::*;
+use bevy_code_editor::prelude::*;
+
+fn main() {
+    App::new()
+        .add_plugins((DefaultPlugins, CodeEditorPlugin::standalone()))
+        .run();
+}
+```
+
+`CodeEditorPlugin::standalone()` is a `PluginGroup` that bundles the engine, interaction, the editor, and a default UI plugin (line numbers, separator, camera). One line of code, working editor.
+
+If you want **a chat box, log viewer, terminal, or anything that just renders styled text**:
+
+```rust
+use bevy::prelude::*;
+use bevy_text_engine::prelude::*;
+
+fn main() {
+    App::new()
+        .add_plugins((DefaultPlugins, TextEnginePlugins))
+        .add_systems(Startup, spawn_panel)
+        .run();
+}
+
+fn spawn_panel(mut commands: Commands) {
+    commands.spawn((
+        TextView,
+        FontConfig::from_size(16.0),
+        // your data layer writes DisplayLayout each frame
+    ));
+}
+```
+
+The engine's job is "given a `DisplayLayout`, render it." How you produce the layout is up to you. For static content, see `view::trivial_layout` / `view::trivial_layout_blocks`.
+
+## Examples
 
 ```bash
-# Basic example
-cargo run --example basic_editor
+# Basic editor
+cargo run --example basic
 
-# With syntax highlighting
+# Two editors in one window, independent state, separate cameras
+cargo run --example multi_editor
+
+# Tree-sitter syntax highlighting (Rust)
 cargo run --example tree-sitter
 
-# With LSP integration
-cargo run --example lsp_integration --features lsp
+# LSP integration (rust-analyzer)
+cargo run --example lsp --features lsp
+
+# Engine-only demo, no editor — proves TextEnginePlugins works alone
+cargo run --example text_view_demo
 ```
 
-## Usage
+## Composition
 
-### Basic Setup
+The plugins are explicit and additive — no auto-add of unrelated machinery. Mix and match:
 
 ```rust
-use bevy::prelude::*;
-use bevy_code_editor::prelude::*;
+// Just the rendering engine
+.add_plugins(TextEnginePlugins)
 
-fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugins(CodeEditorPlugin::default())
-        .add_systems(Startup, setup)
-        .run();
-}
+// Engine + pointer/keyboard interaction
+.add_plugins((TextEnginePlugins, TextInteractionPlugin))
 
-fn setup(mut state: ResMut<CodeEditorState>) {
-    state.set_text("fn main() {\n    println!(\"Hello, world!\");\n}");
-}
+// Engine + interaction + editor (build it up explicitly)
+.add_plugins((TextEnginePlugins, TextInteractionPlugin, CodeEditorPlugin))
+
+// All of the above plus default UI + camera (one-line)
+.add_plugins(CodeEditorPlugin::standalone())
 ```
 
-### With Syntax Highlighting
+LSP and tree-sitter are gated by feature flags on `bevy_code_editor`:
+
+- `tree-sitter` (default) — pulls in `bevy_tree_sitter` + a syntax-highlighting adapter.
+- `lsp` — pulls in `bevy_lsp` + the editor's LSP UI.
+
+## Embedding multiple editors
+
+The whole workspace is per-entity. `CodeEditor::default()` can be spawned multiple times; `bevy_picking` routes clicks to whichever is hovered, `bevy_input_focus` routes keyboard to whichever is focused. Each editor has its own `FontConfig`, scroll state, fold state, LSP client, syntax tree.
+
+See `examples/multi_editor.rs`.
+
+## Sharing fonts with bevy_text
+
+`FontConfig` carries `Option<Handle<bevy_text::Font>>`:
 
 ```rust
-use bevy::prelude::*;
-use bevy_code_editor::prelude::*;
+let font: Handle<bevy::text::Font> = asset_server.load("fonts/JetBrainsMono.ttf");
 
-fn setup(
-    mut state: ResMut<CodeEditorState>,
-    mut syntax: ResMut<SyntaxResource>,
-) {
-    state.set_text("fn main() {\n    println!(\"Hello, world!\");\n}");
+// In bevy_text:
+commands.spawn((Text2d::new("hello"), TextFont { font: font.clone(), ..default() }));
 
-    // Define your language configuration
-    let rust = Language {
-        name: "rust",
-        tree_sitter: Some(TreeSitterConfig {
-            grammar: tree_sitter_rust::LANGUAGE.into(),
-            highlights_query: tree_sitter_rust::HIGHLIGHTS_QUERY,
-        }),
-        #[cfg(feature = "lsp")]
-        lsp_command: Some(("rust-analyzer", &[])),
-    };
-
-    // Apply language configuration
-    if let Some(provider) = rust.create_tree_sitter_provider() {
-        syntax.set_provider(provider);
-    }
-}
+// In bevy_text_engine:
+commands.spawn((TextView, FontConfig::from_size(16.0).with_font(font)));
 ```
 
-### With LSP
+Same handle, single asset load, asset hot-reload works for both.
 
-```rust
-use bevy::prelude::*;
-use bevy_code_editor::prelude::*;
+## Feature flags
 
-fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugins(CodeEditorPlugin::default())
-        .add_plugins(LspPlugin::default())
-        .add_plugins(LspUiPlugin::default())
-        .add_systems(Startup, setup)
-        .run();
-}
+`bevy_code_editor` features:
 
-fn setup(
-    mut state: ResMut<CodeEditorState>,
-    mut syntax: ResMut<SyntaxResource>,
-    mut lsp_client: ResMut<LspClient>,
-) {
-    // Define language configuration
-    let rust = Language {
-        name: "rust",
-        tree_sitter: Some(TreeSitterConfig {
-            grammar: tree_sitter_rust::LANGUAGE.into(),
-            highlights_query: tree_sitter_rust::HIGHLIGHTS_QUERY,
-        }),
-        lsp_command: Some(("rust-analyzer", &[])),
-    };
+- `tree-sitter` (default) — syntax highlighting via `bevy_tree_sitter`
+- `lsp` — language server integration via `bevy_lsp`
 
-    // Setup syntax highlighting
-    if let Some(provider) = rust.create_tree_sitter_provider() {
-        syntax.set_provider(provider);
-    }
+Minimal build (no syntax highlighting, no LSP):
 
-    // Start LSP server
-    if let Some((cmd, args)) = rust.lsp_command {
-        lsp_client.start(cmd, args).unwrap();
-        // Send initialize request...
-    }
-}
+```bash
+cargo build -p bevy_code_editor --no-default-features
 ```
-
-## Feature Flags
-
-- `tree-sitter` (default) - Syntax highlighting via tree-sitter
-- `lsp` - Language Server Protocol integration
-
-Minimal build: `cargo build --no-default-features`
-
-## Known Issues
-
-1. **Scrolling despawns all visible entities after edit** - Mesh vertices have absolute Y positions baked in, so position changes require full rebuild. This is ~60-70 entities on every scroll.
-2. **Tree-sitter completion triggers viewport rebuild** - When async parsing finishes, all visible entities get despawned/respawned even though only some lines changed highlighting.
-3. **Cache invalidation inefficient** - Cache checks content_version for validity, but when only tree_version changes (highlighting updates), we still rebuild everything.Text Buffer
 
 ## License
 
@@ -145,10 +138,14 @@ MIT OR Apache-2.0
 
 Built with:
 
-- [Bevy](https://bevyengine.org/) - Game engine
-- [Ropey](https://github.com/cessen/ropey) - Text buffer
-- [Tree-sitter](https://tree-sitter.github.io/) - Parsing and syntax highlighting
-- [tower-lsp](https://github.com/ebkalderon/tower-lsp) - LSP implementation
-- [rustybuzz](https://github.com/RazrFalcon/rustybuzz) - Text shaping
+- [Bevy](https://bevyengine.org/) — game engine + ECS
+- [cosmic-text](https://github.com/pop-os/cosmic-text) — text shaping
+- [swash](https://github.com/dfrg/swash) — glyph rasterization
+- [ropey](https://github.com/cessen/ropey) — rope-based text buffer
+- [tree-sitter](https://tree-sitter.github.io/) — incremental parsing
+- [async-lsp](https://github.com/oxalica/async-lsp) — LSP transport
+- [lsp-types](https://github.com/gluon-lang/lsp-types) — LSP protocol types
+- [leafwing-input-manager](https://github.com/Leafwing-Studios/leafwing-input-manager) — action mapping
+- [bevy-tokio-tasks](https://github.com/EkardNT/bevy-tokio-tasks) — shared tokio runtime as a Bevy resource
 
 Inspired by [Zed](https://zed.dev/), [Helix](https://helix-editor.com/), and VSCode.

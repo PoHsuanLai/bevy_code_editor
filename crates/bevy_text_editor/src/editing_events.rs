@@ -1,0 +1,88 @@
+//! Typed editing-request events — the public contract between hosts (or the
+//! code editor's leafwing dispatcher) and this crate's editing handlers.
+//!
+//! All events are unit-style structs today. The crate's [`crate::TextEditorPlugin`]
+//! registers them; per-action handler systems consume them.
+
+use bevy::prelude::*;
+
+macro_rules! editing_event {
+    ($($name:ident),* $(,)?) => {
+        $(
+            #[derive(Message, Clone, Copy, Debug, Default, Reflect)]
+            #[reflect(Clone, Debug, Default)]
+            pub struct $name;
+        )*
+    };
+}
+
+// Cursor movement (12)
+editing_event!(
+    MoveCursorLeftRequested,
+    MoveCursorRightRequested,
+    MoveCursorUpRequested,
+    MoveCursorDownRequested,
+    MoveCursorWordLeftRequested,
+    MoveCursorWordRightRequested,
+    MoveCursorLineStartRequested,
+    MoveCursorLineEndRequested,
+    MoveCursorDocumentStartRequested,
+    MoveCursorDocumentEndRequested,
+    MoveCursorPageUpRequested,
+    MoveCursorPageDownRequested,
+);
+
+// Selection (10)
+editing_event!(
+    SelectLeftRequested,
+    SelectRightRequested,
+    SelectUpRequested,
+    SelectDownRequested,
+    SelectWordLeftRequested,
+    SelectWordRightRequested,
+    SelectLineStartRequested,
+    SelectLineEndRequested,
+    SelectAllRequested,
+    ClearSelectionRequested,
+);
+
+// Editing (7)
+editing_event!(
+    DeleteBackwardRequested,
+    DeleteForwardRequested,
+    DeleteWordBackwardRequested,
+    DeleteWordForwardRequested,
+    DeleteLineRequested,
+    InsertNewlineRequested,
+    InsertTabRequested,
+);
+
+// Clipboard (3)
+editing_event!(CopyRequested, CutRequested, PasteRequested);
+
+// Undo / redo (2)
+editing_event!(UndoRequested, RedoRequested);
+
+/// Replace `[start_char..end_char]` with `text` on a specific editor entity.
+/// The single payloaded edit primitive for ECS-driven mutation: LSP, completion,
+/// formatting, AI suggestions, refactoring tools etc. emit this and let
+/// `bevy_text_editor` route it through `EditHistoryState::replace_range` so
+/// history, anchors, content_version, and `OnEdit` all stay correct.
+#[derive(Message, Clone, Debug, Reflect)]
+#[reflect(Clone, Debug)]
+pub struct ReplaceRangeRequested {
+    pub entity: Entity,
+    pub start_char: usize,
+    pub end_char: usize,
+    pub text: String,
+    pub kind: crate::history::EditKind,
+    pub record_history: bool,
+}
+
+/// Replace the entire buffer of an editor entity with `text`. Skips history.
+#[derive(Message, Clone, Debug, Reflect)]
+#[reflect(Clone, Debug)]
+pub struct SetTextRequested {
+    pub entity: Entity,
+    pub text: String,
+}
