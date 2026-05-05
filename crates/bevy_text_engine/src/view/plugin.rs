@@ -12,7 +12,7 @@ use bevy::prelude::*;
 
 use super::font::FontConfig;
 use super::layout::DisplayLayout;
-use super::layout_builder::{produce_layouts, LayoutProduceSet};
+use super::layout_builder::{produce_block_layout, produce_layouts, LayoutProduceSet};
 use super::overlay::TextViewOverlays;
 use super::render::{render_layout, GlyphBatchComponent, TextViewBatch};
 use super::state::TextViewState;
@@ -91,6 +91,12 @@ impl Plugin for TextEnginePlugin {
                 animate_text_view_scroll,
                 produce_layouts
                     .run_if(atlas_ready)
+                    .in_set(LayoutProduceSet)
+                    .before(prewarm_atlas_for_layout),
+                // Static-content path. Runs alongside `produce_layouts` —
+                // the two are mutually exclusive at the entity level
+                // (`produce_layouts` filters out entities with `BlockSource`).
+                produce_block_layout
                     .in_set(LayoutProduceSet)
                     .before(prewarm_atlas_for_layout),
                 prewarm_atlas_for_layout

@@ -14,9 +14,9 @@
 
 pub use bevy_text_engine::view::{
     layout, overlay, render, snapshot, state, viewport, DisplayLayout, GlyphBatchComponent,
-    GlyphInstance, RectOverlay, RowVertical, ShapedLine, SimpleTheme, StyleRun, TextView,
-    TextViewBatch, TextViewBatchEntity, TextViewOverlays, TextViewRenderSet, TextViewState,
-    TextViewViewport, ViewportOrigin,
+    GlyphInstance, RectOverlay, RowVertical, ShapedLine, StyleRun, TextView, TextViewBatch,
+    TextViewBatchEntity, TextViewOverlays, TextViewRenderSet, TextViewState, TextViewViewport,
+    ViewportOrigin,
 };
 
 pub use bevy_text_engine::view::snapshot::trivial_layout;

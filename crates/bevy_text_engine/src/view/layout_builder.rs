@@ -19,9 +19,9 @@ use std::sync::Arc;
 use super::font::FontConfig;
 use super::layout::DisplayLayout;
 use super::plugin::TextView;
-use super::snapshot::{LineShape, ShapedGlyph, ShapedLine, StyleRun};
+use super::snapshot::{Block, BlockLayoutConfig, LineShape, ShapedGlyph, ShapedLine, StyleRun};
 use super::state::TextViewState;
-use super::styling::{LayoutWrap, LineFilter, LineStyleSource, RunWithText};
+use super::styling::{BlockSource, LayoutWrap, LineFilter, LineStyleSource, RunWithText};
 use super::viewport::TextViewViewport;
 use crate::gpu::GlyphAtlas;
 
@@ -72,7 +72,9 @@ pub(crate) fn produce_layouts(
             Option<&LineStyleSource>,
             Option<&LayoutWrap>,
         ),
-        With<TextView>,
+        // Block-driven entities have their layout written by
+        // `produce_block_layout`; skip them here to avoid double-writes.
+        (With<TextView>, Without<BlockSource>),
     >,
     mut atlas: ResMut<GlyphAtlas>,
     fonts: Res<Assets<bevy::text::Font>>,
@@ -526,5 +528,208 @@ pub fn approx_display_rows_for_line(
         1
     } else {
         len.div_ceil(budget) as u32
+    }
+}
+
+/// Per-entity dirty key for block-driven layouts.
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct BlockLayoutFingerprint {
+    block_version: u64,
+    font_size_tenths: u32,
+    line_height_tenths: u32,
+    char_width_tenths: u32,
+    wrap_chars: u32,
+    default_fg_bits: [u32; 4],
+}
+
+/// Engine system for the static-content path. Walks every `TextView` entity
+/// carrying a [`BlockSource`], reads the current block list, and writes the
+/// entity's `DisplayLayout` via [`Block::layout`].
+///
+/// Skips when the source's `version()` + font / wrap inputs are unchanged
+/// from the previous run — the same fingerprint dance `produce_layouts`
+/// uses for the rope-driven path. `LayoutWrap.budget_px` (pixels) is
+/// translated to a character budget via `font.char_width`.
+#[allow(clippy::type_complexity)]
+pub(crate) fn produce_block_layout(
+    mut q: Query<
+        (
+            Entity,
+            &BlockSource,
+            &FontConfig,
+            &mut DisplayLayout,
+            Option<&LayoutWrap>,
+        ),
+        With<TextView>,
+    >,
+    mut last_fingerprints: Local<HashMap<Entity, BlockLayoutFingerprint>>,
+) {
+    let mut alive: std::collections::HashSet<Entity> = std::collections::HashSet::new();
+    for (entity, source, font, mut layout, wrap) in q.iter_mut() {
+        alive.insert(entity);
+        let wrap = wrap.copied().unwrap_or_default();
+        let char_width = font.char_width.max(1.0);
+        let wrap_chars = wrap
+            .budget_px
+            .map(|px| (px / char_width).floor().max(0.0) as u32)
+            .unwrap_or(0);
+
+        let fg_l = layout.default_fg.to_linear();
+        let fingerprint = BlockLayoutFingerprint {
+            block_version: source.0.version(),
+            font_size_tenths: (font.size * 10.0) as u32,
+            line_height_tenths: (font.line_height * 10.0) as u32,
+            char_width_tenths: (font.char_width * 10.0) as u32,
+            wrap_chars,
+            default_fg_bits: [
+                fg_l.red.to_bits(),
+                fg_l.green.to_bits(),
+                fg_l.blue.to_bits(),
+                fg_l.alpha.to_bits(),
+            ],
+        };
+        if last_fingerprints.get(&entity) == Some(&fingerprint) {
+            continue;
+        }
+
+        let blocks = source.0.blocks();
+        let cfg = BlockLayoutConfig {
+            line_height: font.line_height,
+            char_width: font.char_width,
+            // Mirror of the editor's baseline-offset convention; ~32% of font size.
+            baseline_offset: font.size * 0.32,
+            default_fg: layout.default_fg,
+            default_wrap_chars: if wrap_chars > 0 { Some(wrap_chars as usize) } else { None },
+        };
+        *layout = Block::layout(&blocks, cfg);
+        last_fingerprints.insert(entity, fingerprint);
+    }
+
+    last_fingerprints.retain(|e, _| alive.contains(e));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, RwLock};
+
+    /// Smoke-test the Component → system → DisplayLayout flow. Spawn a
+    /// `TextView` entity with a `BlockSource`, run `produce_block_layout`
+    /// once via a minimal Schedule, verify the entity's `DisplayLayout`
+    /// has the right rows.
+    #[test]
+    fn produce_block_layout_writes_display_layout() {
+        struct FixedDoc(Vec<Block>);
+        impl super::super::styling::BlockProvider for FixedDoc {
+            fn blocks(&self) -> Vec<Block> {
+                self.0.clone()
+            }
+            fn version(&self) -> u64 {
+                1
+            }
+        }
+
+        let mut world = World::new();
+        let blocks = vec![
+            Block::new("hello"),
+            Block::new("world").with_padding(4.0, 4.0),
+        ];
+        let entity = world
+            .spawn((
+                TextView,
+                FontConfig::from_size(16.0),
+                DisplayLayout::default(),
+                BlockSource::new(FixedDoc(blocks)),
+            ))
+            .id();
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(produce_block_layout);
+        schedule.run(&mut world);
+
+        let layout = world.get::<DisplayLayout>(entity).expect("layout missing");
+        assert_eq!(layout.lines.len(), 2);
+        assert_eq!(layout.lines[0].text, "hello");
+        assert_eq!(layout.lines[1].text, "world");
+        // padding_top on the second block lifts row 1 by 4px above the
+        // baseline of "16px line height + previous row".
+        assert!(layout.lines[1].y_top > layout.lines[0].y_top + 16.0);
+    }
+
+    /// Re-running the system without a version bump skips the rebuild.
+    #[test]
+    fn produce_block_layout_skips_when_version_unchanged() {
+        struct StableDoc;
+        impl super::super::styling::BlockProvider for StableDoc {
+            fn blocks(&self) -> Vec<Block> {
+                vec![Block::new("once")]
+            }
+            fn version(&self) -> u64 {
+                42
+            }
+        }
+
+        let mut world = World::new();
+        let entity = world
+            .spawn((
+                TextView,
+                FontConfig::from_size(16.0),
+                DisplayLayout::default(),
+                BlockSource::new(StableDoc),
+            ))
+            .id();
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(produce_block_layout);
+        schedule.run(&mut world);
+        let first_arc = world.get::<DisplayLayout>(entity).unwrap().lines.clone();
+
+        schedule.run(&mut world);
+        let second_arc = world.get::<DisplayLayout>(entity).unwrap().lines.clone();
+        // Second run should reuse the same Arc — no rebuild.
+        assert!(Arc::ptr_eq(&first_arc, &second_arc));
+    }
+
+    /// `BlockSource` Component cooperates with `LayoutWrap`: the system
+    /// translates `LayoutWrap.budget_px` into a char budget via
+    /// `FontConfig.char_width` and applies it as the default wrap.
+    #[test]
+    fn produce_block_layout_honors_layout_wrap() {
+        struct LongDoc(Arc<RwLock<u64>>);
+        impl super::super::styling::BlockProvider for LongDoc {
+            fn blocks(&self) -> Vec<Block> {
+                vec![Block::new(
+                    "the quick brown fox jumps over the lazy dog and runs away.",
+                )]
+            }
+            fn version(&self) -> u64 {
+                *self.0.read().unwrap()
+            }
+        }
+
+        let mut world = World::new();
+        // 16px font, char_width = 8px, budget_px = 80px → 10-char budget.
+        let mut font = FontConfig::from_size(16.0);
+        font.char_width = 8.0;
+        let entity = world
+            .spawn((
+                TextView,
+                font,
+                DisplayLayout::default(),
+                BlockSource::new(LongDoc(Arc::new(RwLock::new(1)))),
+                super::super::styling::LayoutWrap {
+                    budget_px: Some(80.0),
+                    indent_px: 0.0,
+                },
+            ))
+            .id();
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(produce_block_layout);
+        schedule.run(&mut world);
+
+        let layout = world.get::<DisplayLayout>(entity).unwrap();
+        // 58 chars / 10-char budget → multiple wrap rows.
+        assert!(layout.lines.len() >= 2, "expected wrap, got {}", layout.lines.len());
     }
 }

@@ -18,7 +18,7 @@
 use bevy::prelude::*;
 use std::sync::Arc;
 
-use super::snapshot::StyleRun;
+use super::snapshot::{Block, StyleRun};
 
 /// Per-line visibility predicate. Implementors return `false` for buffer
 /// lines that are folded (or otherwise hidden) and should be skipped during
@@ -79,6 +79,43 @@ pub struct LineStyleSource(pub Arc<dyn LineStyling>);
 impl LineStyleSource {
     /// Convenience wrapper for `Arc::new(value)`.
     pub fn new<T: LineStyling>(value: T) -> Self {
+        Self(Arc::new(value))
+    }
+}
+
+/// Static-content source — produces a list of [`Block`]s the engine stacks
+/// into a [`super::layout::DisplayLayout`]. Mirror of [`LineStyleSource`]
+/// but for the markdown / chat / log-viewer path: no rope, no folding, no
+/// shaping — just blocks with padding, indent, optional wrap and decoration.
+///
+/// Implementors typically hold an `Arc<RwLock<…>>` so a producer system
+/// can rebuild the block list when source data changes (markdown re-parse,
+/// new chat message) and bump `version()`.
+pub trait BlockProvider: Send + Sync + 'static {
+    /// Snapshot the current blocks. The engine clones the slice into the
+    /// layout, so returning a `Vec` per call is fine for most consumers.
+    fn blocks(&self) -> Vec<Block>;
+
+    /// Monotonic version. Bumped whenever `blocks()` would return different
+    /// content. Folded into the engine's layout-fingerprint cache.
+    fn version(&self) -> u64 {
+        0
+    }
+}
+
+/// Optional Component on a `TextView` entity that drives the static-content
+/// path. When present, [`super::layout_builder::produce_block_layout`]
+/// reads the blocks each frame (gated by `version()` change-detection) and
+/// writes the entity's `DisplayLayout`. Mutually exclusive with the
+/// rope-driven [`LineStyleSource`] flow — an entity uses one or the other.
+///
+/// Cheap to clone (`Arc` bump). Not Reflect: wraps a `dyn Trait`.
+#[derive(Component, Clone)]
+pub struct BlockSource(pub Arc<dyn BlockProvider>);
+
+impl BlockSource {
+    /// Convenience wrapper for `Arc::new(value)`.
+    pub fn new<T: BlockProvider>(value: T) -> Self {
         Self(Arc::new(value))
     }
 }

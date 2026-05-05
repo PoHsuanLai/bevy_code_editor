@@ -182,25 +182,6 @@ pub struct ShapedLine {
     pub shape: Option<Arc<LineShape>>,
 }
 
-/// Trivial styling source: one foreground color for the whole text.
-///
-/// Used by standalone consumers (chat panel, log viewer) that don't need
-/// syntax highlighting. The editor uses a real `HighlightMap` instead.
-#[derive(Clone, Copy, Debug)]
-pub struct SimpleTheme {
-    pub foreground: Color,
-    pub background: Option<Color>,
-}
-
-impl SimpleTheme {
-    pub fn new(foreground: Color) -> Self {
-        Self {
-            foreground,
-            background: None,
-        }
-    }
-}
-
 /// Build a `DisplayLayout` from plain text + per-line styling, suitable for
 /// standalone consumers that don't have an editor / display map.
 ///
@@ -255,13 +236,6 @@ pub fn trivial_layout(
     }
 }
 
-/// One row of input for [`trivial_layout_blocks`]: text + styling +
-/// optional per-row line-height override + block padding above/below.
-///
-/// Markdown / chat consumers build a `Vec<TrivialBlock>` with appropriate
-/// padding for paragraph breaks, heading margins, code-block separators,
-/// and call [`trivial_layout_blocks`] to get a `DisplayLayout` with
-/// correctly-stacked `y_top` values.
 /// A border applied around a block's outer rect.
 ///
 /// `width` is in pixels and applies uniformly to all four sides — uniform-width
@@ -309,7 +283,7 @@ pub struct BlockRect {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct TrivialBlock {
+pub struct Block {
     pub text: String,
     pub runs: Vec<StyleRun>,
     /// Per-row line-height in pixels. `None` = layout default.
@@ -319,7 +293,7 @@ pub struct TrivialBlock {
     pub indent: f32,
     pub line_bg: Option<Color>,
     /// Soft-wrap budget in characters. `None` = inherit from the
-    /// `trivial_layout_blocks` default. `Some(0)` = no wrap (block stays one row).
+    /// `layout_blocks` default. `Some(0)` = no wrap (block stays one row).
     pub wrap_chars: Option<usize>,
     /// Block-level background (spans padding + all wrap rows). Distinct from
     /// `line_bg`; both can coexist (the line bg paints over the block bg).
@@ -328,7 +302,7 @@ pub struct TrivialBlock {
     pub block_corner_radius: f32,
 }
 
-impl TrivialBlock {
+impl Block {
     pub fn new(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
@@ -393,28 +367,49 @@ impl TrivialBlock {
     }
 }
 
-/// Like [`trivial_layout`] but accepts per-row line-height + padding.
+/// Configuration for [`Block::layout`]: the metrics + defaults a block
+/// stack needs to produce a [`super::layout::DisplayLayout`].
 ///
-/// Stacks rows by accumulating `padding_top + line_height + padding_bottom`
-/// — markdown-style block layout. Rows where `line_height` is `None`
-/// fall back to the layout's global `line_height`.
-///
-/// `default_wrap_chars`: soft-wrap budget in characters applied to blocks
-/// that don't override it. `None` ⇒ no wrap. Per-block override via
-/// [`TrivialBlock::with_wrap_chars`]. Whitespace-aware: breaks at the last
-/// space/tab before the budget when one exists; otherwise hard-breaks at
-/// the budget. Long words with no internal whitespace stay intact and
-/// extend past the budget rather than splitting mid-word.
-pub fn trivial_layout_blocks(
-    blocks: &[TrivialBlock],
-    line_height: f32,
-    char_width: f32,
-    baseline_offset: f32,
-    default_fg: bevy::prelude::Color,
-    default_wrap_chars: Option<usize>,
-) -> super::layout::DisplayLayout {
+/// In the Bevy-native flow these come from per-entity Components
+/// (`FontConfig`, `LayoutWrap`, `DisplayLayout::default_fg`) and
+/// `produce_block_layout` reads them directly — this struct is the
+/// headless entry point used by tests and embeddings that want to
+/// build a layout outside the ECS world.
+#[derive(Clone, Copy, Debug)]
+pub struct BlockLayoutConfig {
+    pub line_height: f32,
+    pub char_width: f32,
+    pub baseline_offset: f32,
+    pub default_fg: bevy::prelude::Color,
+    /// Soft-wrap budget in characters applied to blocks that don't override
+    /// it. `None` ⇒ no wrap. Per-block override via [`Block::with_wrap_chars`].
+    pub default_wrap_chars: Option<usize>,
+}
+
+impl Block {
+    /// Stack a slice of blocks into a [`super::layout::DisplayLayout`].
+    ///
+    /// Stacks rows by accumulating `padding_top + line_height + padding_bottom`
+    /// — markdown-style block layout. Rows where `line_height` is `None`
+    /// fall back to `cfg.line_height`. Whitespace-aware soft-wrap: breaks at
+    /// the last space/tab before the budget when one exists; otherwise
+    /// hard-breaks at the budget. Long words with no internal whitespace stay
+    /// intact and extend past the budget rather than splitting mid-word.
+    pub fn layout(blocks: &[Block], cfg: BlockLayoutConfig) -> super::layout::DisplayLayout {
+        layout_blocks_inner(blocks, cfg)
+    }
+}
+
+fn layout_blocks_inner(blocks: &[Block], cfg: BlockLayoutConfig) -> super::layout::DisplayLayout {
     use super::layout::DisplayLayout;
     use std::sync::Arc;
+    let BlockLayoutConfig {
+        line_height,
+        char_width,
+        baseline_offset,
+        default_fg,
+        default_wrap_chars,
+    } = cfg;
 
     let mut shaped: Vec<ShapedLine> = Vec::with_capacity(blocks.len());
     let mut block_rects: Vec<BlockRect> = Vec::new();
@@ -607,21 +602,21 @@ mod tests {
     /// correctly: each row's `y_top` equals the sum of all prior rows'
     /// `(padding_top + line_height + padding_bottom) + this row's padding_top`.
     #[test]
-    fn trivial_layout_blocks_stacks_padding_and_line_height() {
+    fn layout_blocks_stacks_padding_and_line_height() {
         let blocks = vec![
             // body: 16px line height, no padding.
-            TrivialBlock::new("hello"),
+            Block::new("hello"),
             // heading: 24px line height, 8px above, 4px below.
-            TrivialBlock::new("# heading")
+            Block::new("# heading")
                 .with_line_height(24.0)
                 .with_padding(8.0, 4.0),
             // body again, default line-height (16px), no padding.
-            TrivialBlock::new("more body"),
+            Block::new("more body"),
             // code block row: 16px, 6px above, 6px below for the panel.
-            TrivialBlock::new("fn x() {}").with_padding(6.0, 6.0),
+            Block::new("fn x() {}").with_padding(6.0, 6.0),
         ];
 
-        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE, None);
+        let layout = Block::layout(&blocks, BlockLayoutConfig { line_height: 16.0, char_width: 8.0, baseline_offset: 5.0, default_fg: Color::WHITE, default_wrap_chars: None });
         let lines = &*layout.lines;
         assert_eq!(lines.len(), 4);
 
@@ -636,14 +631,14 @@ mod tests {
     }
 
     #[test]
-    fn trivial_layout_blocks_indent_propagates_to_x_offset() {
+    fn layout_blocks_indent_propagates_to_x_offset() {
         let blocks = vec![
-            TrivialBlock::new("body"),
-            TrivialBlock::new("- list").with_indent(20.0),
-            TrivialBlock::new("  - nested").with_indent(40.0),
-            TrivialBlock::new("> quote").with_indent(16.0),
+            Block::new("body"),
+            Block::new("- list").with_indent(20.0),
+            Block::new("  - nested").with_indent(40.0),
+            Block::new("> quote").with_indent(16.0),
         ];
-        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE, None);
+        let layout = Block::layout(&blocks, BlockLayoutConfig { line_height: 16.0, char_width: 8.0, baseline_offset: 5.0, default_fg: Color::WHITE, default_wrap_chars: None });
         let lines = &*layout.lines;
         assert_eq!(lines[0].x_offset, 0.0);
         assert_eq!(lines[1].x_offset, 20.0);
@@ -653,11 +648,11 @@ mod tests {
 
     #[test]
     fn trivial_layout_no_padding_matches_old_behavior() {
-        let blocks: Vec<TrivialBlock> = ["a", "b", "c"]
+        let blocks: Vec<Block> = ["a", "b", "c"]
             .iter()
-            .map(|s| TrivialBlock::new(*s))
+            .map(|s| Block::new(*s))
             .collect();
-        let layout = trivial_layout_blocks(&blocks, 20.0, 8.0, 5.0, Color::WHITE, None);
+        let layout = Block::layout(&blocks, BlockLayoutConfig { line_height: 20.0, char_width: 8.0, baseline_offset: 5.0, default_fg: Color::WHITE, default_wrap_chars: None });
         let lines = &*layout.lines;
         assert_eq!(lines[0].y_top, 0.0);
         assert_eq!(lines[1].y_top, 20.0);
@@ -669,10 +664,10 @@ mod tests {
     /// the block's `indent`, and get the right `buffer_byte_offset` so callers
     /// can map clicks back into the source text.
     #[test]
-    fn trivial_layout_blocks_wraps_at_word_boundary() {
+    fn layout_blocks_wraps_at_word_boundary() {
         let body = "the quick brown fox jumps over the lazy dog and runs away.";
-        let blocks = vec![TrivialBlock::new(body).with_indent(10.0)];
-        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE, Some(30));
+        let blocks = vec![Block::new(body).with_indent(10.0)];
+        let layout = Block::layout(&blocks, BlockLayoutConfig { line_height: 16.0, char_width: 8.0, baseline_offset: 5.0, default_fg: Color::WHITE, default_wrap_chars: Some(30) });
         let lines = &*layout.lines;
 
         assert!(lines.len() >= 2);
@@ -696,10 +691,10 @@ mod tests {
     /// A word longer than the wrap budget stays intact rather than splitting
     /// mid-word. Mirrors the shaped wrap path's behavior for oversized clusters.
     #[test]
-    fn trivial_layout_blocks_wrap_keeps_long_words_intact() {
+    fn layout_blocks_wrap_keeps_long_words_intact() {
         let body = "short pneumonoultramicroscopicsilicovolcanoconiosis end";
-        let blocks = vec![TrivialBlock::new(body)];
-        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE, Some(10));
+        let blocks = vec![Block::new(body)];
+        let layout = Block::layout(&blocks, BlockLayoutConfig { line_height: 16.0, char_width: 8.0, baseline_offset: 5.0, default_fg: Color::WHITE, default_wrap_chars: Some(10) });
         let lines = &*layout.lines;
 
         let recomposed: String = lines.iter().map(|l| l.text.clone()).collect();
@@ -714,12 +709,12 @@ mod tests {
     /// Per-block `with_wrap_chars(0)` overrides the layout default and
     /// disables wrap for that block alone.
     #[test]
-    fn trivial_layout_blocks_per_block_wrap_override() {
+    fn layout_blocks_per_block_wrap_override() {
         let blocks = vec![
-            TrivialBlock::new("alpha bravo charlie delta echo foxtrot"),
-            TrivialBlock::new("uno dos tres cuatro cinco seis siete").with_wrap_chars(0),
+            Block::new("alpha bravo charlie delta echo foxtrot"),
+            Block::new("uno dos tres cuatro cinco seis siete").with_wrap_chars(0),
         ];
-        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE, Some(15));
+        let layout = Block::layout(&blocks, BlockLayoutConfig { line_height: 16.0, char_width: 8.0, baseline_offset: 5.0, default_fg: Color::WHITE, default_wrap_chars: Some(15) });
         let lines = &*layout.lines;
 
         let block0_rows = lines.iter().filter(|l| l.buffer_row == 0).count();
@@ -731,7 +726,7 @@ mod tests {
     /// `StyleRun`s on a wrapped block are clipped + rebased to each chunk's
     /// local byte numbering, so renderers can index into chunk.text directly.
     #[test]
-    fn trivial_layout_blocks_wrap_clips_runs_to_chunks() {
+    fn layout_blocks_wrap_clips_runs_to_chunks() {
         // Crafted so a budget of 10 puts "the quick " on row 0 and
         // "fox" (with its run) entirely inside row 1.
         let text = "the quick fox runs";
@@ -749,12 +744,12 @@ mod tests {
             decoration: None,
             link: None,
         }];
-        let blocks = vec![TrivialBlock::new(text).with_runs(runs)];
+        let blocks = vec![Block::new(text).with_runs(runs)];
 
         // Budget 10 splits at the space after "quick" (byte 10). Row 0 =
         // "the quick " (bytes 0..10) — pre-fox, no runs. Row 1 = "fox runs"
         // (bytes 10..18) — holds the fox run rebased to local 0..3.
-        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE, Some(10));
+        let layout = Block::layout(&blocks, BlockLayoutConfig { line_height: 16.0, char_width: 8.0, baseline_offset: 5.0, default_fg: Color::WHITE, default_wrap_chars: Some(10) });
         let lines = &*layout.lines;
         assert_eq!(lines.len(), 2);
 
@@ -769,16 +764,16 @@ mod tests {
     /// matching `BlockRect` in `DisplayLayout::block_rects`. Blocks without
     /// either don't.
     #[test]
-    fn trivial_layout_blocks_emits_block_rect_for_decorated_blocks() {
+    fn layout_blocks_emits_block_rect_for_decorated_blocks() {
         let blocks = vec![
-            TrivialBlock::new("plain body"),
-            TrivialBlock::new("fenced code")
+            Block::new("plain body"),
+            Block::new("fenced code")
                 .with_padding(8.0, 8.0)
                 .with_block_background(Color::srgb(0.1, 0.1, 0.1))
                 .with_block_corner_radius(4.0),
-            TrivialBlock::new("> blockquote line").with_block_border(Color::srgb(0.5, 0.5, 0.5), 1.0),
+            Block::new("> blockquote line").with_block_border(Color::srgb(0.5, 0.5, 0.5), 1.0),
         ];
-        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE, None);
+        let layout = Block::layout(&blocks, BlockLayoutConfig { line_height: 16.0, char_width: 8.0, baseline_offset: 5.0, default_fg: Color::WHITE, default_wrap_chars: None });
 
         // Two decorated blocks → two rects (the plain body has neither).
         assert_eq!(layout.block_rects.len(), 2);
@@ -802,11 +797,11 @@ mod tests {
     /// Wrapping a decorated block keeps it as one `BlockRect` spanning all
     /// continuation rows — a code block that wraps stays one panel.
     #[test]
-    fn trivial_layout_blocks_block_rect_spans_wrap_continuation() {
+    fn layout_blocks_block_rect_spans_wrap_continuation() {
         let body = "alpha bravo charlie delta echo foxtrot golf hotel";
-        let blocks = vec![TrivialBlock::new(body)
+        let blocks = vec![Block::new(body)
             .with_block_background(Color::srgb(0.2, 0.2, 0.3))];
-        let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE, Some(10));
+        let layout = Block::layout(&blocks, BlockLayoutConfig { line_height: 16.0, char_width: 8.0, baseline_offset: 5.0, default_fg: Color::WHITE, default_wrap_chars: Some(10) });
 
         assert_eq!(layout.block_rects.len(), 1);
         let rect = &layout.block_rects[0];

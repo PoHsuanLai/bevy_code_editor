@@ -10,7 +10,8 @@ This is the rendering layer. It owns no input model, no UI framework choice, no 
 - **`FontConfig`** — per-entity font sizing + optional `Handle<bevy_text::Font>`. Carries `size`, `line_height`, `char_width`. Same handle works in `bevy_text::Text2d` and `TextView`.
 - **`DisplayLayout`** — the renderer's input. A list of `ShapedLine`s (text + style runs + per-row line height + padding + indent) plus global metrics. Producers write it; the renderer reads it.
 - **Layout producer** — `produce_layouts` system queries entities with `LineFilter` / `LineStyleSource` / `LayoutWrap` Components and writes `DisplayLayout` automatically. Handles soft-wrap with whitespace-aware breaks, fold-aware visibility (via the filter Component), per-row styling (via the styling Component).
-- **`trivial_layout` / `trivial_layout_blocks`** — for static content. `trivial_layout` is one row per line; `trivial_layout_blocks` accepts per-row line-height + padding + indent for markdown-style block layout.
+- **Static-content path**: attach a `BlockSource` Component (mirror of `LineStyleSource`) and the engine's `produce_block_layout` system writes the entity's `DisplayLayout` from a `Vec<Block>`. `Block` carries text + runs + per-row line-height + padding + indent + soft-wrap budget + block-level decoration. Headless / one-shot use: `Block::layout(&blocks, BlockLayoutConfig { … })`.
+- **`trivial_layout`** — one-row-per-line helper for static text without block structure (test fixtures, simple panels).
 - **GPU pipeline** — `GlyphAtlasPlugin` (manages the cosmic-text font system + a 2048×2048 R8 atlas with shelf packing) and `InstancedTextRenderPlugin` (one instanced draw per text view, `GlyphInstance` per glyph).
 - **Overlays** — `RectOverlay` rows (cursor caret, selection rectangles, line highlights, find-matches) layered into the same draw call via z-order.
 
@@ -66,30 +67,57 @@ block-level decoration (background fills + borders for code blocks /
 blockquotes / chat-message bubbles):
 
 ```rust
-use bevy_text_engine::view::snapshot::{trivial_layout_blocks, TrivialBlock};
+use std::sync::{Arc, RwLock};
+use bevy_text_engine::prelude::*;
 
-let blocks = vec![
-    TrivialBlock::new("# Heading")
-        .with_line_height(28.0)
-        .with_padding(12.0, 6.0)
-        .with_wrap_chars(0),                          // headings don't wrap
-    TrivialBlock::new("Lorem ipsum dolor sit amet, consectetur adipiscing elit."),
-    TrivialBlock::new("fn main() { println!(\"hi\"); }")
-        .with_padding(8.0, 8.0)
-        .with_block_background(Color::srgb(0.12, 0.12, 0.14))
-        .with_block_corner_radius(4.0),
-    TrivialBlock::new("> a quoted line")
-        .with_padding(4.0, 4.0)
-        .with_block_border(Color::srgb(0.5, 0.5, 0.5), 1.0),
-];
-// 6th arg = default wrap budget in characters (None = no wrap).
-let layout = trivial_layout_blocks(&blocks, 16.0, 8.0, 5.0, Color::WHITE, Some(60));
+struct StaticDoc(Arc<RwLock<Vec<Block>>>);
+impl BlockProvider for StaticDoc {
+    fn blocks(&self) -> Vec<Block> { self.0.read().unwrap().clone() }
+}
+
+fn setup(mut commands: Commands) {
+    let blocks = vec![
+        Block::new("# Heading")
+            .with_line_height(28.0)
+            .with_padding(12.0, 6.0)
+            .with_wrap_chars(0),                          // headings don't wrap
+        Block::new("Lorem ipsum dolor sit amet, consectetur adipiscing elit."),
+        Block::new("fn main() { println!(\"hi\"); }")
+            .with_padding(8.0, 8.0)
+            .with_block_background(Color::srgb(0.12, 0.12, 0.14))
+            .with_block_corner_radius(4.0),
+        Block::new("> a quoted line")
+            .with_padding(4.0, 4.0)
+            .with_block_border(Color::srgb(0.5, 0.5, 0.5), 1.0),
+    ];
+    commands.spawn((
+        TextView,
+        FontConfig::from_size(16.0),
+        BlockSource::new(StaticDoc(Arc::new(RwLock::new(blocks)))),
+        LayoutWrap { budget_px: Some(480.0), indent_px: 0.0 },
+    ));
+}
 ```
 
+`BlockSource` is the static-content peer of `LineStyleSource`. The engine's
+`produce_block_layout` system reads the blocks each frame (gated by the
+provider's `version()`) and writes the entity's `DisplayLayout`.
 `with_block_background` paints a filled quad spanning the block's full
 vertical extent (padding_top + all wrap rows + padding_bottom), distinct
 from per-row `line_bg`. `with_block_border(color, width)` adds a uniform
 border drawn from four edge quads. Blocks with no decoration cost zero.
+
+Headless / test path (no ECS world):
+
+```rust
+let layout = Block::layout(&blocks, BlockLayoutConfig {
+    line_height: 16.0,
+    char_width: 8.0,
+    baseline_offset: 5.0,
+    default_fg: Color::WHITE,
+    default_wrap_chars: Some(60),
+});
+```
 
 For dynamic content (an editor, a streaming log viewer), drive the producer via `LineFilter` / `LineStyleSource` Components — see the editor crate for a worked example.
 
