@@ -53,6 +53,23 @@ impl GotoLineState {
     }
 }
 
+/// Goto-line dialog interceptor.
+///
+/// When the dialog is active and the user presses `ClearSelection`
+/// (Escape), dismisses the dialog without falling through to the
+/// `bevy_text_editor::ClearSelectionRequested` handler. Returns `true`
+/// when the action was consumed.
+pub fn goto_line_intercept(
+    action: crate::input::keybindings::EditorAction,
+    state: &mut GotoLineState,
+) -> bool {
+    if matches!(action, crate::input::keybindings::EditorAction::ClearSelection) && state.active {
+        state.clear();
+        return true;
+    }
+    false
+}
+
 /// Represents a foldable region in the code
 #[derive(Clone, Debug, PartialEq, Eq, Reflect)]
 #[reflect(Debug, PartialEq)]
