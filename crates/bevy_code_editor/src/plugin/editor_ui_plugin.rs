@@ -415,14 +415,15 @@ fn sync_viewport_from_resource(
     }
 }
 
-fn setup_editor_camera(
-    mut commands: Commands,
-    theme: Res<ThemeSettings>,
-    render_config: Res<EditorRenderConfig>,
-) {
+fn setup_editor_camera(mut commands: Commands, render_config: Res<EditorRenderConfig>) {
     // Only spawn camera if NOT using render layers (standalone mode)
     // When using render layers, the host application manages cameras
+    // and is responsible for the clear color too.
     if render_config.render_layers.is_none() {
+        // Match the per-entity ThemeConfig::default() background; hosts that
+        // theme their editors differently are expected to manage their own
+        // camera and clear color.
+        let bg = ThemeConfig::default().background;
         commands.spawn((
             Camera2d,
             Projection::Orthographic(OrthographicProjection {
@@ -430,7 +431,7 @@ fn setup_editor_camera(
                 ..OrthographicProjection::default_2d()
             }),
             Camera {
-                clear_color: ClearColorConfig::Custom(theme.background),
+                clear_color: ClearColorConfig::Custom(bg),
                 ..default()
             },
             EditorCamera,
@@ -439,28 +440,15 @@ fn setup_editor_camera(
     }
 }
 
-/// Setup UI entities (line numbers, cursor, separator) and load the default
-/// font handle into each `CodeEditor` entity's `FontConfig` if it doesn't
-/// already have one.
+/// Setup UI entities (line numbers, cursor, separator) for each `CodeEditor`.
 fn setup_editor_ui(
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    default_font: Res<EditorDefaultFont>,
-    theme: Res<ThemeSettings>,
     _cursor_settings: Res<CursorSettings>,
     ui: Res<UiSettings>,
-    mut editor_query: Query<(&TextViewViewport, &mut FontConfig), With<CodeEditor>>,
+    editor_query: Query<(&TextViewViewport, &ThemeConfig), With<CodeEditor>>,
     render_config: Res<EditorRenderConfig>,
 ) {
-    // Load the default font once. Editors keep their own handle in
-    // FontConfig.font; we only fill it in if the host didn't supply one
-    // via FontConfig::with_font().
-    let font_handle: Handle<Font> = asset_server.load(&default_font.family);
-
-    for (viewport, mut font_config) in editor_query.iter_mut() {
-        if font_config.font.is_none() {
-            font_config.font = Some(font_handle.clone());
-        }
+    for (viewport, theme) in editor_query.iter() {
         let viewport_width = viewport.width as f32;
         let viewport_height = viewport.height as f32;
 

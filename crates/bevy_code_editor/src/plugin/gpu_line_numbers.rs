@@ -37,10 +37,10 @@ pub(crate) fn update_gpu_line_numbers(
             &TextViewViewport,
             Ref<FoldState>,
             &FontConfig,
+            &ThemeConfig,
         ),
         With<CodeEditor>,
     >,
-    theme: Res<ThemeSettings>,
     ui: Res<UiSettings>,
     performance: Res<PerformanceSettings>,
     mut atlas: ResMut<GlyphAtlas>,
@@ -57,7 +57,7 @@ pub(crate) fn update_gpu_line_numbers(
         return;
     }
 
-    for (editor_entity, sel, tv, viewport, fold_state, font) in editor_query.iter() {
+    for (editor_entity, sel, tv, viewport, fold_state, font, theme) in editor_query.iter() {
     // Check if we need to update
     let fold_changed = fold_state.is_changed();
 

@@ -157,18 +157,16 @@ impl Plugin for CodeEditorPlugin {
         use crate::settings::*;
 
         // Initialize each editor-side settings resource with its Default.
-        // Per-entity values (font size, scroll behaviour) are already
-        // FontConfig / ScrollConfig components on the editor entity; what
-        // remains here is genuinely-global config like theme, UI toggles,
-        // indentation rules, etc.
-        app.init_resource::<EditorDefaultFont>();
-        app.init_resource::<ThemeSettings>();
+        // Per-entity values (font, theme, syntax theme, scroll behaviour)
+        // live as `FontConfig` / `ThemeConfig` / `SyntaxTheme` /
+        // `ScrollConfig` components on the editor entity (cascaded via
+        // `#[require]`); what remains here is genuinely-global config like
+        // UI toggles, indentation rules, etc.
         app.init_resource::<UiSettings>();
         app.init_resource::<IndentationSettings>();
         app.init_resource::<BracketSettings>();
         app.init_resource::<CursorSettings>();
         app.init_resource::<CursorLineSettings>();
-        app.init_resource::<SyntaxSettings>();
         app.init_resource::<PerformanceSettings>();
         app.init_resource::<WrappingSettings>();
         app.init_resource::<ScrollbarSettings>();

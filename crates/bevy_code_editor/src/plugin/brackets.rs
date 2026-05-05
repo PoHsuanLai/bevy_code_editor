@@ -157,10 +157,10 @@ pub(crate) fn update_bracket_highlight(
             &FoldState,
             &FontConfig,
             Option<&crate::text_view::DisplayLayout>,
+            &ThemeConfig,
         ),
         With<CodeEditor>,
     >,
-    theme: Res<ThemeSettings>,
     brackets: Res<BracketSettings>,
     render_config: Res<EditorRenderConfig>,
     mut highlight_query: Query<(
@@ -175,7 +175,7 @@ pub(crate) fn update_bracket_highlight(
     let mut entity_index_global: usize = 0;
     let mut any_match = false;
 
-    for (tv, viewport, bracket_state, fold_state, font, layout) in editor_query.iter() {
+    for (tv, viewport, bracket_state, fold_state, font, layout, theme) in editor_query.iter() {
     match &bracket_state.current_match {
         Some(bracket_match) => {
             any_match = true;

@@ -21,7 +21,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::styling::segs_to_runs;
 use crate::plugin::syntax_highlighting::EditorSyntaxState;
-use crate::settings::{IndentationSettings, SyntaxSettings, ThemeSettings, WrappingSettings};
+use crate::settings::{IndentationSettings, SyntaxTheme, ThemeConfig, WrappingSettings};
 use crate::types::{CodeEditor, FoldState};
 
 /// System set for sync systems that update the engine's data Components
@@ -118,14 +118,9 @@ pub(crate) fn produce_hidden_lines(
 /// Recompute styled runs for each editor's visible buffer-line window and
 /// write them into the entity's `LineStyles` Component.
 ///
-/// Runs when any input that affects styling output changes:
-/// - `Changed<TextViewState>` — typing, paste, undo
-/// - `Changed<TextViewViewport>` — viewport resize
-/// - `Changed<HiddenLines>` — folds opened/closed (shifts visible window)
-/// - `Changed<EditorSyntaxState>` — parse completion bumps `tree_version`
-///   internally; the surrounding parse system writes a `Changed` tick by
-///   triggering `set_provider` / mutating `inner` via the same Component
-/// - `Changed<ThemeSettings>` / `Changed<SyntaxSettings>` — theme swap
+/// Runs when any input that affects styling output changes (per-entity
+/// `Changed<>` filter): `TextViewState`, `TextViewViewport`, `HiddenLines`,
+/// `ThemeConfig`, `SyntaxTheme`, and (with `tree-sitter`) `SyntaxTree`.
 ///
 /// Uses [`visible_buffer_range`] to scope work to lines about to render —
 /// the engine's layout system uses the same helper, so producer and
@@ -142,6 +137,8 @@ pub(crate) fn produce_line_styles(
             Option<&HiddenLines>,
             &mut EditorSyntaxState,
             &mut LineStyles,
+            &ThemeConfig,
+            &SyntaxTheme,
         ),
         With<CodeEditor>,
     >,
@@ -153,6 +150,8 @@ pub(crate) fn produce_line_styles(
                 Changed<TextViewState>,
                 Changed<TextViewViewport>,
                 Changed<HiddenLines>,
+                Changed<ThemeConfig>,
+                Changed<SyntaxTheme>,
                 Changed<bevy_tree_sitter::SyntaxTree>,
             )>,
         ),
@@ -165,22 +164,21 @@ pub(crate) fn produce_line_styles(
                 Changed<TextViewState>,
                 Changed<TextViewViewport>,
                 Changed<HiddenLines>,
+                Changed<ThemeConfig>,
+                Changed<SyntaxTheme>,
             )>,
         ),
     >,
-    theme: Res<ThemeSettings>,
-    syntax_settings: Res<SyntaxSettings>,
 ) {
-    let theme_changed = theme.is_changed() || syntax_settings.is_changed();
     let dirty: HashSet<Entity> = state_changed.iter().collect();
-    if !theme_changed && dirty.is_empty() {
+    if dirty.is_empty() {
         return;
     }
 
-    for (entity, state, viewport, font, wrap, hidden, mut syntax, mut line_styles) in
+    for (entity, state, viewport, font, wrap, hidden, mut syntax, mut line_styles, theme, syntax_theme) in
         editors.iter_mut()
     {
-        if !theme_changed && !dirty.contains(&entity) {
+        if !dirty.contains(&entity) {
             continue;
         }
 
@@ -213,7 +211,7 @@ pub(crate) fn produce_line_styles(
                 buffer_line,
                 buffer_line + 1,
                 start_byte,
-                &syntax_settings.theme,
+                syntax_theme,
                 theme.foreground,
             );
             let segs = per_line.pop().unwrap_or_default();
