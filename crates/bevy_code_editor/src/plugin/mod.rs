@@ -163,8 +163,6 @@ impl Plugin for CodeEditorPlugin {
         app.init_resource::<BracketSettings>();
         app.init_resource::<CursorSettings>();
         app.init_resource::<CursorLineSettings>();
-        app.init_resource::<ScrollingSettings>();
-        app.init_resource::<SearchSettings>();
         app.init_resource::<SyntaxSettings>();
         app.init_resource::<PerformanceSettings>();
         app.init_resource::<WrappingSettings>();

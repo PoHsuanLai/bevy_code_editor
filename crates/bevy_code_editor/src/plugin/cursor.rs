@@ -67,8 +67,6 @@ impl Plugin for CursorPlugin {
             .register_type::<crate::settings::KeyRepeatSettings>()
             .register_type::<crate::settings::PerformanceSettings>()
             .register_type::<crate::settings::ScrollbarSettings>()
-            .register_type::<crate::settings::ScrollingSettings>()
-            .register_type::<crate::settings::SearchSettings>()
             .register_type::<crate::settings::SyntaxSettings>()
             .register_type::<crate::settings::SyntaxTheme>()
             .register_type::<crate::settings::ThemeSettings>()
