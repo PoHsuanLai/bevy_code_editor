@@ -119,7 +119,6 @@ impl Default for ViewportDimensions {
         crate::types::fold::GotoLineState,
         crate::types::fold::FoldState,
         crate::plugin::scrollbar::ScrollbarDragState,
-        crate::input::MouseDragState,
     )
 )]
 #[cfg_attr(
@@ -132,7 +131,6 @@ impl Default for ViewportDimensions {
         crate::types::fold::GotoLineState,
         crate::types::fold::FoldState,
         crate::plugin::scrollbar::ScrollbarDragState,
-        crate::input::MouseDragState,
         // LSP-side state. `LspDocument` is NOT in this cascade because it
         // requires a URI which the host must supply.
         bevy_lsp::LspClient,

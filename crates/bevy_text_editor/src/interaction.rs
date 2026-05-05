@@ -16,7 +16,8 @@ use ropey::Rope;
 
 use bevy_text_engine::{DisplayLayout, FontConfig, TextView, TextViewState, TextViewViewport};
 
-use crate::components::{ScrollConfig, TextViewDragState, TextViewSelectionState};
+use crate::components::{ScrollConfig, TextViewDragState};
+use crate::state::{CursorState, SelectionState};
 
 // =============================================================================
 // Utilities (kept public for hosts that build their own click handlers)
@@ -77,21 +78,26 @@ pub fn screen_to_char_pos(
     line_start_char + char_in_line
 }
 
-/// Copy the current selection to the system clipboard.
+/// Copy the primary selection's text to the system clipboard.
 /// Returns true if text was copied, false if no selection.
-pub fn copy_selection(sel: &TextViewSelectionState, tv: &TextViewState) -> bool {
-    if let (Some(s), Some(e)) = (sel.selection_start, sel.selection_end) {
-        let (start, end) = if s < e { (s, e) } else { (e, s) };
-        let start = start.min(tv.rope.len_chars());
-        let end = end.min(tv.rope.len_chars());
-        if start == end {
-            return false;
-        }
-        let text = tv.rope.slice(start..end).to_string();
-        if let Ok(mut clipboard) = arboard::Clipboard::new() {
-            let _ = clipboard.set_text(text);
-            return true;
-        }
+///
+/// The unified `SelectionState` (with multi-selection support) is the
+/// source of truth — only the primary selection is copied. Bare-`TextView`
+/// consumers that want copy without `TextEditor` should attach a
+/// `SelectionState` Component to their entity (it's a cheap default).
+pub fn copy_selection(sel: &SelectionState, tv: &TextViewState) -> bool {
+    let Some((start, end)) = sel.primary_range() else {
+        return false;
+    };
+    let start = start.min(tv.rope.len_chars());
+    let end = end.min(tv.rope.len_chars());
+    if start == end {
+        return false;
+    }
+    let text = tv.rope.slice(start..end).to_string();
+    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+        let _ = clipboard.set_text(text);
+        return true;
     }
     false
 }
@@ -149,26 +155,35 @@ pub fn on_pointer_scroll(
 ///
 /// Only the primary button starts a selection. Position is taken from the
 /// hit data, which the picking backend reports in viewport-local coords.
+/// Writes through to `SelectionState` (the unified selection model) when
+/// present; bare-`TextView` entities without `SelectionState` get focus
+/// + drag-tracking but no selection update.
+///
+/// `CursorState`, when present, is also moved to the click position so
+/// editor handlers see the new caret on the next frame.
 pub fn on_pointer_press(
     trigger: On<Pointer<Press>>,
     mut views: Query<
         (
-            &mut TextViewSelectionState,
             &mut TextViewDragState,
             &TextViewState,
             &TextViewViewport,
             &FontConfig,
             Option<&DisplayLayout>,
+            Option<&mut SelectionState>,
+            Option<&mut CursorState>,
         ),
         With<TextView>,
     >,
+    keyboard: Res<ButtonInput<KeyCode>>,
     mut input_focus: ResMut<InputFocus>,
 ) {
     if trigger.event().button != PointerButton::Primary {
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((mut sel, mut drag_state, tv, viewport, font, layout)) = views.get_mut(entity) else {
+    let Ok((mut drag_state, tv, viewport, font, layout, sel, cursor)) = views.get_mut(entity)
+    else {
         return;
     };
 
@@ -187,13 +202,29 @@ pub fn on_pointer_press(
         None,
     );
 
-    sel.selection_start = Some(char_pos);
-    sel.selection_end = None;
-    drag_state.is_dragging = true;
-    drag_state.drag_start_pos = Some(char_pos);
-    drag_state.drag_start_scroll_offset = tv.scroll_offset;
-    // Reconstruct screen-space pointer position from hit + viewport origin.
-    drag_state.last_screen_pos = Some(viewport.hit_test_position + local_pos);
+    // Editor-feature modifiers (Alt = multi-cursor, Ctrl/Cmd = goto-definition)
+    // are handled by their own observers / systems. Skip the plain-click cursor
+    // move when any of those is held — the editor crate will write selection
+    // state itself for the modifier path.
+    let alt_held = keyboard.pressed(KeyCode::AltLeft) || keyboard.pressed(KeyCode::AltRight);
+    let ctrl_held = keyboard.pressed(KeyCode::ControlLeft)
+        || keyboard.pressed(KeyCode::ControlRight)
+        || keyboard.pressed(KeyCode::SuperLeft)
+        || keyboard.pressed(KeyCode::SuperRight);
+    let modifier_held = alt_held || ctrl_held;
+
+    if !modifier_held {
+        if let Some(mut sel) = sel {
+            sel.selections.set_cursor(char_pos);
+        }
+        if let Some(mut cursor) = cursor {
+            cursor.cursor_pos = char_pos;
+        }
+        drag_state.is_dragging = true;
+        drag_state.drag_start_pos = Some(char_pos);
+        drag_state.drag_start_scroll_offset = tv.scroll_offset;
+        drag_state.last_screen_pos = Some(viewport.hit_test_position + local_pos);
+    }
     input_focus.set(entity);
 }
 
@@ -202,16 +233,19 @@ pub fn on_pointer_press(
 /// Picking dispatches `Pointer<Drag>` to the entity that received the
 /// initial press, so this stays scoped to the view that started the drag
 /// even if the cursor moves out of its viewport.
+///
+/// Writes through to `SelectionState` and `CursorState` when present.
 pub fn on_pointer_drag(
     trigger: On<Pointer<Drag>>,
     mut views: Query<
         (
-            &mut TextViewSelectionState,
             &mut TextViewDragState,
             &TextViewState,
             &TextViewViewport,
             &FontConfig,
             Option<&DisplayLayout>,
+            Option<&mut SelectionState>,
+            Option<&mut CursorState>,
         ),
         With<TextView>,
     >,
@@ -220,7 +254,8 @@ pub fn on_pointer_drag(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((mut sel, mut drag_state, tv, viewport, font, layout)) = views.get_mut(entity) else {
+    let Ok((mut drag_state, tv, viewport, font, layout, sel, cursor)) = views.get_mut(entity)
+    else {
         return;
     };
     if !drag_state.is_dragging {
@@ -247,8 +282,16 @@ pub fn on_pointer_drag(
         Some(drag_state.drag_start_scroll_offset),
     );
 
-    sel.selection_start = drag_state.drag_start_pos;
-    sel.selection_end = Some(char_pos);
+    if let (Some(mut sel), Some(start)) = (sel, drag_state.drag_start_pos) {
+        if start == char_pos {
+            sel.selections.set_cursor(char_pos);
+        } else {
+            sel.selections.set_selection(char_pos, start);
+        }
+    }
+    if let Some(mut cursor) = cursor {
+        cursor.cursor_pos = char_pos;
+    }
     drag_state.last_screen_pos = Some(cursor_pos);
 }
 
@@ -270,12 +313,21 @@ pub fn on_pointer_release(
 ///
 /// Replaces the global `Res<ButtonInput<KeyCode>>` poll with a routed
 /// `FocusedInput<KeyboardInput>` event, so only the focused text view's
-/// selection is copied. The Ctrl modifier check keys off
-/// `Res<ButtonInput<KeyCode>>` since `KeyboardInput` carries a single
-/// key per event.
+/// selection is copied. Reads `SelectionState` (the unified selection
+/// model); entities without it are skipped.
+///
+/// Editor entities also have a leafwing-driven `CopyRequested` →
+/// `handle_copy` system path. To avoid double-copy, this observer skips
+/// when a `TextEditor` Component is present (the editor crate's path
+/// handles those). For bare-`TextView + SelectionState` consumers (e.g.
+/// a markdown viewer with selectable text), this observer is the only
+/// Cmd+C path.
 pub fn on_focused_keyboard(
     trigger: On<FocusedInput<KeyboardInput>>,
-    views: Query<(&TextViewSelectionState, &TextViewState), With<TextView>>,
+    views: Query<
+        (&SelectionState, &TextViewState),
+        (With<TextView>, Without<crate::state::TextEditor>),
+    >,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     let entity = trigger.event().focused_entity;

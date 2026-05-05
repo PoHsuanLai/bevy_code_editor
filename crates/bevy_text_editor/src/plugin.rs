@@ -19,7 +19,7 @@ use bevy::input_focus::InputDispatchPlugin;
 use bevy::picking::{DefaultPickingPlugins, PickingSystems};
 use bevy::prelude::*;
 
-use crate::components::{ScrollConfig, TextViewDragState, TextViewSelectionState};
+use crate::components::{ScrollConfig, TextViewDragState};
 use crate::editing_events::*;
 use crate::handlers;
 use crate::interaction::{
@@ -38,8 +38,7 @@ pub struct TextInteractionPlugin;
 impl Plugin for TextInteractionPlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<ScrollConfig>()
-            .register_type::<TextViewDragState>()
-            .register_type::<TextViewSelectionState>();
+            .register_type::<TextViewDragState>();
 
         if !app.is_plugin_added::<bevy::picking::PickingPlugin>() {
             app.add_plugins(DefaultPickingPlugins);

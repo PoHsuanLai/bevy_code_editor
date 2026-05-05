@@ -10,7 +10,7 @@ use crate::anchor::AnchorSet;
 use crate::history::EditHistory;
 use crate::selection::SelectionCollection;
 
-use crate::components::{ScrollConfig, TextViewDragState, TextViewSelectionState};
+use crate::components::{ScrollConfig, TextViewDragState};
 
 /// Cursor state component — tracks the primary cursor's position over time.
 ///
@@ -140,7 +140,6 @@ impl Default for IndentConfig {
     EditHistoryState,
     IndentConfig,
     TextViewDragState,
-    TextViewSelectionState,
     ScrollConfig,
 )]
 pub struct TextEditor;

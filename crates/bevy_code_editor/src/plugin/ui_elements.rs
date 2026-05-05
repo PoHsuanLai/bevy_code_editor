@@ -427,7 +427,7 @@ pub(crate) fn should_auto_scroll(
             &TextViewState,
             &CursorState,
             &super::scrollbar::ScrollbarDragState,
-            &crate::input::MouseDragState,
+            &bevy_text_editor::TextViewDragState,
         ),
         With<CodeEditor>,
     >,

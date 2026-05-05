@@ -7,14 +7,6 @@
 
 use bevy::prelude::*;
 
-/// Selection state for a text view. Tracks character indices into the rope.
-#[derive(Component, Default, Debug, Clone, Reflect)]
-#[reflect(Component, Default, Debug)]
-pub struct TextViewSelectionState {
-    pub selection_start: Option<usize>,
-    pub selection_end: Option<usize>,
-}
-
 /// Per-view mouse drag tracking for text selection.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]

@@ -51,7 +51,6 @@ impl Plugin for CursorPlugin {
             .register_type::<ViewportConfig>()
             .register_type::<ViewportDimensions>()
             .register_type::<crate::input::EditorAction>()
-            .register_type::<crate::input::MouseDragState>()
             .register_type::<super::editor_ui_plugin::EditorCamera>()
             .register_type::<super::gpu_line_numbers::GpuLineNumbersBatch>();
 

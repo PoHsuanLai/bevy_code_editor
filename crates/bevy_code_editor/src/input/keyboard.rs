@@ -18,7 +18,7 @@ use super::actions::{
 use super::actions::{
     find_word_start, request_completion, send_did_change, update_completion_filter,
 };
-use super::editing::insert_char;
+use super::editing::drain_one;
 use super::editor_ops::move_cursor;
 #[cfg(feature = "lsp")]
 use crate::settings::LspSettings;
@@ -168,15 +168,10 @@ pub fn on_focused_keyboard(
             }
         }
         Key::Space => {
-            insert_char(
-                &mut sel,
-                &mut hist,
-                &mut syntax,
-                &mut display,
-                &mut cursor,
-                &mut tv,
-                ' ',
+            bevy_text_editor::handlers::edit::insert_char(
+                &mut sel, &mut hist, &mut cursor, &mut tv, ' ',
             );
+            drain_one(&mut hist, &mut syntax, &mut display);
             #[cfg(feature = "lsp")]
             {
                 send_did_change(&tv.rope, lsp_client, lsp_document.as_deref_mut());
@@ -220,7 +215,8 @@ fn insert_typed_char(
         }
     }
 
-    insert_char(sel, hist, syntax, display, cursor, tv, c);
+    bevy_text_editor::handlers::edit::insert_char(sel, hist, cursor, tv, c);
+    drain_one(hist, syntax, display);
 
     if brackets.auto_close {
         if let Some(closing) = get_closing_bracket(c, &brackets.pairs) {

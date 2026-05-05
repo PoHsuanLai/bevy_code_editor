@@ -12,24 +12,6 @@ use crate::lsp_ui::reset_hover_state;
 #[cfg(feature = "lsp")]
 use bevy_lsp::LspMessage;
 
-/// Per-editor mouse drag state for selection.
-///
-/// Cascaded onto every `CodeEditor` entity via `#[require]` so each editor
-/// owns its own drag — clicking in editor A while dragging in editor B
-/// no longer corrupts a single global drag (the previous Resource shape).
-#[derive(Component, Default, Reflect)]
-#[reflect(Component, Default)]
-pub struct MouseDragState {
-    /// Whether we're currently dragging
-    pub is_dragging: bool,
-    /// Position where drag started (character index)
-    pub drag_start_pos: Option<usize>,
-    /// Scroll offset when drag started (to prevent auto-scroll from affecting selection)
-    pub drag_start_scroll_offset: f32,
-    /// Last screen position of the mouse (to detect actual mouse movement vs scroll changes)
-    pub last_screen_pos: Option<Vec2>,
-}
-
 /// Read-only context needed to translate a viewport-local pixel position to
 /// a character position in the rope. Bundled because the two call sites in
 /// `handle_mouse_input` thread the same set of refs through.
@@ -114,7 +96,6 @@ pub fn handle_mouse_input(
             &mut FoldState,
             &FontConfig,
             Option<&DisplayLayout>,
-            &mut MouseDragState,
         ),
         With<CodeEditor>,
     >,
@@ -149,7 +130,6 @@ pub fn handle_mouse_input(
         mut fold_state,
         font,
         layout,
-        mut drag_state,
     ) in editor_query.iter_mut()
     {
         // LSP-side state for this editor (separate query because the main
@@ -326,94 +306,31 @@ pub fn handle_mouse_input(
                 }
             }
 
-            // Check for Alt+Click to add a new cursor
+            // Alt+click: add a new secondary cursor at the clicked position.
+            // The plain-click cursor move is handled by bevy_text_editor's
+            // `on_pointer_press` observer, which skips writing selection when
+            // a modifier (Alt / Ctrl / Cmd) is held — so we own this branch
+            // exclusively.
             let alt_pressed = keyboard_input.pressed(KeyCode::AltLeft)
                 || keyboard_input.pressed(KeyCode::AltRight);
 
             if alt_pressed {
-                // Add cursor at clicked position
                 sel.add_cursor_at(&tv, char_pos);
                 sel.refresh_primary_cursor(&mut cursor);
-                // Hide hover on click
                 #[cfg(feature = "lsp")]
                 reset_hover_state(&mut hover_state);
                 continue;
             }
 
-            // Start drag - capture scroll offset and screen position to prevent auto-scroll from affecting selection
-            drag_state.is_dragging = true;
-            drag_state.drag_start_pos = Some(char_pos);
-            drag_state.drag_start_scroll_offset = tv.scroll_offset;
-            drag_state.last_screen_pos = cursor_pos_screen;
-
-            // Clear secondary cursors on regular click
-            if sel.has_multiple_cursors() {
-                sel.clear_secondary_cursors(&mut cursor);
-            }
-
-            // Update cursor and clear selection
-            cursor.cursor_pos = char_pos;
-            sel.apply_primary_cursor(&cursor);
-
-            // Hide hover on click
+            // Plain-click cursor placement and drag-select are owned by
+            // `bevy_text_editor::interaction::on_pointer_press` /
+            // `on_pointer_drag`. We just hide the LSP hover on click here.
             #[cfg(feature = "lsp")]
             reset_hover_state(&mut hover_state);
         } else {
             // Clicked outside any editor, lose focus only if this editor was the focused one.
             if input_focus.get() == Some(editor_entity) {
                 input_focus.clear();
-            }
-        }
-    }
-
-    // Handle mouse button release
-    if mouse_button.just_released(MouseButton::Left) {
-        drag_state.is_dragging = false;
-        drag_state.drag_start_pos = None;
-    }
-
-    // Handle dragging (mouse held and moving)
-    if drag_state.is_dragging && mouse_button.pressed(MouseButton::Left) {
-        if let (Some(cursor_pos_screen), Some(start_pos)) =
-            (cursor_pos_screen, drag_state.drag_start_pos)
-        {
-            // Only process drag if mouse actually moved (prevents auto-scroll from creating selections)
-            let mouse_moved = drag_state
-                .last_screen_pos
-                .map(|last| (cursor_pos_screen - last).length() > 2.0)
-                .unwrap_or(false);
-
-            if mouse_moved {
-                // Update last screen position
-                drag_state.last_screen_pos = Some(cursor_pos_screen);
-
-                let _viewport_width = viewport.width as f32;
-                let _viewport_height = viewport.height as f32;
-                let viewport_local_pos = Vec2::new(
-                    cursor_pos_screen.x - viewport.hit_test_position.x,
-                    cursor_pos_screen.y - viewport.hit_test_position.y,
-                );
-
-                // Use the scroll offset from drag start to prevent auto-scroll
-                // from affecting selection.
-                let current_pos = screen_to_char_pos(
-                    viewport_local_pos,
-                    &HitTestCtx {
-                        rope: &tv.rope,
-                        layout: layout.as_deref(),
-                        font,
-                        viewport,
-                        fold_state: &fold_state,
-                        current_scroll_offset: tv.scroll_offset,
-                        scroll_offset_override: Some(drag_state.drag_start_scroll_offset),
-                    },
-                );
-
-                // Only update if position changed
-                if current_pos != cursor.cursor_pos {
-                    cursor.cursor_pos = current_pos;
-                    sel.selections.set_selection(current_pos, start_pos);
-                }
             }
         }
     }

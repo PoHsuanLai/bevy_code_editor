@@ -179,9 +179,11 @@ impl Plugin for CodeEditorPlugin {
         app.init_resource::<ViewportConfig>();
         app.init_resource::<ViewportDimensions>();
 
-        // BracketMatchState, GotoLineState, FoldState, KeyRepeatState, and
-        // MouseDragState are per-editor / per-input-manager components
-        // (cascaded via #[require]); no global resource init.
+        // BracketMatchState, GotoLineState, FoldState, and KeyRepeatState are
+        // per-editor / per-input-manager components (cascaded via #[require]);
+        // no global resource init. Mouse drag tracking lives on
+        // `bevy_text_editor::TextViewDragState`, written by the picking-driven
+        // press/drag observers in `bevy_text_editor::interaction`.
 
         // Configure system set ordering
         app.configure_sets(

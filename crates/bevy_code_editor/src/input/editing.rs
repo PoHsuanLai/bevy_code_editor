@@ -1,4 +1,4 @@
-//! Editor-side wrappers + side-effect drain for [`bevy_text_editor`] edits.
+//! Editor-side side-effect drain for [`bevy_text_editor`] edits.
 //!
 //! The editable-text core (insert / delete / undo / redo / set_text) lives
 //! in `bevy_text_editor`. After every edit op, `EditHistoryState` exposes
@@ -10,13 +10,13 @@
 //!
 //! The [`drain_edit_side_effects`] system runs every Update after the
 //! editing handlers, copying these into the editor's `SyntaxCacheState` and
-//! `EditorDisplayState`. The wrappers below also drain the side-channels
-//! eagerly for handlers / observers that mutate edit state imperatively.
+//! `EditorDisplayState`. Hosts that mutate edit state imperatively from
+//! within an observer (e.g. the bracket auto-close path in
+//! [`crate::input::keyboard`]) call [`drain_one`] directly to propagate the
+//! side-channel within the same handler invocation.
 
 use crate::text_view::TextViewState;
-use crate::types::{
-    CursorState, EditHistoryState, EditorDisplayState, SelectionState, SyntaxCacheState,
-};
+use crate::types::{EditHistoryState, EditorDisplayState, SyntaxCacheState};
 use bevy::prelude::*;
 
 /// Drain `EditHistoryState`'s side-channel fields onto the editor's caches.
@@ -56,124 +56,18 @@ pub fn drain_edit_side_effects(
     }
 }
 
-/// Insert a character with bevy_code_editor side-effect propagation.
-#[allow(clippy::too_many_arguments)]
-pub fn insert_char(
-    sel: &mut SelectionState,
-    hist: &mut EditHistoryState,
-    syntax: &mut SyntaxCacheState,
-    display: &mut EditorDisplayState,
-    cursor: &mut CursorState,
-    tv: &mut TextViewState,
-    c: char,
-) {
-    if sel.selections.primary().has_selection() {
-        delete_selection(sel, hist, syntax, display, cursor, tv);
-    }
-    hist.insert_char(sel, cursor, tv, c);
-    drain_one(hist, syntax, display);
-}
-
-/// Delete the active selection range (with side-effect propagation).
-pub fn delete_selection(
-    sel: &mut SelectionState,
-    hist: &mut EditHistoryState,
-    syntax: &mut SyntaxCacheState,
-    display: &mut EditorDisplayState,
-    cursor: &mut CursorState,
-    tv: &mut TextViewState,
-) {
-    bevy_text_editor::handlers::edit::delete_selection(sel, hist, cursor, tv);
-    drain_one(hist, syntax, display);
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn delete_backward(
-    sel: &mut SelectionState,
-    hist: &mut EditHistoryState,
-    syntax: &mut SyntaxCacheState,
-    display: &mut EditorDisplayState,
-    cursor: &mut CursorState,
-    tv: &mut TextViewState,
-) {
-    hist.delete_backward(sel, cursor, tv);
-    drain_one(hist, syntax, display);
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn delete_forward(
-    sel: &mut SelectionState,
-    hist: &mut EditHistoryState,
-    syntax: &mut SyntaxCacheState,
-    display: &mut EditorDisplayState,
-    cursor: &mut CursorState,
-    tv: &mut TextViewState,
-) {
-    hist.delete_forward(sel, cursor, tv);
-    drain_one(hist, syntax, display);
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn undo(
-    sel: &mut SelectionState,
-    hist: &mut EditHistoryState,
-    syntax: &mut SyntaxCacheState,
-    display: &mut EditorDisplayState,
-    cursor: &mut CursorState,
-    tv: &mut TextViewState,
-) -> bool {
-    let r = hist.undo(sel, cursor, tv);
-    drain_one(hist, syntax, display);
-    r
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn redo(
-    sel: &mut SelectionState,
-    hist: &mut EditHistoryState,
-    syntax: &mut SyntaxCacheState,
-    display: &mut EditorDisplayState,
-    cursor: &mut CursorState,
-    tv: &mut TextViewState,
-) -> bool {
-    let r = hist.redo(sel, cursor, tv);
-    drain_one(hist, syntax, display);
-    r
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn delete_word_backward(
-    sel: &mut SelectionState,
-    hist: &mut EditHistoryState,
-    syntax: &mut SyntaxCacheState,
-    display: &mut EditorDisplayState,
-    cursor: &mut CursorState,
-    tv: &mut TextViewState,
-) {
-    bevy_text_editor::handlers::edit::delete_word_backward(sel, hist, cursor, tv);
-    drain_one(hist, syntax, display);
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn delete_word_forward(
-    sel: &mut SelectionState,
-    hist: &mut EditHistoryState,
-    syntax: &mut SyntaxCacheState,
-    display: &mut EditorDisplayState,
-    cursor: &mut CursorState,
-    tv: &mut TextViewState,
-) {
-    bevy_text_editor::handlers::edit::delete_word_forward(sel, hist, cursor, tv);
-    drain_one(hist, syntax, display);
-}
-
+/// Set buffer text + drain side effects eagerly.
+///
+/// Wraps [`bevy_text_editor::EditHistoryState::set_text`] so callers that
+/// load a file at startup (before [`drain_edit_side_effects`] runs) still
+/// get the syntax/display caches updated for the initial render.
 #[allow(clippy::too_many_arguments)]
 pub fn set_text(
-    sel: &mut SelectionState,
+    sel: &mut crate::types::SelectionState,
     hist: &mut EditHistoryState,
     syntax: &mut SyntaxCacheState,
     display: &mut EditorDisplayState,
-    cursor: &mut CursorState,
+    cursor: &mut crate::types::CursorState,
     tv: &mut TextViewState,
     text: &str,
 ) {
