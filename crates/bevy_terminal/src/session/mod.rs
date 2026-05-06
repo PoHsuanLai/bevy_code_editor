@@ -14,6 +14,7 @@ use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::{Config, Term};
 use alacritty_terminal::tty;
+use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use crossbeam_channel::{Receiver, Sender};
 
@@ -80,12 +81,15 @@ pub struct TerminalEventLoopRegistry {
 }
 
 /// Observer wired in `BevyTerminalPlugin`: spawn a PTY + EventLoop + Term
-/// for any entity that gains a `BevyTerminal` marker.
+/// for any entity that gains a `BevyTerminal` marker. Also seeds
+/// `InputFocus` if nothing else has it yet — handy for single-terminal
+/// apps that don't need to click before typing.
 pub fn on_terminal_added(
     trigger: On<Add, BevyTerminal>,
     scrollbacks: Query<&TerminalScrollback>,
     mut commands: Commands,
     mut registry: ResMut<TerminalEventLoopRegistry>,
+    mut input_focus: ResMut<InputFocus>,
 ) {
     let entity = trigger.entity;
     let scrollback = scrollbacks
@@ -97,6 +101,9 @@ pub fn on_terminal_added(
         Ok((session, channel, handle)) => {
             registry.handles.push(handle);
             commands.entity(entity).insert((session, channel));
+            if input_focus.get().is_none() {
+                input_focus.set(entity);
+            }
         }
         Err(err) => {
             error!("bevy_terminal: failed to spawn PTY: {err}");

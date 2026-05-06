@@ -21,6 +21,7 @@
 
 pub mod cursor;
 pub mod drain;
+pub mod input;
 pub mod messages;
 pub mod plugin;
 pub mod session;

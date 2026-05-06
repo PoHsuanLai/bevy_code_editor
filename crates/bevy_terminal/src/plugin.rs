@@ -145,5 +145,10 @@ impl Plugin for BevyTerminalPlugin {
         // its PTY is closed (which happens when the OS reaps the process).
         // Phase 4 may revisit when explicit despawn-during-runtime matters.
         app.add_observer(on_terminal_added);
+
+        // Keyboard firehose: per-event observer that translates keystrokes
+        // to PTY bytes. Routed by `bevy::input_focus::FocusedInput<KeyboardInput>`
+        // — the focused entity is the recipient.
+        app.add_observer(crate::input::on_focused_terminal_keyboard);
     }
 }
