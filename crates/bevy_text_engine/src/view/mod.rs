@@ -18,7 +18,10 @@ pub use layout_builder::{
     approx_display_rows_for_line, slice_runs, visible_buffer_range, wrap_into_rows,
     LayoutProduceSet, WrapRow,
 };
-pub use overlay::{CornerRadii, RectOverlay, RowVertical, TextViewOverlays};
+pub use overlay::{
+    for_each_row_in_buffer_span, CornerRadii, RectOverlay, RowPosition, RowVertical,
+    TextViewOverlays,
+};
 pub use plugin::{TextEnginePlugin, TextEnginePlugins, TextView, TextViewBatchEntity, TextViewRenderSet};
 pub use render::{render_layout, FontFaces, GlyphBatchComponent, GlyphInstance, TextViewBatch};
 pub use snapshot::{
@@ -27,5 +30,5 @@ pub use snapshot::{
 };
 pub use state::{ContentMetrics, ScrollState, TextBuffer};
 pub use styling::{BlockList, HiddenLines, LayoutWrap, LineStyles, RunWithText};
-pub use theme::RenderTheme;
+pub use theme::{BlockDecorTheme, RenderTheme};
 pub use viewport::{TextViewViewport, ViewportOrigin};

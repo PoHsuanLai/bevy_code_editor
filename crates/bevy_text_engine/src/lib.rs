@@ -36,8 +36,9 @@ pub mod prelude {
     pub use crate::gpu::{GlyphAtlasPlugin, InstancedTextRenderPlugin};
     pub use crate::ui::{Scrollbar, ScrollbarOrientation, ScrollbarPlugin, ScrollbarState};
     pub use crate::view::{
-        Block, BlockLayoutConfig, BlockList, ContentMetrics, DisplayLayout, FontConfig,
-        FontSynthesis, HiddenLines, LayoutWrap, LineStyles, RenderTheme, RunWithText, ScrollState,
-        StyleRun, TextBuffer, TextEnginePlugin, TextEnginePlugins, TextView, TextViewViewport,
+        Block, BlockDecorTheme, BlockLayoutConfig, BlockList, ContentMetrics, DisplayLayout,
+        FontConfig, FontSynthesis, HiddenLines, LayoutWrap, LineStyles, RenderTheme, RunWithText,
+        ScrollState, StyleRun, TextBuffer, TextEnginePlugin, TextEnginePlugins, TextView,
+        TextViewViewport,
     };
 }

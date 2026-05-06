@@ -17,7 +17,7 @@ use super::overlay::TextViewOverlays;
 use super::render::{render_layout, GlyphBatchComponent, TextViewBatch};
 use super::state::{ContentMetrics, ScrollState, TextBuffer};
 use super::styling::LayoutWrap;
-use super::theme::RenderTheme;
+use super::theme::{BlockDecorTheme, RenderTheme};
 use super::viewport::TextViewViewport;
 use crate::gpu::{atlas_ready, GlyphAtlas, GlyphAtlasPlugin, InstancedTextRenderPlugin};
 
@@ -61,6 +61,7 @@ impl Plugin for TextEnginePlugin {
             .register_type::<super::overlay::RowVertical>()
             .register_type::<LayoutWrap>()
             .register_type::<RenderTheme>()
+            .register_type::<BlockDecorTheme>()
             .register_type::<TextView>()
             .register_type::<TextViewBatchEntity>()
             .register_type::<TextViewOverlays>()

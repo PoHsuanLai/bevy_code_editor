@@ -11,6 +11,8 @@
 use bevy::prelude::*;
 use std::ops::Range;
 
+use super::layout::DisplayLayout;
+
 #[derive(Component, Default, Clone, Reflect)]
 #[reflect(Component, Default)]
 pub struct TextViewOverlays {
@@ -135,4 +137,68 @@ pub enum RowVertical {
     BottomBand { thickness: f32 },
     /// Underline below the typographic baseline (squiggle / error indicator).
     UnderBaseline { thickness: f32, gap: f32 },
+}
+
+/// Where a display row sits within a multi-row span. Drives per-corner
+/// rounding so a multi-row panel rounds only its outer corners — the first
+/// row rounds the top, the last row rounds the bottom, middle rows are
+/// sharp, and a single-row span rounds all four.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RowPosition {
+    Only,
+    First,
+    Middle,
+    Last,
+}
+
+impl RowPosition {
+    /// Map a position to corner radii for the common "round only the
+    /// outer corners of a multi-row panel" pattern.
+    pub fn corners(self, r: f32) -> CornerRadii {
+        match self {
+            RowPosition::Only => CornerRadii::uniform(r),
+            RowPosition::First => CornerRadii::top(r),
+            RowPosition::Last => CornerRadii::bottom(r),
+            RowPosition::Middle => CornerRadii::ZERO,
+        }
+    }
+}
+
+/// Walk every display row in `layout` whose `buffer_row` falls in
+/// `[first_buffer_row, last_buffer_row]` (inclusive), invoking `builder`
+/// once per display row with that row's [`RowPosition`] within the span.
+///
+/// A buffer line can wrap into multiple display rows; this iterator collects
+/// the full set first so first/middle/last classification has the full count
+/// to work with. Used by markdown for code-block / blockquote / rule
+/// backgrounds and by editors for fold-region / multi-row range highlights.
+pub fn for_each_row_in_buffer_span(
+    layout: &DisplayLayout,
+    first_buffer_row: u32,
+    last_buffer_row: u32,
+    mut builder: impl FnMut(u32, RowPosition),
+) {
+    let rows: Vec<u32> = layout
+        .lines
+        .iter()
+        .filter(|l| l.buffer_row >= first_buffer_row && l.buffer_row <= last_buffer_row)
+        .map(|l| l.display_row)
+        .collect();
+    let len = rows.len();
+    if len == 0 {
+        return;
+    }
+    let last_idx = len - 1;
+    for (i, display_row) in rows.into_iter().enumerate() {
+        let pos = if len == 1 {
+            RowPosition::Only
+        } else if i == 0 {
+            RowPosition::First
+        } else if i == last_idx {
+            RowPosition::Last
+        } else {
+            RowPosition::Middle
+        };
+        builder(display_row, pos);
+    }
 }
