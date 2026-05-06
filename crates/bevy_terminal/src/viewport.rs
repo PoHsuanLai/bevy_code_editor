@@ -1,41 +1,24 @@
-//! Viewport-change → PTY + Term resize.
+//! Viewport-change → PTY + `Terminal` resize.
 //!
 //! Whenever the rendered viewport (size or font cell metrics) changes,
-//! recompute (cols, rows) and resize both the alacritty `Term` (so the
-//! grid reshapes immediately) and the PTY (so the child process sees a
-//! `SIGWINCH`). A change-detection query (`Changed<TextViewViewport>`)
-//! gates the system; a fingerprint guard inside catches font changes too.
+//! recompute (cols, rows) and resize both the wezterm [`backend::Terminal`]
+//! (so the grid reshapes immediately) and the PTY (so the child sees a
+//! `SIGWINCH`). A change-detection query gates the system; (cols, rows)
+//! comparison inside catches inconsequential viewport jitter.
 
-use alacritty_terminal::event::{OnResize, WindowSize};
-use alacritty_terminal::grid::Dimensions;
 use bevy::prelude::*;
 use bevy_text_engine::{FontConfig, TextViewViewport};
+use portable_pty::PtySize;
 
+use crate::backend;
 use crate::types::TerminalSession;
-
-/// Tiny `Dimensions` impl so we can pass cols/rows to `Term::resize`.
-struct Dims {
-    cols: usize,
-    rows: usize,
-}
-
-impl Dimensions for Dims {
-    fn total_lines(&self) -> usize {
-        self.rows
-    }
-    fn screen_lines(&self) -> usize {
-        self.rows
-    }
-    fn columns(&self) -> usize {
-        self.cols
-    }
-}
 
 const MIN_COLS: u16 = 2;
 const MIN_ROWS: u16 = 1;
 
-/// Reads viewport + font, reshapes Term + PTY when (cols, rows) changes.
+/// Reads viewport + font, reshapes `Terminal` + PTY when (cols, rows) changes.
 /// Lives in `TerminalApplyStateSet`.
+#[allow(clippy::type_complexity)]
 pub fn sync_terminal_size(
     mut q: Query<
         (&TextViewViewport, &FontConfig, &mut TerminalSession),
@@ -48,28 +31,28 @@ pub fn sync_terminal_size(
         let cols = ((usable_w / font.char_width).floor() as u16).max(MIN_COLS);
         let rows = ((usable_h / font.line_height).floor() as u16).max(MIN_ROWS);
 
-        if session.size.num_cols == cols && session.size.num_lines == rows {
+        if session.size.cols as u16 == cols && session.size.rows as u16 == rows {
             continue;
         }
 
-        let new_size = WindowSize {
-            num_cols: cols,
-            num_lines: rows,
-            cell_width: font.char_width.round() as u16,
-            cell_height: font.line_height.round() as u16,
+        let cell_w = font.char_width.round() as u16;
+        let cell_h = font.line_height.round() as u16;
+        let new_size = backend::TerminalSize {
+            cols: cols as usize,
+            rows: rows as usize,
+            pixel_width: (cols * cell_w) as usize,
+            pixel_height: (rows * cell_h) as usize,
+            dpi: 0,
+        };
+        let pty_size = PtySize {
+            cols,
+            rows,
+            pixel_width: cols * cell_w,
+            pixel_height: rows * cell_h,
         };
 
-        // Resize the Term (cell grid) under the lock.
-        {
-            let mut term = session.terminal.lock();
-            term.resize(Dims {
-                cols: cols as usize,
-                rows: rows as usize,
-            });
-        }
-        // Resize the PTY — alacritty's EventLoop handles the actual
-        // `SIGWINCH` via `Notifier::on_resize`.
-        session.notifier.on_resize(new_size);
+        session.terminal.lock().resize(new_size);
+        let _ = session.pty_master.lock().resize(pty_size);
         session.size = new_size;
     }
 }

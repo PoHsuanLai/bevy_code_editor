@@ -7,14 +7,11 @@
 
 use std::sync::Arc;
 
-use alacritty_terminal::event::WindowSize;
-use alacritty_terminal::event_loop::Notifier;
-use alacritty_terminal::sync::FairMutex;
-use alacritty_terminal::term::Term;
 use bevy::picking::Pickable;
 use bevy::prelude::*;
+use parking_lot::Mutex;
 
-use crate::session::EventProxy;
+use crate::backend;
 
 /// Spawn this on an entity to make it a terminal. The cascade brings in
 /// rendering substrate (`TextView` + family), selection state, the
@@ -56,27 +53,42 @@ use crate::session::EventProxy;
 )]
 pub struct BevyTerminal;
 
-/// Holds the live PTY + Term state. Inserted by the spawn observer; the
-/// drain system is the only writer to `terminal` (it takes the lock).
-/// Snapshot reads under the same lock and produces `TerminalGridSnapshot`.
+/// Holds the live PTY + wezterm `Terminal`. Inserted by the spawn
+/// observer; the drain system is the only writer to `terminal`
+/// (it locks for `advance_bytes`). Snapshot reads under the same
+/// lock and produces `TerminalGridSnapshot`.
 ///
-/// Opaque to reflection — the inner `Arc<FairMutex<Term<_>>>` and
-/// `Notifier` carry OS handles and don't make sense to inspect.
+/// Opaque to reflection — the inner mutex guards a `wezterm_term::Terminal`
+/// that wraps OS handles and large internal state; reflecting it doesn't
+/// make sense.
 #[derive(Component)]
 pub struct TerminalSession {
-    pub terminal: Arc<FairMutex<Term<EventProxy>>>,
-    pub notifier: Notifier,
-    /// Last applied window size. Compared against the viewport-derived
-    /// (cols, rows) each frame; on change we resize both `Term` and PTY.
-    pub size: WindowSize,
+    pub terminal: Arc<Mutex<backend::Terminal>>,
+    pub pty_master: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
+    /// Cloned handle to the same PTY-input writer the wezterm `Terminal`
+    /// owns. Used by host-driven byte writes (raw write-bytes,
+    /// run-command) so they reach the shell without going through the
+    /// VT parser. `MasterPty::take_writer` is one-shot, so this clone is
+    /// the only safe second writer.
+    pub pty_input: backend::SharedWriter,
+    /// Last applied terminal size. Compared against the viewport-derived
+    /// (cols, rows, pixel dims) each frame; on change we resize both
+    /// `Terminal` and the PTY (so the child sees `SIGWINCH`).
+    pub size: backend::TerminalSize,
 }
 
-/// Receiver side of the alacritty `EventLoop` ↔ ECS bridge. Drained each
-/// frame in the PTY drain set. Held in its own component (not the session)
-/// so other systems can borrow `TerminalSession` mutably without aliasing.
+/// Receiver side of the PTY-reader-thread → ECS bridge. Drained each
+/// frame in `TerminalPtyDrainSet`; bytes are fed into
+/// [`backend::Terminal::advance_bytes`]. Held in its own component (not
+/// the session) so other systems can borrow `TerminalSession` mutably
+/// without aliasing the receiver.
 #[derive(Component)]
 pub struct TerminalEventChannel {
-    pub rx: crossbeam_channel::Receiver<alacritty_terminal::event::Event>,
+    pub rx: crossbeam_channel::Receiver<Vec<u8>>,
+    /// Async-emitted alerts from the wezterm `Terminal` (bell, title
+    /// changes, cwd updates, …). Filled by the `AlertChannel` handler
+    /// installed in `make_terminal`; drained alongside the bytes.
+    pub alerts: crossbeam_channel::Receiver<backend::Alert>,
 }
 
 /// Snapshot of the visible grid metadata: dims + cursor + version. The

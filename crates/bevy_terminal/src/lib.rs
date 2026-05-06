@@ -2,9 +2,9 @@
 //!
 //! Embeddable terminal widget. Spawn a single [`BevyTerminal`] component
 //! and `#[require]` cascades the rest — PTY session, grid snapshot, theme,
-//! input mode, scrollback. PTY + VT parsing comes from `alacritty_terminal`;
-//! rendering from `bevy_text_engine`; selection / clipboard from
-//! `bevy_text_editor`.
+//! input mode, scrollback. VT state from `wezterm-term`; PTY allocation
+//! from `portable-pty`; rendering from `bevy_text_engine`; selection /
+//! clipboard from `bevy_text_editor`.
 //!
 //! ```rust,no_run
 //! use bevy::prelude::*;
@@ -19,6 +19,7 @@
 //!     .run();
 //! ```
 
+pub mod backend;
 pub mod clipboard;
 pub mod cursor;
 pub mod drain;
