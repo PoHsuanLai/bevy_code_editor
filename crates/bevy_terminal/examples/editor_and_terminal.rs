@@ -18,7 +18,7 @@ fn main() {
             }),
             ..default()
         }))
-        .add_plugins(CodeEditorPlugin::default())
+        .add_plugins(CodeEditorPlugins)
         .add_plugins(BevyTerminalPlugin)
         .add_systems(Startup, (setup_camera, layout_panes))
         .run();
