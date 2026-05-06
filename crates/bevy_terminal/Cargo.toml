@@ -1,0 +1,44 @@
+[package]
+name = "bevy_terminal"
+version = "0.1.0"
+edition = "2021"
+authors = ["PoHsuanLai"]
+license = "MIT OR Apache-2.0"
+description = "Embeddable terminal widget for Bevy. PTY + VT parser via alacritty_terminal; rendering via bevy_text_engine; selection and clipboard via bevy_text_editor."
+repository = "https://github.com/PoHsuanLai/bevy_code_editor"
+keywords = ["bevy", "terminal", "pty", "vt100", "alacritty"]
+categories = ["game-development", "command-line-interface"]
+
+[dependencies]
+bevy_text_engine = { path = "../bevy_text_engine" }
+bevy_text_editor = { path = "../bevy_text_editor" }
+
+bevy = { version = "0.18", default-features = false, features = [
+    "bevy_render",
+    "bevy_core_pipeline",
+    "bevy_asset",
+    "bevy_text",
+    "default_font",
+    "bevy_sprite",
+    "bevy_sprite_render",
+    "bevy_color",
+    "bevy_mesh",
+    "bevy_camera",
+    "bevy_input_focus",
+    "bevy_picking",
+    "bevy_window",
+] }
+
+# Terminal state machine + PTY + VTE parser. Apache-2.0.
+alacritty_terminal = "0.26"
+
+# crossbeam for the EventLoop ↔ ECS bridge channel — alacritty's EventLoop
+# runs on a thread and proxies events through an `EventListener` we plug.
+crossbeam-channel = "0.5"
+
+leafwing-input-manager = "0.20"
+
+serde = { version = "1.0", features = ["derive"] }
+
+[dev-dependencies]
+bevy = { version = "0.18", features = ["bevy_window", "bevy_winit"] }
