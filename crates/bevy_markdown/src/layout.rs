@@ -12,8 +12,8 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use bevy_text_engine::{
-    Block as EBlock, BlockLayoutConfig, DisplayLayout, RectOverlay, RowVertical, StyleRun,
-    TextDecoration,
+    for_each_row_in_buffer_span, Block as EBlock, BlockLayoutConfig, DisplayLayout, RectOverlay,
+    RowPosition, RowVertical, StyleRun, TextDecoration,
 };
 
 use crate::parse::{Block, Inline};
@@ -109,20 +109,6 @@ struct PendingRect {
     block_idx: usize,
     coverage: RectCoverage,
     builder: fn(u32, RowPosition, &OverlayContext) -> RectOverlay,
-}
-
-/// Where a row sits within an overlay's coverage span. Drives per-corner
-/// rounding so a multi-row panel rounds only its outer corners.
-#[derive(Clone, Copy, Debug)]
-enum RowPosition {
-    /// The only row in the span — round all four corners.
-    Only,
-    /// First row of a multi-row span — round only the top corners.
-    First,
-    /// Middle row — sharp on all four corners.
-    Middle,
-    /// Last row of a multi-row span — round only the bottom corners.
-    Last,
 }
 
 /// Context passed to overlay builders at resolution time. Carries the
@@ -324,7 +310,7 @@ impl<'a> LayoutBuilder<'a> {
 
     fn emit_code_block(&mut self, text: &str, depth: u32) {
         let pad = self.cfg.theme.code_block_padding;
-        let fg = self.cfg.theme.code_block_fg;
+        let fg = self.cfg.theme.decor.code_block_fg;
         let indent = self.indent_px(depth);
 
         let lines: Vec<&str> = text.split('\n').collect();
@@ -420,11 +406,11 @@ impl<'a> LayoutBuilder<'a> {
         // but inline code can still legitimately end with a trailing
         // space in some inputs — those are usually unintentional and
         // make the chip read as right-padded.
-        let theme = &self.cfg.theme;
+        let decor = &self.cfg.theme.decor;
         buf.push_run(
             s.trim(),
-            theme.inline_code_fg,
-            Some(theme.inline_code_bg),
+            decor.inline_code_fg,
+            Some(decor.inline_code_bg),
             INLINE_CODE_CORNER,
             state,
         );
@@ -659,30 +645,14 @@ fn resolve_pending_rects(
             RectCoverage::SingleBlock => p.block_idx,
             RectCoverage::Span { len } => p.block_idx + len.saturating_sub(1),
         };
-        let first_buffer_row = p.block_idx as u32;
-        let last_buffer_row = last_block as u32;
-        // Collect all display rows in the span first, so we know which
-        // is first / last (a buffer line can wrap into multiple display
-        // rows; the rounding decision needs the full set).
-        let rows: Vec<u32> = layout
-            .lines
-            .iter()
-            .filter(|l| l.buffer_row >= first_buffer_row && l.buffer_row <= last_buffer_row)
-            .map(|l| l.display_row)
-            .collect();
-        let last_idx = rows.len().saturating_sub(1);
-        for (i, display_row) in rows.into_iter().enumerate() {
-            let pos = if last_idx == 0 {
-                RowPosition::Only
-            } else if i == 0 {
-                RowPosition::First
-            } else if i == last_idx {
-                RowPosition::Last
-            } else {
-                RowPosition::Middle
-            };
-            out.push((p.builder)(display_row, pos, ctx));
-        }
+        for_each_row_in_buffer_span(
+            layout,
+            p.block_idx as u32,
+            last_block as u32,
+            |display_row, pos| {
+                out.push((p.builder)(display_row, pos, ctx));
+            },
+        );
     }
     out
 }
@@ -700,9 +670,9 @@ fn code_block_overlay(display_row: u32, pos: RowPosition, ctx: &OverlayContext) 
         display_row,
         x_range: 0.0..ctx.content_right,
         vertical: RowVertical::FullLeaded,
-        color: ctx.theme.code_block_bg,
+        color: ctx.theme.decor.code_block_bg,
         z: DECORATION_Z,
-        corners: corners_for_row(pos, ctx.theme.code_corner_radius),
+        corners: pos.corners(ctx.theme.decor.code_corner_radius),
     }
 }
 
@@ -715,7 +685,7 @@ fn blockquote_bar_overlay(display_row: u32, _pos: RowPosition, ctx: &OverlayCont
         display_row,
         x_range: 0.0..BLOCKQUOTE_BAR_WIDTH,
         vertical: RowVertical::FullLeaded,
-        color: ctx.theme.blockquote_bar,
+        color: ctx.theme.decor.blockquote_bar,
         z: BLOCKQUOTE_BAR_Z,
         corners: bevy_text_engine::CornerRadii::ZERO,
     }
@@ -730,26 +700,12 @@ fn rule_overlay(display_row: u32, _pos: RowPosition, ctx: &OverlayContext) -> Re
         vertical: RowVertical::TopBand {
             thickness: RULE_THICKNESS,
         },
-        color: ctx.theme.rule_color,
+        color: ctx.theme.decor.rule_color,
         z: DECORATION_Z,
         corners: bevy_text_engine::CornerRadii::ZERO,
     }
 }
 
-/// Map a `RowPosition` to the corner radii for a row of a multi-row
-/// panel: the first row rounds its top corners, the last row rounds
-/// its bottom corners, middle rows are sharp, single-row spans round
-/// all four. Lets the stack of `FullLeaded` quads paint as one
-/// continuous rounded rectangle.
-fn corners_for_row(pos: RowPosition, r: f32) -> bevy_text_engine::CornerRadii {
-    use bevy_text_engine::CornerRadii;
-    match pos {
-        RowPosition::Only => CornerRadii::uniform(r),
-        RowPosition::First => CornerRadii::top(r),
-        RowPosition::Last => CornerRadii::bottom(r),
-        RowPosition::Middle => CornerRadii::ZERO,
-    }
-}
 
 /// Prepend a list marker into an engine block: shifts existing run
 /// byte_ranges by `marker.len()` and inserts a leading body-styled run

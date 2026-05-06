@@ -1,13 +1,14 @@
-//! Color + sizing palette for the markdown viewer. Hosts override individual
-//! fields to match the surrounding UI; `dark()` is the default and matches
-//! the rest of the example fleet.
+//! Markdown-specific styling. Decorative chrome (code chips, blockquote
+//! bars, rules) is delegated to [`bevy_text_engine::BlockDecorTheme`] so
+//! terminals, log viewers, and other consumers can share it.
 
 use bevy::prelude::*;
+use bevy_text_engine::BlockDecorTheme;
 
-/// Visual styling for markdown blocks. Independent of `bevy_text_engine`'s
-/// `FontConfig` — this type only carries colors + per-element scale
-/// multipliers; sizing is derived at layout time from the entity's
-/// `FontConfig.size`.
+/// Markdown-specific palette: text colors, heading scales, indentation,
+/// and per-element padding. Generic block chrome (inline-code chip,
+/// fenced-code background, blockquote bar, rule color) lives in
+/// [`MarkdownTheme::decor`] as a [`BlockDecorTheme`].
 #[derive(Clone, Debug, Resource)]
 pub struct MarkdownTheme {
     pub body_fg: Color,
@@ -16,20 +17,11 @@ pub struct MarkdownTheme {
     /// Heading font scales relative to body, indexed by `level - 1`.
     pub heading_scale: [f32; 6],
     pub link_fg: Color,
-    pub inline_code_fg: Color,
-    pub inline_code_bg: Color,
-    pub code_block_fg: Color,
-    pub code_block_bg: Color,
-    pub blockquote_fg: Color,
-    pub blockquote_bar: Color,
-    pub rule_color: Color,
+    pub decor: BlockDecorTheme,
     /// Padding (px) inside fenced code blocks.
     pub code_block_padding: f32,
-    /// Corner radius for code blocks + inline code chips.
-    pub code_corner_radius: f32,
     /// Horizontal indent (px) per nesting level for lists / blockquotes.
     pub indent_step: f32,
-    /// Vertical space (px) above a heading. Applied as a `Block.padding_top`.
     pub heading_padding_top: f32,
     pub heading_padding_bottom: f32,
     pub paragraph_padding_bottom: f32,
@@ -42,8 +34,7 @@ impl Default for MarkdownTheme {
 }
 
 impl MarkdownTheme {
-    /// Default dark theme — neutral grays + accent blue for links, matching
-    /// the editor's default surface tone.
+    /// Default dark theme — neutral grays + accent blue for links.
     pub fn dark() -> Self {
         Self {
             body_fg: Color::srgb(0.86, 0.86, 0.88),
@@ -57,15 +48,8 @@ impl MarkdownTheme {
             ],
             heading_scale: [2.0, 1.6, 1.3, 1.15, 1.05, 1.0],
             link_fg: Color::srgb(0.45, 0.72, 1.0),
-            inline_code_fg: Color::srgb(1.0, 0.78, 0.55),
-            inline_code_bg: Color::srgba(1.0, 1.0, 1.0, 0.08),
-            code_block_fg: Color::srgb(0.90, 0.90, 0.92),
-            code_block_bg: Color::srgba(1.0, 1.0, 1.0, 0.05),
-            blockquote_fg: Color::srgb(0.75, 0.75, 0.78),
-            blockquote_bar: Color::srgba(0.55, 0.65, 0.85, 0.55),
-            rule_color: Color::srgba(1.0, 1.0, 1.0, 0.15),
+            decor: BlockDecorTheme::default(),
             code_block_padding: 8.0,
-            code_corner_radius: 4.0,
             indent_step: 24.0,
             heading_padding_top: 12.0,
             heading_padding_bottom: 6.0,
