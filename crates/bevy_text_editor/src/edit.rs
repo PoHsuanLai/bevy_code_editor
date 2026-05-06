@@ -34,7 +34,6 @@ pub fn point_at_byte(rope: &Rope, byte_offset: usize) -> EditPoint {
 pub struct EditOutcome {
     pub start_char: usize,
     pub new_cursor_pos: usize,
-    pub removed_text: String,
 }
 
 impl EditHistoryState {
@@ -124,7 +123,6 @@ impl EditHistoryState {
         EditOutcome {
             start_char: start,
             new_cursor_pos,
-            removed_text,
         }
     }
 
@@ -272,7 +270,6 @@ impl EditHistoryState {
         cursor.cursor_pos = cursor.cursor_pos.min(buffer.rope.len_chars());
         sel.selections = SelectionCollection::with_cursor(cursor.cursor_pos);
         metrics.max_content_width = 0.0;
-        metrics.max_width_line = None;
     }
 
     /// Create an anchor at the given position.

@@ -42,7 +42,7 @@ use bevy::prelude::*;
 use leafwing_input_manager::prelude::*;
 use std::time::Instant;
 
-const ALL_ACTIONS: [EditorAction; 50] = [
+const ALL_ACTIONS: [EditorAction; 49] = [
     EditorAction::DeleteBackward,
     EditorAction::DeleteForward,
     EditorAction::DeleteWordBackward,
@@ -77,7 +77,6 @@ const ALL_ACTIONS: [EditorAction; 50] = [
     EditorAction::Paste,
     EditorAction::Undo,
     EditorAction::Redo,
-    EditorAction::Replace,
     EditorAction::GotoLine,
     EditorAction::RequestCompletion,
     EditorAction::GotoDefinition,
@@ -145,8 +144,7 @@ pub struct ActionEventWriters<'w> {
     undo: MessageWriter<'w, UndoRequested>,
     redo: MessageWriter<'w, RedoRequested>,
 
-    // Search / Navigation
-    replace: MessageWriter<'w, ReplaceRequested>,
+    // Navigation
     goto_line: MessageWriter<'w, GotoLineRequested>,
 
     // LSP
@@ -286,9 +284,6 @@ impl<'w> ActionEventWriters<'w> {
             EditorAction::Redo => {
                 self.redo.write(RedoRequested);
             }
-            EditorAction::Replace => {
-                self.replace.write(ReplaceRequested);
-            }
             EditorAction::GotoLine => {
                 self.goto_line.write(GotoLineRequested);
             }
@@ -334,19 +329,6 @@ impl<'w> ActionEventWriters<'w> {
             EditorAction::Save | EditorAction::Open => {}
         }
     }
-}
-
-/// Per-action flag: whether this action moves the cursor horizontally.
-/// Used by `lsp_followup` to decide if the completion popup should hide.
-#[cfg(feature = "lsp")]
-fn is_horizontal_move(action: EditorAction) -> bool {
-    matches!(
-        action,
-        EditorAction::MoveCursorLeft
-            | EditorAction::MoveCursorRight
-            | EditorAction::MoveCursorWordLeft
-            | EditorAction::MoveCursorWordRight
-    )
 }
 
 /// `EditorAction` → typed event dispatcher.
@@ -484,11 +466,7 @@ pub fn dispatch_action_events(
     // Snapshot for the LSP follow-up system before handlers run.
     #[cfg(feature = "lsp")]
     {
-        if let Ok((cursor, _tv, _)) = editor_q.get(focused) {
-            pending.pre_cursor_pos = cursor.cursor_pos;
-        }
         pending.was_delete_backward = matches!(action, EditorAction::DeleteBackward);
-        pending.was_horizontal_move = is_horizontal_move(action);
         pending.action_fired = true;
     }
 

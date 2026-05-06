@@ -309,11 +309,6 @@ impl Block {
         self
     }
 
-    pub fn with_background(mut self, color: Color) -> Self {
-        self.line_bg = Some(color);
-        self
-    }
-
     /// Wrap this block's text on a per-character budget. Continuation rows
     /// inherit the block's `indent`. Whitespace-aware: breaks at the last
     /// space/tab before the budget when one exists; otherwise hard-breaks.

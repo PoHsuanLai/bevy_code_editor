@@ -48,9 +48,9 @@ fn main() {
     // to the egui render systems below.
     app.add_plugins(bevy_egui::EguiPlugin::default());
 
-    app.add_plugins(CodeEditorPlugin::default());
+    app.add_plugins(CodeEditorPlugins);
 
-    // LspPlugin is auto-added by CodeEditorPlugin under the `lsp` feature; we
+    // LspPlugin is part of `CodeEditorPlugins` under the `lsp` feature; we
     // just supply the egui-based UI layer here.
     app.add_plugins(LspEguiUiPlugin);
 

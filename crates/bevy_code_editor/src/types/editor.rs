@@ -8,7 +8,6 @@
 
 use bevy::prelude::*;
 
-use super::display_map::{HighlightedToken, LineSegment};
 
 /// When `true`, viewport auto-resizes to window; when `false`, the host manages
 /// [`ViewportDimensions`] manually.
@@ -54,14 +53,6 @@ impl ViewportDimensions {
         }
     }
 
-    pub fn world_left(&self) -> f32 {
-        self.origin_position().x
-    }
-
-    /// Calculate the world coordinate of the viewport's top edge
-    pub fn world_top(&self) -> f32 {
-        self.origin_position().y
-    }
 }
 
 impl Default for ViewportDimensions {
@@ -93,8 +84,6 @@ impl Default for ViewportDimensions {
     not(feature = "lsp"),
     require(
         bevy_text_editor::TextEditor,
-        SyntaxCacheState,
-        EditorDisplayState,
         BracketMatchState,
         crate::types::fold::GotoLineState,
         crate::types::fold::FoldState,
@@ -107,8 +96,6 @@ impl Default for ViewportDimensions {
     feature = "lsp",
     require(
         bevy_text_editor::TextEditor,
-        SyntaxCacheState,
-        EditorDisplayState,
         BracketMatchState,
         crate::types::fold::GotoLineState,
         crate::types::fold::FoldState,
@@ -133,41 +120,6 @@ impl Default for ViewportDimensions {
     )
 )]
 pub struct CodeEditor;
-
-/// Cached highlighted tokens and line segments. Edit signals ride
-/// [`crate::types::events::TextEditEvent`]; staleness is detected via Bevy's
-/// `Changed<TextBuffer>` change-tick, not a manual version field.
-#[derive(Component, Default)]
-pub struct SyntaxCacheState {
-    pub tokens: Vec<HighlightedToken>,
-    pub lines: Vec<Vec<LineSegment>>,
-}
-
-/// Editor display state component — entity pools and line invalidation.
-///
-/// Soft-wrap and fold information now lives on the entity's `DisplayLayout`
-/// produced by `display_map::build_display_layout`; this component only
-/// holds entity-pool bookkeeping.
-#[derive(Component, Default)]
-pub struct EditorDisplayState {
-    /// Pool of reusable text entities (PERFORMANCE)
-    pub entity_pool: Vec<Entity>,
-    /// Pool of reusable line number entities (PERFORMANCE)
-    pub line_number_pool: Vec<Entity>,
-    /// When line count changes, stores the line index from which all subsequent
-    /// line entities should be invalidated.
-    pub invalidate_lines_from: Option<usize>,
-}
-
-#[derive(Component, Default, Reflect)]
-#[reflect(Component, Default)]
-pub struct EditorText;
-
-#[derive(Component, Reflect)]
-#[reflect(Component)]
-pub struct HighlightedTextToken {
-    pub index: usize,
-}
 
 #[derive(Component, Reflect)]
 #[reflect(Component)]
@@ -195,30 +147,7 @@ pub struct SelectionHighlight {
 /// Component marker for bracket match highlight entities (bounding box style)
 #[derive(Component, Reflect)]
 #[reflect(Component)]
-pub struct BracketMatchHighlight {
-    /// Which bracket this belongs to (0 = cursor bracket, 1 = matching bracket)
-    pub bracket_index: usize,
-    /// Which border edge (0=top, 1=bottom, 2=left, 3=right)
-    pub edge: usize,
-}
-
-/// Component marker for current line border (top or bottom line)
-#[derive(Component, Reflect)]
-#[reflect(Component)]
-pub struct CursorLineBorder {
-    /// The cursor index this border belongs to (for multi-cursor support)
-    pub cursor_index: usize,
-    /// Whether this is the top (true) or bottom (false) border
-    pub is_top: bool,
-}
-
-/// Component marker for current word highlight (under cursor)
-#[derive(Component, Reflect)]
-#[reflect(Component)]
-pub struct CursorWordHighlight {
-    /// The cursor index this highlight belongs to (for multi-cursor support)
-    pub cursor_index: usize,
-}
+pub struct BracketMatchHighlight;
 
 /// Component marker for indent guide entities
 #[derive(Component, Reflect)]
@@ -253,14 +182,6 @@ pub struct BracketMatch {
 pub struct BracketMatchState {
     /// Current bracket match (if any)
     pub current_match: Option<BracketMatch>,
-}
-
-/// Component marker for find/search highlight entities
-#[derive(Component, Reflect)]
-#[reflect(Component)]
-pub struct FindHighlight {
-    /// Index of this match in the matches list
-    pub match_index: usize,
 }
 
 /// Event emitted when save is requested (Ctrl+S)

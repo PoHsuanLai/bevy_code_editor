@@ -24,9 +24,3 @@ pub struct LineSegment {
     pub skew: f32,
 }
 
-/// Token with its highlight type and text content
-#[derive(Clone, Debug)]
-pub struct HighlightedToken {
-    pub text: String,
-    pub highlight_type: Option<String>,
-}

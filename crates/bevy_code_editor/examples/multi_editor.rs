@@ -33,11 +33,7 @@ fn main() {
             }),
             ..default()
         }))
-        // Embedded mode: explicitly compose the engine plugins, the
-        // interaction plugin, and the editor plugin. We skip `EditorUiPlugin`
-        // (no global gutter/separator/camera) because each editor here
-        // carries its own camera + render layer pair.
-        .add_plugins(CodeEditorPlugin::default())
+        .add_plugins(CodeEditorPlugins)
         .add_systems(Startup, (despawn_default_editor, spawn_two_editors).chain())
         .run();
 }

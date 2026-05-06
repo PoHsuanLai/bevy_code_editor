@@ -50,32 +50,20 @@ impl Plugin for BevyTerminalPlugin {
             .register_type::<TerminalBlockState>()
             .register_type::<TerminalColorPalette>()
             .register_type::<TerminalScrollback>()
-            .register_type::<TerminalReady>()
             .register_type::<TerminalExited>()
             .register_type::<TerminalTitleChanged>()
             .register_type::<TerminalBellRang>()
-            .register_type::<TerminalCwdChanged>()
-            .register_type::<TerminalBlockFinished>()
             .register_type::<TerminalWriteBytes>()
             .register_type::<TerminalRunCommand>()
-            .register_type::<TerminalResize>()
-            .register_type::<TerminalScrollTo>()
-            .register_type::<TerminalClear>()
             .register_type::<TerminalCopySelection>()
             .register_type::<TerminalPaste>();
 
         // Message buses.
-        app.add_message::<TerminalReady>()
-            .add_message::<TerminalExited>()
+        app.add_message::<TerminalExited>()
             .add_message::<TerminalTitleChanged>()
             .add_message::<TerminalBellRang>()
-            .add_message::<TerminalCwdChanged>()
-            .add_message::<TerminalBlockFinished>()
             .add_message::<TerminalWriteBytes>()
             .add_message::<TerminalRunCommand>()
-            .add_message::<TerminalResize>()
-            .add_message::<TerminalScrollTo>()
-            .add_message::<TerminalClear>()
             .add_message::<TerminalCopySelection>()
             .add_message::<TerminalPaste>();
 

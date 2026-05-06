@@ -39,9 +39,6 @@ macro_rules! action_event {
     };
 }
 
-// Search
-action_event!(ReplaceRequested);
-
 // Navigation
 action_event!(GotoLineRequested);
 

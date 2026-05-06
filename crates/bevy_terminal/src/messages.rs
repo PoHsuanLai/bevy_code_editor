@@ -14,12 +14,6 @@ use std::process::ExitStatus;
 
 // ─── Outbound (terminal → app) ──────────────────────────────────────────
 
-/// PTY spawned and reported its initial dimensions.
-#[derive(Message, Clone, Debug, Reflect)]
-pub struct TerminalReady {
-    pub entity: Entity,
-}
-
 /// Child process exited (for whatever reason).
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Debug)]
@@ -48,21 +42,6 @@ pub struct TerminalBellRang {
     pub entity: Entity,
 }
 
-/// OSC 7 — cwd change.
-#[derive(Message, Clone, Debug, Reflect)]
-pub struct TerminalCwdChanged {
-    pub entity: Entity,
-    pub cwd: String,
-}
-
-/// OSC 133 D — command finished. Phase 5 fills in `block_id` / `exit_code`.
-#[derive(Message, Clone, Debug, Reflect)]
-pub struct TerminalBlockFinished {
-    pub entity: Entity,
-    pub block_id: u64,
-    pub exit_code: Option<i32>,
-}
-
 // ─── Inbound (app → terminal) ───────────────────────────────────────────
 
 /// Write raw bytes to the PTY (the firehose path — no interpretation).
@@ -77,30 +56,6 @@ pub struct TerminalWriteBytes {
 pub struct TerminalRunCommand {
     pub entity: Entity,
     pub command: String,
-}
-
-/// Resize the PTY (cols, rows). Normally the viewport-change observer
-/// drives this from `TextViewViewport` change-detection; emit explicitly
-/// when an app wants a different size than the viewport implies.
-#[derive(Message, Clone, Debug, Reflect)]
-pub struct TerminalResize {
-    pub entity: Entity,
-    pub cols: u16,
-    pub rows: u16,
-}
-
-/// Scroll the visible window to a given offset (display lines from
-/// bottom; `0` = current screen).
-#[derive(Message, Clone, Debug, Reflect)]
-pub struct TerminalScrollTo {
-    pub entity: Entity,
-    pub offset: usize,
-}
-
-/// Clear screen + scrollback (Cmd+K-style).
-#[derive(Message, Clone, Debug, Reflect)]
-pub struct TerminalClear {
-    pub entity: Entity,
 }
 
 /// Copy current selection to the clipboard.

@@ -1,17 +1,7 @@
 //! Editor-specific helpers used by the focused-keyboard observer and LSP
-//! handlers.
-//!
-//! Buffer-edit primitives (`insert_char`, `delete_selection`, `delete_*`,
-//! undo / redo) live in [`super::editing`] — that module wraps the
-//! `bevy_text_editor::EditHistoryState` impl and propagates side-channels
-//! into the editor's `SyntaxCacheState` / `EditorDisplayState`.
-//!
-//! What remains here is the handful of editor-only helpers: bracket
-//! auto-close predicates and LSP completion / `did_change` glue.
+//! handlers — bracket auto-close predicates and LSP completion glue.
 
 use crate::text_view::TextBuffer;
-#[cfg(feature = "lsp")]
-use crate::settings::LspSettings;
 use crate::types::*;
 #[cfg(feature = "lsp")]
 use bevy::prelude::{Entity, MessageWriter};
@@ -23,19 +13,6 @@ use crate::lsp_ui::state::LspCompletionPopup;
 use bevy::log::trace;
 #[cfg(feature = "lsp")]
 use bevy_lsp::{LspClient, LspDocument, LspMessage};
-
-/// Bundled refs to the four LSP pieces that previously co-traveled through
-/// `execute_action`: settings, transport client, completion popup state, and
-/// the per-editor `LspDocument` (URI / version). Retained here for the
-/// keyboard observer that still passes them down its `insert_typed_char`
-/// helper.
-#[cfg(feature = "lsp")]
-pub struct LspBuf<'a> {
-    pub settings: &'a LspSettings,
-    pub client: &'a LspClient,
-    pub completion: &'a mut LspCompletionPopup,
-    pub document: Option<&'a mut LspDocument>,
-}
 
 /// Insert a closing bracket / quote without moving the cursor (auto-close).
 pub fn insert_closing_char(cursor: &CursorState, buffer: &mut TextBuffer, c: char) {

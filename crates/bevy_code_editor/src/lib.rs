@@ -12,18 +12,21 @@
 //!
 //! App::new()
 //!     .add_plugins(DefaultPlugins)
-//!     .add_plugins(CodeEditorPlugin::default())
+//!     .add_plugins(CodeEditorPlugins)
 //!     .add_systems(Startup, |mut commands: Commands| {
 //!         commands.spawn(Camera2d);
 //!     })
 //!     .run();
 //! ```
 //!
-//! `CodeEditorPlugin` registers default settings resources, spawns one
-//! `CodeEditor` entity at startup with a default key binding map, and
-//! brings in the GPU rendering, interaction, and UI sub-plugins
-//! transitively. The host is responsible for spawning a `Camera2d`
-//! (matches the conventions of [`bevy_egui`] / [`bevy_pancam`]).
+//! [`CodeEditorPlugins`] is the full bundle: GPU rendering, interaction,
+//! editor sub-plugins (cursor / syntax / folding / brackets / scrollbar
+//! / UI), and the editor's own [`CodeEditorPlugin`] core. The bare
+//! [`CodeEditorPlugin`] is the editor logic on its own — for hosts that
+//! compose with their own [`bevy_text_engine::TextEnginePlugins`],
+//! [`EditorUiPlugin`], etc., and need to avoid double-adds. Disable
+//! individual plugins in the group with
+//! `CodeEditorPlugins.build().disable::<EditorUiPlugin>()`.
 //!
 //! Per-entity configuration lives on components — to start with a
 //! different font size, override
@@ -32,12 +35,16 @@
 //! ```rust,no_run
 //! # use bevy::prelude::*;
 //! # use bevy_code_editor::prelude::*;
-//! fn spawn_editor(mut commands: Commands) {
-//!     commands.spawn((
-//!         CodeEditor,
-//!         FontConfig::from_size(18.0).with_line_height_multiplier(1.4),
-//!     ));
-//! }
+//! App::new()
+//!     .add_plugins(DefaultPlugins)
+//!     .add_plugins(CodeEditorPlugins)
+//!     .add_systems(Startup, |mut commands: Commands| {
+//!         commands.spawn((
+//!             CodeEditor,
+//!             FontConfig::from_size(18.0).with_line_height_multiplier(1.4),
+//!         ));
+//!     })
+//!     .run();
 //! ```
 //!
 //! Customizing keybindings: spawn an `EditorInputManager` with your own
@@ -77,7 +84,7 @@ pub mod prelude {
 
     // Editor plugin + its standalone PluginGroup, and the interaction +
     // UI plugins that hosts compose with.
-    pub use crate::plugin::{CodeEditorPlugin, EditorCamera, EditorUiPlugin};
+    pub use crate::plugin::{CodeEditorPlugin, CodeEditorPlugins, EditorCamera, EditorUiPlugin};
 
     // Editor marker + save/open events.
     pub use crate::types::editor::{CodeEditor, OpenRequested, SaveRequested};

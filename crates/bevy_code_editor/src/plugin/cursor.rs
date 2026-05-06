@@ -26,13 +26,8 @@ impl Plugin for CursorPlugin {
             .register_type::<BracketMatchHighlight>()
             .register_type::<BracketMatchState>()
             .register_type::<CodeEditor>()
-            .register_type::<CursorLineBorder>()
-            .register_type::<CursorWordHighlight>()
             .register_type::<crate::types::events::DismissCompletionEvent>()
             .register_type::<EditorCursor>()
-            .register_type::<EditorText>()
-            .register_type::<FindHighlight>()
-            .register_type::<HighlightedTextToken>()
             .register_type::<IndentGuide>()
             .register_type::<KeyRepeatState>()
             .register_type::<LineNumbers>()
@@ -109,7 +104,6 @@ pub(crate) fn track_cursor_movement(
 pub(crate) fn push_cursor_overlays(
     mut editor_query: Query<
         (
-            &EditorDisplayState,
             &SelectionState,
             &CursorState,
             &TextBuffer,
@@ -125,7 +119,7 @@ pub(crate) fn push_cursor_overlays(
     cursor_settings: Res<CursorSettings>,
     time: Res<Time>,
 ) {
-    for (_display, sel, cursor, buffer, _vp, mut overlays, fold_state, font, layout, theme) in
+    for (sel, cursor, buffer, _vp, mut overlays, fold_state, font, layout, theme) in
         editor_query.iter_mut()
     {
         // Drain any caret rects from the previous frame. We mark them with
@@ -180,7 +174,6 @@ pub(crate) fn push_cursor_overlays(
 pub(crate) fn update_cursor_line_highlight(
     mut editor_query: Query<
         (
-            &EditorDisplayState,
             &SelectionState,
             &CursorState,
             &TextBuffer,
@@ -195,7 +188,7 @@ pub(crate) fn update_cursor_line_highlight(
     >,
     cursor_line: Res<CursorLineSettings>,
 ) {
-    for (_display, sel, cursor, buffer, vp, mut overlays, fold_state, font, layout, theme) in
+    for (sel, cursor, buffer, vp, mut overlays, fold_state, font, layout, theme) in
         editor_query.iter_mut()
     {
         // Drain previous-frame line-border / word rects (z = 0 reserved for cursor-line decoration).

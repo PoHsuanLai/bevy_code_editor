@@ -30,10 +30,6 @@ use crate::types::{CodeEditor, FoldState};
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LayoutSyncSet;
 
-/// Legacy alias kept so existing call sites that referenced
-/// `DisplayMapSet` for ordering still compile.
-pub type DisplayMapSet = LayoutSyncSet;
-
 pub struct DisplayMapPlugin;
 
 impl Plugin for DisplayMapPlugin {

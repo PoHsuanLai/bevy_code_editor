@@ -14,7 +14,6 @@
 
 pub mod action_events;
 pub mod actions;
-pub mod cursor;
 pub mod dispatch;
 pub mod editing;
 pub mod editor_ops;

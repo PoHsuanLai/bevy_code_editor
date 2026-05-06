@@ -23,7 +23,7 @@ pub mod state;
 pub mod theme;
 pub mod typing;
 
-pub use anchor::{Anchor, AnchorBias, AnchorRange, AnchorSet, TextEdit};
+pub use anchor::{Anchor, AnchorBias, AnchorSet, TextEdit};
 pub use edit::{point_at_byte, EditOutcome};
 pub use components::{ScrollConfig, TextViewDragState};
 pub use editing_events::*;

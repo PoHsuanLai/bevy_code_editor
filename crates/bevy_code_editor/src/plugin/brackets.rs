@@ -298,10 +298,7 @@ pub(crate) fn update_bracket_highlight(
                                     ..default()
                                 },
                                 Transform::from_translation(translation),
-                                BracketMatchHighlight {
-                                    bracket_index: bracket_idx,
-                                    edge: edge_idx,
-                                },
+                                BracketMatchHighlight,
                                 Name::new(format!("BracketHighlight_{}_{}", bracket_idx, edge_idx)),
                                 Visibility::Visible,
                             ));
@@ -328,10 +325,7 @@ pub(crate) fn update_bracket_highlight(
                                 ..default()
                             },
                             Transform::from_translation(translation),
-                            BracketMatchHighlight {
-                                bracket_index: bracket_idx,
-                                edge: 0,
-                            },
+                            BracketMatchHighlight,
                             Name::new(format!("BracketHighlight_{}", bracket_idx)),
                             Visibility::Visible,
                         ));

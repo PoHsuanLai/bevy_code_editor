@@ -50,18 +50,3 @@ impl Default for ScrollConfig {
     }
 }
 
-impl ScrollConfig {
-    /// Build a `ScrollConfig` with the given scroll speed.
-    pub const fn from_speed(speed: f32) -> Self {
-        Self {
-            speed,
-            smooth: true,
-        }
-    }
-
-    /// Override smooth-scroll on/off.
-    pub const fn with_smooth(mut self, smooth: bool) -> Self {
-        self.smooth = smooth;
-        self
-    }
-}

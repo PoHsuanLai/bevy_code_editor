@@ -118,12 +118,6 @@ pub fn default_input_map() -> InputMap<EditorAction> {
         ButtonlikeChord::new([KeyCode::ControlLeft, KeyCode::ShiftLeft, KeyCode::KeyZ]),
     );
 
-    // Search
-    input_map.insert(
-        EditorAction::Replace,
-        ButtonlikeChord::new([KeyCode::ControlLeft, KeyCode::KeyH]),
-    );
-
     // Navigation
     input_map.insert(
         EditorAction::GotoLine,
@@ -250,9 +244,6 @@ pub enum EditorAction {
     // Undo/Redo
     Undo,
     Redo,
-
-    // Search
-    Replace,
 
     // Navigation
     GotoLine,

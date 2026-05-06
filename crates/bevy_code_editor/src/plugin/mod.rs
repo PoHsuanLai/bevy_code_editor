@@ -1,4 +1,5 @@
 use crate::types::*;
+use bevy::app::{PluginGroup, PluginGroupBuilder};
 use bevy::prelude::*;
 
 pub mod brackets;
@@ -15,18 +16,11 @@ pub mod ui_elements;
 #[cfg(feature = "lsp")]
 pub use self::lsp_plugin::LspPlugin;
 
-// Re-export plugins publicly
-pub use self::brackets::BracketPlugin as BracketPluginType;
-pub use self::cursor::CursorPlugin as CursorPluginType;
-pub use self::editor_ui_plugin::EditorUiPlugin as EditorUiPluginType;
-pub use self::folding::FoldingPlugin as FoldingPluginType;
-pub use self::scrollbar::Scrollbar;
-pub use self::scrollbar::ScrollbarPlugin as ScrollbarPluginType;
-// Fix visibility for lib.rs re-exports
 pub use self::brackets::BracketPlugin;
 pub use self::cursor::CursorPlugin;
 pub use self::editor_ui_plugin::{EditorCamera, EditorUiPlugin};
 pub use self::folding::FoldingPlugin;
+pub use self::scrollbar::Scrollbar;
 pub use self::scrollbar::ScrollbarPlugin;
 
 // Re-export syntax highlighting resources publicly for external use
@@ -89,26 +83,23 @@ pub struct RenderingSet;
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EditorSetupSet;
 
-/// Editor systems plugin. Registers editor settings resources, input
-/// dispatch, the editor's per-frame update pipeline, and the syntax /
-/// folding / cursor / scrollbar / bracket sub-plugins.
+/// Editor systems plugin — just the editor's own resources, system sets,
+/// observers, and IDE-specific event/handler wiring. Does **not** add the
+/// engine GPU pipeline, the editable-text core, the input manager, or the
+/// editor sub-plugins (cursor / syntax / folding / brackets / scrollbar / UI).
 ///
-/// Internally adds `bevy_text_editor::TextEditorPlugin` (with the typed-
-/// character observer disabled — the editor has its own bracket-aware
-/// observer) so the editable-text core (cursor / selection / edit history /
-/// undo / clipboard handlers) is wired up automatically.
-///
-/// **Dependencies (host responsibility):** this plugin does **not** add the
-/// engine GPU pipeline or the `TextView` rendering systems. Hosts must add
-/// [`bevy_text_engine::TextEnginePlugins`] separately, e.g.
+/// Most hosts should use [`CodeEditorPlugins`] instead — the full bundle.
+/// `CodeEditorPlugin` is for hosts that compose their own version of those
+/// dependencies (e.g. a render-to-texture wrapper that owns
+/// [`bevy_text_engine::TextEnginePlugins`] and [`EditorUiPlugin`] directly)
+/// and need to avoid double-adds.
 ///
 /// ```rust,no_run
 /// # use bevy::prelude::*;
-/// # use bevy_text_engine::TextEnginePlugins;
 /// # use bevy_code_editor::prelude::*;
 /// App::new()
 ///     .add_plugins(DefaultPlugins)
-///     .add_plugins((TextEnginePlugins, CodeEditorPlugin))
+///     .add_plugins(CodeEditorPlugins)
 ///     .run();
 /// ```
 #[derive(Default)]
@@ -156,31 +147,6 @@ impl Plugin for CodeEditorPlugin {
             )
                 .chain(),
         );
-
-        // GPU text rendering — idempotent. Composing CodeEditorPlugin with
-        // another plugin that uses the engine (e.g. bevy_terminal) doesn't
-        // double-init: TextEnginePlugins's individual plugins all check
-        // is_plugin_added internally.
-        if !app.is_plugin_added::<bevy_text_engine::view::plugin::TextEnginePlugin>() {
-            app.add_plugins(bevy_text_engine::TextEnginePlugins);
-        }
-
-        // Per-entity keyboard focus, idempotent if the host already added it.
-        if !app.is_plugin_added::<bevy::input_focus::InputDispatchPlugin>() {
-            app.add_plugins(bevy::input_focus::InputDispatchPlugin);
-        }
-
-        // Editable-text core: registers the 33 editing events, basic editing
-        // handlers (cursor / selection / delete / clipboard / undo), and the
-        // pointer-interaction plugin. We pass `without_typing_observer()`
-        // because the editor has its own bracket / LSP-aware typed-character
-        // observer (`crate::input::on_focused_keyboard`).
-        app.add_plugins(bevy_text_editor::TextEditorPlugin::without_typing_observer());
-
-        // Add input manager plugin for action-based input
-        app.add_plugins(leafwing_input_manager::plugin::InputManagerPlugin::<
-            crate::input::EditorAction,
-        >::default());
 
         // Spawn the editor entity, plus a default EditorInputManager with the
         // standard keybindings. Hosts that want to override the keymap can spawn
@@ -238,11 +204,9 @@ impl Plugin for CodeEditorPlugin {
         register_handler_systems(app);
 
         // `bevy_text_editor` fires `OnEdit` triggers per editor entity after
-        // every edit op. The editor crate observes those triggers to keep
-        // its per-entity caches (`SyntaxCacheState` for incremental tree-
-        // sitter reparse, `EditorDisplayState` for line-entity invalidation)
-        // in sync. No system polls the source state; cross-crate
-        // propagation flows through the event bus.
+        // every edit op. The editor crate observes those triggers to drive
+        // incremental tree-sitter reparse and LSP `did_change` via the
+        // `TextEditEvent` bus.
         app.add_observer(crate::input::on_edit_invalidate_caches);
 
         // Auto-scroll-to-cursor sets target_scroll_offset; the actual
@@ -256,22 +220,6 @@ impl Plugin for CodeEditorPlugin {
                 .run_if(ui_elements::should_auto_scroll)
                 .in_set(ApplyStateSet),
         );
-
-        // Add sub-plugins
-        app.add_plugins((
-            CursorPlugin,
-            syntax_highlighting::SyntaxPlugin,
-            FoldingPlugin,
-            BracketPlugin,
-            ScrollbarPlugin,
-            EditorUiPlugin,
-        ));
-
-        #[cfg(feature = "lsp")]
-        app.add_plugins(LspPlugin);
-
-        // Display-map snapshot — runs between input/state and rendering.
-        app.add_plugins(crate::display_map::DisplayMapPlugin);
 
         // The renderer (`update_text_views`) is registered by `TextEnginePlugin`
         // — see `bevy_text_engine::view::plugin`. It already runs in
@@ -289,6 +237,40 @@ impl Plugin for CodeEditorPlugin {
     }
 }
 
+/// Full editor bundle. Adds the engine GPU pipeline, the editable-text
+/// core, the input manager, [`CodeEditorPlugin`], and every editor sub-
+/// plugin (cursor / syntax / folding / brackets / scrollbar / UI / display
+/// map, plus LSP under the `lsp` feature).
+///
+/// Disable individual plugins with `.build().disable::<EditorUiPlugin>()`
+/// when composing with hosts that own one of the dependencies directly.
+pub struct CodeEditorPlugins;
+
+impl PluginGroup for CodeEditorPlugins {
+    fn build(self) -> PluginGroupBuilder {
+        let group = PluginGroupBuilder::start::<Self>()
+            .add(bevy_text_engine::gpu::GlyphAtlasPlugin)
+            .add(bevy_text_engine::gpu::InstancedTextRenderPlugin)
+            .add(bevy_text_engine::view::plugin::TextEnginePlugin)
+            .add(bevy_text_engine::ui::ScrollbarPlugin)
+            .add(bevy::input_focus::InputDispatchPlugin)
+            .add(bevy_text_editor::TextEditorPlugin::without_typing_observer())
+            .add(leafwing_input_manager::plugin::InputManagerPlugin::<
+                crate::input::EditorAction,
+            >::default())
+            .add(CodeEditorPlugin)
+            .add(CursorPlugin)
+            .add(syntax_highlighting::SyntaxPlugin)
+            .add(FoldingPlugin)
+            .add(BracketPlugin)
+            .add(ScrollbarPlugin)
+            .add(EditorUiPlugin)
+            .add(crate::display_map::DisplayMapPlugin);
+        #[cfg(feature = "lsp")]
+        let group = group.add(LspPlugin);
+        group
+    }
+}
 
 /// Register the IDE-only `*Requested` events. The 33 editing events are
 /// registered by `bevy_text_editor::TextEditorPlugin`.
@@ -302,8 +284,7 @@ fn register_ide_action_events(app: &mut App) {
     }
 
     register!(
-        // Search / navigation
-        ReplaceRequested,
+        // Navigation
         GotoLineRequested,
         // LSP
         RequestCompletionRequested,

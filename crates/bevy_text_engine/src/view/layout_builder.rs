@@ -334,7 +334,6 @@ pub(crate) fn build_display_layout(
         if let Some(s) = shape.as_ref() {
             if s.width > metrics.max_content_width {
                 metrics.max_content_width = s.width;
-                metrics.max_width_line = Some(buffer_line);
             }
         }
 

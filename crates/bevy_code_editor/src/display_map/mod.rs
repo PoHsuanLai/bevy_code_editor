@@ -17,4 +17,4 @@
 pub mod plugin;
 pub mod styling;
 
-pub use plugin::{DisplayMapPlugin, DisplayMapSet, LayoutSyncSet};
+pub use plugin::{DisplayMapPlugin, LayoutSyncSet};

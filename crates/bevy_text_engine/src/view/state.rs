@@ -68,5 +68,4 @@ pub struct ScrollState {
 #[reflect(Component, Default)]
 pub struct ContentMetrics {
     pub max_content_width: f32,
-    pub max_width_line: Option<usize>,
 }

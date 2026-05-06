@@ -42,23 +42,6 @@ impl Anchor {
         Self::new(offset, AnchorBias::Right)
     }
 
-    pub fn start() -> Self {
-        Self::new(0, AnchorBias::Left)
-    }
-
-    /// Uses usize::MAX; resolves to actual end when applied
-    pub fn end() -> Self {
-        Self::new(usize::MAX, AnchorBias::Right)
-    }
-
-    /// May be stale if edits have occurred since last resolution
-    pub fn offset(&self) -> usize {
-        self.offset
-    }
-
-    pub fn is_at_start(&self) -> bool {
-        self.offset == 0
-    }
 }
 
 impl Default for Anchor {
@@ -278,55 +261,3 @@ impl AnchorSet {
     }
 }
 
-/// A range defined by two anchors that survives edits.
-#[derive(Clone, Debug)]
-pub struct AnchorRange {
-    pub start: Anchor,
-    pub end: Anchor,
-}
-
-impl AnchorRange {
-    pub fn new(start: usize, end: usize) -> Self {
-        Self {
-            start: Anchor::at(start),
-            end: Anchor::at_right(end),
-        }
-    }
-
-    pub fn from_anchors(start: Anchor, end: Anchor) -> Self {
-        Self { start, end }
-    }
-
-    pub fn start_offset(&self) -> usize {
-        self.start.offset
-    }
-
-    pub fn end_offset(&self) -> usize {
-        self.end.offset
-    }
-
-    /// Returns (start, end) in sorted order
-    pub fn as_tuple(&self) -> (usize, usize) {
-        let s = self.start.offset;
-        let e = self.end.offset;
-        if s <= e {
-            (s, e)
-        } else {
-            (e, s)
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.start.offset == self.end.offset
-    }
-
-    pub fn contains(&self, offset: usize) -> bool {
-        let (start, end) = self.as_tuple();
-        offset >= start && offset < end
-    }
-
-    pub fn adjust(&mut self, edit: &TextEdit) {
-        self.start.offset = AnchorSet::adjust_offset(self.start.offset, self.start.bias, edit);
-        self.end.offset = AnchorSet::adjust_offset(self.end.offset, self.end.bias, edit);
-    }
-}
