@@ -1658,7 +1658,9 @@ dependencies = [
  "bevy_text_engine",
  "crossbeam-channel",
  "leafwing-input-manager",
+ "ropey",
  "serde",
+ "vte",
 ]
 
 [[package]]

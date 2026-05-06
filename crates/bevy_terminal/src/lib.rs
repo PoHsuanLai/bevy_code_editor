@@ -19,10 +19,12 @@
 //!     .run();
 //! ```
 
+pub mod cursor;
 pub mod drain;
 pub mod messages;
 pub mod plugin;
 pub mod session;
+pub mod snapshot;
 pub mod types;
 
 pub mod prelude {

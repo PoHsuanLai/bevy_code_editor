@@ -14,6 +14,7 @@
 //! ```
 
 use bevy::prelude::*;
+use bevy_text_engine::view::layout_builder::LayoutProduceSet;
 
 use crate::drain::drain_pty_events;
 use crate::messages::*;
@@ -94,9 +95,15 @@ impl Plugin for BevyTerminalPlugin {
 
         // Resources.
         app.init_resource::<TerminalEventLoopRegistry>();
+        // CursorSettings is the editor-tier resource that drives caret shape +
+        // blink. We init it idempotently so terminals work without
+        // TextEditorPlugin.
+        app.init_resource::<bevy_text_editor::CursorSettings>();
+        app.register_type::<bevy_text_editor::CursorSettings>();
+        app.register_type::<bevy_text_editor::CursorStyle>();
 
-        // System-set chain. Engine's render set runs naturally — we just
-        // ensure our snapshot finishes before it picks up `LineStyles`.
+        // System-set chain. Engine's `LayoutProduceSet` reads our LineStyles
+        // and TextViewState, so it must run *after* our SnapshotSet.
         app.configure_sets(
             Update,
             (
@@ -109,9 +116,29 @@ impl Plugin for BevyTerminalPlugin {
             )
                 .chain(),
         );
+        app.configure_sets(Update, LayoutProduceSet.after(TerminalSnapshotSet));
 
         // Drain alacritty events into ECS once per frame.
         app.add_systems(Update, drain_pty_events.in_set(TerminalPtyDrainSet));
+
+        // Build the per-frame grid snapshot + LineStyles for the engine.
+        app.add_systems(
+            Update,
+            crate::snapshot::sync_grid_snapshot.in_set(TerminalSnapshotSet),
+        );
+
+        // Caret tracking + overlay push.
+        app.register_type::<crate::cursor::TerminalCursorBlink>();
+        app.add_systems(
+            Update,
+            (
+                crate::cursor::track_cursor_blink,
+                crate::cursor::push_terminal_caret,
+            )
+                .chain()
+                .in_set(TerminalSnapshotSet)
+                .after(crate::snapshot::sync_grid_snapshot),
+        );
 
         // Spawn observer fires on `commands.spawn(BevyTerminal)`. We don't
         // register a Remove observer yet — the EventLoop thread exits when

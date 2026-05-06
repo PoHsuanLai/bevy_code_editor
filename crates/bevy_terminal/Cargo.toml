@@ -31,6 +31,8 @@ bevy = { version = "0.18", default-features = false, features = [
 
 # Terminal state machine + PTY + VTE parser. Apache-2.0.
 alacritty_terminal = "0.26"
+# alacritty re-exports vte; pin the same version it uses to access types.
+vte = "0.15"
 
 # crossbeam for the EventLoop ↔ ECS bridge channel — alacritty's EventLoop
 # runs on a thread and proxies events through an `EventListener` we plug.
@@ -38,6 +40,7 @@ crossbeam-channel = "0.5"
 
 leafwing-input-manager = "0.20"
 
+ropey = "1.6"
 serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]

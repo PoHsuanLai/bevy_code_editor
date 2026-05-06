@@ -44,6 +44,7 @@ use crate::session::EventProxy;
     TerminalBlockState,
     TerminalThemeConfig,
     TerminalScrollback,
+    crate::cursor::TerminalCursorBlink,
     Pickable,
 )]
 pub struct BevyTerminal;
@@ -71,9 +72,10 @@ pub struct TerminalEventChannel {
     pub rx: crossbeam_channel::Receiver<alacritty_terminal::event::Event>,
 }
 
-/// Immutable snapshot of the visible grid + cursor + dims. Bumped each
-/// frame the `Term` reports damage; the rendering pipeline keys off
-/// `version` for change detection.
+/// Snapshot of the visible grid metadata: dims + cursor + version. The
+/// actual cell text/styles flow through `LineStyles` (engine signal-
+/// component); the cursor stays here so input + overlay code can read
+/// without touching the term lock.
 ///
 /// `Default` produces an empty 0×0 snapshot; the spawn observer replaces
 /// it with the right size on the first sync tick.
@@ -83,6 +85,12 @@ pub struct TerminalGridSnapshot {
     pub version: u64,
     pub cols: u16,
     pub rows: u16,
+    /// Cursor row in *display* lines (0-based, top of screen).
+    pub cursor_row: u16,
+    /// Cursor column (0-based).
+    pub cursor_col: u16,
+    /// `true` when the cursor is hidden (DECTCEM off).
+    pub cursor_hidden: bool,
 }
 
 /// Shell info reported by the PTY child + OSC 0/1/2/7 escape sequences.
