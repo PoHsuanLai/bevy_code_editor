@@ -18,6 +18,7 @@ use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use crossbeam_channel::{Receiver, Sender};
 
+use crate::messages::TerminalReady;
 use crate::types::{
     BevyTerminal, TerminalEventChannel, TerminalScrollback, TerminalSession,
 };
@@ -90,6 +91,7 @@ pub fn on_terminal_added(
     mut commands: Commands,
     mut registry: ResMut<TerminalEventLoopRegistry>,
     mut input_focus: ResMut<InputFocus>,
+    mut ready_w: MessageWriter<TerminalReady>,
 ) {
     let entity = trigger.entity;
     let scrollback = scrollbacks
@@ -99,11 +101,14 @@ pub fn on_terminal_added(
 
     match build_session(scrollback.max_lines) {
         Ok((session, channel, handle)) => {
+            let cols = session.size.num_cols;
+            let rows = session.size.num_lines;
             registry.handles.push(handle);
             commands.entity(entity).insert((session, channel));
             if input_focus.get().is_none() {
                 input_focus.set(entity);
             }
+            ready_w.write(TerminalReady { entity, cols, rows });
         }
         Err(err) => {
             error!("bevy_terminal: failed to spawn PTY: {err}");

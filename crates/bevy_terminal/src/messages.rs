@@ -42,6 +42,38 @@ pub struct TerminalBellRang {
     pub entity: Entity,
 }
 
+/// PTY is up and the initial dimensions are known. Emitted once per session
+/// from `on_terminal_added` once the writer + reader threads are wired.
+#[derive(Message, Clone, Debug, Reflect)]
+pub struct TerminalReady {
+    pub entity: Entity,
+    pub cols: u16,
+    pub rows: u16,
+}
+
+/// OSC 7 — shell announced a new working directory.
+#[derive(Message, Clone, Debug, Reflect)]
+pub struct TerminalCwdChanged {
+    pub entity: Entity,
+    pub cwd: String,
+}
+
+/// OSC 133 D — a command block transitioned to the completed state.
+/// Carries the block id and the optional exit code parsed from the sequence.
+#[derive(Message, Clone, Debug, Reflect)]
+pub struct TerminalBlockFinished {
+    pub entity: Entity,
+    pub block_id: u64,
+    pub exit_code: Option<i32>,
+}
+
+/// User clicked one of the per-block `Pickable` child entities.
+#[derive(Message, Clone, Debug, Reflect)]
+pub struct TerminalBlockSelected {
+    pub entity: Entity,
+    pub block_id: u64,
+}
+
 // ─── Inbound (app → terminal) ───────────────────────────────────────────
 
 /// Write raw bytes to the PTY (the firehose path — no interpretation).
@@ -69,4 +101,27 @@ pub struct TerminalCopySelection {
 pub struct TerminalPaste {
     pub entity: Entity,
     pub text: String,
+}
+
+/// Force a (cols, rows) on the terminal without owning the viewport.
+/// Useful for hosts that drive layout themselves (split panes, tiled WMs).
+#[derive(Message, Clone, Debug, Reflect)]
+pub struct TerminalResize {
+    pub entity: Entity,
+    pub cols: u16,
+    pub rows: u16,
+}
+
+/// Scroll the terminal so `line` (a buffer row, 0 = top of scrollback) is
+/// at the top of the visible area.
+#[derive(Message, Clone, Debug, Reflect)]
+pub struct TerminalScrollTo {
+    pub entity: Entity,
+    pub line: i64,
+}
+
+/// Clear the screen + scrollback (equivalent to running `clear` in the shell).
+#[derive(Message, Clone, Debug, Reflect)]
+pub struct TerminalClear {
+    pub entity: Entity,
 }
