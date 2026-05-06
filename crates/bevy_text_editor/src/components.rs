@@ -15,6 +15,15 @@ pub struct TextViewDragState {
     pub drag_start_pos: Option<usize>,
     pub drag_start_scroll_offset: f32,
     pub last_screen_pos: Option<Vec2>,
+    /// Selection mode chosen for the active drag. Set on press (from
+    /// click count + Alt modifier); read by the drag observer to expand
+    /// the selection accordingly. Reset to `Simple` after release.
+    pub mode: crate::selection::SelectionMode,
+    /// Last press time + position for click-count detection (single /
+    /// double / triple click → Simple / Semantic / Line).
+    pub last_press_time: f64,
+    pub last_press_pos: Option<Vec2>,
+    pub click_count: u8,
 }
 
 /// Per-view scrolling behaviour.

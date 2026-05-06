@@ -30,7 +30,9 @@ pub use editing_events::*;
 pub use history::{EditHistory, EditKind, EditOperation, EditTransaction};
 pub use interaction::{copy_selection, screen_to_char_pos};
 pub use plugin::{EditEmitSet, TextEditorPlugin, TextInteractionPlugin};
-pub use selection::{Selection, SelectionCollection};
+pub use selection::{
+    Selection, SelectionCollection, SelectionMode, DEFAULT_SEMANTIC_ESCAPE_CHARS,
+};
 pub use state::{
     CursorState, EditDelta, EditHistoryState, EditPoint, IndentConfig, OnEdit, SelectionState,
     SnapshotPreEdit, TextEditor,

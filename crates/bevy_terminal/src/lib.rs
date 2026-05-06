@@ -19,6 +19,7 @@
 //!     .run();
 //! ```
 
+pub mod clipboard;
 pub mod cursor;
 pub mod drain;
 pub mod input;
@@ -27,6 +28,7 @@ pub mod plugin;
 pub mod session;
 pub mod snapshot;
 pub mod types;
+pub mod viewport;
 
 pub mod prelude {
     pub use crate::messages::*;

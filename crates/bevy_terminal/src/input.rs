@@ -10,6 +10,7 @@ use bevy::input::ButtonState;
 use bevy::input_focus::FocusedInput;
 use bevy::prelude::*;
 
+use crate::messages::{TerminalCopySelection, TerminalPaste};
 use crate::types::{TerminalInputMode, TerminalSession};
 
 /// `FocusedInput<KeyboardInput>` observer: translate the key into a byte
@@ -23,6 +24,8 @@ pub fn on_focused_terminal_keyboard(
     trigger: On<FocusedInput<KeyboardInput>>,
     sessions: Query<(&TerminalSession, &TerminalInputMode)>,
     keyboard: Res<ButtonInput<KeyCode>>,
+    mut copy_w: MessageWriter<TerminalCopySelection>,
+    mut paste_w: MessageWriter<TerminalPaste>,
 ) {
     let entity = trigger.event().focused_entity;
     let Ok((session, mode)) = sessions.get(entity) else {
@@ -35,11 +38,32 @@ pub fn on_focused_terminal_keyboard(
 
     let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
     let alt = keyboard.pressed(KeyCode::AltLeft) || keyboard.pressed(KeyCode::AltRight);
-    let _shift = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+    let shift = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
     let cmd = keyboard.pressed(KeyCode::SuperLeft) || keyboard.pressed(KeyCode::SuperRight);
 
-    // Cmd shortcuts (Cmd+C, Cmd+V, etc.) are app-level commands — handled
-    // by leafwing/picking, not the firehose. Skip them here.
+    // Cmd-shortcuts: copy / paste fire as messages so the snapshot rope
+    // is the source of truth. Anything else under Cmd is unhandled (the
+    // app can install its own handlers via leafwing).
+    //
+    // Linux/Windows convention: Ctrl+Shift+C / Ctrl+Shift+V (so plain
+    // Ctrl+C still sends SIGINT to the shell). macOS convention: Cmd+C /
+    // Cmd+V. Honor both.
+    let copy_combo = (cmd && event.key_code == KeyCode::KeyC)
+        || (ctrl && shift && event.key_code == KeyCode::KeyC);
+    let paste_combo = (cmd && event.key_code == KeyCode::KeyV)
+        || (ctrl && shift && event.key_code == KeyCode::KeyV);
+    if copy_combo {
+        copy_w.write(TerminalCopySelection { entity });
+        return;
+    }
+    if paste_combo {
+        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+            if let Ok(text) = clipboard.get_text() {
+                paste_w.write(TerminalPaste { entity, text });
+            }
+        }
+        return;
+    }
     if cmd {
         return;
     }

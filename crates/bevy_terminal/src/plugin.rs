@@ -121,6 +121,25 @@ impl Plugin for BevyTerminalPlugin {
         // Drain alacritty events into ECS once per frame.
         app.add_systems(Update, drain_pty_events.in_set(TerminalPtyDrainSet));
 
+        // Viewport changes drive Term + PTY resize.
+        app.add_systems(
+            Update,
+            crate::viewport::sync_terminal_size.in_set(TerminalApplyStateSet),
+        );
+
+        // Clipboard + raw-write message handlers. These run in
+        // ApplyStateSet so any subsequent snapshot picks up the writes.
+        app.add_systems(
+            Update,
+            (
+                crate::clipboard::handle_copy_selection,
+                crate::clipboard::handle_paste,
+                crate::clipboard::handle_write_bytes,
+                crate::clipboard::handle_run_command,
+            )
+                .in_set(TerminalApplyStateSet),
+        );
+
         // Build the per-frame grid snapshot + LineStyles for the engine.
         app.add_systems(
             Update,

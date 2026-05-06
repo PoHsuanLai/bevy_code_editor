@@ -77,25 +77,74 @@ pub fn screen_to_char_pos(
 /// Copy the primary selection's text to the system clipboard.
 /// Returns true if text was copied, false if no selection.
 ///
-/// The unified `SelectionState` (with multi-selection support) is the
-/// source of truth — only the primary selection is copied. Bare-`TextView`
-/// consumers that want copy without `TextEditor` should attach a
-/// `SelectionState` Component to their entity (it's a cheap default).
+/// Honors the primary selection's [`crate::selection::SelectionMode`]:
+/// - `Simple` / `Semantic` — char-range slice (current behavior).
+/// - `Block` — column-aligned rectangular slice across visited lines,
+///   joined with `\n`. Useful for column edits and reading aligned
+///   terminal output.
+/// - `Line` — full-line slice (already snapped to whole lines by
+///   `expand_to_lines`, so this is identical to the char-range path
+///   but kept distinct for clarity).
 pub fn copy_selection(sel: &SelectionState, tv: &TextViewState) -> bool {
     let Some((start, end)) = sel.primary_range() else {
         return false;
     };
-    let start = start.min(tv.rope.len_chars());
-    let end = end.min(tv.rope.len_chars());
+    let mode = sel.selections.primary().mode;
+    let len = tv.rope.len_chars();
+    let start = start.min(len);
+    let end = end.min(len);
     if start == end {
         return false;
     }
-    let text = tv.rope.slice(start..end).to_string();
+    let text = match mode {
+        crate::selection::SelectionMode::Block => block_slice(&tv.rope, start, end),
+        _ => tv.rope.slice(start..end).to_string(),
+    };
+    if text.is_empty() {
+        return false;
+    }
     if let Ok(mut clipboard) = arboard::Clipboard::new() {
         let _ = clipboard.set_text(text);
         return true;
     }
     false
+}
+
+/// Return the rectangular slice between `start` and `end` (rope char
+/// offsets), one row per source line, joined with `\n`. The column
+/// range is `[min_col, max_col)` in *characters*, derived from the two
+/// endpoints' columns within their lines.
+fn block_slice(rope: &Rope, start: usize, end: usize) -> String {
+    if start >= end {
+        return String::new();
+    }
+    let (start, end) = (start.min(end), start.max(end));
+    let start_line = rope.char_to_line(start);
+    let end_line = rope.char_to_line(end);
+    let start_col = start - rope.line_to_char(start_line);
+    let end_col = end - rope.line_to_char(end_line);
+    let (col_lo, col_hi) = if start_col <= end_col {
+        (start_col, end_col)
+    } else {
+        (end_col, start_col)
+    };
+    if col_lo == col_hi {
+        return String::new();
+    }
+    let mut out = String::new();
+    for line_idx in start_line..=end_line {
+        let line = rope.line(line_idx);
+        let line_len = line.len_chars().saturating_sub(1); // drop trailing '\n'
+        let lo = col_lo.min(line_len);
+        let hi = col_hi.min(line_len);
+        if lo < hi {
+            out.push_str(&line.slice(lo..hi).to_string());
+        }
+        if line_idx != end_line {
+            out.push('\n');
+        }
+    }
+    out
 }
 
 /// Pointer scroll observer for `TextView` entities — handles both vertical
@@ -191,6 +240,7 @@ pub fn on_pointer_press(
         With<TextView>,
     >,
     keyboard: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
     mut input_focus: ResMut<InputFocus>,
 ) {
     if trigger.event().button != PointerButton::Primary {
@@ -217,31 +267,84 @@ pub fn on_pointer_press(
         None,
     );
 
-    // Editor-feature modifiers (Alt = multi-cursor, Ctrl/Cmd = goto-definition)
-    // are handled by their own observers / systems. Skip the plain-click cursor
-    // move when any of those is held — the editor crate will write selection
-    // state itself for the modifier path.
     let alt_held = keyboard.pressed(KeyCode::AltLeft) || keyboard.pressed(KeyCode::AltRight);
-    let ctrl_held = keyboard.pressed(KeyCode::ControlLeft)
+    let ctrl_or_cmd_held = keyboard.pressed(KeyCode::ControlLeft)
         || keyboard.pressed(KeyCode::ControlRight)
         || keyboard.pressed(KeyCode::SuperLeft)
         || keyboard.pressed(KeyCode::SuperRight);
-    let modifier_held = alt_held || ctrl_held;
 
-    if !modifier_held {
-        if let Some(mut sel) = sel {
-            sel.selections.set_cursor(char_pos);
-        }
-        if let Some(mut cursor) = cursor {
-            cursor.cursor_pos = char_pos;
-        }
-        drag_state.is_dragging = true;
-        drag_state.drag_start_pos = Some(char_pos);
-        drag_state.drag_start_scroll_offset = tv.scroll_offset;
-        drag_state.last_screen_pos = Some(viewport.hit_test_position + local_pos);
+    // Ctrl/Cmd-click is a *navigation* gesture (goto-def, etc.) handled by
+    // editor observers — skip selection writes here. Alt-click is *not* a
+    // navigation gesture in this layer; it switches the upcoming drag into
+    // block mode. Editor-side multi-cursor still uses Alt-click but its
+    // observer runs separately and reads `SelectionState` directly.
+    if ctrl_or_cmd_held {
+        input_focus.set(entity);
+        return;
     }
+
+    // Click-count detection: same-position click within 0.5s bumps count.
+    let now = time.elapsed_secs_f64();
+    let near_last = drag_state
+        .last_press_pos
+        .map(|p| (p - local_pos).length() <= CLICK_RADIUS_PX)
+        .unwrap_or(false);
+    drag_state.click_count = if near_last && (now - drag_state.last_press_time) <= MULTI_CLICK_SECS
+    {
+        (drag_state.click_count + 1).min(3)
+    } else {
+        1
+    };
+    drag_state.last_press_time = now;
+    drag_state.last_press_pos = Some(local_pos);
+
+    let mode = if alt_held {
+        crate::selection::SelectionMode::Block
+    } else {
+        match drag_state.click_count {
+            2 => crate::selection::SelectionMode::Semantic,
+            3 => crate::selection::SelectionMode::Line,
+            _ => crate::selection::SelectionMode::Simple,
+        }
+    };
+    drag_state.mode = mode;
+
+    if let Some(mut sel) = sel {
+        match mode {
+            crate::selection::SelectionMode::Semantic => {
+                let mut s = crate::selection::Selection::cursor(char_pos);
+                s.expand_semantic(&tv.rope, crate::selection::DEFAULT_SEMANTIC_ESCAPE_CHARS);
+                sel.selections.clear_secondary();
+                *sel.selections.primary_mut() = s;
+            }
+            crate::selection::SelectionMode::Line => {
+                let mut s = crate::selection::Selection::cursor(char_pos);
+                s.expand_to_lines(&tv.rope);
+                sel.selections.clear_secondary();
+                *sel.selections.primary_mut() = s;
+            }
+            _ => {
+                sel.selections.set_cursor(char_pos);
+                sel.selections.primary_mut().mode = mode;
+            }
+        }
+    }
+    if let Some(mut cursor) = cursor {
+        cursor.cursor_pos = char_pos;
+    }
+    drag_state.is_dragging = true;
+    drag_state.drag_start_pos = Some(char_pos);
+    drag_state.drag_start_scroll_offset = tv.scroll_offset;
+    drag_state.last_screen_pos = Some(viewport.hit_test_position + local_pos);
     input_focus.set(entity);
 }
+
+/// Two consecutive clicks must fall within this window to count as a
+/// multi-click. Matches typical OS double-click thresholds.
+const MULTI_CLICK_SECS: f64 = 0.5;
+/// Two consecutive clicks must fall within this radius (viewport-local
+/// pixels) to count as a multi-click.
+const CLICK_RADIUS_PX: f32 = 4.0;
 
 /// Drag observer: extend the selection while the primary button is held.
 ///
@@ -298,10 +401,22 @@ pub fn on_pointer_drag(
     );
 
     if let (Some(mut sel), Some(start)) = (sel, drag_state.drag_start_pos) {
-        if start == char_pos {
+        let mode = drag_state.mode;
+        if start == char_pos && mode == crate::selection::SelectionMode::Simple {
             sel.selections.set_cursor(char_pos);
         } else {
-            sel.selections.set_selection(char_pos, start);
+            let mut s = crate::selection::Selection::with_mode(char_pos, start, mode);
+            match mode {
+                crate::selection::SelectionMode::Semantic => {
+                    s.expand_semantic(&tv.rope, crate::selection::DEFAULT_SEMANTIC_ESCAPE_CHARS);
+                }
+                crate::selection::SelectionMode::Line => {
+                    s.expand_to_lines(&tv.rope);
+                }
+                _ => {}
+            }
+            sel.selections.clear_secondary();
+            *sel.selections.primary_mut() = s;
         }
     }
     if let Some(mut cursor) = cursor {
@@ -321,6 +436,10 @@ pub fn on_pointer_release(
     let entity = trigger.event().entity;
     if let Ok(mut drag_state) = views.get_mut(entity) {
         drag_state.is_dragging = false;
+        // mode is *not* reset here — the next press observer rebuilds it
+        // from click-count + Alt. Reset to default just in case the next
+        // gesture skips press (e.g. focus-only consumers).
+        drag_state.mode = crate::selection::SelectionMode::Simple;
     }
 }
 

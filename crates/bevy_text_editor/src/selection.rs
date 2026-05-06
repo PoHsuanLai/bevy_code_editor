@@ -2,7 +2,30 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use bevy::reflect::Reflect;
+use ropey::Rope;
+
 use crate::anchor::{Anchor, AnchorSet, TextEdit};
+
+/// Default semantic-boundary characters: word breakers + brackets + quotes.
+/// Matches the alacritty default and is a sensible cross-domain choice
+/// (editor word selection, terminal double-click expansion, log viewer).
+pub const DEFAULT_SEMANTIC_ESCAPE_CHARS: &str = ",│`|:\"' ()[]{}<>\t";
+
+/// What kind of region a selection covers.
+///
+/// `Simple` is the editor default (free-form char range). `Block` is
+/// rectangular (column-aligned), useful for column edits and reading
+/// terminal output. `Line` is whole-line (triple-click). `Semantic`
+/// expands to word/symbol boundaries (double-click).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Reflect)]
+pub enum SelectionMode {
+    #[default]
+    Simple,
+    Block,
+    Line,
+    Semantic,
+}
 
 /// Cursor + optional selection anchor, both edit-resilient. `head` is the
 /// cursor (Left bias); `anchor` is where the selection started (Right bias).
@@ -17,6 +40,8 @@ pub struct Selection {
     /// The selection anchor (where selection started)
     /// Uses Right bias so selection expands to include inserted text at the boundary
     pub anchor: Anchor,
+    /// Selection shape — how the (start, end) range is interpreted.
+    pub mode: SelectionMode,
     /// Unique ID for this selection (for tracking across operations)
     id: u64,
 }
@@ -30,6 +55,7 @@ impl Selection {
         Self {
             head: Anchor::at(offset),
             anchor: Anchor::at(offset),
+            mode: SelectionMode::Simple,
             id: SELECTION_ID_COUNTER.fetch_add(1, Ordering::Relaxed),
         }
     }
@@ -40,6 +66,17 @@ impl Selection {
         Self {
             head: Anchor::at(head),
             anchor: Anchor::at_right(anchor),
+            mode: SelectionMode::Simple,
+            id: SELECTION_ID_COUNTER.fetch_add(1, Ordering::Relaxed),
+        }
+    }
+
+    /// Create a new selection with an explicit mode.
+    pub fn with_mode(head: usize, anchor: usize, mode: SelectionMode) -> Self {
+        Self {
+            head: Anchor::at(head),
+            anchor: Anchor::at_right(anchor),
+            mode,
             id: SELECTION_ID_COUNTER.fetch_add(1, Ordering::Relaxed),
         }
     }
@@ -49,6 +86,7 @@ impl Selection {
         Self {
             head,
             anchor,
+            mode: SelectionMode::Simple,
             id: SELECTION_ID_COUNTER.fetch_add(1, Ordering::Relaxed),
         }
     }
@@ -129,12 +167,66 @@ impl Selection {
         let new_start = self.start().min(other.start());
         let new_end = self.end().max(other.end());
 
-        // Preserve the head direction from self
+        // Preserve the head direction from self.
+        // Mode follows self — the "primary" half of the merge.
         if self.is_reversed() {
-            Selection::new(new_start, new_end)
+            Selection::with_mode(new_start, new_end, self.mode)
         } else {
-            Selection::new(new_end, new_start)
+            Selection::with_mode(new_end, new_start, self.mode)
         }
+    }
+
+    /// Expand this selection to whole-word boundaries on both ends.
+    ///
+    /// Walks left from `start()` and right from `end()` until a boundary
+    /// character (`escape_chars`) or rope edge. After expansion `mode`
+    /// is set to `Semantic`. For terminal use the alacritty default
+    /// [`DEFAULT_SEMANTIC_ESCAPE_CHARS`] is appropriate.
+    pub fn expand_semantic(&mut self, rope: &Rope, escape_chars: &str) {
+        let len = rope.len_chars();
+        if len == 0 {
+            return;
+        }
+        let (start, end) = self.range();
+        let new_start = walk_back_to_boundary(rope, start, escape_chars);
+        let new_end = walk_forward_to_boundary(rope, end, escape_chars).min(len);
+
+        // Preserve direction.
+        if self.is_reversed() {
+            self.head.offset = new_start;
+            self.anchor.offset = new_end;
+        } else {
+            self.head.offset = new_end;
+            self.anchor.offset = new_start;
+        }
+        self.mode = SelectionMode::Semantic;
+    }
+
+    /// Expand this selection to whole lines.
+    ///
+    /// `start()` snaps to its line start, `end()` snaps to the start of
+    /// the line after `end()` (so the trailing newline is included).
+    /// Mode is set to `Line`.
+    pub fn expand_to_lines(&mut self, rope: &Rope) {
+        let len = rope.len_chars();
+        if len == 0 {
+            return;
+        }
+        let (start, end) = self.range();
+        let line_start = rope.line_to_char(rope.char_to_line(start));
+        let end_line = rope.char_to_line(end.min(len.saturating_sub(0)));
+        let next_line_start = rope
+            .line_to_char((end_line + 1).min(rope.len_lines()))
+            .min(len);
+
+        if self.is_reversed() {
+            self.head.offset = line_start;
+            self.anchor.offset = next_line_start;
+        } else {
+            self.head.offset = next_line_start;
+            self.anchor.offset = line_start;
+        }
+        self.mode = SelectionMode::Line;
     }
 
     /// Adjust this selection based on a text edit
@@ -174,6 +266,34 @@ impl Selection {
     pub fn len(&self) -> usize {
         self.end() - self.start()
     }
+}
+
+fn is_boundary(ch: char, escape_chars: &str) -> bool {
+    ch.is_whitespace() || escape_chars.contains(ch)
+}
+
+fn walk_back_to_boundary(rope: &Rope, mut offset: usize, escape_chars: &str) -> usize {
+    while offset > 0 {
+        let prev = offset - 1;
+        let ch = rope.char(prev);
+        if is_boundary(ch, escape_chars) {
+            break;
+        }
+        offset = prev;
+    }
+    offset
+}
+
+fn walk_forward_to_boundary(rope: &Rope, mut offset: usize, escape_chars: &str) -> usize {
+    let len = rope.len_chars();
+    while offset < len {
+        let ch = rope.char(offset);
+        if is_boundary(ch, escape_chars) {
+            break;
+        }
+        offset += 1;
+    }
+    offset
 }
 
 impl PartialEq for Selection {
@@ -496,5 +616,50 @@ impl SelectionCollection {
                 }
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn semantic_expansion_grabs_word() {
+        let rope = Rope::from_str("hello world foo");
+        let mut sel = Selection::cursor(7); // inside "world"
+        sel.expand_semantic(&rope, DEFAULT_SEMANTIC_ESCAPE_CHARS);
+        assert_eq!(sel.range(), (6, 11));
+        assert_eq!(sel.mode, SelectionMode::Semantic);
+    }
+
+    #[test]
+    fn line_expansion_includes_newline() {
+        let rope = Rope::from_str("first\nsecond\nthird\n");
+        let mut sel = Selection::cursor(8); // inside "second"
+        sel.expand_to_lines(&rope);
+        // "second\n" is chars 6..13
+        assert_eq!(sel.range(), (6, 13));
+        assert_eq!(sel.mode, SelectionMode::Line);
+    }
+
+    #[test]
+    fn semantic_does_not_cross_brackets() {
+        // '(' and ')' are in DEFAULT_SEMANTIC_ESCAPE_CHARS; '.' is not —
+        // matching alacritty's word semantics where dots stay inside an
+        // identifier (e.g. `foo.bar` selects the whole thing).
+        let rope = Rope::from_str("foo.bar(baz)");
+        let mut sel = Selection::cursor(9); // inside "baz"
+        sel.expand_semantic(&rope, DEFAULT_SEMANTIC_ESCAPE_CHARS);
+        // Stops at '(' and ')' — selects "baz".
+        assert_eq!(sel.range(), (8, 11));
+    }
+
+    #[test]
+    fn semantic_keeps_dotted_identifier() {
+        let rope = Rope::from_str("foo.bar baz");
+        let mut sel = Selection::cursor(2);
+        sel.expand_semantic(&rope, DEFAULT_SEMANTIC_ESCAPE_CHARS);
+        // Stops at the space after "bar" — selects "foo.bar".
+        assert_eq!(sel.range(), (0, 7));
     }
 }

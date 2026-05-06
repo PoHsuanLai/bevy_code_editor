@@ -42,6 +42,7 @@ leafwing-input-manager = "0.20"
 
 ropey = "1.6"
 serde = { version = "1.0", features = ["derive"] }
+arboard = "3.4"
 
 [dev-dependencies]
 bevy = { version = "0.18", features = ["bevy_window", "bevy_winit"] }
