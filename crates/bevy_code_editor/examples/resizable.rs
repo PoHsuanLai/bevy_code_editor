@@ -107,6 +107,7 @@ fn main() {
         .insert_resource(ViewportConfig {
             auto_resize_to_window: false,
         })
+        .add_systems(Startup, setup_camera)
         .add_systems(PostStartup, setup)
         .add_systems(
             Update,
@@ -119,6 +120,20 @@ fn main() {
                 .chain(),
         )
         .run();
+}
+
+fn setup_camera(mut commands: Commands) {
+    // `EditorCamera` marker opts into the editor's camera-viewport
+    // restriction system (`update_camera_viewport`), which is needed
+    // here because we run with `auto_resize_to_window: false`.
+    commands.spawn((
+        Camera2d,
+        Camera {
+            clear_color: ClearColorConfig::Custom(ThemeConfig::default().background),
+            ..default()
+        },
+        EditorCamera,
+    ));
 }
 
 fn setup(

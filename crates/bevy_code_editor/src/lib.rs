@@ -69,7 +69,7 @@ pub mod prelude {
     // Editor plugin + its standalone PluginGroup, and the interaction +
     // UI plugins that hosts compose with.
     pub use crate::plugin::{
-        CodeEditorPlugin, CodeEditorStandalone, EditorUiPlugin,
+        CodeEditorPlugin, CodeEditorStandalone, EditorCamera, EditorUiPlugin,
     };
 
     // Editor marker + save/open events.
@@ -84,4 +84,8 @@ pub mod prelude {
     // Selection / multi-cursor types and the EditorAction enum.
     pub use crate::input::EditorAction;
     pub use crate::types::{Selection, SelectionCollection};
+
+    // Theme — hosts that match the editor's clear color in their own
+    // Camera2d setup grab `ThemeConfig::default().background`.
+    pub use crate::settings::ThemeConfig;
 }

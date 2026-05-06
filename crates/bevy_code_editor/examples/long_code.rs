@@ -21,9 +21,20 @@ fn main() {
             ..default()
         }))
         .add_plugins(CodeEditorPlugin::standalone())
+        .add_systems(Startup, setup_camera)
         .add_systems(PostStartup, setup_editor)
         .add_systems(Update, update_cursor_icon)
         .run();
+}
+
+fn setup_camera(mut commands: Commands) {
+    commands.spawn((
+        Camera2d,
+        Camera {
+            clear_color: ClearColorConfig::Custom(ThemeConfig::default().background),
+            ..default()
+        },
+    ));
 }
 
 fn setup_editor(

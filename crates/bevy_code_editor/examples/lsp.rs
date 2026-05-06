@@ -60,9 +60,20 @@ fn main() {
     // entity that the markdown plugin lays out as styled text.
     app.add_plugins(MarkdownViewerPlugin);
 
-    app.add_systems(PostStartup, setup_editor)
+    app.add_systems(Startup, setup_camera)
+        .add_systems(PostStartup, setup_editor)
         .add_systems(Update, (display_lsp_info, auto_request_completion))
         .run();
+}
+
+fn setup_camera(mut commands: Commands) {
+    commands.spawn((
+        Camera2d,
+        Camera {
+            clear_color: ClearColorConfig::Custom(ThemeConfig::default().background),
+            ..default()
+        },
+    ));
 }
 
 /// LSP UI plugin using egui/armas overlays for popup rendering, plus inline

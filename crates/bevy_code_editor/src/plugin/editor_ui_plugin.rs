@@ -114,12 +114,13 @@ impl Plugin for EditorUiPlugin {
             render_layers: self.render_layers.clone(),
         });
 
-        // Startup: setup camera (only if not using render layers), compute layout, and spawn UI entities
+        // Startup: compute layout + spawn UI entities. The host is
+        // responsible for spawning a `Camera2d` (matches bevy_egui /
+        // bevy_pancam conventions). Without one nothing renders.
         app.add_systems(
             Startup,
             (
                 init_viewport_from_window,
-                setup_editor_camera,
                 compute_viewport_layout,
                 setup_editor_ui,
                 stamp_editor_render_layers,
@@ -412,31 +413,6 @@ fn sync_viewport_from_resource(
             viewport.width = dims.width;
             viewport.height = dims.height;
         }
-    }
-}
-
-fn setup_editor_camera(mut commands: Commands, render_config: Res<EditorRenderConfig>) {
-    // Only spawn camera if NOT using render layers (standalone mode)
-    // When using render layers, the host application manages cameras
-    // and is responsible for the clear color too.
-    if render_config.render_layers.is_none() {
-        // Match the per-entity ThemeConfig::default() background; hosts that
-        // theme their editors differently are expected to manage their own
-        // camera and clear color.
-        let bg = ThemeConfig::default().background;
-        commands.spawn((
-            Camera2d,
-            Projection::Orthographic(OrthographicProjection {
-                scale: 1.0, // 1:1 world units to pixels
-                ..OrthographicProjection::default_2d()
-            }),
-            Camera {
-                clear_color: ClearColorConfig::Custom(bg),
-                ..default()
-            },
-            EditorCamera,
-            Name::new("EditorCamera"),
-        ));
     }
 }
 

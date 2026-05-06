@@ -27,7 +27,7 @@ pub use self::scrollbar::ScrollbarPlugin as ScrollbarPluginType;
 // Fix visibility for lib.rs re-exports
 pub use self::brackets::BracketPlugin;
 pub use self::cursor::CursorPlugin;
-pub use self::editor_ui_plugin::EditorUiPlugin;
+pub use self::editor_ui_plugin::{EditorCamera, EditorUiPlugin};
 pub use self::folding::FoldingPlugin;
 pub use self::scrollbar::ScrollbarPlugin;
 

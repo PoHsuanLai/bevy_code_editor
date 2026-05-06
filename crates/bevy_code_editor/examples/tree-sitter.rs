@@ -19,8 +19,19 @@ fn main() {
             ..default()
         }))
         .add_plugins(CodeEditorPlugin::standalone())
+        .add_systems(Startup, setup_camera)
         .add_systems(PostStartup, setup_editor_with_treesitter)
         .run();
+}
+
+fn setup_camera(mut commands: Commands) {
+    commands.spawn((
+        Camera2d,
+        Camera {
+            clear_color: ClearColorConfig::Custom(ThemeConfig::default().background),
+            ..default()
+        },
+    ));
 }
 
 fn setup_editor_with_treesitter(
