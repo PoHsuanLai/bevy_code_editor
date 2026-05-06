@@ -7,23 +7,16 @@
 
 use std::sync::Arc;
 
-use alacritty_terminal::event::WindowSize;
-use alacritty_terminal::event_loop::Notifier;
-use alacritty_terminal::sync::FairMutex;
-use alacritty_terminal::term::Term;
 use bevy::picking::Pickable;
 use bevy::prelude::*;
+use parking_lot::Mutex;
 
-use crate::session::EventProxy;
+use crate::backend;
 
-/// Spawn this on an entity to make it a terminal. The cascade brings in
-/// rendering substrate (`TextView` + family), selection state, the
-/// session/event/grid/shell/mode/blocks state, the per-entity terminal
-/// theme, scrollback config, and `Pickable` for mouse routing.
-///
-/// The PTY is *not* started here — an `On<Add, BevyTerminal>` observer
-/// in `crate::session::spawn` allocates the pty + spawns the event loop
-/// thread once defaults are fully cascaded.
+/// Spawn this on an entity to make it a terminal; the `#[require]`
+/// cascade brings in rendering substrate, selection state, terminal
+/// state, theme, and `Pickable` for mouse routing. PTY + child shell
+/// start in the `On<Add, BevyTerminal>` observer in `crate::session`.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 #[require(
@@ -34,14 +27,9 @@ use crate::session::EventProxy;
     bevy_text_engine::TextViewViewport,
     bevy_text_engine::FontConfig,
     bevy_text_engine::LineStyles,
-    // NOT BlockList — engine's `produce_layouts` filters out entities
-    // that carry it (BlockList is the "static-content" path, mutually
-    // exclusive with the rope + LineStyles path we use here). When
-    // Phase 5 (OSC 133 command blocks) lands, that path will spawn
-    // child entities with their own BlockList rather than putting it
-    // on the BevyTerminal root.
     bevy_text_engine::HiddenLines,
     bevy_text_engine::RenderTheme,
+    bevy_text_engine::BlockDecorTheme,
     bevy_text_editor::SelectionState,
     bevy_text_editor::EditTheme,
     bevy_text_editor::ScrollConfig,
@@ -56,27 +44,18 @@ use crate::session::EventProxy;
 )]
 pub struct BevyTerminal;
 
-/// Holds the live PTY + Term state. Inserted by the spawn observer; the
-/// drain system is the only writer to `terminal` (it takes the lock).
-/// Snapshot reads under the same lock and produces `TerminalGridSnapshot`.
-///
-/// Opaque to reflection — the inner `Arc<FairMutex<Term<_>>>` and
-/// `Notifier` carry OS handles and don't make sense to inspect.
 #[derive(Component)]
 pub struct TerminalSession {
-    pub terminal: Arc<FairMutex<Term<EventProxy>>>,
-    pub notifier: Notifier,
-    /// Last applied window size. Compared against the viewport-derived
-    /// (cols, rows) each frame; on change we resize both `Term` and PTY.
-    pub size: WindowSize,
+    pub terminal: Arc<Mutex<backend::Terminal>>,
+    pub pty_master: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
+    pub pty_input: backend::SharedWriter,
+    pub size: backend::TerminalSize,
 }
 
-/// Receiver side of the alacritty `EventLoop` ↔ ECS bridge. Drained each
-/// frame in the PTY drain set. Held in its own component (not the session)
-/// so other systems can borrow `TerminalSession` mutably without aliasing.
 #[derive(Component)]
 pub struct TerminalEventChannel {
-    pub rx: crossbeam_channel::Receiver<alacritty_terminal::event::Event>,
+    pub rx: crossbeam_channel::Receiver<Vec<u8>>,
+    pub alerts: crossbeam_channel::Receiver<backend::Alert>,
 }
 
 /// Snapshot of the visible grid metadata: dims + cursor + version. The
@@ -121,8 +100,7 @@ pub struct TerminalInputMode {
     pub kitty_keyboard: bool,
 }
 
-/// Warp-style command blocks (filled in Phase 5 by the OSC 133 parser).
-/// Empty in Phase 1.
+/// Warp-style command blocks parsed from OSC 133. Empty without shell-integration.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 pub struct TerminalBlockState {
@@ -135,6 +113,10 @@ pub struct TerminalBlock {
     pub id: u64,
     pub status: BlockStatus,
     pub exit_code: Option<i32>,
+    pub prompt_row: i64,
+    pub output_row: i64,
+    pub end_row: i64,
+    pub command_text: String,
 }
 
 #[derive(Clone, Copy, Debug, Default, Reflect, PartialEq, Eq)]

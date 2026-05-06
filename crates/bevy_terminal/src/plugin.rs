@@ -13,6 +13,7 @@
 
 use bevy::prelude::*;
 use bevy_text_engine::view::layout_builder::LayoutProduceSet;
+use bevy_text_engine::view::plugin::TextViewRenderSet;
 
 use crate::drain::drain_pty_events;
 use crate::messages::*;
@@ -53,19 +54,33 @@ impl Plugin for BevyTerminalPlugin {
             .register_type::<TerminalExited>()
             .register_type::<TerminalTitleChanged>()
             .register_type::<TerminalBellRang>()
+            .register_type::<TerminalReady>()
+            .register_type::<TerminalCwdChanged>()
+            .register_type::<TerminalBlockFinished>()
+            .register_type::<TerminalBlockSelected>()
             .register_type::<TerminalWriteBytes>()
             .register_type::<TerminalRunCommand>()
             .register_type::<TerminalCopySelection>()
-            .register_type::<TerminalPaste>();
+            .register_type::<TerminalPaste>()
+            .register_type::<TerminalResize>()
+            .register_type::<TerminalScrollTo>()
+            .register_type::<TerminalClear>();
 
         // Message buses.
         app.add_message::<TerminalExited>()
             .add_message::<TerminalTitleChanged>()
             .add_message::<TerminalBellRang>()
+            .add_message::<TerminalReady>()
+            .add_message::<TerminalCwdChanged>()
+            .add_message::<TerminalBlockFinished>()
+            .add_message::<TerminalBlockSelected>()
             .add_message::<TerminalWriteBytes>()
             .add_message::<TerminalRunCommand>()
             .add_message::<TerminalCopySelection>()
-            .add_message::<TerminalPaste>();
+            .add_message::<TerminalPaste>()
+            .add_message::<TerminalResize>()
+            .add_message::<TerminalScrollTo>()
+            .add_message::<TerminalClear>();
 
         app.init_resource::<TerminalEventLoopRegistry>();
         app.init_resource::<bevy_text_editor::CursorSettings>();
@@ -97,12 +112,27 @@ impl Plugin for BevyTerminalPlugin {
                 crate::clipboard::handle_paste,
                 crate::clipboard::handle_write_bytes,
                 crate::clipboard::handle_run_command,
+                crate::clipboard::handle_resize,
+                crate::clipboard::handle_scroll_to,
+                crate::clipboard::handle_clear,
             )
                 .in_set(TerminalApplyStateSet),
         );
         app.add_systems(
             Update,
             crate::snapshot::sync_grid_snapshot.in_set(TerminalSnapshotSet),
+        );
+        app.add_systems(
+            Update,
+            crate::blocks::extract_blocks
+                .in_set(TerminalSnapshotSet)
+                .after(crate::snapshot::sync_grid_snapshot),
+        );
+        app.add_systems(
+            Update,
+            crate::blocks_overlay::paint_block_overlays
+                .after(LayoutProduceSet)
+                .before(TextViewRenderSet),
         );
 
         app.register_type::<crate::cursor::TerminalCursorBlink>();
@@ -119,5 +149,6 @@ impl Plugin for BevyTerminalPlugin {
 
         app.add_observer(on_terminal_added);
         app.add_observer(crate::input::on_focused_terminal_keyboard);
+        app.add_observer(crate::blocks_pick::on_terminal_block_press);
     }
 }

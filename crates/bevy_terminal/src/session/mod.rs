@@ -1,95 +1,37 @@
-//! PTY session lifecycle: spawn (`On<Add>`), drain (per-frame system),
-//! shutdown (`On<Remove>`).
-//!
-//! `alacritty_terminal` runs the PTY I/O loop on its own thread; events
-//! come back to ECS through a crossbeam channel via [`EventProxy`]. The
-//! drain system in `crate::plugin` pulls events and updates ECS components.
+//! PTY session lifecycle: spawn (`On<Add>`), shutdown (`On<Remove>`).
 
+use std::io::Read;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
-use alacritty_terminal::event::{Event as AlacrittyEvent, EventListener, WindowSize};
-use alacritty_terminal::event_loop::{EventLoop, Notifier};
-use alacritty_terminal::grid::Dimensions;
-use alacritty_terminal::sync::FairMutex;
-use alacritty_terminal::term::{Config, Term};
-use alacritty_terminal::tty;
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use crossbeam_channel::{Receiver, Sender};
+use parking_lot::Mutex;
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
+use crate::backend;
+use crate::messages::TerminalReady;
 use crate::types::{
     BevyTerminal, TerminalEventChannel, TerminalScrollback, TerminalSession,
 };
 
-/// Initial PTY dimensions used when the entity is spawned before its
-/// viewport / font has settled. The viewport-resize observer (Phase 4)
-/// resizes both Term and PTY to the actual visible (cols, rows).
 const DEFAULT_COLS: u16 = 80;
 const DEFAULT_ROWS: u16 = 24;
-/// Reasonable cell-size hint for the PTY. The shell doesn't truly care
-/// about pixels — it reads cols/rows.
 const DEFAULT_CELL_W: u16 = 8;
 const DEFAULT_CELL_H: u16 = 16;
 
-/// Cloneable bridge implementing alacritty's `EventListener`. Both
-/// `Term<Self>` and the `EventLoop` thread hold a copy; events arrive at
-/// the same channel.
-#[derive(Clone)]
-pub struct EventProxy {
-    tx: Sender<AlacrittyEvent>,
-}
-
-impl EventProxy {
-    pub fn new(tx: Sender<AlacrittyEvent>) -> Self {
-        Self { tx }
-    }
-}
-
-impl EventListener for EventProxy {
-    fn send_event(&self, event: AlacrittyEvent) {
-        // Channel send only fails when the receiver is dropped — meaning
-        // the entity has been despawned. Drop the event silently.
-        let _ = self.tx.send(event);
-    }
-}
-
-/// Tiny `Dimensions` shim so we can construct a `Term` before its grid
-/// exists.
-struct Dims {
-    cols: usize,
-    rows: usize,
-}
-
-impl Dimensions for Dims {
-    fn total_lines(&self) -> usize {
-        self.rows
-    }
-    fn screen_lines(&self) -> usize {
-        self.rows
-    }
-    fn columns(&self) -> usize {
-        self.cols
-    }
-}
-
-/// Tracker for spawned event-loop threads — held in a non-`Send` registry
-/// resource so they can be joined on app shutdown without leaking.
 #[derive(Resource, Default)]
 pub struct TerminalEventLoopRegistry {
     pub handles: Vec<JoinHandle<()>>,
 }
 
-/// Observer wired in `BevyTerminalPlugin`: spawn a PTY + EventLoop + Term
-/// for any entity that gains a `BevyTerminal` marker. Also seeds
-/// `InputFocus` if nothing else has it yet — handy for single-terminal
-/// apps that don't need to click before typing.
 pub fn on_terminal_added(
     trigger: On<Add, BevyTerminal>,
     scrollbacks: Query<&TerminalScrollback>,
     mut commands: Commands,
     mut registry: ResMut<TerminalEventLoopRegistry>,
     mut input_focus: ResMut<InputFocus>,
+    mut ready_w: MessageWriter<TerminalReady>,
 ) {
     let entity = trigger.entity;
     let scrollback = scrollbacks
@@ -99,11 +41,14 @@ pub fn on_terminal_added(
 
     match build_session(scrollback.max_lines) {
         Ok((session, channel, handle)) => {
+            let cols = session.size.cols as u16;
+            let rows = session.size.rows as u16;
             registry.handles.push(handle);
             commands.entity(entity).insert((session, channel));
             if input_focus.get().is_none() {
                 input_focus.set(entity);
             }
+            ready_w.write(TerminalReady { entity, cols, rows });
         }
         Err(err) => {
             error!("bevy_terminal: failed to spawn PTY: {err}");
@@ -111,69 +56,97 @@ pub fn on_terminal_added(
     }
 }
 
-/// All-in-one session builder: opens the PTY, constructs `Term`, spawns
-/// the alacritty `EventLoop` thread, returns the ECS components plus
-/// the join handle (for clean shutdown).
 fn build_session(
     scrollback_lines: usize,
 ) -> std::io::Result<(TerminalSession, TerminalEventChannel, JoinHandle<()>)> {
-    let (tx, rx): (Sender<AlacrittyEvent>, Receiver<AlacrittyEvent>) =
-        crossbeam_channel::unbounded();
-    let proxy = EventProxy::new(tx);
+    let pty_system = native_pty_system();
+    let pty_pair = pty_system
+        .openpty(PtySize {
+            rows: DEFAULT_ROWS,
+            cols: DEFAULT_COLS,
+            pixel_width: DEFAULT_COLS * DEFAULT_CELL_W,
+            pixel_height: DEFAULT_ROWS * DEFAULT_CELL_H,
+        })
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
 
-    let size = WindowSize {
-        num_lines: DEFAULT_ROWS,
-        num_cols: DEFAULT_COLS,
-        cell_width: DEFAULT_CELL_W,
-        cell_height: DEFAULT_CELL_H,
-    };
+    let writer = pty_pair
+        .master
+        .take_writer()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
 
-    let pty = tty::new(&tty::Options::default(), size, /* window_id */ 0)?;
-
-    let mut term_cfg = Config::default();
-    term_cfg.scrolling_history = scrollback_lines;
-
-    let dims = Dims {
-        cols: DEFAULT_COLS as usize,
+    let size = backend::TerminalSize {
         rows: DEFAULT_ROWS as usize,
+        cols: DEFAULT_COLS as usize,
+        pixel_width: (DEFAULT_COLS * DEFAULT_CELL_W) as usize,
+        pixel_height: (DEFAULT_ROWS * DEFAULT_CELL_H) as usize,
+        dpi: 0,
     };
-    let terminal = Term::new(term_cfg, &dims, proxy.clone());
-    let terminal = Arc::new(FairMutex::new(terminal));
 
-    let event_loop = EventLoop::new(
-        terminal.clone(),
-        proxy,
-        pty,
-        /* drain_on_exit */ false,
-        /* ref_test */ false,
-    )?;
-    let notifier = Notifier(event_loop.channel());
-    let handle = event_loop.spawn();
+    let config = Arc::new(backend::DefaultConfig {
+        scrollback: scrollback_lines,
+        ..Default::default()
+    }) as Arc<dyn backend::TerminalConfiguration + Send + Sync>;
 
-    // EventLoop::spawn returns `JoinHandle<(EventLoop, State)>`; we don't
-    // care about the inner tuple, just that we can join the thread on
-    // shutdown. Wrap to a unit-returning handle.
-    let handle = std::thread::spawn(move || {
-        let _ = handle.join();
-    });
+    let (terminal, alerts_rx, pty_input) = backend::make_terminal(size, config, writer);
+    let terminal = Arc::new(Mutex::new(terminal));
+
+    let cmd = default_shell_command();
+    pty_pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+
+    let mut reader = pty_pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+
+    let (tx, rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    let handle = std::thread::Builder::new()
+        .name("bevy_terminal_pty_reader".into())
+        .spawn(move || {
+            let mut buf = vec![0u8; 4096];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if tx.send(buf[..n].to_vec()).is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(_) => break,
+                }
+            }
+        })?;
+
+    let pty_master = Arc::new(Mutex::new(pty_pair.master));
 
     Ok((
         TerminalSession {
             terminal,
-            notifier,
+            pty_master,
+            pty_input,
             size,
         },
-        TerminalEventChannel { rx },
+        TerminalEventChannel { rx, alerts: alerts_rx },
         handle,
     ))
 }
 
-/// Observer for cleanup when the terminal entity is removed/despawned.
-///
-/// V1 leaves the EventLoop thread to be reaped at process exit (its sender
-/// errors when our crossbeam receiver is dropped, and `EventLoop` exits its
-/// poll loop on the next PTY error). Wire `Msg::Shutdown` here when we add
-/// a shutdown sender to `TerminalSession`.
+fn default_shell_command() -> CommandBuilder {
+    if cfg!(windows) {
+        CommandBuilder::new("powershell.exe")
+    } else {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+        let mut cmd = CommandBuilder::new(shell);
+        if let Ok(home) = std::env::var("HOME") {
+            cmd.cwd(home);
+        }
+        cmd
+    }
+}
+
 pub fn on_terminal_removed(
     _trigger: On<Remove, BevyTerminal>,
     _sessions: Query<&TerminalSession>,

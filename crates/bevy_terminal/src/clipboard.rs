@@ -1,22 +1,16 @@
-//! Clipboard + raw-write message handlers.
-//!
-//! Reads `TerminalCopySelection` / `TerminalPaste` / `TerminalWriteBytes`
-//! / `TerminalRunCommand` and translates them into PTY writes (and
-//! clipboard operations via `bevy_text_editor::copy_selection`).
+//! Inbound message handlers: clipboard ops + direct host commands.
 
-use alacritty_terminal::event::Notify;
 use bevy::prelude::*;
 use bevy_text_editor::{copy_selection, SelectionState};
 use bevy_text_engine::TextBuffer;
+use portable_pty::PtySize;
 
 use crate::messages::{
-    TerminalCopySelection, TerminalPaste, TerminalRunCommand, TerminalWriteBytes,
+    TerminalClear, TerminalCopySelection, TerminalPaste, TerminalResize, TerminalRunCommand,
+    TerminalScrollTo, TerminalWriteBytes,
 };
-use crate::types::{TerminalInputMode, TerminalSession};
+use crate::types::{TerminalGridSnapshot, TerminalSession};
 
-/// Handle `TerminalCopySelection`: read the entity's selection from
-/// `SelectionState` and call into the shared `copy_selection` helper
-/// (which honors `SelectionMode` for block / line / semantic copies).
 pub fn handle_copy_selection(
     mut events: MessageReader<TerminalCopySelection>,
     q: Query<(&SelectionState, &TextBuffer)>,
@@ -29,31 +23,18 @@ pub fn handle_copy_selection(
     }
 }
 
-/// Handle `TerminalPaste`: write the bytes to the PTY, wrapped in
-/// bracketed-paste markers when the term has the mode enabled.
 pub fn handle_paste(
     mut events: MessageReader<TerminalPaste>,
-    q: Query<(&TerminalSession, &TerminalInputMode)>,
+    q: Query<&TerminalSession>,
 ) {
     for ev in events.read() {
-        let Ok((session, mode)) = q.get(ev.entity) else {
+        let Ok(session) = q.get(ev.entity) else {
             continue;
         };
-        let bytes = if mode.bracketed_paste {
-            let mut out =
-                Vec::with_capacity(ev.text.len() + BRACKETED_PASTE_START.len() + BRACKETED_PASTE_END.len());
-            out.extend_from_slice(BRACKETED_PASTE_START);
-            out.extend_from_slice(ev.text.as_bytes());
-            out.extend_from_slice(BRACKETED_PASTE_END);
-            out
-        } else {
-            ev.text.as_bytes().to_vec()
-        };
-        session.notifier.notify(bytes);
+        let _ = session.terminal.lock().send_paste(&ev.text);
     }
 }
 
-/// Handle raw-byte writes (the firehose path; no interpretation).
 pub fn handle_write_bytes(
     mut events: MessageReader<TerminalWriteBytes>,
     q: Query<&TerminalSession>,
@@ -62,11 +43,10 @@ pub fn handle_write_bytes(
         let Ok(session) = q.get(ev.entity) else {
             continue;
         };
-        session.notifier.notify(ev.bytes.clone());
+        let _ = session.pty_input.write_bytes(&ev.bytes);
     }
 }
 
-/// Handle `TerminalRunCommand`: append the command + `\r` (Enter).
 pub fn handle_run_command(
     mut events: MessageReader<TerminalRunCommand>,
     q: Query<&TerminalSession>,
@@ -78,9 +58,66 @@ pub fn handle_run_command(
         let mut bytes = Vec::with_capacity(ev.command.len() + 1);
         bytes.extend_from_slice(ev.command.as_bytes());
         bytes.push(b'\r');
-        session.notifier.notify(bytes);
+        let _ = session.pty_input.write_bytes(&bytes);
     }
 }
 
-const BRACKETED_PASTE_START: &[u8] = b"\x1b[200~";
-const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
+pub fn handle_resize(
+    mut events: MessageReader<TerminalResize>,
+    mut q: Query<&mut TerminalSession>,
+) {
+    for ev in events.read() {
+        let Ok(mut session) = q.get_mut(ev.entity) else {
+            continue;
+        };
+        if ev.cols == 0 || ev.rows == 0 {
+            continue;
+        }
+        let cell_w = (session.size.pixel_width / session.size.cols.max(1)) as u16;
+        let cell_h = (session.size.pixel_height / session.size.rows.max(1)) as u16;
+        let new_size = crate::backend::TerminalSize {
+            cols: ev.cols as usize,
+            rows: ev.rows as usize,
+            pixel_width: (ev.cols * cell_w) as usize,
+            pixel_height: (ev.rows * cell_h) as usize,
+            dpi: session.size.dpi,
+        };
+        let pty_size = PtySize {
+            cols: ev.cols,
+            rows: ev.rows,
+            pixel_width: ev.cols * cell_w,
+            pixel_height: ev.rows * cell_h,
+        };
+        session.terminal.lock().resize(new_size);
+        let _ = session.pty_master.lock().resize(pty_size);
+        session.size = new_size;
+    }
+}
+
+/// Stub: scroll position lives in the host overlay layer; bump the snapshot version.
+pub fn handle_scroll_to(
+    mut events: MessageReader<TerminalScrollTo>,
+    mut q: Query<&mut TerminalGridSnapshot>,
+) {
+    for ev in events.read() {
+        let Ok(mut snapshot) = q.get_mut(ev.entity) else {
+            continue;
+        };
+        let _ = ev.line;
+        snapshot.version = snapshot.version.wrapping_add(1);
+    }
+}
+
+pub fn handle_clear(
+    mut events: MessageReader<TerminalClear>,
+    mut q: Query<(&TerminalSession, &mut TerminalGridSnapshot)>,
+) {
+    const CLEAR_SEQUENCE: &[u8] = b"\x1b[3J\x1b[2J\x1b[H";
+    for ev in events.read() {
+        let Ok((session, mut snapshot)) = q.get_mut(ev.entity) else {
+            continue;
+        };
+        session.terminal.lock().advance_bytes(CLEAR_SEQUENCE);
+        snapshot.version = snapshot.version.wrapping_add(1);
+    }
+}
