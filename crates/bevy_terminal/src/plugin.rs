@@ -149,5 +149,6 @@ impl Plugin for BevyTerminalPlugin {
 
         app.add_observer(on_terminal_added);
         app.add_observer(crate::input::on_focused_terminal_keyboard);
+        app.add_observer(crate::blocks_pick::on_terminal_block_press);
     }
 }

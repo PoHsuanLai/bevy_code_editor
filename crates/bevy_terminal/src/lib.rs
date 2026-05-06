@@ -22,6 +22,7 @@
 pub mod backend;
 pub mod blocks;
 pub mod blocks_overlay;
+pub mod blocks_pick;
 pub mod clipboard;
 pub mod cursor;
 pub mod drain;
