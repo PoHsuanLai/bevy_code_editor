@@ -22,7 +22,6 @@ use bevy_code_editor::lsp_ui::components::{
 use bevy_code_editor::lsp_ui::state::{
     LspCodeActionsPopup, LspCompletionPopup, LspHoverPopup, LspRenamePopup, LspSignatureHelpPopup,
 };
-use bevy_code_editor::plugin::editor_ui_plugin::EditorRenderConfig;
 use bevy_code_editor::prelude::*;
 use bevy_text_engine::FontConfig;
 use bevy_code_editor::text_view::TextViewViewport;
@@ -49,7 +48,7 @@ fn main() {
     // to the egui render systems below.
     app.add_plugins(bevy_egui::EguiPlugin::default());
 
-    app.add_plugins(CodeEditorPlugin::standalone());
+    app.add_plugins(CodeEditorPlugin::default());
 
     // LspPlugin is auto-added by CodeEditorPlugin under the `lsp` feature; we
     // just supply the egui-based UI layer here.
@@ -189,7 +188,6 @@ fn render_inlay_hints(
     hint_query: Query<(Entity, &InlayHintData), Added<InlayHintData>>,
     editor_query: Query<(&TextViewViewport, &FontConfig), With<CodeEditor>>,
     theme: Res<InlineDecorationsTheme>,
-    render_config: Res<EditorRenderConfig>,
 ) {
     let Ok((viewport, font)) = editor_query.single() else {
         return;
@@ -230,13 +228,6 @@ fn render_inlay_hints(
             ),
             bevy::ecs::bundle::InsertMode::Replace,
         ));
-
-        if let Some(layers) = &render_config.render_layers {
-            entity_cmd.queue_silenced(bevy::ecs::system::entity_command::insert(
-                layers.clone(),
-                bevy::ecs::bundle::InsertMode::Replace,
-            ));
-        }
     }
 }
 
@@ -247,7 +238,6 @@ fn render_document_highlights(
     highlight_query: Query<(Entity, &DocumentHighlightData), Added<DocumentHighlightData>>,
     viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
     theme: Res<InlineDecorationsTheme>,
-    render_config: Res<EditorRenderConfig>,
 ) {
     let Ok(viewport) = viewport_query.single() else {
         return;
@@ -284,13 +274,6 @@ fn render_document_highlights(
             ),
             bevy::ecs::bundle::InsertMode::Replace,
         ));
-
-        if let Some(layers) = &render_config.render_layers {
-            entity_cmd.queue_silenced(bevy::ecs::system::entity_command::insert(
-                layers.clone(),
-                bevy::ecs::bundle::InsertMode::Replace,
-            ));
-        }
     }
 }
 

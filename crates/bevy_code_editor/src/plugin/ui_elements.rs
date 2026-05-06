@@ -1,6 +1,5 @@
 //! UI elements: selection, indent guides
 
-use super::editor_ui_plugin::EditorRenderConfig;
 use crate::settings::*;
 use crate::text_view::{
     DisplayLayout, RectOverlay, RowVertical, TextViewOverlays, TextViewState, TextViewViewport,
@@ -219,7 +218,6 @@ pub(crate) fn update_indent_guides(
     >,
     ui: Res<UiSettings>,
     indentation: Res<IndentationSettings>,
-    render_config: Res<EditorRenderConfig>,
     mut guide_query: Query<(Entity, &mut Transform, &mut Visibility, &mut IndentGuide)>,
 ) {
     // Hide all guides if disabled
@@ -343,7 +341,7 @@ pub(crate) fn update_indent_guides(
                 **visibility = Visibility::Visible;
             } else {
                 // Spawn new guide entity
-                let mut entity_cmd = commands.spawn((
+                commands.spawn((
                     Sprite {
                         color: theme.indent_guide,
                         custom_size: Some(Vec2::new(1.0, line_height)),
@@ -357,9 +355,6 @@ pub(crate) fn update_indent_guides(
                     Name::new(format!("IndentGuide_{}_{}", display_row, level)),
                     Visibility::Visible,
                 ));
-                if let Some(ref layers) = render_config.render_layers {
-                    entity_cmd.insert(layers.clone());
-                }
             }
 
             entity_index += 1;

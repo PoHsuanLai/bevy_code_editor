@@ -14,8 +14,6 @@
 //! querying the editor state directly.
 
 use bevy::prelude::*;
-// Import RenderLayers from bevy_camera crate directly
-use bevy_camera::visibility::RenderLayers;
 use bevy_text_engine::FontConfig;
 
 use crate::settings::*;
@@ -42,88 +40,19 @@ use super::update_fold_indicators;
 
 use super::scrollbar::update_editor_scrollbar;
 
-/// Resource to store render layer configuration for the editor
-// not reflectable: holds `RenderLayers`, which is not derived `Reflect` in
-// bevy 0.17. Skipping this resource.
-#[derive(Resource, Clone, Default)]
-pub struct EditorRenderConfig {
-    /// Optional render layer for editor entities.
-    /// If Some(layer), all editor UI entities will only render to cameras on that layer.
-    /// If None, entities render to all cameras (default behavior).
-    pub render_layers: Option<RenderLayers>,
-}
-
-/// Editor UI plugin providing default rendering for editor visual elements
-///
-/// This plugin must be added AFTER CodeEditorPlugin.
-/// It renders line numbers, selection, cursor, etc.
-///
-/// # Example
-/// ```no_run
-/// use bevy::prelude::*;
-/// use bevy_code_editor::prelude::*;
-///
-/// App::new()
-///     .add_plugins(CodeEditorPlugin::default())
-///     .add_plugins(EditorUiPlugin::default())
-///     .run();
-/// ```
-///
-/// # Render to Texture Example
-/// ```no_run
-/// use bevy::prelude::*;
-/// use bevy_camera::visibility::RenderLayers;
-/// use bevy_code_editor::prelude::*;
-///
-/// App::new()
-///     .add_plugins(CodeEditorPlugin::default())
-///     .add_plugins(EditorUiPlugin::with_render_layer(RenderLayers::layer(1)))
-///     .run();
-/// ```
-///
-/// # Custom UI
-/// If you want to implement your own UI, simply don't add this plugin
-/// and query the editor's components and resources directly.
+/// Editor UI plugin: renders line numbers, separator, cursor, selection.
+/// Added automatically by `CodeEditorPlugin`.
 #[derive(Default)]
-pub struct EditorUiPlugin {
-    /// Optional render layer for editor entities
-    pub render_layers: Option<RenderLayers>,
-}
-
-impl EditorUiPlugin {
-    /// Create a new Editor UI plugin
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Create an Editor UI plugin that only renders to a specific camera layer
-    ///
-    /// This is useful for render-to-texture scenarios where you want the editor
-    /// to only appear in a specific camera's view.
-    pub fn with_render_layer(render_layers: RenderLayers) -> Self {
-        Self {
-            render_layers: Some(render_layers),
-        }
-    }
-}
+pub struct EditorUiPlugin;
 
 impl Plugin for EditorUiPlugin {
     fn build(&self, app: &mut App) {
-        // Insert render configuration as a resource
-        app.insert_resource(EditorRenderConfig {
-            render_layers: self.render_layers.clone(),
-        });
-
-        // Startup: compute layout + spawn UI entities. The host is
-        // responsible for spawning a `Camera2d` (matches bevy_egui /
-        // bevy_pancam conventions). Without one nothing renders.
         app.add_systems(
             Startup,
             (
                 init_viewport_from_window,
                 compute_viewport_layout,
                 setup_editor_ui,
-                stamp_editor_render_layers,
             )
                 .chain()
                 .after(EditorSetupSet),
@@ -323,34 +252,6 @@ fn compute_viewport_layout(
     }
 }
 
-/// Helper function to apply render layers to an entity if configured
-fn apply_render_layers(entity: &mut EntityCommands, config: &EditorRenderConfig) {
-    if let Some(ref layers) = config.render_layers {
-        entity.insert(layers.clone());
-    }
-}
-
-/// Stamp the configured `RenderLayers` onto the `CodeEditor` entity at startup.
-///
-/// `text_view::update_text_views` reads `RenderLayers` from the source entity
-/// to propagate them to the spawned batch entity, which is how multi-viewport
-/// camera filtering works. Without this, the editor's text would render to all
-/// cameras (including the host app's main camera) when `EditorRenderConfig`
-/// configures a dedicated layer.
-fn stamp_editor_render_layers(
-    mut commands: Commands,
-    editor_query: Query<Entity, With<CodeEditor>>,
-    config: Res<EditorRenderConfig>,
-) {
-    let Some(layers) = config.render_layers.as_ref() else {
-        return;
-    };
-    for entity in &editor_query {
-        commands.entity(entity).insert(layers.clone());
-    }
-}
-
-/// Setup camera for standalone editor mode (only if not using render layers)
 /// Initialize viewport dimensions from the actual window size
 fn init_viewport_from_window(
     mut viewport_query: Query<&mut TextViewViewport, With<CodeEditor>>,
@@ -422,7 +323,6 @@ fn setup_editor_ui(
     _cursor_settings: Res<CursorSettings>,
     ui: Res<UiSettings>,
     editor_query: Query<(&TextViewViewport, &ThemeConfig), With<CodeEditor>>,
-    render_config: Res<EditorRenderConfig>,
 ) {
     for (viewport, theme) in editor_query.iter() {
         let viewport_width = viewport.width as f32;
@@ -433,7 +333,7 @@ fn setup_editor_ui(
 
         // Spawn separator line (only if enabled)
         if ui.show_separator {
-            let mut separator = commands.spawn((
+            commands.spawn((
                 Sprite {
                     color: theme.separator,
                     custom_size: Some(Vec2::new(1.0, viewport_height)),
@@ -449,7 +349,6 @@ fn setup_editor_ui(
                 Separator,
                 Name::new("Separator"),
             ));
-            apply_render_layers(&mut separator, &render_config);
         }
 
         // Cursor carets are pushed into TextViewOverlays each frame by

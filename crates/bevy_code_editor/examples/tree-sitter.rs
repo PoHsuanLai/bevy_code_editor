@@ -18,7 +18,7 @@ fn main() {
             }),
             ..default()
         }))
-        .add_plugins(CodeEditorPlugin::standalone())
+        .add_plugins(CodeEditorPlugin::default())
         .add_systems(Startup, setup_camera)
         .add_systems(PostStartup, setup_editor_with_treesitter)
         .run();

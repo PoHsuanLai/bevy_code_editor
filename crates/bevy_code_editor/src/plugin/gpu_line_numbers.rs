@@ -2,7 +2,6 @@
 //!
 //! Uses the same instanced rendering pipeline as the main code text for visual consistency.
 
-use super::editor_ui_plugin::EditorRenderConfig;
 use bevy_text_engine::gpu::GlyphAtlas;
 use bevy_text_engine::FontConfig;
 use crate::settings::*;
@@ -44,7 +43,6 @@ pub(crate) fn update_gpu_line_numbers(
     ui: Res<UiSettings>,
     performance: Res<PerformanceSettings>,
     mut atlas: ResMut<GlyphAtlas>,
-    render_config: Res<EditorRenderConfig>,
     mut images: ResMut<Assets<Image>>,
     fonts: Res<Assets<bevy::text::Font>>,
     batch_query: Query<(Entity, &GpuLineNumbersBatch)>,
@@ -233,11 +231,7 @@ pub(crate) fn update_gpu_line_numbers(
             .insert(GlyphBatchComponent {
                 instances,
                 atlas_texture: atlas.texture.clone(),
-                render_layer: render_config.render_layers.as_ref().and_then(|layers| {
-                    (0u8..=31).find(|&i| {
-                        layers.intersects(&bevy_camera::visibility::RenderLayers::layer(i as usize))
-                    })
-                }),
+                render_layer: None,
             })
             .insert(GpuLineNumbersBatch {
                 editor: editor_entity,
@@ -248,15 +242,11 @@ pub(crate) fn update_gpu_line_numbers(
             })
             .insert(Visibility::Visible);
     } else {
-        let mut entity_cmd = commands.spawn((
+        commands.spawn((
             GlyphBatchComponent {
                 instances,
                 atlas_texture: atlas.texture.clone(),
-                render_layer: render_config.render_layers.as_ref().and_then(|layers| {
-                    (0u8..=31).find(|&i| {
-                        layers.intersects(&bevy_camera::visibility::RenderLayers::layer(i as usize))
-                    })
-                }),
+                render_layer: None,
             },
             Transform::default(),
             GlobalTransform::default(),
@@ -272,10 +262,6 @@ pub(crate) fn update_gpu_line_numbers(
             InheritedVisibility::default(),
             ViewVisibility::default(),
         ));
-
-        if let Some(ref layers) = render_config.render_layers {
-            entity_cmd.insert(layers.clone());
-        }
     }
     }
 }

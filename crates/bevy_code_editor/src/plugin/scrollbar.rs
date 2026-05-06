@@ -2,7 +2,6 @@
 //!
 //! Provides a reusable scrollbar component that can be added to any entity
 
-use super::editor_ui_plugin::EditorRenderConfig;
 use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::CodeEditor;
 use bevy::prelude::*;
@@ -306,7 +305,6 @@ fn update_scrollbars(
         ),
         With<CodeEditor>,
     >,
-    render_config: Res<EditorRenderConfig>,
     mut last_scroll: Local<f32>,
 ) {
     for (tv, viewport, drag_state, font) in editor_query.iter() {
@@ -376,7 +374,7 @@ fn update_scrollbars(
         }
 
         if !track_found {
-            let mut entity_cmd = commands.spawn((
+            commands.spawn((
                 Sprite {
                     color: scrollbar.track_color,
                     custom_size: Some(Vec2::new(scrollbar.width, scrollbar.track_height)),
@@ -389,9 +387,6 @@ fn update_scrollbars(
                 Name::new(format!("ScrollbarTrack_{:?}", scrollbar_entity)),
                 Visibility::Visible,
             ));
-            if let Some(ref layers) = render_config.render_layers {
-                entity_cmd.insert(layers.clone());
-            }
         }
 
         // Find or create thumb
@@ -408,7 +403,7 @@ fn update_scrollbars(
         }
 
         if !thumb_found {
-            let mut entity_cmd = commands.spawn((
+            commands.spawn((
                 Sprite {
                     color: scrollbar.thumb_color,
                     custom_size: Some(Vec2::new(scrollbar.width, thumb_height)),
@@ -425,9 +420,6 @@ fn update_scrollbars(
                 Name::new(format!("ScrollbarThumb_{:?}", scrollbar_entity)),
                 Visibility::Visible,
             ));
-            if let Some(ref layers) = render_config.render_layers {
-                entity_cmd.insert(layers.clone());
-            }
         }
     }
     }

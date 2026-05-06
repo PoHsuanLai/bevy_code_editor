@@ -12,14 +12,21 @@
 //!
 //! App::new()
 //!     .add_plugins(DefaultPlugins)
-//!     .add_plugins(CodeEditorPlugin)
+//!     .add_plugins(CodeEditorPlugin::default())
+//!     .add_systems(Startup, |mut commands: Commands| {
+//!         commands.spawn(Camera2d);
+//!     })
 //!     .run();
 //! ```
 //!
-//! `CodeEditorPlugin` is a `Default` unit struct: it registers default
-//! settings resources and spawns one `CodeEditor` entity at startup, with
-//! a default key binding map. Per-entity configuration lives on
-//! components — to start with a different font size, override
+//! `CodeEditorPlugin` registers default settings resources, spawns one
+//! `CodeEditor` entity at startup with a default key binding map, and
+//! brings in the GPU rendering, interaction, and UI sub-plugins
+//! transitively. The host is responsible for spawning a `Camera2d`
+//! (matches the conventions of [`bevy_egui`] / [`bevy_pancam`]).
+//!
+//! Per-entity configuration lives on components — to start with a
+//! different font size, override
 //! [`bevy_text_engine::FontConfig`] when spawning:
 //!
 //! ```rust,no_run
@@ -68,9 +75,7 @@ pub mod prelude {
 
     // Editor plugin + its standalone PluginGroup, and the interaction +
     // UI plugins that hosts compose with.
-    pub use crate::plugin::{
-        CodeEditorPlugin, CodeEditorStandalone, EditorCamera, EditorUiPlugin,
-    };
+    pub use crate::plugin::{CodeEditorPlugin, EditorCamera, EditorUiPlugin};
 
     // Editor marker + save/open events.
     pub use crate::types::editor::{CodeEditor, OpenRequested, SaveRequested};

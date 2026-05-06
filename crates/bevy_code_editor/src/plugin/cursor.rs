@@ -13,9 +13,6 @@ use crate::types::*;
 use bevy::prelude::*;
 use bevy_text_engine::FontConfig;
 
-#[allow(unused_imports)]
-use super::editor_ui_plugin::EditorRenderConfig;
-
 pub struct CursorPlugin;
 
 impl Plugin for CursorPlugin {

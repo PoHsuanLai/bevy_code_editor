@@ -1,7 +1,5 @@
 use crate::types::*;
-use bevy::app::{PluginGroup, PluginGroupBuilder};
 use bevy::prelude::*;
-use bevy_text_engine::TextEnginePlugins;
 
 pub mod brackets;
 pub mod cursor;
@@ -113,44 +111,8 @@ pub struct EditorSetupSet;
 ///     .add_plugins((TextEnginePlugins, CodeEditorPlugin))
 ///     .run();
 /// ```
-///
-/// For a one-line "hello world" with everything pre-wired (engine + interaction
-/// + UI + camera), use [`CodeEditorPlugin::standalone`].
 #[derive(Default)]
 pub struct CodeEditorPlugin;
-
-impl CodeEditorPlugin {
-    /// Returns a [`PluginGroup`] that bundles everything for a runnable
-    /// editor demo: [`TextEnginePlugins`] (GPU + view systems),
-    /// [`CodeEditorPlugin`] (editor systems — internally adds the
-    /// `bevy_text_editor` plugin which brings pointer interaction +
-    /// editable-text core), and [`EditorUiPlugin`] (line numbers,
-    /// separator, camera).
-    ///
-    /// Use this when you just want to drop an editor into an app without
-    /// thinking about plugin ordering. For embedded use (one panel inside
-    /// a larger UI), prefer adding the constituent plugins yourself.
-    pub fn standalone() -> CodeEditorStandalone {
-        CodeEditorStandalone
-    }
-}
-
-/// `PluginGroup` returned by [`CodeEditorPlugin::standalone`].
-///
-/// Bundles the engine, editor (which transitively brings the
-/// `bevy_text_editor` interaction + editable-text plugins), and default UI
-/// plugins into a single group. Mirror of `bevy::DefaultPlugins`: hosts
-/// that want fine-grained control can `.disable::<X>()` individual plugins.
-pub struct CodeEditorStandalone;
-
-impl PluginGroup for CodeEditorStandalone {
-    fn build(self) -> PluginGroupBuilder {
-        PluginGroupBuilder::start::<Self>()
-            .add_group(TextEnginePlugins)
-            .add(CodeEditorPlugin)
-            .add(EditorUiPlugin::default())
-    }
-}
 
 impl Plugin for CodeEditorPlugin {
     fn build(&self, app: &mut App) {
@@ -195,12 +157,13 @@ impl Plugin for CodeEditorPlugin {
                 .chain(),
         );
 
-        // GPU text rendering plugins live in `bevy_text_engine::TextEnginePlugins`
-        // and are the host's responsibility to add — see this plugin's
-        // top-level doc-comment. We don't auto-add them: doing so would make
-        // the engine plugins effectively part of CodeEditorPlugin's surface,
-        // and hosts couldn't disable / replace them via standard PluginGroup
-        // tools.
+        // GPU text rendering — idempotent. Composing CodeEditorPlugin with
+        // another plugin that uses the engine (e.g. bevy_terminal) doesn't
+        // double-init: TextEnginePlugins's individual plugins all check
+        // is_plugin_added internally.
+        if !app.is_plugin_added::<bevy_text_engine::view::plugin::TextEnginePlugin>() {
+            app.add_plugins(bevy_text_engine::TextEnginePlugins);
+        }
 
         // Per-entity keyboard focus, idempotent if the host already added it.
         if !app.is_plugin_added::<bevy::input_focus::InputDispatchPlugin>() {
@@ -301,6 +264,7 @@ impl Plugin for CodeEditorPlugin {
             FoldingPlugin,
             BracketPlugin,
             ScrollbarPlugin,
+            EditorUiPlugin,
         ));
 
         #[cfg(feature = "lsp")]

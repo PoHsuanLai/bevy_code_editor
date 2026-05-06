@@ -1,7 +1,6 @@
 //! Bracket matching and find highlights
 #![allow(dead_code)]
 
-use super::editor_ui_plugin::EditorRenderConfig;
 use crate::settings::*;
 use crate::text_view::{TextViewState, TextViewViewport};
 use crate::types::*;
@@ -162,7 +161,6 @@ pub(crate) fn update_bracket_highlight(
         With<CodeEditor>,
     >,
     brackets: Res<BracketSettings>,
-    render_config: Res<EditorRenderConfig>,
     mut highlight_query: Query<(
         Entity,
         &BracketMatchHighlight,
@@ -292,7 +290,7 @@ pub(crate) fn update_bracket_highlight(
                             sprite.color = theme.bracket_match;
                             **visibility = Visibility::Visible;
                         } else {
-                            let mut entity_cmd = commands.spawn((
+                            commands.spawn((
                                 Sprite {
                                     color: theme.bracket_match,
                                     custom_size: Some(size),
@@ -306,9 +304,6 @@ pub(crate) fn update_bracket_highlight(
                                 Name::new(format!("BracketHighlight_{}_{}", bracket_idx, edge_idx)),
                                 Visibility::Visible,
                             ));
-                            if let Some(ref layers) = render_config.render_layers {
-                                entity_cmd.insert(layers.clone());
-                            }
                         }
                         entity_index_global += 1;
                     }
@@ -325,7 +320,7 @@ pub(crate) fn update_bracket_highlight(
                         sprite.color = theme.bracket_match;
                         **visibility = Visibility::Visible;
                     } else {
-                        let mut entity_cmd = commands.spawn((
+                        commands.spawn((
                             Sprite {
                                 color: theme.bracket_match,
                                 custom_size: Some(size),
@@ -339,9 +334,6 @@ pub(crate) fn update_bracket_highlight(
                             Name::new(format!("BracketHighlight_{}", bracket_idx)),
                             Visibility::Visible,
                         ));
-                        if let Some(ref layers) = render_config.render_layers {
-                            entity_cmd.insert(layers.clone());
-                        }
                     }
                     entity_index_global += 1;
                 }

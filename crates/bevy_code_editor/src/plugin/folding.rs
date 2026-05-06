@@ -1,7 +1,6 @@
 //! Code folding
 #![allow(dead_code)]
 
-use super::editor_ui_plugin::EditorRenderConfig;
 use super::to_bevy_coords_left_aligned;
 use crate::settings::{ThemeConfig, UiSettings};
 use crate::text_view::{TextViewState, TextViewViewport};
@@ -294,7 +293,6 @@ pub(crate) fn update_fold_indicators(
         With<CodeEditor>,
     >,
     ui: Res<UiSettings>,
-    render_config: Res<EditorRenderConfig>,
     mut indicator_query: Query<(
         Entity,
         &FoldIndicator,
@@ -389,7 +387,7 @@ pub(crate) fn update_fold_indicators(
                     ..default()
                 };
 
-                let mut entity_cmd = commands.spawn((
+                commands.spawn((
                     Text2d::new(indicator_char.to_string()),
                     text_font,
                     TextColor(theme.line_numbers.with_alpha(0.8)),
@@ -400,9 +398,6 @@ pub(crate) fn update_fold_indicators(
                     Name::new(format!("FoldIndicator_{}", line_idx)),
                     Visibility::Visible,
                 ));
-                if let Some(ref layers) = render_config.render_layers {
-                    entity_cmd.insert(layers.clone());
-                }
             }
         }
     }

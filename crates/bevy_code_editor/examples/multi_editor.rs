@@ -37,11 +37,7 @@ fn main() {
         // interaction plugin, and the editor plugin. We skip `EditorUiPlugin`
         // (no global gutter/separator/camera) because each editor here
         // carries its own camera + render layer pair.
-        .add_plugins((
-            TextEnginePlugins,
-            TextInteractionPlugin,
-            CodeEditorPlugin,
-        ))
+        .add_plugins(CodeEditorPlugin::default())
         .add_systems(Startup, (despawn_default_editor, spawn_two_editors).chain())
         .run();
 }

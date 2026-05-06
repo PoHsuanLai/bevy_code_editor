@@ -12,25 +12,25 @@ use bevy_code_editor::prelude::*;
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, CodeEditorPlugin::standalone()))
+        .add_plugins((DefaultPlugins, CodeEditorPlugin::default()))
+        // The host spawns its own Camera2d — see any of this crate's
+        // examples for the standard six-line setup_camera system.
         .run();
 }
 ```
 
-`CodeEditorPlugin::standalone()` is a `PluginGroup` that bundles the engine, interaction, the editor, and the default UI plugin (line numbers, separator, camera). One line, working editor.
+`CodeEditorPlugin` adds the GPU text engine, the interaction layer, and the editor UI (line numbers, scrollbar, selection/cursor overlays). One plugin, one line.
 
 ## Embedded in a larger app
 
-Drop `CodeEditorPlugin` into an app that already has its own camera and input. Plugins are explicit and additive — no auto-add of unrelated machinery:
+Drop `CodeEditorPlugin` into an existing app. Plugins it depends on (`TextEnginePlugins`, `TextEditorPlugin`, etc.) are added idempotently — if your host already brought them in, they don't double-init.
 
 ```rust
 App::new()
     .add_plugins((
         DefaultPlugins,
         MyGamePlugin,
-        TextEnginePlugins,         // engine PluginGroup
-        TextInteractionPlugin,     // mouse/scroll/select/copy
-        CodeEditorPlugin,          // the editor
+        CodeEditorPlugin::default(),
     ))
     .add_systems(Startup, |mut commands: Commands| {
         commands.spawn(CodeEditor::default());
@@ -113,7 +113,7 @@ fn setup_keys(mut commands: Commands) {
 }
 
 App::new()
-    .add_plugins(CodeEditorPlugin::standalone())
+    .add_plugins(CodeEditorPlugin::default())
     .add_systems(PreStartup, setup_keys)
     .run();
 ```
