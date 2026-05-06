@@ -13,14 +13,10 @@ use parking_lot::Mutex;
 
 use crate::backend;
 
-/// Spawn this on an entity to make it a terminal. The cascade brings in
-/// rendering substrate (`TextView` + family), selection state, the
-/// session/event/grid/shell/mode/blocks state, the per-entity terminal
-/// theme, scrollback config, and `Pickable` for mouse routing.
-///
-/// The PTY is *not* started here — an `On<Add, BevyTerminal>` observer
-/// in `crate::session::spawn` allocates the pty + spawns the event loop
-/// thread once defaults are fully cascaded.
+/// Spawn this on an entity to make it a terminal; the `#[require]`
+/// cascade brings in rendering substrate, selection state, terminal
+/// state, theme, and `Pickable` for mouse routing. PTY + child shell
+/// start in the `On<Add, BevyTerminal>` observer in `crate::session`.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 #[require(
@@ -31,14 +27,9 @@ use crate::backend;
     bevy_text_engine::TextViewViewport,
     bevy_text_engine::FontConfig,
     bevy_text_engine::LineStyles,
-    // NOT BlockList — engine's `produce_layouts` filters out entities
-    // that carry it (BlockList is the "static-content" path, mutually
-    // exclusive with the rope + LineStyles path we use here). When
-    // Phase 5 (OSC 133 command blocks) lands, that path will spawn
-    // child entities with their own BlockList rather than putting it
-    // on the BevyTerminal root.
     bevy_text_engine::HiddenLines,
     bevy_text_engine::RenderTheme,
+    bevy_text_engine::BlockDecorTheme,
     bevy_text_editor::SelectionState,
     bevy_text_editor::EditTheme,
     bevy_text_editor::ScrollConfig,
