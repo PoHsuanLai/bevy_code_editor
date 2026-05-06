@@ -69,9 +69,6 @@ pub struct EditHistoryState {
     /// offsets without needing the pre-edit rope.
     #[doc(hidden)]
     pub pending_byte_edit: Option<EditDelta>,
-    /// Set when an edit changes line count; drained into [`OnEdit`].
-    #[doc(hidden)]
-    pub invalidate_lines_from: Option<usize>,
     /// Mirrored from the [`SnapshotPreEdit`] marker each frame so `replace_range`
     /// can decide whether to clone the rope without an extra Bevy query.
     #[doc(hidden)]
@@ -88,7 +85,6 @@ impl Default for EditHistoryState {
             history: EditHistory::default(),
             anchors: AnchorSet::new(),
             pending_byte_edit: None,
-            invalidate_lines_from: None,
             snapshot_pre_edits: false,
             pre_edit_rope: None,
         }
@@ -104,8 +100,6 @@ impl Default for EditHistoryState {
 pub struct OnEdit {
     pub entity: Entity,
     pub byte_edit: Option<EditDelta>,
-    /// `Some` when lines were added or removed.
-    pub invalidate_lines_from: Option<usize>,
     #[reflect(ignore)]
     pub pre_edit_rope: Option<Rope>,
 }

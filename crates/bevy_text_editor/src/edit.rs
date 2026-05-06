@@ -5,9 +5,7 @@
 //! / selection components, and bookkeeping fields on `EditHistoryState`.
 //!
 //! Editor-level systems read [`EditHistoryState::pending_byte_edit`] (set by
-//! every edit op for incremental tree-sitter reparse) and
-//! [`EditHistoryState::invalidate_lines_from`] (set when an edit changes
-//! line structure for entity-pool invalidation), then clear them.
+//! every edit op for incremental tree-sitter reparse) then clear it.
 
 use bevy_text_engine::{ContentMetrics, TextBuffer};
 use ropey::Rope;
@@ -95,10 +93,6 @@ impl EditHistoryState {
 
         let new_end_byte = start_byte + inserted_bytes;
         let new_cursor_pos = start + inserted_chars;
-
-        if removed_text.contains('\n') || text.contains('\n') {
-            self.invalidate_lines_from = Some(buffer.rope.char_to_line(start));
-        }
 
         if record_history && (!removed_text.is_empty() || !text.is_empty()) {
             self.history.record(EditOperation {

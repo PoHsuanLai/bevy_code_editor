@@ -157,19 +157,14 @@ pub fn emit_edit_triggers(
     mut q: Query<(Entity, &mut EditHistoryState), With<TextEditor>>,
 ) {
     for (entity, mut hist) in q.iter_mut() {
-        if hist.pending_byte_edit.is_none()
-            && hist.invalidate_lines_from.is_none()
-            && hist.pre_edit_rope.is_none()
-        {
+        if hist.pending_byte_edit.is_none() && hist.pre_edit_rope.is_none() {
             continue;
         }
         let byte_edit = hist.pending_byte_edit.take();
-        let invalidate_lines_from = hist.invalidate_lines_from.take();
         let pre_edit_rope = hist.pre_edit_rope.take();
         commands.trigger(OnEdit {
             entity,
             byte_edit,
-            invalidate_lines_from,
             pre_edit_rope,
         });
     }
