@@ -20,6 +20,7 @@
 //! ```
 
 pub mod backend;
+pub mod blocks;
 pub mod clipboard;
 pub mod cursor;
 pub mod drain;

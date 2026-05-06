@@ -53,41 +53,17 @@ use crate::backend;
 )]
 pub struct BevyTerminal;
 
-/// Holds the live PTY + wezterm `Terminal`. Inserted by the spawn
-/// observer; the drain system is the only writer to `terminal`
-/// (it locks for `advance_bytes`). Snapshot reads under the same
-/// lock and produces `TerminalGridSnapshot`.
-///
-/// Opaque to reflection — the inner mutex guards a `wezterm_term::Terminal`
-/// that wraps OS handles and large internal state; reflecting it doesn't
-/// make sense.
 #[derive(Component)]
 pub struct TerminalSession {
     pub terminal: Arc<Mutex<backend::Terminal>>,
     pub pty_master: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
-    /// Cloned handle to the same PTY-input writer the wezterm `Terminal`
-    /// owns. Used by host-driven byte writes (raw write-bytes,
-    /// run-command) so they reach the shell without going through the
-    /// VT parser. `MasterPty::take_writer` is one-shot, so this clone is
-    /// the only safe second writer.
     pub pty_input: backend::SharedWriter,
-    /// Last applied terminal size. Compared against the viewport-derived
-    /// (cols, rows, pixel dims) each frame; on change we resize both
-    /// `Terminal` and the PTY (so the child sees `SIGWINCH`).
     pub size: backend::TerminalSize,
 }
 
-/// Receiver side of the PTY-reader-thread → ECS bridge. Drained each
-/// frame in `TerminalPtyDrainSet`; bytes are fed into
-/// [`backend::Terminal::advance_bytes`]. Held in its own component (not
-/// the session) so other systems can borrow `TerminalSession` mutably
-/// without aliasing the receiver.
 #[derive(Component)]
 pub struct TerminalEventChannel {
     pub rx: crossbeam_channel::Receiver<Vec<u8>>,
-    /// Async-emitted alerts from the wezterm `Terminal` (bell, title
-    /// changes, cwd updates, …). Filled by the `AlertChannel` handler
-    /// installed in `make_terminal`; drained alongside the bytes.
     pub alerts: crossbeam_channel::Receiver<backend::Alert>,
 }
 
@@ -133,8 +109,7 @@ pub struct TerminalInputMode {
     pub kitty_keyboard: bool,
 }
 
-/// Warp-style command blocks (filled in Phase 5 by the OSC 133 parser).
-/// Empty in Phase 1.
+/// Warp-style command blocks parsed from OSC 133. Empty without shell-integration.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 pub struct TerminalBlockState {
@@ -147,6 +122,10 @@ pub struct TerminalBlock {
     pub id: u64,
     pub status: BlockStatus,
     pub exit_code: Option<i32>,
+    pub prompt_row: i64,
+    pub output_row: i64,
+    pub end_row: i64,
+    pub command_text: String,
 }
 
 #[derive(Clone, Copy, Debug, Default, Reflect, PartialEq, Eq)]

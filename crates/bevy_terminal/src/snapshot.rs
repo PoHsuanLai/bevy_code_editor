@@ -1,7 +1,4 @@
-//! Walk the wezterm `Terminal` once per frame, build a fresh
-//! `TextBuffer.rope` of cell text, and write per-line `LineStyles`
-//! capturing fg/bg/bold/italic/underline. Engine's `produce_layouts`
-//! picks them up automatically.
+//! Wezterm grid → `TextBuffer.rope` + per-line `LineStyles`.
 
 use std::collections::HashMap;
 
@@ -16,10 +13,6 @@ use crate::backend::{
 };
 use crate::types::{TerminalColorPalette, TerminalGridSnapshot, TerminalSession};
 
-/// Per-frame snapshot system: take the term lock, copy the visible grid
-/// into the entity's rope + `LineStyles`, bump `TerminalGridSnapshot.version`.
-///
-/// Runs in `TerminalSnapshotSet`, after `TerminalApplyStateSet`.
 #[allow(clippy::too_many_arguments)]
 pub fn sync_grid_snapshot(
     mut q: Query<(
@@ -47,8 +40,6 @@ pub fn sync_grid_snapshot(
             let mut line_text = String::with_capacity(cols);
             let mut runs: Vec<RunWithText> = Vec::new();
 
-            // Coalesce consecutive cells with identical (fg, bg, attrs) into
-            // a single run. Saves shaping work and overlay churn.
             let mut current: Option<(StyleRun, String)> = None;
             for cell in line.visible_cells() {
                 let cell_str = cell.str();
@@ -97,7 +88,6 @@ pub fn sync_grid_snapshot(
                     }
                 }
             }
-            // Pad to physical width so the rope's line length matches the grid.
             while line_text.chars().count() < cols {
                 line_text.push(' ');
             }
@@ -118,7 +108,6 @@ pub fn sync_grid_snapshot(
 
         *line_styles = LineStyles::new(by_line, 0..rows as u32);
 
-        // Cursor — wezterm reports it in the visible coordinate space.
         let cursor = term.cursor_pos();
         snapshot.version = snapshot.version.wrapping_add(1);
         snapshot.cols = cols as u16;
@@ -143,12 +132,6 @@ fn rope_text_differs(rope: &Rope, candidate: &Rope) -> bool {
     rope.len_chars() != candidate.len_chars() || rope != candidate
 }
 
-/// Resolve a wezterm [`ColorAttribute`] into a Bevy [`Color`]. Default
-/// foreground / background come from the engine's [`RenderTheme`]; the
-/// 16 ANSI palette slots come from the host-supplied
-/// [`TerminalColorPalette`]; indexed 16..=255 fall back to the standard
-/// xterm 256-color cube + grayscale ramp; truecolor passes through
-/// directly.
 fn resolve_color(
     color: ColorAttribute,
     palette: &TerminalColorPalette,
@@ -177,7 +160,6 @@ fn resolve_color(
     }
 }
 
-/// Standard xterm 6×6×6 color cube + 24-step grayscale ramp for slots 16..=255.
 fn indexed_to_color(idx: u8) -> Color {
     if idx < 16 {
         return Color::srgb(0.5, 0.5, 0.5);

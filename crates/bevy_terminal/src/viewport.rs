@@ -1,10 +1,4 @@
 //! Viewport-change → PTY + `Terminal` resize.
-//!
-//! Whenever the rendered viewport (size or font cell metrics) changes,
-//! recompute (cols, rows) and resize both the wezterm [`backend::Terminal`]
-//! (so the grid reshapes immediately) and the PTY (so the child sees a
-//! `SIGWINCH`). A change-detection query gates the system; (cols, rows)
-//! comparison inside catches inconsequential viewport jitter.
 
 use bevy::prelude::*;
 use bevy_text_engine::{FontConfig, TextViewViewport};
@@ -16,8 +10,6 @@ use crate::types::TerminalSession;
 const MIN_COLS: u16 = 2;
 const MIN_ROWS: u16 = 1;
 
-/// Reads viewport + font, reshapes `Terminal` + PTY when (cols, rows) changes.
-/// Lives in `TerminalApplyStateSet`.
 #[allow(clippy::type_complexity)]
 pub fn sync_terminal_size(
     mut q: Query<

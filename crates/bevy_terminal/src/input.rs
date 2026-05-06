@@ -1,11 +1,4 @@
 //! Keyboard → wezterm key encoding via `FocusedInput<KeyboardInput>` observer.
-//!
-//! Bevy gives us logical / physical key plus a modifier snapshot; we
-//! translate to [`backend::KeyCode`] + [`backend::KeyModifiers`] and call
-//! `Terminal::key_down`. Wezterm handles the mode-aware encoding (cursor-
-//! key application, kitty keyboard, CSI-u, alt-screen mouse, …) — so the
-//! encoder we used to maintain by hand goes away. Mouse interaction
-//! (drag-select, scroll) reuses `bevy_text_editor::TextInteractionPlugin`.
 
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input::ButtonState;
@@ -16,12 +9,6 @@ use crate::backend;
 use crate::messages::{TerminalCopySelection, TerminalPaste};
 use crate::types::TerminalSession;
 
-/// `FocusedInput<KeyboardInput>` observer: translate the key + modifiers
-/// into a wezterm `key_down` call. The `Terminal`'s writer flushes the
-/// encoded bytes through to the PTY.
-///
-/// Only `state == Pressed` produces output for now; held-key repeat is
-/// delegated to the OS (most shells handle their own repeat).
 pub fn on_focused_terminal_keyboard(
     trigger: On<FocusedInput<KeyboardInput>>,
     sessions: Query<&TerminalSession>,
@@ -43,13 +30,6 @@ pub fn on_focused_terminal_keyboard(
     let shift = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
     let cmd = keyboard.pressed(KeyCode::SuperLeft) || keyboard.pressed(KeyCode::SuperRight);
 
-    // Cmd-shortcuts: copy / paste fire as messages so the snapshot rope
-    // is the source of truth. Anything else under Cmd is unhandled (the
-    // app can install its own handlers via leafwing).
-    //
-    // Linux/Windows convention: Ctrl+Shift+C / Ctrl+Shift+V (so plain
-    // Ctrl+C still sends SIGINT to the shell). macOS convention: Cmd+C /
-    // Cmd+V. Honor both.
     let copy_combo = (cmd && event.key_code == KeyCode::KeyC)
         || (ctrl && shift && event.key_code == KeyCode::KeyC);
     let paste_combo = (cmd && event.key_code == KeyCode::KeyV)
@@ -78,11 +58,6 @@ pub fn on_focused_terminal_keyboard(
     let _ = term.key_down(wezterm_key, mods);
 }
 
-/// Translate Bevy's `(KeyCode, logical Key)` pair plus modifier flags
-/// into a [`backend::KeyCode`] + [`backend::KeyModifiers`] suitable for
-/// `Terminal::key_down`. Returns `None` for keys we don't have an
-/// encoding for (raw modifier presses, etc.) — the wezterm parser knows
-/// how to do the rest.
 fn bevy_to_wezterm(
     code: &KeyCode,
     logical: &Key,

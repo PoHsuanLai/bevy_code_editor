@@ -1,12 +1,4 @@
-//! Inbound message handlers: clipboard ops and direct host commands.
-//!
-//! Reads the inbound message bus (`TerminalCopySelection`, `TerminalPaste`,
-//! `TerminalWriteBytes`, `TerminalRunCommand`, `TerminalResize`,
-//! `TerminalScrollTo`, `TerminalClear`) and translates them into PTY
-//! writes plus `Terminal` mutations. Bytes that should be visible to the
-//! shell (raw writes, run-command, paste) flow through the PTY master
-//! writer; bytes that should mutate terminal state (clear) walk
-//! `Terminal::advance_bytes`.
+//! Inbound message handlers: clipboard ops + direct host commands.
 
 use bevy::prelude::*;
 use bevy_text_editor::{copy_selection, SelectionState};
@@ -19,9 +11,6 @@ use crate::messages::{
 };
 use crate::types::{TerminalGridSnapshot, TerminalSession};
 
-/// Handle `TerminalCopySelection`: read the entity's selection from
-/// `SelectionState` and call into the shared `copy_selection` helper
-/// (which honors `SelectionMode` for block / line / semantic copies).
 pub fn handle_copy_selection(
     mut events: MessageReader<TerminalCopySelection>,
     q: Query<(&SelectionState, &TextBuffer)>,
@@ -34,9 +23,6 @@ pub fn handle_copy_selection(
     }
 }
 
-/// Handle `TerminalPaste`: hand the text to wezterm's `send_paste`,
-/// which wraps in bracketed-paste markers when the mode is enabled and
-/// canonicalizes newlines per the configured `NewlineCanon`.
 pub fn handle_paste(
     mut events: MessageReader<TerminalPaste>,
     q: Query<&TerminalSession>,
@@ -49,10 +35,6 @@ pub fn handle_paste(
     }
 }
 
-/// Handle raw-byte writes (the firehose path; no interpretation).
-/// Bytes go through the shared PTY-input writer so the shell sees them
-/// as if typed; the `Terminal` parser receives them on the next drain
-/// tick via the reader thread (the shell's echo path).
 pub fn handle_write_bytes(
     mut events: MessageReader<TerminalWriteBytes>,
     q: Query<&TerminalSession>,
@@ -65,8 +47,6 @@ pub fn handle_write_bytes(
     }
 }
 
-/// Handle `TerminalRunCommand`: append the command + `\r` (Enter), via
-/// the shared PTY-input writer.
 pub fn handle_run_command(
     mut events: MessageReader<TerminalRunCommand>,
     q: Query<&TerminalSession>,
@@ -82,9 +62,6 @@ pub fn handle_run_command(
     }
 }
 
-/// Handle `TerminalResize`: reshape the wezterm `Terminal` grid and
-/// tell the PTY master about the new (cols, rows). Cell-pixel hints are
-/// kept from the last viewport-driven resize.
 pub fn handle_resize(
     mut events: MessageReader<TerminalResize>,
     mut q: Query<&mut TerminalSession>,
@@ -117,13 +94,7 @@ pub fn handle_resize(
     }
 }
 
-/// Handle `TerminalScrollTo`: nudge the visible window so `line` (a
-/// stable buffer row) lands at the top. Wezterm tracks scroll position
-/// via `Screen::scrollback_top` plus the visible-row range; the simplest
-/// portable hook is to walk the parser through a vertical-position CSI
-/// (`ESC[r`) — but that mutates state. Instead, we leave the scroll
-/// state to the host's overlay logic and just bump the snapshot version
-/// so the renderer redraws.
+/// Stub: scroll position lives in the host overlay layer; bump the snapshot version.
 pub fn handle_scroll_to(
     mut events: MessageReader<TerminalScrollTo>,
     mut q: Query<&mut TerminalGridSnapshot>,
@@ -137,9 +108,6 @@ pub fn handle_scroll_to(
     }
 }
 
-/// Handle `TerminalClear`: dispatch the standard clear sequences
-/// (`ESC[3J ESC[2J ESC[H`) through the parser so it walks the same code
-/// path the shell's `clear` would.
 pub fn handle_clear(
     mut events: MessageReader<TerminalClear>,
     mut q: Query<(&TerminalSession, &mut TerminalGridSnapshot)>,

@@ -1,10 +1,4 @@
 //! Drain PTY bytes + wezterm alerts into ECS state.
-//!
-//! Runs once per frame in `TerminalPtyDrainSet`. Pumps any pending bytes
-//! from the reader thread into [`backend::Terminal::advance_bytes`],
-//! then drains the alert channel (bell, title, cwd, …) and polls a
-//! handful of mode flags + the parser's sequence number so the snapshot
-//! system can react to in-band changes.
 
 use bevy::prelude::*;
 
@@ -31,7 +25,6 @@ pub fn drain_pty_events(
     mut cwd_w: MessageWriter<TerminalCwdChanged>,
 ) {
     for (entity, channel, session, mut shell, mut mode, mut snapshot) in q.iter_mut() {
-        // 1. Pump bytes from the reader thread → wezterm parser.
         {
             let mut term = session.terminal.lock();
             while let Ok(bytes) = channel.rx.try_recv() {
@@ -39,7 +32,6 @@ pub fn drain_pty_events(
             }
         }
 
-        // 2. Drain async alerts (bell / title / cwd / …).
         while let Ok(alert) = channel.alerts.try_recv() {
             match alert {
                 backend::Alert::Bell => {
@@ -65,15 +57,6 @@ pub fn drain_pty_events(
             }
         }
 
-        // 3. Mirror the public mode flags + sequence number under the lock.
-        //
-        // wezterm-term encodes keys itself (via `key_down`), so the
-        // cursor-key-application + keypad-application + kitty flags that
-        // the alacritty path mirrored for our hand-rolled encoder are no
-        // longer load-bearing. We keep the fields on `TerminalInputMode`
-        // for hosts that want to query them, but only populate the ones
-        // wezterm exposes as public getters (alt-screen, bracketed paste,
-        // mouse grab, kitty encoding kind).
         let term = session.terminal.lock();
         let new_mode = TerminalInputMode {
             cursor_key_application: false,

@@ -121,6 +121,12 @@ impl Plugin for BevyTerminalPlugin {
             Update,
             crate::snapshot::sync_grid_snapshot.in_set(TerminalSnapshotSet),
         );
+        app.add_systems(
+            Update,
+            crate::blocks::extract_blocks
+                .in_set(TerminalSnapshotSet)
+                .after(crate::snapshot::sync_grid_snapshot),
+        );
 
         app.register_type::<crate::cursor::TerminalCursorBlink>();
         app.add_systems(

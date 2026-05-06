@@ -1,13 +1,4 @@
-//! PTY session lifecycle: spawn (`On<Add>`), drain (per-frame system),
-//! shutdown (`On<Remove>`).
-//!
-//! `wezterm-term` does not run its own PTY I/O thread — the caller drives
-//! `advance_bytes` directly. We use `portable-pty` to allocate the PTY
-//! and spawn the user's shell, then run a small reader thread that pumps
-//! bytes from the PTY into a `crossbeam_channel`; the ECS drain system
-//! pulls them and feeds them to the wezterm parser. Async events from
-//! the parser (bell, title, cwd, …) flow through a separate alert channel
-//! installed by [`crate::backend::make_terminal`].
+//! PTY session lifecycle: spawn (`On<Add>`), shutdown (`On<Remove>`).
 
 use std::io::Read;
 use std::sync::Arc;
@@ -24,28 +15,16 @@ use crate::types::{
     BevyTerminal, TerminalEventChannel, TerminalScrollback, TerminalSession,
 };
 
-/// Initial PTY dimensions used when the entity is spawned before its
-/// viewport / font has settled. The viewport-resize system in
-/// `crate::viewport` resizes both Terminal and PTY to the actual
-/// visible (cols, rows) on the next frame.
 const DEFAULT_COLS: u16 = 80;
 const DEFAULT_ROWS: u16 = 24;
-/// Reasonable cell-pixel hints. Most TUIs ignore them; the few that
-/// don't (sixel-aware viewers) get a sane starting point.
 const DEFAULT_CELL_W: u16 = 8;
 const DEFAULT_CELL_H: u16 = 16;
 
-/// Tracker for spawned reader / waiter threads — held in a registry
-/// resource so they can be joined on app shutdown without leaking.
 #[derive(Resource, Default)]
 pub struct TerminalEventLoopRegistry {
     pub handles: Vec<JoinHandle<()>>,
 }
 
-/// Observer wired in `BevyTerminalPlugin`: spawn a PTY + child shell +
-/// `Terminal` for any entity that gains a `BevyTerminal` marker. Also
-/// seeds `InputFocus` if nothing else has it yet — handy for
-/// single-terminal apps that don't need to click before typing.
 pub fn on_terminal_added(
     trigger: On<Add, BevyTerminal>,
     scrollbacks: Query<&TerminalScrollback>,
@@ -77,10 +56,6 @@ pub fn on_terminal_added(
     }
 }
 
-/// All-in-one session builder: opens a portable-pty pair, constructs a
-/// wezterm [`backend::Terminal`] writing into the master, spawns the
-/// user's shell on the slave end, and starts a reader thread feeding
-/// bytes back to the ECS drain system.
 fn build_session(
     scrollback_lines: usize,
 ) -> std::io::Result<(TerminalSession, TerminalEventChannel, JoinHandle<()>)> {
@@ -159,9 +134,6 @@ fn build_session(
     ))
 }
 
-/// Pick the user's shell. Honors `$SHELL` (Unix) or falls back to a
-/// reasonable default per platform; matches the convention used by
-/// other libraries embedding `portable-pty`.
 fn default_shell_command() -> CommandBuilder {
     if cfg!(windows) {
         CommandBuilder::new("powershell.exe")
@@ -175,11 +147,6 @@ fn default_shell_command() -> CommandBuilder {
     }
 }
 
-/// Observer for cleanup when the terminal entity is removed/despawned.
-///
-/// V1 leaves the reader thread to exit naturally: closing the PTY master
-/// returns EOF on the next `read`, the thread breaks out of its loop,
-/// and the join handle in the registry is reaped at app shutdown.
 pub fn on_terminal_removed(
     _trigger: On<Remove, BevyTerminal>,
     _sessions: Query<&TerminalSession>,
