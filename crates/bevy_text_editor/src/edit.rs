@@ -301,10 +301,6 @@ impl EditHistoryState {
     }
 }
 
-// ============================================================================
-// SelectionState helpers — primary-cursor sync, multi-cursor management.
-// ============================================================================
-
 impl SelectionState {
     /// Push the imperative `cursor.cursor_pos` (mutated by movement and edit
     /// helpers) into the primary `Selection` in the collection. Drops any

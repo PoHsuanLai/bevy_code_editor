@@ -20,30 +20,14 @@ use super::styling::LayoutWrap;
 use super::viewport::TextViewViewport;
 use crate::gpu::{atlas_ready, GlyphAtlas, GlyphAtlasPlugin, InstancedTextRenderPlugin};
 
-/// System set for text view rendering.
-///
-/// `update_text_views` runs in this set; downstream systems that read the
-/// freshly-built `GlyphBatchComponent` can order themselves with
-/// `.after(TextViewRenderSet)`.
+/// Contains `update_text_views`. Order downstream `.after(TextViewRenderSet)`.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TextViewRenderSet;
 
-/// Marker component for a text view rendered by [`TextEnginePlugin`].
-///
-/// `#[require]` cascades the rest of the rendering machinery, so spawning
-/// `TextView` alone is enough to get a usable text-rendering entity
-/// (mirror of `bevy_text::Text2d`).
-///
-/// `Pickable` is also cascaded so a custom `bevy_picking` backend (in
-/// `bevy_text_editor::picking`) can produce `PointerHits` for this
-/// entity, routing pointer events / scroll / drag observers correctly. The
-/// engine itself doesn't run the backend — adding `Pickable` is a no-op
-/// without `TextInteractionPlugin` (or another picking backend) registered,
-/// it just declares "this entity wants to be pickable."
-///
-/// This component intentionally requires only engine-side data. Editor /
-/// interaction layers attach their own components via their own
-/// `#[require]` cascades on top of `TextView`.
+/// Marker for a text view rendered by [`TextEnginePlugin`]. `#[require]`
+/// cascades the rest of the rendering machinery — spawning `TextView` alone
+/// is enough. Includes `Pickable` so `bevy_text_editor::picking` can produce
+/// `PointerHits` without the engine needing to register the backend itself.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 #[require(
@@ -57,18 +41,13 @@ pub struct TextViewRenderSet;
 )]
 pub struct TextView;
 
-/// Component that links a text view to its batch rendering entity.
-/// Managed automatically by [`update_text_views`].
+/// Links a text view to its batch rendering entity. Managed by [`update_text_views`].
 #[derive(Component, Reflect)]
 #[reflect(Component)]
 pub struct TextViewBatchEntity(pub Entity);
 
-/// View-side plugin: registers the rendering and scroll animation systems.
-///
-/// Does **not** add the GPU plugins — those live in [`crate::gpu`] and are
-/// bundled into [`TextEnginePlugins`]. If you only need the systems
-/// (because you've already added the GPU plugins manually), add this
-/// directly. Most consumers should add [`TextEnginePlugins`] instead.
+/// Registers the rendering and scroll animation systems. Does not add GPU
+/// plugins — use [`TextEnginePlugins`] for the full bundle.
 #[derive(Default)]
 pub struct TextEnginePlugin;
 
@@ -93,9 +72,8 @@ impl Plugin for TextEnginePlugin {
                     .run_if(atlas_ready)
                     .in_set(LayoutProduceSet)
                     .before(prewarm_atlas_for_layout),
-                // Static-content path. Runs alongside `produce_layouts` —
-                // the two are mutually exclusive at the entity level
-                // (`produce_layouts` filters out entities with `BlockList`).
+                // Mutually exclusive with `produce_layouts` at the entity level —
+                // `produce_layouts` filters out entities that have `BlockList`.
                 produce_block_layout
                     .in_set(LayoutProduceSet)
                     .before(prewarm_atlas_for_layout),
@@ -111,13 +89,7 @@ impl Plugin for TextEnginePlugin {
     }
 }
 
-/// `PluginGroup` bundling everything needed to render `TextView` entities:
-/// [`GlyphAtlasPlugin`] (atlas resource bootstrap),
-/// [`InstancedTextRenderPlugin`] (instanced draw pipeline), and
-/// [`TextEnginePlugin`] (view systems).
-///
-/// Mirror of `bevy::DefaultPlugins`: hosts that want fine-grained control
-/// can `.disable::<X>()` individual plugins or build their own group.
+/// Full bundle: [`GlyphAtlasPlugin`] + [`InstancedTextRenderPlugin`] + [`TextEnginePlugin`].
 pub struct TextEnginePlugins;
 
 impl PluginGroup for TextEnginePlugins {
@@ -129,10 +101,9 @@ impl PluginGroup for TextEnginePlugins {
     }
 }
 
-/// Smooth scroll animation for text views.
 fn animate_text_view_scroll(mut query: Query<&mut TextViewState, With<TextView>>, time: Res<Time>) {
     let dt = time.delta_secs();
-    let lerp_speed = 12.0; // Exponential decay factor
+    let lerp_speed = 12.0; // exponential decay
 
     for mut state in query.iter_mut() {
         // Vertical scroll
@@ -153,12 +124,6 @@ fn animate_text_view_scroll(mut query: Query<&mut TextViewState, With<TextView>>
     }
 }
 
-/// Main rendering system for all text views.
-///
-/// Queries entities with `TextView`, `TextViewState`, `TextViewViewport`, and
-/// `DisplayLayout`, rendering each via `render_layout()`. Consumers must
-/// provide a `DisplayLayout` (e.g. via `view::snapshot::trivial_layout` for
-/// static content, or compute one from a display map).
 #[allow(clippy::type_complexity)]
 pub(crate) fn update_text_views(
     mut commands: Commands,
@@ -182,10 +147,9 @@ pub(crate) fn update_text_views(
     for (tv_entity, state, viewport, font, layout, overlays, batch_entity_opt, render_layers) in
         text_views.iter_mut()
     {
-        // Resolve all four optional faces up front. `ensure_font` is O(1)
-        // after first registration, so paying it for the empty slots is
-        // free. Collected into a `FontFaces` so the renderer can pick
-        // per-run without touching the atlas.
+        // ensure_font is O(1) after first registration, so calling it for
+        // empty slots is free. FontFaces lets the renderer pick per-run
+        // without touching the atlas.
         let regular = font
             .font
             .as_ref()
@@ -209,9 +173,7 @@ pub(crate) fn update_text_views(
             bold_italic,
             synthesis: font.font_synthesis,
         };
-        // Skip-on-unchanged: if neither the display layout nor the overlays
-        // changed since last frame, the GPU batch is still valid — skip the
-        // rebuild + atlas upload entirely.
+        // Skip the rebuild if neither layout nor overlays changed — the GPU batch is still valid.
         let overlays_changed = overlays.as_ref().map(|o| o.is_changed()).unwrap_or(false);
         if !layout.is_changed() && !overlays_changed && batch_entity_opt.is_some() {
             continue;
@@ -300,12 +262,8 @@ pub(crate) fn update_text_views(
     }
 }
 
-/// Pre-rasterize every glyph the freshly-built `DisplayLayout` will need.
-///
-/// Runs before `update_text_views`, so by the time the renderer reads the
-/// layout the atlas is fully populated. The renderer never triggers atlas
-/// mutation during the paint pass, which eliminates first-encounter scroll
-/// stutter on freshly-shaped glyphs.
+/// Pre-rasterize every glyph in a freshly-built `DisplayLayout` so the renderer
+/// never triggers atlas mutation during the paint pass (eliminates scroll stutter).
 pub(crate) fn prewarm_atlas_for_layout(
     layouts: Query<Ref<DisplayLayout>, With<TextView>>,
     mut atlas: ResMut<GlyphAtlas>,
@@ -314,11 +272,8 @@ pub(crate) fn prewarm_atlas_for_layout(
         if !layout.is_changed() {
             continue;
         }
-        // Each `ShapedLine.shape` already carries cache_keys from the
-        // producer's shaping. Pre-rasterize them so the renderer's paint
-        // pass is a pure read. Per-run `font_scale` overrides re-shape on
-        // demand at paint time (rare enough that mid-paint rasterization
-        // is acceptable).
+        // ShapedLine.shape already carries cache_keys; per-run font_scale overrides
+        // re-shape at paint time (rare enough that mid-paint rasterization is fine).
         atlas.ensure_glyphs(layout.lines.iter().flat_map(|l| {
             l.shape
                 .as_ref()

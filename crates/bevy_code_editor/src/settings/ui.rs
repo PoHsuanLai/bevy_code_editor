@@ -3,45 +3,22 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// UI settings for visual elements
-///
-/// Note: Layout dimensions (margins, positions) are computed by the UI plugin
-/// and stored in the `ViewportDimensions` resource for decoupling.
+/// UI visual settings. Layout dimensions are computed by the UI plugin and
+/// stored in `ViewportDimensions` for decoupling.
 #[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
 #[reflect(Resource, Default, Debug)]
 pub struct UiSettings {
-    /// Show line numbers
     pub show_line_numbers: bool,
-
-    /// Show relative line numbers (vim-style)
+    /// Vim-style relative line numbers.
     pub relative_line_numbers: bool,
-
-    /// Show gutter (area for line numbers, breakpoints, etc.)
     pub show_gutter: bool,
-
-    /// Show indent guides
     pub show_indent_guides: bool,
-
-    /// Show whitespace characters
     pub show_whitespace: WhitespaceMode,
-
-    /// Highlight current line
     pub highlight_active_line: bool,
-
-    /// Show separator line between gutter and code
     pub show_separator: bool,
-
-    // UI plugin uses these preferences to compute ViewportDimensions layout
-    /// Gutter padding left (pixels)
     pub gutter_padding_left: f32,
-
-    /// Gutter padding right (pixels)
     pub gutter_padding_right: f32,
-
-    /// Code margin left (pixels) - space between separator and code
     pub code_margin_left: f32,
-
-    /// Top margin (pixels)
     pub margin_top: f32,
 }
 
@@ -72,20 +49,13 @@ impl Default for UiSettings {
     }
 }
 
-/// Indentation settings
 #[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
 #[reflect(Resource, Default, Debug)]
 pub struct IndentationSettings {
-    /// Use spaces instead of tabs
     pub use_spaces: bool,
-
-    /// Tab width in characters
     pub tab_width: usize,
-
-    /// Indent size (alias for tab_width for compatibility)
+    /// Alias of `tab_width` for compatibility.
     pub indent_size: usize,
-
-    /// Auto-indent on newline
     pub auto_indent: bool,
 }
 
@@ -100,23 +70,13 @@ impl Default for IndentationSettings {
     }
 }
 
-/// Bracket matching settings
 #[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
 #[reflect(Resource, Default, Debug)]
 pub struct BracketSettings {
-    /// Enable bracket matching
     pub enabled: bool,
-
-    /// Highlight style
     pub style: BracketHighlightStyle,
-
-    /// Auto-close brackets
     pub auto_close: bool,
-
-    /// Auto-close quotes
     pub auto_close_quotes: bool,
-
-    /// Bracket pairs
     pub pairs: Vec<(char, char)>,
 }
 

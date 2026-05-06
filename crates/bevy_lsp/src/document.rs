@@ -17,7 +17,6 @@ pub struct LspDocument {
 }
 
 impl LspDocument {
-    /// Construct a new document with the given URI and language id, version 1.
     pub fn new(uri: Url, language_id: impl Into<String>) -> Self {
         Self {
             uri,

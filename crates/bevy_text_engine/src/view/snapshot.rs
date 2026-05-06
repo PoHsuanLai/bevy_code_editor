@@ -97,8 +97,6 @@ pub struct StyleRun {
 }
 
 impl StyleRun {
-    /// Convenience constructor: a run with foreground color only (everything
-    /// else default). Mirrors the pre-Phase-4 `LineSegment` shape.
     pub fn fg_only(byte_range: Range<usize>, fg: Color) -> Self {
         Self {
             byte_range,
@@ -167,12 +165,8 @@ pub struct ShapedLine {
     pub shape: Option<Arc<LineShape>>,
 }
 
-/// Build a `DisplayLayout` from plain text + per-line styling, suitable for
-/// standalone consumers that don't have an editor / display map.
-///
-/// `lines` is a list of `(text, runs)` pairs — one entry per buffer line, in
-/// order. `runs` is the styling for that line (empty = use `default_fg`).
-/// No folding, no soft-wrap, no viewport culling — every line is included.
+/// Build a `DisplayLayout` from `(text, runs)` pairs without folding, wrapping,
+/// or viewport culling. Suitable for standalone consumers without a display map.
 pub fn trivial_layout(
     lines: &[(String, Vec<StyleRun>)],
     line_height: f32,
@@ -351,14 +345,9 @@ impl Block {
     }
 }
 
-/// Configuration for [`Block::layout`]: the metrics + defaults a block
-/// stack needs to produce a [`super::layout::DisplayLayout`].
-///
-/// In the Bevy-native flow these come from per-entity Components
-/// (`FontConfig`, `LayoutWrap`, `DisplayLayout::default_fg`) and
-/// `produce_block_layout` reads them directly — this struct is the
-/// headless entry point used by tests and embeddings that want to
-/// build a layout outside the ECS world.
+/// Metrics + defaults for [`Block::layout`]. In the ECS flow these come from
+/// per-entity Components; this struct is the headless entry point for tests and
+/// embeddings.
 #[derive(Clone, Copy, Debug)]
 pub struct BlockLayoutConfig {
     pub line_height: f32,
@@ -371,14 +360,6 @@ pub struct BlockLayoutConfig {
 }
 
 impl Block {
-    /// Stack a slice of blocks into a [`super::layout::DisplayLayout`].
-    ///
-    /// Stacks rows by accumulating `padding_top + line_height + padding_bottom`
-    /// — markdown-style block layout. Rows where `line_height` is `None`
-    /// fall back to `cfg.line_height`. Whitespace-aware soft-wrap: breaks at
-    /// the last space/tab before the budget when one exists; otherwise
-    /// hard-breaks at the budget. Long words with no internal whitespace stay
-    /// intact and extend past the budget rather than splitting mid-word.
     pub fn layout(blocks: &[Block], cfg: BlockLayoutConfig) -> super::layout::DisplayLayout {
         layout_blocks_inner(blocks, cfg)
     }
@@ -469,13 +450,9 @@ fn layout_blocks_inner(blocks: &[Block], cfg: BlockLayoutConfig) -> super::layou
     }
 }
 
-/// Whitespace-aware character-budget wrap. Returns `(byte_offset_in_source, chunk_text)`
-/// pairs. `byte_offset_in_source` is each chunk's start byte within the input `text`.
-///
-/// Algorithm: walk char-by-char up to `budget` chars; if the cap was hit and a
-/// space/tab was seen, break after that whitespace; otherwise hard-break at
-/// the budget. A budget-spanning word with no internal whitespace stays intact
-/// (the row extends past the budget — same as the shaped wrap path).
+/// Whitespace-aware char-budget wrap. Returns `(byte_offset_in_source, chunk_text)` pairs.
+/// Breaks at the last space/tab before the budget; otherwise hard-breaks. Words
+/// wider than the budget stay intact (extends past budget, same as shaped wrap).
 fn wrap_text_into_chunks(text: &str, budget: usize) -> Vec<(usize, String)> {
     if text.is_empty() || budget == 0 {
         return vec![(0, text.to_string())];
@@ -555,9 +532,7 @@ fn wrap_text_into_chunks(text: &str, budget: usize) -> Vec<(usize, String)> {
     out
 }
 
-/// Clip a block's `StyleRun`s to a `[start_byte, end_byte)` window and rebase
-/// to the chunk-local byte numbering. Used when soft-wrap splits a block into
-/// multiple `ShapedLine`s.
+/// Clip runs to `[start_byte, end_byte)` and rebase to chunk-local numbering.
 fn slice_runs_for_chunk(runs: &[StyleRun], start: usize, end: usize) -> Vec<StyleRun> {
     let mut out = Vec::new();
     for r in runs {

@@ -20,25 +20,16 @@ use serde::{Deserialize, Serialize};
 #[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct ThemeConfig {
-    /// Background color (camera clear color in standalone mode).
     pub background: Color,
-    /// Default text color.
     pub foreground: Color,
-    /// Cursor caret color.
     pub cursor: Color,
-    /// Selection background.
     pub selection_background: Color,
-    /// Current-line highlight band. `None` disables the band.
+    /// `None` disables the current-line highlight band.
     pub line_highlight: Option<Color>,
-    /// Gutter line numbers.
     pub line_numbers: Color,
-    /// Active (cursor) line number.
     pub line_numbers_active: Color,
-    /// Separator line between gutter and code.
     pub separator: Color,
-    /// Indent guide vertical lines.
     pub indent_guide: Color,
-    /// Matching bracket highlight.
     pub bracket_match: Color,
 }
 

@@ -3,17 +3,12 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// Text wrapping settings
 #[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
 #[reflect(Resource, Default, Debug)]
 pub struct WrappingSettings {
-    /// Enable line wrapping
     pub enabled: bool,
-
-    /// Wrap column (None = wrap at viewport width)
+    /// `None` = wrap at viewport width.
     pub wrap_column: Option<usize>,
-
-    /// Indent wrapped lines
     pub indent_wrapped_lines: bool,
 }
 

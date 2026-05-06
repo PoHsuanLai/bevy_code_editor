@@ -7,39 +7,20 @@ static ANCHOR_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// Determines how an anchor behaves when text is inserted exactly at its position.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum AnchorBias {
-    /// Stays before inserted text (cursor-like behavior)
     #[default]
     Left,
-    /// Moves after inserted text (selection-end-like behavior)
     Right,
 }
 
-/// An anchor is an edit-resilient position in the text buffer.
-///
-/// Unlike raw character offsets, anchors automatically adjust when text
-/// is inserted or deleted around them. This makes them ideal for:
-/// - Cursor positions that should stay at the "same place" after edits
-/// - Selection boundaries
-/// - Bookmarks
-/// - Diagnostic positions from LSP
-/// - Any position that needs to survive edits
-///
-/// # Example
-/// ```ignore
-/// // Create an anchor at position 10
-/// let anchor = Anchor::new(10, AnchorBias::Left);
-///
-/// // If text is inserted at position 5, the anchor's resolved position becomes 15
-/// // If text is inserted at position 10, the anchor stays at 10 (Left bias)
-/// // If text is inserted at position 15, the anchor stays at 10
-/// ```
+/// Edit-resilient position: adjusts automatically when text is inserted or
+/// deleted around it. Use for cursors, selection bounds, LSP diagnostic marks,
+/// or any position that must survive edits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Anchor {
     pub id: u64,
-    /// Character offset when created or last resolved
     pub offset: usize,
     pub bias: AnchorBias,
-    /// Buffer version when last updated; used to detect stale anchors
+    /// Buffer version when last updated; stale if edits occurred since.
     pub version: u64,
 }
 

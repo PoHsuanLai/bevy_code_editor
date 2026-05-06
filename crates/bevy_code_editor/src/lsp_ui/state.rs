@@ -71,7 +71,6 @@ pub enum UnifiedCompletionItem {
 }
 
 impl UnifiedCompletionItem {
-    /// Get the display label
     pub fn label(&self) -> &str {
         match self {
             UnifiedCompletionItem::Lsp(item) => &item.label,
@@ -79,7 +78,6 @@ impl UnifiedCompletionItem {
         }
     }
 
-    /// Get the detail text (if any)
     pub fn detail(&self) -> Option<&str> {
         match self {
             UnifiedCompletionItem::Lsp(item) => item.detail.as_deref(),
@@ -87,7 +85,6 @@ impl UnifiedCompletionItem {
         }
     }
 
-    /// Get the text to insert
     pub fn insert_text(&self) -> &str {
         match self {
             UnifiedCompletionItem::Lsp(item) => item.insert_text.as_deref().unwrap_or(&item.label),
@@ -95,12 +92,10 @@ impl UnifiedCompletionItem {
         }
     }
 
-    /// Check if this is a word completion
     pub fn is_word(&self) -> bool {
         matches!(self, UnifiedCompletionItem::Word(_))
     }
 
-    /// Get the completion kind icon
     pub fn kind_icon(&self) -> &'static str {
         match self {
             UnifiedCompletionItem::Lsp(item) => match item.kind {

@@ -346,8 +346,6 @@ fn ranges_to_segments(
 }
 
 
-// ========== ParseSource bridge ==========
-
 /// Snapshot of an editor's buffer state — the slice the parser actually
 /// reads. Held behind `Arc<RwLock<_>>` so:
 ///
@@ -399,8 +397,6 @@ impl bevy_tree_sitter::ParseSource for EditorParseSource {
         }
     }
 }
-
-// ========== Pipeline systems ==========
 
 /// On startup, attach `EditorSyntaxState` + (when tree-sitter feature is
 /// on) `bevy_tree_sitter::SyntaxTree` + `bevy_tree_sitter::ParseSourceComp`
@@ -568,8 +564,6 @@ pub(crate) fn mirror_syntax_tree_to_provider(
     }
 }
 
-// ========== Edit Recording for Incremental Parsing ==========
-
 #[cfg(feature = "tree-sitter")]
 fn send_text_edit_events(
     mut editor_query: Query<(&mut SyntaxCacheState, &TextViewState), With<CodeEditor>>,
@@ -636,8 +630,6 @@ fn record_edits_for_incremental_parsing(
         }
     }
 }
-
-// ========== Plugin ==========
 
 pub struct SyntaxPlugin;
 

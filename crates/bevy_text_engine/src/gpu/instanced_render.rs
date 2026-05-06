@@ -1,6 +1,4 @@
-//! Proper GPU instancing for text glyphs using Bevy 0.17 APIs
-//!
-//! Based on Bevy's custom_shader_instancing example
+//! GPU instanced text rendering. Based on Bevy's custom_shader_instancing example.
 
 use bevy::{
     core_pipeline::core_2d::{Transparent2d, CORE_2D_DEPTH_FORMAT},
@@ -29,7 +27,6 @@ use bevy_camera::visibility::RenderLayers;
 
 use crate::view::render::{GlyphBatchComponent, GlyphInstance};
 
-/// Plugin for instanced glyph rendering
 pub struct InstancedTextRenderPlugin;
 
 impl Plugin for InstancedTextRenderPlugin {
@@ -67,7 +64,6 @@ impl Plugin for InstancedTextRenderPlugin {
     }
 }
 
-/// Make GlyphBatchComponent extractable to render world
 impl ExtractComponent for GlyphBatchComponent {
     type QueryData = &'static GlyphBatchComponent;
     type QueryFilter = ();
@@ -99,14 +95,12 @@ pub struct ExtractedTextGlobals {
     pub viewport_size: Vec2,
 }
 
-/// GPU buffer for instance data
 #[derive(Component)]
 pub struct InstanceBuffer {
     pub buffer: Buffer,
     pub length: usize,
 }
 
-/// Texture bind group for atlas
 #[derive(Component)]
 pub struct TextureBindGroup {
     pub bind_group: BindGroup,
@@ -181,7 +175,6 @@ fn prepare_view_bind_group(
     }
 }
 
-/// Prepare instance buffers on the GPU
 fn prepare_instance_buffers(
     mut commands: Commands,
     query: Query<(Entity, &GlyphBatchComponent)>,
@@ -205,7 +198,6 @@ fn prepare_instance_buffers(
             continue;
         }
 
-        // Debug first buffer preparation
         use std::sync::atomic::{AtomicBool, Ordering};
         static BUFFER_LOGGED: AtomicBool = AtomicBool::new(false);
         if !BUFFER_LOGGED.swap(true, Ordering::Relaxed) {
@@ -230,10 +222,7 @@ fn prepare_instance_buffers(
             length: batch.instances.len(),
         });
 
-        // Create texture bind group
         if let Some(gpu_image) = gpu_images.get(&batch.atlas_texture) {
-            // Remove verbose logging - this runs every frame
-            // info!("Creating texture bind group for atlas");
             let bind_group = render_device.create_bind_group(
                 "text_texture_bind_group",
                 &texture_layout,
@@ -249,7 +238,6 @@ fn prepare_instance_buffers(
     }
 }
 
-/// Pipeline for instanced text rendering
 #[derive(Resource)]
 pub struct InstancedTextPipeline {
     shader: Handle<Shader>,
@@ -402,7 +390,6 @@ impl SpecializedRenderPipeline for InstancedTextPipeline {
     }
 }
 
-/// Queue instanced text for rendering, filtered by RenderLayers.
 fn queue_instanced_text(
     transparent_2d_draw_functions: Res<DrawFunctions<Transparent2d>>,
     instanced_text_pipeline: Res<InstancedTextPipeline>,
@@ -424,7 +411,6 @@ fn queue_instanced_text(
             continue;
         };
 
-        // Use MSAA sample count of 4 (default for Bevy 2D)
         let pipeline_id = pipelines.specialize(&pipeline_cache, &instanced_text_pipeline, 4);
 
         for (entity, global_transform, batch) in &batches {
@@ -437,8 +423,7 @@ fn queue_instanced_text(
                 }
             }
 
-            // Use Z from GlobalTransform as sort key for proper layering with sprites
-            // Higher Z values render on top (later in the sorted phase)
+            // Higher Z renders on top (later in the sorted phase).
             let z = global_transform.map(|t| t.translation().z).unwrap_or(0.0);
 
             transparent_phase.add(Transparent2d {
@@ -449,13 +434,12 @@ fn queue_instanced_text(
                 batch_range: 0..1,
                 extra_index: PhaseItemExtraIndex::None,
                 extracted_index: usize::MAX,
-                indexed: false, // We use draw() not draw_indexed()
+                indexed: false, // draw() not draw_indexed()
             });
         }
     }
 }
 
-/// Draw command for instanced text
 type DrawInstancedText = (
     SetItemPipeline,
     SetViewBindGroup<0>,
@@ -463,7 +447,6 @@ type DrawInstancedText = (
     DrawGlyphInstances,
 );
 
-/// Set view bind group
 struct SetViewBindGroup<const I: usize>;
 
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetViewBindGroup<I> {
@@ -483,13 +466,11 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetViewBindGroup<I> {
     }
 }
 
-/// Bind group for view uniforms
 #[derive(Component)]
 struct TextViewBindGroup {
     bind_group: BindGroup,
 }
 
-/// Set texture bind group
 struct SetTextureBindGroup<const I: usize>;
 
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetTextureBindGroup<I> {
@@ -535,7 +516,6 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGlyphInstances {
             return RenderCommandResult::Skip;
         }
 
-        // Debug: log first draw call
         use std::sync::atomic::{AtomicBool, Ordering};
         static DRAW_LOGGED: AtomicBool = AtomicBool::new(false);
         if !DRAW_LOGGED.swap(true, Ordering::Relaxed) {
@@ -546,10 +526,8 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGlyphInstances {
             );
         }
 
-        // Set instance buffer (slot 0, no mesh needed)
         pass.set_vertex_buffer(0, instance_buffer.buffer.slice(..));
-
-        // Draw quad instances (6 vertices per quad, triangle list)
+        // 6 vertices per quad (triangle list), no mesh needed.
         pass.draw(0..6, 0..instance_buffer.length as u32);
 
         RenderCommandResult::Success

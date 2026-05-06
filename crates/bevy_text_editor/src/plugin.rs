@@ -1,19 +1,7 @@
-//! Plugins for `TextView` interaction and editable text editing.
-//!
-//! [`TextInteractionPlugin`] wires the picking backend and observer-based
-//! handlers that turn pointer + focused-keyboard events into scroll,
-//! drag-selection, and clipboard copy on any entity carrying
-//! [`bevy_text_engine::TextView`]. The rendering side lives in the engine
-//! crate ([`bevy_text_engine::TextEnginePlugin`] /
-//! [`bevy_text_engine::TextEnginePlugins`]).
-//!
-//! [`TextEditorPlugin`] adds the editable-text core on top: typed-character
-//! insertion, edit history, undo / redo, the typed editing-event registry,
-//! and the per-action handler systems. Pulls in `TextInteractionPlugin`.
-//!
-//! Both plugins idempotently add [`bevy::picking::DefaultPickingPlugins`]
-//! and [`bevy::input_focus::InputDispatchPlugin`] if the host hasn't
-//! already.
+//! [`TextInteractionPlugin`] wires picking + observers for scroll, drag-select,
+//! and copy on any `TextView`. [`TextEditorPlugin`] adds the editable-text core
+//! (typed-char, edit history, undo/redo, clipboard). Both are idempotent re:
+//! `DefaultPickingPlugins` and `InputDispatchPlugin`.
 
 use bevy::input_focus::InputDispatchPlugin;
 use bevy::picking::{DefaultPickingPlugins, PickingSystems};
@@ -29,15 +17,12 @@ use crate::picking::text_view_picking_backend;
 use crate::state::{EditHistoryState, IndentConfig, OnEdit, SnapshotPreEdit, TextEditor};
 use crate::typing::on_focused_keyboard_typing;
 
-/// Public ordering hook: `emit_edit_triggers` runs in this set. Consumers
-/// reading state populated by `OnEdit` observers (e.g. an editor's
-/// per-frame edit-event drain) should schedule themselves `.after(EditEmitSet)`.
+/// Contains `emit_edit_triggers`. Schedule downstream systems `.after(EditEmitSet)`.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EditEmitSet;
 
-/// Plugin registering pointer + keyboard interaction for `TextView`
-/// entities. Pair with [`bevy_text_engine::TextEnginePlugins`] which
-/// supplies the rendering side.
+/// Pointer + keyboard interaction for `TextView` entities. Pair with
+/// [`bevy_text_engine::TextEnginePlugins`] for the rendering side.
 #[derive(Default)]
 pub struct TextInteractionPlugin;
 
@@ -66,29 +51,14 @@ impl Plugin for TextInteractionPlugin {
     }
 }
 
-/// Plugin registering the editable-text core: typed-character insertion,
-/// edit history, undo / redo, clipboard, and the editing-event handlers.
-///
-/// Adds [`TextInteractionPlugin`] (idempotent) so spawning a [`TextEditor`]
-/// gives you a fully working editable text view: click to focus, type to
-/// edit, drag to select, scroll to scroll, Cmd/Ctrl+C/X/V/Z/Y do the
-/// expected things.
-///
-/// Hosts that want a leafwing keymap layer (Ctrl+Right for word-jump, etc.)
-/// add their own dispatcher system that emits the appropriate `*Requested`
-/// events; the code editor crate (`bevy_code_editor`) does this. Hosts
-/// without leafwing can compose simpler input bindings via observers.
-///
-/// Construct with [`Self::default()`] for the everything-on configuration.
-/// Use [`Self::without_typing_observer()`] when the host has its own
-/// typed-character handler (e.g. the code editor's bracket / LSP-aware
-/// observer); in that case the host inserts characters itself.
+/// Editable-text core: typed-char insertion, edit history, undo/redo, clipboard.
+/// Adds [`TextInteractionPlugin`] idempotently. Use
+/// [`Self::without_typing_observer()`] when the host handles typing itself
+/// (bracket auto-close, IME, LSP completion triggers).
 #[derive(Clone, Copy, Debug)]
 pub struct TextEditorPlugin {
-    /// When `true`, the plugin registers a `FocusedInput<KeyboardInput>`
-    /// observer that inserts printable characters into the focused
-    /// `TextEditor`. Hosts that want bracket auto-close, IME, or LSP
-    /// completion triggers handle typing themselves and pass `false`.
+    /// When `true`, registers a `FocusedInput<KeyboardInput>` observer that
+    /// inserts printable chars. Set `false` when the host inserts them itself.
     pub typing_observer: bool,
 }
 
@@ -101,10 +71,6 @@ impl Default for TextEditorPlugin {
 }
 
 impl TextEditorPlugin {
-    /// Plugin variant that omits the typed-character observer. Pair with a
-    /// host-side keyboard handler that calls
-    /// [`crate::handlers::edit::insert_char`] (or equivalent) for each
-    /// printable char.
     pub const fn without_typing_observer() -> Self {
         Self {
             typing_observer: false,
@@ -132,9 +98,6 @@ impl Plugin for TextEditorPlugin {
 
         register_handler_systems(app);
 
-        // Drains EditHistoryState's pending fields into per-entity
-        // `OnEdit` triggers. Runs in EditEmitSet so consumers can order
-        // their downstream systems after it.
         app.configure_sets(Update, EditEmitSet);
         app.add_systems(
             Update,
@@ -145,10 +108,8 @@ impl Plugin for TextEditorPlugin {
     }
 }
 
-/// Mirror the [`SnapshotPreEdit`] marker into the `snapshot_pre_edits`
-/// flag on each entity's `EditHistoryState` so the pure `replace_range`
-/// primitive can decide whether to clone the rope without taking a Bevy
-/// query.
+/// Mirrors [`SnapshotPreEdit`] into `EditHistoryState.snapshot_pre_edits` so
+/// `replace_range` can decide to clone without an extra Bevy query.
 fn mirror_snapshot_marker(
     mut q: Query<(&mut EditHistoryState, Has<SnapshotPreEdit>), With<TextEditor>>,
 ) {
@@ -159,8 +120,7 @@ fn mirror_snapshot_marker(
     }
 }
 
-/// Drain `EditHistoryState`'s pending-edit fields into per-entity [`OnEdit`]
-/// triggers. Idempotent — once a frame, taking the field clears it.
+/// Drain pending edit fields into per-entity [`OnEdit`] triggers. Runs once per frame.
 pub fn emit_edit_triggers(
     mut commands: Commands,
     mut q: Query<(Entity, &mut EditHistoryState), With<TextEditor>>,

@@ -6,10 +6,8 @@ use bevy_tokio_tasks::{TokioTasksPlugin, TokioTasksRuntime};
 
 use crate::client::LspClient;
 
-/// Adds [`TokioTasksPlugin`] iff no [`TokioTasksRuntime`] is already present,
-/// so a host running its own tokio integration can share the runtime.
-/// Also wires an `AppExit` observer that gracefully shuts down every
-/// `LspClient` before the app terminates.
+/// Installs [`TokioTasksPlugin`] (only if the host hasn't already) and
+/// gracefully shuts down every [`LspClient`] on `AppExit`.
 #[derive(Default)]
 pub struct LspPlugin;
 
@@ -22,8 +20,7 @@ impl Plugin for LspPlugin {
     }
 }
 
-/// Send `Shutdown` + `Exit` to every live `LspClient` when the app is
-/// exiting. Keeps the language server from being hard-killed mid-request.
+/// Keeps the language server from being hard-killed mid-request.
 fn shutdown_clients_on_app_exit(
     mut exit: MessageReader<AppExit>,
     clients: Query<&LspClient>,

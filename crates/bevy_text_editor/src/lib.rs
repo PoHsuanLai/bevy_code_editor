@@ -1,29 +1,9 @@
-//! # bevy_text_editor
+//! Editable text widget for Bevy. [`TextInteractionPlugin`] adds scroll /
+//! drag-select / copy on any `TextView`; [`TextEditorPlugin`] adds typed-char
+//! input, edit history, undo/redo, clipboard, and keyboard shortcuts on top.
 //!
-//! Editable text widget for Bevy: pointer interaction (scroll, click + drag
-//! selection, copy) on top of [`bevy_text_engine`] `TextView` entities, plus
-//! the editable-text core (cursor, selection, edit history, undo/redo,
-//! clipboard, typed-character handling).
-//!
-//! ## Plugins
-//!
-//! - [`TextInteractionPlugin`] — read-only interaction: scroll, drag-select,
-//!   copy. Pair with `TextEnginePlugins` for a selectable, scrollable view.
-//! - [`TextEditorPlugin`] — typed-char input, edit history, undo/redo, paste,
-//!   keyboard editing shortcuts. Pulls in `TextInteractionPlugin` automatically.
-//!
-//! ## Architecture
-//!
-//! - A custom `bevy_picking` backend in [`picking`] hit-tests the
-//!   [`bevy_text_engine::TextViewViewport`] rect of every `TextView` and
-//!   produces `PointerHits`.
-//! - Observers in [`interaction`] consume `Pointer<Press|Drag|Release|Scroll>`
-//!   events that picking has already routed to the right entity.
-//! - Editing dispatch is observer-driven: `FocusedInput<KeyboardInput>` plus
-//!   typed `*Requested` editing events that hosts (or this crate's plugin)
-//!   write to.
-//!
-//! No polling systems, no manual cursor-rect hit tests.
+//! Dispatch is observer-driven: a custom `bevy_picking` backend routes pointer
+//! events to the right entity; editing events flow as typed `*Requested` messages.
 
 pub mod anchor;
 pub mod components;

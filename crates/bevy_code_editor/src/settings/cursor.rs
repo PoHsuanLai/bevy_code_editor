@@ -3,40 +3,25 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// Cursor settings
 #[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
 #[reflect(Resource, Default, Debug)]
 pub struct CursorSettings {
-    /// Cursor style
     pub style: CursorStyle,
-
-    /// Cursor width in pixels (for line/underline styles)
+    /// In pixels; for `Line` and `Underline` styles.
     pub width: f32,
-
-    /// Cursor height as multiplier of line height
+    /// Fraction of line height.
     pub height_multiplier: f32,
-
-    /// Blink rate in seconds (0 = no blink)
+    /// Seconds per blink cycle; 0 = no blink.
     pub blink_rate: f32,
-
-    /// Smooth cursor animation
     pub smooth_animation: bool,
-
-    /// Animation speed (higher = faster)
     pub animation_speed: f32,
-
-    /// Key repeat settings
     pub key_repeat: KeyRepeatSettings,
 }
 
-/// Key repeat settings for cursor movement
 #[derive(Clone, Debug, Serialize, Deserialize, Reflect)]
 #[reflect(Default, Debug)]
 pub struct KeyRepeatSettings {
-    /// Initial delay before repeat starts (milliseconds)
     pub initial_delay_ms: u64,
-
-    /// Delay between repeats (milliseconds)
     pub repeat_delay_ms: u64,
 }
 
@@ -71,35 +56,18 @@ impl Default for KeyRepeatSettings {
     }
 }
 
-/// Cursor line highlighting settings (VSCode-style)
+/// VSCode-style cursor-line highlighting.
 #[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
 #[reflect(Resource, Default, Debug)]
 pub struct CursorLineSettings {
-    /// Enable cursor line highlighting
     pub enabled: bool,
-
-    /// Highlight style
     pub style: CursorLineStyle,
-
-    /// Border width (for Border style)
     pub border_width: f32,
-
-    /// Border thickness (for Border style)
     pub border_thickness: f32,
-
-    /// Border alpha multiplier
     pub border_alpha_multiplier: f32,
-
-    /// Border color
     pub border_color: Color,
-
-    /// Show border
     pub show_border: bool,
-
-    /// Highlight word under cursor
     pub highlight_word: bool,
-
-    /// Word highlight color
     pub word_highlight_color: Color,
 }
 

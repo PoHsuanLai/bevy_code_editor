@@ -11,14 +11,10 @@ use std::sync::Arc;
 
 use super::snapshot::{BlockRect, ShapedLine};
 
-/// Per-entity rendering snapshot. Replaces the dirty-flag dance on `TextViewState`.
-///
-/// Written by `display_map::build_display_layout` (or by `trivial_layout` for
-/// standalone consumers). Read-only for the renderer.
-// not reflectable: paint-time snapshot built every frame; contains
-// `Arc<Vec<ShapedLine>>` whose leaf `cosmic_text::CacheKey` and `Arc<LineShape>`
-// are not Reflect. The component is rebuilt every frame from the rope so
-// inspector access would observe stale data anyway.
+/// Per-entity rendering snapshot. Written by `display_map::build_display_layout`
+/// (or `trivial_layout`); read-only for the renderer.
+// Not Reflect: contains Arc<Vec<ShapedLine>> with cosmic_text::CacheKey leaves
+// that don't impl Reflect, and would be stale anyway (rebuilt every frame).
 #[derive(Component, Clone)]
 pub struct DisplayLayout {
     /// Visible-window slice of shaped lines. Shared (Arc) so scroll-only and
@@ -65,7 +61,7 @@ impl Default for DisplayLayout {
 }
 
 impl DisplayLayout {
-    /// True when the same `lines` Arc backs both layouts (cheap nothing-changed check).
+    /// Cheap nothing-changed check via pointer equality.
     pub fn lines_unchanged(&self, other: &DisplayLayout) -> bool {
         Arc::ptr_eq(&self.lines, &other.lines)
     }
@@ -111,14 +107,11 @@ impl DisplayLayout {
         Some(Vec2::new(x, line.y_top))
     }
 
-    /// Map a `(buffer_row, byte_in_buffer_line)` position to the display row
-    /// and the byte offset within that row's `text`. Walks all rows sharing
-    /// the buffer line to find the one whose `[buffer_byte_offset .. + text.len()]`
-    /// covers the byte. Returns `None` if no row in the visible window matches.
+    /// Map `(buffer_row, byte_in_line)` to `(display_row, byte_in_display_row)`.
+    /// Returns `None` if no row in the visible window matches.
     pub fn buffer_to_display(&self, buffer_row: u32, byte_in_line: usize) -> Option<(u32, usize)> {
-        // Rows are emitted in display order; rows sharing a buffer_row are in
-        // ascending buffer_byte_offset. We pick the row with the largest
-        // buffer_byte_offset that's <= byte_in_line.
+        // Rows sharing a buffer_row are in ascending buffer_byte_offset.
+        // Pick the largest offset that's <= byte_in_line.
         let mut best: Option<&ShapedLine> = None;
         for line in self.lines.iter() {
             if line.buffer_row != buffer_row {
@@ -136,18 +129,16 @@ impl DisplayLayout {
     }
 }
 
-/// Line-local pixel x for a byte offset inside `line.text`. Public-in-crate so
-/// `render.rs` can reuse it for run start positions and bg widths.
+/// Line-local pixel x for a byte offset. Reused by `render.rs` for run start
+/// positions and background widths.
 pub(crate) fn line_x_at_byte(
     line: &ShapedLine,
     byte: usize,
     char_width_fallback: f32,
 ) -> f32 {
     if let Some(shape) = &line.shape {
-        // Visible lines are short — linear scan beats the binary-search overhead.
-        // Cluster starts are monotonic for LTR; for BiDi runs the byte_index
-        // ordering may not match visual order but the renderer doesn't paint
-        // BiDi yet, so scanning is correct in practice.
+        // Linear scan is fine — visible lines are short. Cluster starts are
+        // monotonic for LTR; BiDi isn't rendered yet so scanning is correct.
         for g in &shape.glyphs {
             if g.byte_index >= byte {
                 return g.x;
@@ -167,8 +158,7 @@ pub(crate) fn line_x_at_byte(
     x
 }
 
-/// Inverse of [`line_x_at_byte`] — snap a line-local pixel x to the nearest
-/// cluster boundary in `line.text`.
+/// Inverse of [`line_x_at_byte`]: snap a line-local pixel x to the nearest cluster boundary.
 pub(crate) fn line_byte_at_x(
     line: &ShapedLine,
     x: f32,

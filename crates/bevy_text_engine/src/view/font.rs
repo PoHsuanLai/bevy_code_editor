@@ -1,43 +1,15 @@
-//! Per-entity font configuration for text views.
-//!
-//! Mirror of `bevy_text::TextFont`. The renderer reads this off each entity
-//! it draws; there is no global font resource.
-//!
-//! ```rust,ignore
-//! use bevy_text_engine::FontConfig;
-//!
-//! commands.spawn((
-//!     TextView,
-//!     FontConfig::from_size(18.0).with_line_height_multiplier(1.4),
-//! ));
-//! ```
+//! Per-entity font configuration. The renderer reads this; there is no global
+//! font resource.
 
 use bevy::prelude::*;
 use bevy::text::Font;
 
-/// Font sizing + `bevy_text::Font` handle. The atlas registers the
-/// handle's bytes into its cosmic-text font system on first use, so the
-/// same `asset_server.load("foo.ttf")` works in both `Text2d` and
-/// `TextView`.
+/// Font sizing + handles. The atlas registers handle bytes on first use.
 ///
-/// `font` defaults to `Handle::default()`, which Bevy's `TextPlugin`
-/// (when its `default_font` feature is on, the default for the `bevy`
-/// crate) populates with FiraMono-subset. Hosts that want a different
-/// font set it explicitly via [`Self::with_font`]. Setting `font: None`
-/// falls back to whatever the cosmic-text `FontSystem` discovers in
-/// system fonts.
-///
-/// Bold / italic / bold-italic faces are optional. When a `StyleRun`
-/// asks for bold (`font_weight >= 600`) or italic, the renderer picks
-/// the matching slot here; if it's empty it falls back to the regular
-/// face and (subject to `font_synthesis`) synthesizes the missing axis
-/// — bold via stroke-doubling, italic via skew. Matches the CSS
-/// `font-synthesis: weight | style` defaults.
-///
-/// `char_width` is a scalar fallback advance — the renderer prefers
-/// per-glyph shaped advances from `LineShape.glyphs[*].x` and only
-/// falls back to the scalar for `trivial_layout` consumers shipping
-/// `shape: None`.
+/// Bold/italic slots are optional; missing ones fall back to the regular face
+/// with synthesis (stroke-doubling for bold, skew for italic), matching the CSS
+/// `font-synthesis: weight | style` defaults. `char_width` is a fallback
+/// advance used when `shape: None` (the `trivial_layout` path).
 #[derive(Component, Clone, Debug, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct FontConfig {
@@ -85,12 +57,8 @@ impl Default for FontConfig {
 }
 
 impl FontConfig {
-    /// `size`-derived defaults: `line_height = size * 1.5`,
-    /// `char_width = size * 0.6`, `font = Handle::default()` (resolves to
-    /// Bevy's slotted FiraMono-subset when `bevy_text`'s `default_font`
-    /// feature is enabled). Bold / italic slots start empty — callers
-    /// that want real bold/italic rendering load the matching faces
-    /// and set them via the `with_*` builders.
+    /// `line_height = size * 1.5`, `char_width = size * 0.6`,
+    /// `font = Handle::default()` (Bevy's FiraMono-subset when `default_font` is on).
     pub fn from_size(size: f32) -> Self {
         Self {
             size,
@@ -144,14 +112,9 @@ impl FontConfig {
         self
     }
 
-    /// Resolve the font handle for a `(bold, italic)` request, falling
-    /// back when the matching slot is empty. The caller (renderer) is
-    /// responsible for applying synthesis when the returned handle is
-    /// the regular face but a styled face was asked for.
-    ///
-    /// Fallback order picks the closest face on the requested axis,
-    /// trading off style first (bold-italic missing → bold), and only
-    /// dropping all the way to regular when nothing styled exists.
+    /// Resolve a handle for `(bold, italic)`, falling back to the closest
+    /// available face. Caller applies synthesis when the regular face is
+    /// returned for a styled request.
     pub fn font_for(&self, bold: bool, italic: bool) -> Option<&Handle<Font>> {
         match (bold, italic) {
             (true, true) => self

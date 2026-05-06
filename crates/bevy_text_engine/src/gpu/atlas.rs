@@ -225,7 +225,6 @@ impl GlyphAtlas {
         Some(font_id)
     }
 
-    /// Allocate space in the atlas using shelf packing
     fn allocate(&mut self, width: u32, height: u32) -> Option<(u32, u32)> {
         if width == 0 || height == 0 {
             return Some((0, 0));
@@ -234,7 +233,6 @@ impl GlyphAtlas {
         let padded_width = width + GLYPH_PADDING;
         let padded_height = height + GLYPH_PADDING;
 
-        // Try to fit in an existing row
         for row in &mut self.rows {
             if row.height >= padded_height && row.x_cursor + padded_width <= ATLAS_SIZE {
                 let x = row.x_cursor;
@@ -244,7 +242,6 @@ impl GlyphAtlas {
             }
         }
 
-        // Create a new row
         if self.current_y + padded_height <= ATLAS_SIZE {
             let y = self.current_y;
             self.current_y += padded_height;
@@ -256,11 +253,10 @@ impl GlyphAtlas {
             return Some((0, y));
         }
 
-        // Atlas is full
         None
     }
 
-    /// Update the GPU texture with only the dirty rows (partial upload)
+    /// Partial upload: only the dirty row range.
     pub fn update_texture(&mut self, images: &mut Assets<Image>) {
         if !self.dirty || self.dirty_min_y >= self.dirty_max_y {
             self.dirty = false;
@@ -272,7 +268,6 @@ impl GlyphAtlas {
 
         if let Some(image) = images.get_mut(&self.texture) {
             if let Some(ref mut data) = image.data {
-                // Partial copy: only update dirty rows
                 let row_bytes = (ATLAS_SIZE * 4) as usize;
                 let start_byte = min_y as usize * row_bytes;
                 let end_byte = max_y as usize * row_bytes;
@@ -280,12 +275,11 @@ impl GlyphAtlas {
                 if end_byte <= data.len() && end_byte <= self.pixels.len() {
                     data[start_byte..end_byte].copy_from_slice(&self.pixels[start_byte..end_byte]);
                 } else {
-                    // Fallback: full copy
                     data.copy_from_slice(&self.pixels);
                 }
             }
         } else {
-            // No existing image — create fresh (first frame)
+            // No existing image — create fresh (first frame).
             let new_image = Image::new(
                 Extent3d {
                     width: ATLAS_SIZE,
@@ -300,13 +294,12 @@ impl GlyphAtlas {
             let _ = images.insert(&self.texture, new_image);
         }
 
-        // Reset dirty rect
         self.dirty = false;
         self.dirty_min_y = ATLAS_SIZE;
         self.dirty_max_y = 0;
     }
 
-    /// Clear the atlas (e.g., when font changes or atlas is full)
+    /// Clear the atlas when font changes or atlas is full.
     pub fn clear(&mut self) {
         self.rows.clear();
         self.current_y = 0;
@@ -316,7 +309,6 @@ impl GlyphAtlas {
         self.generation += 1;
         self.dirty_min_y = 0;
         self.dirty_max_y = ATLAS_SIZE;
-        // Re-reserve the solid white pixel for background fills
         self.reserve_solid_pixel();
     }
 
@@ -363,9 +355,7 @@ impl GlyphAtlas {
     }
 }
 
-/// Inserts the [`GlyphAtlas`] resource at startup. The renderer
-/// (`view::render`) keys glyphs by `cosmic_text::CacheKey`; everything else
-/// — material/quad/wgsl pipeline — is handled by [`InstancedTextRenderPlugin`].
+/// Inserts [`GlyphAtlas`] at startup.
 pub struct GlyphAtlasPlugin;
 
 impl Plugin for GlyphAtlasPlugin {
@@ -378,17 +368,12 @@ fn setup_glyph_atlas(mut commands: Commands, mut images: ResMut<Assets<Image>>) 
     commands.insert_resource(GlyphAtlas::new(&mut images));
 }
 
-// ============================================================================
-// INSTANCED RENDERING EXTENSIONS
-// ============================================================================
-
 pub use instanced_extensions::*;
 
 mod instanced_extensions {
     use super::*;
     use cosmic_text::{Attrs, AttrsList, ShapeBuffer, ShapeLine, Shaping};
 
-    /// Placement information for a rasterized glyph
     #[derive(Clone, Copy, Debug)]
     pub struct PlacementInfo {
         pub left: f32,
@@ -396,12 +381,10 @@ mod instanced_extensions {
     }
 
     impl GlyphAtlas {
-        /// Pack a glyph into the atlas — thin wrapper around `allocate`.
         pub(crate) fn pack(&mut self, width: u32, height: u32) -> Option<(u32, u32)> {
             self.allocate(width, height)
         }
 
-        /// Write glyph data to the atlas
         pub(crate) fn write_glyph_data(
             &mut self,
             x: u32,
@@ -422,15 +405,14 @@ mod instanced_extensions {
                     let dst_idx = ((dst_y * ATLAS_SIZE + dst_x) * 4) as usize;
 
                     if dst_idx + 3 < self.pixels.len() && src_idx + 3 < data.len() {
-                        self.pixels[dst_idx] = data[src_idx]; // R
-                        self.pixels[dst_idx + 1] = data[src_idx + 1]; // G
-                        self.pixels[dst_idx + 2] = data[src_idx + 2]; // B
-                        self.pixels[dst_idx + 3] = data[src_idx + 3]; // A
+                        self.pixels[dst_idx] = data[src_idx];
+                        self.pixels[dst_idx + 1] = data[src_idx + 1];
+                        self.pixels[dst_idx + 2] = data[src_idx + 2];
+                        self.pixels[dst_idx + 3] = data[src_idx + 3];
                     }
                 }
             }
 
-            // Track dirty rect and mark as dirty
             self.dirty_min_y = self.dirty_min_y.min(y);
             self.dirty_max_y = self.dirty_max_y.max(y + height);
             self.dirty = true;
@@ -508,7 +490,6 @@ mod instanced_extensions {
             }
         }
 
-        /// Get or rasterize a glyph using cosmic_text cache key
         pub fn get_or_rasterize_glyph(
             &mut self,
             cache_key: cosmic_text::CacheKey,
@@ -538,7 +519,6 @@ mod instanced_extensions {
             let width = image.placement.width as usize;
             let height = image.placement.height as usize;
 
-            // Convert image data to RGBA based on content type
             let mut rgba_data = Vec::with_capacity(width * height * 4);
             match image.content {
                 Content::Mask => {
@@ -574,7 +554,7 @@ mod instanced_extensions {
                         image.placement.left as f32 / DPI_SCALE,
                         image.placement.top as f32 / DPI_SCALE,
                     ),
-                    advance: 0.0, // Not used in instanced rendering
+                    advance: 0.0,
                 };
 
                 let placement = PlacementInfo {
@@ -582,7 +562,6 @@ mod instanced_extensions {
                     top: image.placement.top as f32 / DPI_SCALE,
                 };
 
-                // Cache the result
                 self.cache.insert(cache_key, glyph_info);
 
                 Some((glyph_info, placement))

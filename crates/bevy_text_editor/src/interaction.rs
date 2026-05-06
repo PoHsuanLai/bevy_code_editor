@@ -19,10 +19,6 @@ use bevy_text_engine::{DisplayLayout, FontConfig, TextView, TextViewState, TextV
 use crate::components::{ScrollConfig, TextViewDragState};
 use crate::state::{CursorState, SelectionState};
 
-// =============================================================================
-// Utilities (kept public for hosts that build their own click handlers)
-// =============================================================================
-
 /// Convert screen coordinates (viewport-local, 0,0 at top-left) to a character
 /// position in the rope. Used for click-to-position and drag selection.
 ///
@@ -101,10 +97,6 @@ pub fn copy_selection(sel: &SelectionState, tv: &TextViewState) -> bool {
     }
     false
 }
-
-// =============================================================================
-// Observers (registered globally by `TextInteractionPlugin`)
-// =============================================================================
 
 /// Pointer scroll observer for `TextView` entities — handles both vertical
 /// (scroll wheel / two-finger swipe) and horizontal (shift+wheel / two-finger

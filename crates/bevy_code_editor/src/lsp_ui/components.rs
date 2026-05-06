@@ -15,42 +15,27 @@ use bevy::prelude::*;
 
 use super::state::UnifiedCompletionItem;
 
-/// Marker component for the completion popup entity.
-/// Contains all data needed to render the completion UI.
+/// Completion popup data. Hosts query this and render however they prefer.
 #[derive(Component, Clone, Debug)]
 pub struct CompletionPopupData {
-    /// Position in screen space (top-left of popup)
     pub position: Vec2,
-    /// List of completion items to display
     pub items: Vec<CompletionItemData>,
-    /// Index of the currently selected item
     pub selected_index: usize,
-    /// Scroll offset (first visible item index)
+    /// First visible item index.
     pub scroll_offset: usize,
-    /// Maximum number of visible items
     pub max_visible: usize,
-    /// Calculated popup width
     pub width: f32,
-    /// Calculated popup height
     pub height: f32,
-    /// Resolved documentation for the currently selected item, if the
-    /// server returned any. Plain-text rendering — markdown is passed
-    /// through as the raw `value` per LSP spec.
+    /// Docs for the selected item. Markdown is passed as raw `value` per LSP spec.
     pub selected_documentation: Option<String>,
 }
 
-/// Data for a single completion item
 #[derive(Clone, Debug)]
 pub struct CompletionItemData {
-    /// Display label
     pub label: String,
-    /// Optional detail text
     pub detail: Option<String>,
-    /// Kind icon (e.g., "ƒ" for function)
     pub kind_icon: String,
-    /// Whether this is a word completion (vs LSP)
     pub is_word: bool,
-    /// Text to insert when selected
     pub insert_text: String,
 }
 
@@ -66,17 +51,12 @@ impl From<&UnifiedCompletionItem> for CompletionItemData {
     }
 }
 
-/// Marker component for the hover popup entity.
-/// Contains all data needed to render the hover UI.
+/// Hover popup data. Hosts query this and render however they prefer.
 #[derive(Component, Clone, Debug)]
 pub struct HoverPopupData {
-    /// Position in screen space (top-left of popup)
     pub position: Vec2,
-    /// Content to display (markdown/plain text)
     pub content: String,
-    /// Calculated popup width
     pub width: f32,
-    /// Calculated popup height
     pub height: f32,
 }
 
@@ -102,30 +82,19 @@ pub struct SignatureHelpPopupData {
     pub height: f32,
 }
 
-/// Marker component for the code actions popup entity.
-/// Contains all data needed to render the code actions menu.
 #[derive(Component, Clone, Debug)]
 pub struct CodeActionsPopupData {
-    /// Position in screen space (near the gutter)
     pub position: Vec2,
-    /// List of code actions
     pub actions: Vec<CodeActionItemData>,
-    /// Index of the currently selected action
     pub selected_index: usize,
-    /// Calculated popup width
     pub width: f32,
-    /// Calculated popup height
     pub height: f32,
 }
 
-/// Data for a single code action
 #[derive(Clone, Debug)]
 pub struct CodeActionItemData {
-    /// Display title
     pub title: String,
-    /// Action kind icon
     pub icon: String,
-    /// Whether this is a preferred/quick fix action
     pub is_preferred: bool,
 }
 

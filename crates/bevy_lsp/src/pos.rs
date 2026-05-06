@@ -27,8 +27,6 @@ impl PositionEncoding {
     }
 }
 
-// ---------- rope → LSP -----------------------------------------------------
-
 /// Char offset → LSP `Position`. Clamps `char_offset` to `rope.len_chars()`.
 pub fn rope_char_to_lsp_position(
     rope: &Rope,
@@ -45,7 +43,6 @@ pub fn rope_char_to_lsp_position(
     }
 }
 
-/// Byte offset → LSP `Position`.
 pub fn rope_byte_to_lsp_position(
     rope: &Rope,
     byte_offset: usize,
@@ -69,8 +66,6 @@ pub fn rope_range_to_lsp_range(
     }
 }
 
-// ---------- LSP → rope -----------------------------------------------------
-
 /// LSP `Position` → char offset. Clamps the line and the in-line offset.
 pub fn lsp_position_to_rope_char(
     rope: &Rope,
@@ -93,7 +88,6 @@ pub fn lsp_position_to_rope_char(
     line_start + line_chars
 }
 
-/// LSP `Position` → byte offset.
 pub fn lsp_position_to_rope_byte(
     rope: &Rope,
     position: Position,
@@ -102,8 +96,6 @@ pub fn lsp_position_to_rope_byte(
     let char_offset = lsp_position_to_rope_char(rope, position, encoding);
     rope.char_to_byte(char_offset)
 }
-
-// ---------- internals ------------------------------------------------------
 
 /// Sum the encoding units of `[start_char, end_char)` within `rope`.
 fn count_units(rope: &Rope, start_char: usize, end_char: usize, encoding: PositionEncoding) -> usize {
@@ -117,10 +109,6 @@ fn count_units(rope: &Rope, start_char: usize, end_char: usize, encoding: Positi
         PositionEncoding::Utf32 => slice.len_chars(),
     }
 }
-
-// ===========================================================================
-// Tests
-// ===========================================================================
 
 #[cfg(test)]
 mod tests {

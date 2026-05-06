@@ -1,4 +1,4 @@
-//! LSP client transport: async-lsp on a shared tokio runtime, with an mpsc
+//! LSP client transport. async-lsp on a shared tokio runtime, with an mpsc
 //! bridge from the async side into ECS via [`LspClient::try_recv`].
 
 use std::ops::ControlFlow;
@@ -32,12 +32,12 @@ use tower::ServiceBuilder;
 use super::capabilities::ServerCapabilities;
 use super::messages::{CodeActionOrCommand, LspMessage, LspResponse};
 
-/// Kept for API parity. async-lsp doesn't enforce per-request deadlines;
+/// API-parity constant. async-lsp doesn't enforce per-request deadlines;
 /// servers handle long-running work via cancel/progress.
 pub const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 30;
 
-/// LSP client. Pair with [`crate::LspDocument`] and
-/// [`crate::ServerCapabilities`] on the same entity.
+/// Pair with [`crate::LspDocument`] and [`crate::ServerCapabilities`] on the
+/// same entity to bind a server connection to a document.
 #[derive(Component)]
 pub struct LspClient {
     server: Option<ServerSocket>,
@@ -61,7 +61,7 @@ impl Default for LspClient {
 }
 
 impl LspClient {
-    /// Construct a not-yet-started client. Call [`LspClient::start`] to spawn
+    /// Construct a not-yet-started client; call [`LspClient::start`] to spawn
     /// the language server.
     pub fn new() -> Self {
         let (response_tx, response_rx) = unbounded_channel();
@@ -78,10 +78,9 @@ impl LspClient {
         }
     }
 
-    /// Spawn the language server and start the main loop on `runtime`.
-    /// Returns `Err` only on synchronous spawn failure (binary not on PATH,
-    /// permissions); async errors are logged via `warn!` and surface as the
-    /// bridge channel going quiet.
+    /// Spawn the language server and run its main loop on `runtime`. `Err` only
+    /// on synchronous spawn failure (binary missing, permissions); async errors
+    /// log via `warn!` and surface as the bridge channel going quiet.
     pub fn start(
         &mut self,
         runtime: &TokioTasksRuntime,
@@ -92,7 +91,7 @@ impl LspClient {
         debug!("[LSP] Starting server: {} {:?}", command, args);
 
         // tokio::process::Command::spawn needs an active reactor on the
-        // current thread; Bevy systems run outside any. Enter the runtime
+        // current thread, but Bevy systems run outside any. Enter the runtime
         // for the spawn, then drop the guard.
         let handle = runtime.runtime().handle().clone();
         let mut child = {
@@ -142,8 +141,8 @@ impl LspClient {
             }
         });
 
-        // `run_buffered` wants `futures::AsyncRead/Write`; tokio's ChildStd*
-        // only implement the tokio variants. Compat shim bridges them.
+        // run_buffered wants futures::AsyncRead/Write; tokio's ChildStd* only
+        // implement the tokio variants. Compat shim bridges them.
         let watchdog_tx = self.response_tx.clone();
         let watchdog_flag = self.shutting_down.clone();
         let join = runtime.spawn_background_task(move |_ctx| async move {
@@ -151,8 +150,7 @@ impl LspClient {
             let stdin = stdin.compat_write();
             let outcome = mainloop.run_buffered(stdout, stdin).await;
             let _ = child.wait().await;
-            // Only treat the mainloop exit as a crash if we weren't
-            // explicitly shutting the server down.
+            // Only treat mainloop exit as a crash if we weren't shutting down.
             if !watchdog_flag.load(Ordering::Acquire) {
                 if let Err(err) = outcome {
                     warn!("[LSP] main loop exited unexpectedly: {err}");
@@ -168,12 +166,11 @@ impl LspClient {
         Ok(())
     }
 
-    /// Has the server process been started?
     pub fn started(&self) -> bool {
         self.server.is_some()
     }
 
-    /// Send a message. Responses arrive asynchronously via [`Self::try_recv`].
+    /// Responses arrive asynchronously via [`Self::try_recv`].
     pub fn send(&self, message: LspMessage) {
         let Some(server) = self.server.as_ref() else {
             #[cfg(debug_assertions)]
@@ -245,8 +242,8 @@ impl LspClient {
         });
     }
 
-    /// Like [`Self::send`] but skips the message if `caps` doesn't advertise
-    /// support. Init handshake + notifications are always permitted.
+    /// Like [`Self::send`] but skips messages `caps` doesn't advertise.
+    /// Init handshake + notifications are always permitted.
     pub fn send_if_supported(&self, message: LspMessage, caps: &ServerCapabilities) -> bool {
         let allowed = match &message {
             LspMessage::Initialize { .. }
@@ -292,35 +289,29 @@ impl LspClient {
         }
     }
 
-    /// No-op; kept for API parity. async-lsp manages request lifetime.
+    /// No-op; API parity. async-lsp manages request lifetime.
     pub fn cleanup_timeouts(&self) {}
 
     pub fn is_ready(&self) -> bool {
         self.initialized
     }
 
-    /// Initiate graceful shutdown. Sends `Shutdown` then `Exit` to the
-    /// server; the mainloop watchdog won't surface the channel close as
-    /// a `Crashed` response since `shutting_down` is set first. The
-    /// caller usually wires this from a `bevy::app::AppExit` observer.
+    /// Send `Shutdown` then `Exit`; setting `shutting_down` first prevents the
+    /// watchdog from reporting the channel close as `Crashed`. Usually wired
+    /// from a `bevy::app::AppExit` observer.
     pub fn shutdown(&self) {
         if self.server.is_none() {
             return;
         }
         self.shutting_down.store(true, Ordering::Release);
-        // Send `Shutdown` (request) and `Exit` (notification). We don't
-        // wait for the shutdown ack here — async-lsp will handle the
-        // response when it arrives, and the watchdog won't flag it as a
-        // crash either way because of `shutting_down`.
-        // Use `0` for the id since the response handling on
-        // `ShutdownAck` is purely informational.
+        // id=0 because ShutdownAck handling is informational; async-lsp
+        // delivers the response whenever it arrives.
         self.send(LspMessage::Shutdown { id: 0 });
         self.send(LspMessage::Exit);
     }
 
-    /// `true` after the watchdog has reported the mainloop closing
-    /// without an explicit shutdown — the host should consider
-    /// restarting the client (drop and re-spawn).
+    /// `true` after the watchdog reports the mainloop closing without an
+    /// explicit shutdown — host should drop and re-spawn the client.
     pub fn is_shutting_down(&self) -> bool {
         self.shutting_down.load(Ordering::Acquire)
     }
@@ -328,21 +319,16 @@ impl LspClient {
 
 impl Drop for LspClient {
     fn drop(&mut self) {
-        // Abort + kill_on_drop(true) terminates the server process.
+        // abort() + kill_on_drop(true) terminates the server process.
         if let Some(abort) = self.mainloop_abort.take() {
             abort.abort();
         }
     }
 }
 
-// ============================================================================
-// Dispatch
-// ============================================================================
-
 type Tx = UnboundedSender<LspResponse>;
 
-/// Spawn a typed request and feed the typed result into `map` on success.
-/// Method name comes from `R::METHOD` so logs stay correct without a literal.
+/// Spawn a typed request and feed its result into `map` on success.
 fn spawn<R>(server: &ServerSocket, tx: &Tx, params: R::Params, map: impl FnOnce(R::Result, &Tx) + Send + 'static)
 where
     R: LspRequestTrait + 'static,
@@ -370,7 +356,6 @@ fn log_request_error<R: LspRequestTrait>(err: async_lsp::Error) {
     warn!("[LSP] {} failed: {err}", R::METHOD);
 }
 
-/// Fire a notification; log on error.
 fn fire<N>(server: &ServerSocket, params: N::Params)
 where
     N: LspNotificationTrait + 'static,
@@ -381,7 +366,6 @@ where
     }
 }
 
-/// Send `r` into the bridge, dropping the result.
 #[inline]
 fn emit(tx: &Tx, r: LspResponse) {
     let _ = tx.send(r);
@@ -400,7 +384,7 @@ fn dispatch(
     handle: &tokio::runtime::Handle,
     message: LspMessage,
 ) {
-    // bare tokio::spawn calls inside need an active reactor.
+    // Bare tokio::spawn calls inside the match need an active reactor.
     let _guard = handle.enter();
     match message {
         // Initialize / Initialized are handled by `LspClient::send` directly.
@@ -424,11 +408,6 @@ fn dispatch(
         LspMessage::Exit => fire::<ExitNotif>(server, ()),
     }
 }
-
-// ----------------------------------------------------------------------------
-// Per-request builders. Each is a trivially small function; the heavy lifting
-// (spawn, error logging, type-level method-name resolution) is in `spawn`.
-// ----------------------------------------------------------------------------
 
 fn did_open(server: &ServerSocket, uri: Url, language_id: String, version: i32, text: String) {
     fire::<DidOpenTextDocument>(
@@ -619,6 +598,8 @@ fn execute_command(
     };
     // Fire-and-forget: no ack expected. If the command produces edits,
     // the server emits them via workspace/applyEdit (not handled here).
+    // Fire-and-forget. If the command produces edits, the server emits them
+    // via workspace/applyEdit, which is not handled here.
     spawn::<ExecuteCommand>(server, tx, params, |_result, _tx| {});
 }
 
@@ -646,7 +627,7 @@ fn prepare_rename(server: &ServerSocket, tx: &Tx, uri: Url, position: Position) 
         Some(PrepareRenameResponse::RangeWithPlaceholder { range, placeholder }) => {
             emit(tx, LspResponse::PrepareRename { range, placeholder: Some(placeholder) });
         }
-        // DefaultBehavior wants identifier-at-cursor fallback, which the
+        // DefaultBehavior wants an identifier-at-cursor fallback, which the
         // protocol layer can't compute.
         Some(PrepareRenameResponse::DefaultBehavior { .. }) | None => {}
     });
@@ -677,13 +658,9 @@ fn rename(server: &ServerSocket, tx: &Tx, uri: Url, position: Position, new_name
     });
 }
 
-/// Flatten an LSP `HoverContents` into a single text + markup-kind pair.
-///
-/// `MarkupContent` already carries a `kind`, so we pass it through.
-/// `MarkedString::LanguageString` is a fenced code block in markdown
-/// terms (the `language` field becomes the fence info string), so
-/// when any element of an `Array` is a `LanguageString`, the result
-/// is treated as Markdown. A bare `MarkedString::String` is plain text.
+/// Flatten LSP `HoverContents` into a `(text, kind)` pair. An `Array` mixing
+/// `LanguageString` with plain text renders as Markdown so the renderer can
+/// treat fenced blocks uniformly.
 fn extract_hover_content(contents: &HoverContents) -> (String, MarkupKind) {
     match contents {
         HoverContents::Markup(markup) => (markup.value.clone(), markup.kind.clone()),
@@ -709,9 +686,8 @@ fn extract_hover_content(contents: &HoverContents) -> (String, MarkupKind) {
     }
 }
 
-/// Single `MarkedString` → `(content, kind)`. A `LanguageString` is
-/// rendered as a fenced markdown code block so the markdown renderer
-/// downstream can treat it uniformly.
+/// `LanguageString` becomes a fenced markdown code block so the renderer can
+/// treat it uniformly.
 fn marked_string_with_kind(ms: &MarkedString) -> (String, MarkupKind) {
     match ms {
         MarkedString::String(s) => (s.clone(), MarkupKind::PlainText),
@@ -722,10 +698,8 @@ fn marked_string_with_kind(ms: &MarkedString) -> (String, MarkupKind) {
     }
 }
 
-/// Render one `MarkedString` element of a hover array. When the array
-/// is heterogeneous (mixing language-strings with plain text) we render
-/// the whole thing as markdown, fencing language blocks accordingly;
-/// when all elements are plain text we just concatenate.
+/// When the array is heterogeneous (language-strings + plain text) we render
+/// the whole thing as markdown; when all elements are plain text we concatenate.
 fn render_marked_string(ms: &MarkedString, force_markdown: bool) -> String {
     match ms {
         MarkedString::String(s) => s.clone(),

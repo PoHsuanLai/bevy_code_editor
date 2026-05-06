@@ -43,11 +43,8 @@ impl<'a> Iterator for RopeChunks<'a> {
 /// Maximum bytes to query at once (matches Zed's heuristic).
 pub const MAX_BYTES_TO_QUERY: usize = 16 * 1024;
 
-/// Zero-copy rope reader for tree-sitter parsing.
-///
-/// `parse_with` calls this with arbitrary byte offsets; the reader streams
-/// rope chunks forward and returns a slice starting at the requested offset
-/// without allocating. Seeking backwards resets the chunk iterator.
+/// Zero-copy rope reader for `parse_with`. Streams chunks forward; seeking
+/// backwards resets the chunk iterator.
 pub struct RopeReader<'a> {
     rope: &'a Rope,
     chunks: ropey::iter::Chunks<'a>,
@@ -85,29 +82,16 @@ impl<'a> RopeReader<'a> {
     }
 }
 
-/// Tree-sitter-based `SyntaxProvider`.
+/// Tree-sitter-based [`SyntaxProvider`].
 pub struct TreeSitterProvider {
-    /// The compiled highlight query.
     query: Option<Query>,
-
-    /// Capture-name intern table for `query`. Indexed by `capture.index`.
-    /// Populated alongside `query` in `set_query`; cloning an entry is a
-    /// refcount bump rather than a string allocation.
+    /// Intern table indexed by `capture.index`; cloning is a refcount bump.
     capture_names: Vec<Arc<str>>,
-
-    /// Cached parse tree (incremental).
     pub cached_tree: Option<Tree>,
-
-    /// Reused parser, keyed to `cached_language`.
     pub cached_parser: Option<Parser>,
-
-    /// Language used for parsing — kept so async tasks can recreate a parser.
+    /// Kept so async tasks can recreate a parser without the `Language` Component.
     pub cached_language: Option<Language>,
-
-    /// Reusable query cursor (avoids per-call allocation).
     query_cursor: QueryCursor,
-
-    /// Last rope handed to `update_tree` / `apply_sync_edit`.
     /// `Rope` is `Arc`-backed, so cloning is cheap.
     pub cached_rope: Option<Rope>,
 }
@@ -125,9 +109,8 @@ impl TreeSitterProvider {
         }
     }
 
-    /// Compile and store a highlight query for the given language.
-    ///
-    /// Resets the cached parser/tree so the next parse picks up the new grammar.
+    /// Compile a highlight query. Resets cached parser/tree so the next parse
+    /// picks up the new grammar.
     pub fn set_query(
         &mut self,
         query_source: &str,
@@ -146,13 +129,9 @@ impl TreeSitterProvider {
         Ok(())
     }
 
-    /// Apply an edit synchronously (Zed's "tree interpolation").
-    ///
-    /// `tree.edit()` shifts the existing tree's byte offsets in O(log n)
-    /// without re-parsing — the tree stays structurally valid for highlight
-    /// queries while the full async re-parse runs in the background. For
-    /// small documents we also re-parse synchronously so highlights are
-    /// immediately correct.
+    /// Apply an edit synchronously ("tree interpolation"). `tree.edit()` shifts
+    /// byte offsets in O(log n) so highlights stay valid while the async
+    /// re-parse runs; also re-parses synchronously for small documents.
     pub fn apply_sync_edit(&mut self, edit: tree_sitter::InputEdit, rope: &Rope) {
         if let Some(ref mut tree) = self.cached_tree {
             tree.edit(&edit);
@@ -173,19 +152,16 @@ impl TreeSitterProvider {
         self.cached_rope = Some(rope.clone());
     }
 
-    /// Read-only access to the cached tree (for folding, outline, etc.).
     pub fn tree(&self) -> Option<&Tree> {
         self.cached_tree.as_ref()
     }
 
-    /// Drop the cached tree and rope. Used when content shifts in a way that
-    /// would leave byte offsets stale.
+    /// Drop cached tree and rope when content shifts would leave byte offsets stale.
     pub fn invalidate_tree(&mut self) {
         self.cached_tree = None;
         self.cached_rope = None;
     }
 
-    /// Re-parse the tree from `rope` (zero-copy via `RopeReader`).
     pub fn update_tree(&mut self, rope: &Rope) {
         self.cached_rope = Some(rope.clone());
 

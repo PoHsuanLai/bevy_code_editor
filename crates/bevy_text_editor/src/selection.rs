@@ -4,14 +4,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::anchor::{Anchor, AnchorSet, TextEdit};
 
-// ========== Selection Collection ==========
-
-/// A selection represents a cursor position with an optional anchor for text selection.
-/// Uses anchors for edit-resilience, meaning positions automatically adjust when text is edited.
-///
-/// The selection is defined by:
-/// - `head`: The cursor position (where the cursor is displayed, with Left bias)
-/// - `anchor`: The selection anchor (where the selection started, with Right bias)
+/// Cursor + optional selection anchor, both edit-resilient. `head` is the
+/// cursor (Left bias); `anchor` is where the selection started (Right bias).
 ///
 /// When `head == anchor`, there's no selection (just a cursor).
 /// The head and anchor can be in any order - head can be before or after anchor.

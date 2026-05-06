@@ -114,21 +114,16 @@ pub struct GlyphInstance {
     pub _padding: [f32; 2],
 }
 
-/// Marker component for a text view's GPU batch entity
 #[derive(Component)]
 pub struct TextViewBatch {
-    /// The scroll offset when this batch was built
     pub built_at_scroll: f32,
     pub built_at_horizontal_scroll: f32,
-    /// The visible line range when built
     pub first_line: usize,
     pub last_line: usize,
-    /// Viewport dimensions when built
     pub built_at_width: u32,
     pub built_at_height: u32,
 }
 
-/// Component containing batch of glyph instances for GPU rendering
 #[derive(Component, Clone)]
 pub struct GlyphBatchComponent {
     pub instances: Vec<GlyphInstance>,
@@ -138,14 +133,9 @@ pub struct GlyphBatchComponent {
     pub render_layer: Option<u8>,
 }
 
-/// Render a `DisplayLayout` into glyph instances.
-///
-/// This is the new path: the renderer is a pure function over an immutable snapshot.
-/// The caller (display_map) has already done folding, soft-wrap, viewport culling,
-/// and styling — every `ShapedLine` in `layout.lines` is in display order, ready to paint.
-///
-/// Overlays (cursor, selection, line highlight, brackets) are layered in via `RectOverlay`.
-/// Negative-z rects render below text; positive-z above.
+/// Render a `DisplayLayout` into glyph instances. Pure function over an immutable
+/// snapshot — folding, wrapping, culling, and styling are already done by the producer.
+/// Overlays via `RectOverlay`: negative-z renders below text, positive-z above.
 pub fn render_layout(
     layout: &DisplayLayout,
     overlays: Option<&TextViewOverlays>,

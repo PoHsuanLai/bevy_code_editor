@@ -9,20 +9,16 @@ use crate::text_view::TextViewState;
 #[derive(Clone, Debug, Default, Component, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct GotoLineState {
-    /// Whether the goto line dialog is active
     pub active: bool,
-    /// The line number input (as string for easier input handling)
     pub input: String,
 }
 
 impl GotoLineState {
-    /// Try to parse the input as a line number and return it (1-indexed)
+    /// Returns the parsed line number (1-indexed), or `None` on invalid input.
     pub fn parse_line_number(&self) -> Option<usize> {
         self.input.trim().parse::<usize>().ok()
     }
 
-    /// Execute goto line: moves cursor to the specified line
-    /// Returns true if the navigation was successful
     pub fn goto(
         &self,
         sel: &mut SelectionState,
@@ -31,12 +27,10 @@ impl GotoLineState {
     ) -> bool {
         if let Some(line_num) = self.parse_line_number() {
             let total_lines = tv.rope.len_lines();
-            // Clamp line number to valid range (1-indexed input, convert to 0-indexed)
+            // 1-indexed input → 0-indexed, clamped
             let target_line = line_num
                 .saturating_sub(1)
                 .min(total_lines.saturating_sub(1));
-
-            // Move cursor to the start of the target line
             let char_pos = tv.rope.line_to_char(target_line);
             cursor.cursor_pos = char_pos;
             sel.apply_primary_cursor(cursor);
@@ -46,7 +40,6 @@ impl GotoLineState {
         false
     }
 
-    /// Clear the goto line state
     pub fn clear(&mut self) {
         self.active = false;
         self.input.clear();
@@ -98,22 +91,19 @@ impl FoldRegion {
         }
     }
 
-    /// Check if this region contains a given line
     pub fn contains_line(&self, line: usize) -> bool {
         line >= self.start_line && line <= self.end_line
     }
 
-    /// Check if this fold hides a given line (folded and line is inside but not the first)
+    /// `true` when folded and `line` is inside but not the first row.
     pub fn hides_line(&self, line: usize) -> bool {
         self.is_folded && line > self.start_line && line <= self.end_line
     }
 
-    /// Get the number of lines this region spans
     pub fn line_count(&self) -> usize {
         self.end_line.saturating_sub(self.start_line) + 1
     }
 
-    /// Get the number of hidden lines when folded
     pub fn hidden_line_count(&self) -> usize {
         if self.is_folded {
             self.end_line.saturating_sub(self.start_line)
@@ -123,30 +113,22 @@ impl FoldRegion {
     }
 }
 
-/// The kind of foldable region
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Reflect)]
 #[reflect(Debug, PartialEq, Hash)]
 pub enum FoldKind {
-    /// Function or method definition
     Function,
-    /// Class or struct definition
     Class,
-    /// Generic block (if/else, loop, etc.)
     Block,
-    /// Import/include statements
     Imports,
-    /// Comment block
     Comment,
-    /// Region marker (manual fold markers like #region)
+    /// Manual fold marker (`#region`).
     Region,
-    /// Array or object literal
     Literal,
-    /// Unknown/other
     Other,
 }
 
 impl FoldKind {
-    /// Get the fold indicator character for the gutter
+    /// Gutter indicator character.
     pub fn indicator(&self) -> char {
         match self {
             FoldKind::Function => '\u{0192}',
@@ -161,12 +143,10 @@ impl FoldKind {
 #[derive(Component, Clone, Debug, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct FoldState {
-    /// All detected fold regions, sorted by start line
+    /// Sorted by start line.
     pub regions: Vec<FoldRegion>,
-    /// Version of the content when folds were last computed
-    /// Initialized to usize::MAX to force detection on first run
+    /// Initialized to `usize::MAX` to force detection on first run.
     pub content_version: usize,
-    /// Whether fold detection is enabled
     pub enabled: bool,
 }
 

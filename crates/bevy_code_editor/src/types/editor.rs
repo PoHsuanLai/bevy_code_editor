@@ -11,13 +11,11 @@ use std::time::Instant;
 
 use super::display_map::{HighlightedToken, LineSegment};
 
-/// Configuration for viewport behavior
+/// When `true`, viewport auto-resizes to window; when `false`, the host manages
+/// [`ViewportDimensions`] manually.
 #[derive(Resource, Clone, Copy, Debug, Reflect)]
 #[reflect(Resource, Default, Debug)]
 pub struct ViewportConfig {
-    /// If true, viewport automatically resizes to match window size.
-    /// If false, you must manually set [`ViewportDimensions`].
-    /// Default: true.
     pub auto_resize_to_window: bool,
 }
 
@@ -29,35 +27,19 @@ impl Default for ViewportConfig {
     }
 }
 
-/// Viewport dimensions and layout information
-///
-/// This resource tracks both the viewport size and the computed layout for rendering.
-/// The UI plugin (or custom UI) is responsible for computing the layout based on
-/// its own settings and updating this resource.
+/// Viewport size and computed layout. The UI plugin sets the layout fields;
+/// the host may also manage them manually.
 #[derive(Resource, Clone, Copy, Debug, Reflect)]
 #[reflect(Resource, Default, Debug)]
 pub struct ViewportDimensions {
-    /// Viewport width in pixels
     pub width: u32,
-
-    /// Viewport height in pixels
     pub height: u32,
-
-    /// How the viewport's top-left maps to world coordinates.
-    /// See [`crate::text_view::ViewportOrigin`].
+    /// How the top-left maps to world coords. See [`crate::text_view::ViewportOrigin`].
     pub origin: crate::text_view::ViewportOrigin,
-
-    // === Computed Layout (set by UI plugin) ===
-    /// Left margin/padding before text starts
     pub text_area_left: f32,
-
-    /// Top margin/padding before text starts
     pub text_area_top: f32,
-
-    /// Width of the gutter area (line numbers, etc.)
+    /// 0 for views without a gutter.
     pub gutter_width: f32,
-
-    /// X position of the separator line between gutter and code
     pub separator_x: f32,
 }
 
@@ -73,7 +55,6 @@ impl ViewportDimensions {
         }
     }
 
-    /// Calculate the world coordinate of the viewport's left edge
     pub fn world_left(&self) -> f32 {
         self.origin_position().x
     }

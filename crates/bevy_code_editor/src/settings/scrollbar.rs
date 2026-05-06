@@ -3,29 +3,15 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// Scrollbar settings
 #[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
 #[reflect(Resource, Default, Debug)]
 pub struct ScrollbarSettings {
-    /// Enable scrollbar
     pub enabled: bool,
-
-    /// Scrollbar width in pixels
     pub width: f32,
-
-    /// Scrollbar background color
     pub background_color: Color,
-
-    /// Scrollbar thumb color
     pub thumb_color: Color,
-
-    /// Scrollbar thumb hover color
     pub thumb_hover_color: Color,
-
-    /// Auto-hide when not hovering
     pub auto_hide: bool,
-
-    /// Fade duration (seconds) for auto-hide
     pub fade_duration: f32,
 }
 
