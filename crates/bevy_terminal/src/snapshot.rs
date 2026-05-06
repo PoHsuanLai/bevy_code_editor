@@ -16,7 +16,7 @@ use bevy_text_engine::{
 use ropey::Rope;
 use vte::ansi::{Color as AnsiColor, NamedColor, Rgb};
 
-use crate::types::{TerminalGridSnapshot, TerminalSession, TerminalThemeConfig};
+use crate::types::{TerminalGridSnapshot, TerminalSession, TerminalColorPalette};
 
 /// Per-frame snapshot system: take the term lock, copy the visible grid
 /// into the entity's rope + `LineStyles`, bump `TerminalGridSnapshot.version`.
@@ -28,7 +28,7 @@ pub fn sync_grid_snapshot(
         &TerminalSession,
         &mut TextBuffer,
         &TextViewViewport,
-        &TerminalThemeConfig,
+        &TerminalColorPalette,
         &RenderTheme,
         &mut LineStyles,
         &mut TerminalGridSnapshot,
@@ -146,11 +146,11 @@ fn rope_text_differs(rope: &Rope, candidate: &Rope) -> bool {
 }
 
 /// Map an alacritty `Color` (Named / Spec / Indexed) to a Bevy `Color`
-/// using the per-entity `TerminalThemeConfig` palette and engine
+/// using the per-entity `TerminalColorPalette` palette and engine
 /// `RenderTheme` defaults.
 pub fn resolve_color(
     c: AnsiColor,
-    palette: &TerminalThemeConfig,
+    palette: &TerminalColorPalette,
     render: &RenderTheme,
 ) -> Color {
     match c {
@@ -166,7 +166,7 @@ pub fn resolve_color(
     }
 }
 
-fn named_color(n: NamedColor, palette: &TerminalThemeConfig, render: &RenderTheme) -> Color {
+fn named_color(n: NamedColor, palette: &TerminalColorPalette, render: &RenderTheme) -> Color {
     use NamedColor as N;
     match n {
         N::Black => palette.ansi[0],

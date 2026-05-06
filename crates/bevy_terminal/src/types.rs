@@ -49,7 +49,7 @@ use crate::session::EventProxy;
     TerminalShellInfo,
     TerminalInputMode,
     TerminalBlockState,
-    TerminalThemeConfig,
+    TerminalColorPalette,
     TerminalScrollback,
     crate::cursor::TerminalCursorBlink,
     Pickable,
@@ -153,7 +153,7 @@ pub enum BlockStatus {
 /// extras: the 16 ANSI colors plus block backgrounds.
 #[derive(Component, Clone, Debug, Reflect)]
 #[reflect(Component, Default, Debug)]
-pub struct TerminalThemeConfig {
+pub struct TerminalColorPalette {
     /// ANSI 0..=7 (normal) followed by 8..=15 (bright).
     pub ansi: [Color; 16],
     /// Background tint for the active command block.
@@ -162,7 +162,7 @@ pub struct TerminalThemeConfig {
     pub block_completed: Color,
 }
 
-impl Default for TerminalThemeConfig {
+impl Default for TerminalColorPalette {
     fn default() -> Self {
         // VS Code "Dark+" palette. Hosts that want a different look should
         // override the component on spawn or mutate it at runtime.

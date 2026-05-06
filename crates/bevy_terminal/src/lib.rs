@@ -37,7 +37,7 @@ pub mod prelude {
     };
     pub use crate::types::{
         BevyTerminal, BlockStatus, TerminalBlock, TerminalBlockState, TerminalGridSnapshot,
-        TerminalInputMode, TerminalScrollback, TerminalShellInfo, TerminalThemeConfig,
+        TerminalInputMode, TerminalScrollback, TerminalShellInfo, TerminalColorPalette,
     };
     // Re-export the bits hosts need to spawn a styled BevyTerminal.
     pub use bevy_text_engine::{FontConfig, TextViewViewport};

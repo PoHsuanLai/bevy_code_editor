@@ -19,7 +19,7 @@ use crate::messages::*;
 use crate::session::{on_terminal_added, TerminalEventLoopRegistry};
 use crate::types::{
     BevyTerminal, TerminalBlockState, TerminalGridSnapshot, TerminalInputMode,
-    TerminalScrollback, TerminalShellInfo, TerminalThemeConfig,
+    TerminalScrollback, TerminalShellInfo, TerminalColorPalette,
 };
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -36,8 +36,6 @@ pub struct BevyTerminalPlugin;
 
 impl Plugin for BevyTerminalPlugin {
     fn build(&self, app: &mut App) {
-        // Idempotently bring in the picking + input-focus + interaction
-        // plumbing the engine + editor crates rely on. Mirrors the editor.
         if !app.is_plugin_added::<bevy::input_focus::InputDispatchPlugin>() {
             app.add_plugins(bevy::input_focus::InputDispatchPlugin);
         }
@@ -45,13 +43,12 @@ impl Plugin for BevyTerminalPlugin {
             app.add_plugins(bevy_text_editor::TextInteractionPlugin);
         }
 
-        // Type registration — every plain-data Component & Message reflectable.
         app.register_type::<BevyTerminal>()
             .register_type::<TerminalGridSnapshot>()
             .register_type::<TerminalShellInfo>()
             .register_type::<TerminalInputMode>()
             .register_type::<TerminalBlockState>()
-            .register_type::<TerminalThemeConfig>()
+            .register_type::<TerminalColorPalette>()
             .register_type::<TerminalScrollback>()
             .register_type::<TerminalReady>()
             .register_type::<TerminalExited>()
@@ -89,8 +86,6 @@ impl Plugin for BevyTerminalPlugin {
         app.register_type::<bevy_text_engine::RenderTheme>();
         app.register_type::<bevy_text_editor::EditTheme>();
 
-        // System-set chain. Engine's `LayoutProduceSet` reads our LineStyles
-        // and TextBuffer, so it must run *after* our SnapshotSet.
         app.configure_sets(
             Update,
             (
@@ -102,17 +97,11 @@ impl Plugin for BevyTerminalPlugin {
         );
         app.configure_sets(Update, LayoutProduceSet.after(TerminalSnapshotSet));
 
-        // Drain alacritty events into ECS once per frame.
         app.add_systems(Update, drain_pty_events.in_set(TerminalPtyDrainSet));
-
-        // Viewport changes drive Term + PTY resize.
         app.add_systems(
             Update,
             crate::viewport::sync_terminal_size.in_set(TerminalApplyStateSet),
         );
-
-        // Clipboard + raw-write message handlers. These run in
-        // ApplyStateSet so any subsequent snapshot picks up the writes.
         app.add_systems(
             Update,
             (
@@ -123,14 +112,11 @@ impl Plugin for BevyTerminalPlugin {
             )
                 .in_set(TerminalApplyStateSet),
         );
-
-        // Build the per-frame grid snapshot + LineStyles for the engine.
         app.add_systems(
             Update,
             crate::snapshot::sync_grid_snapshot.in_set(TerminalSnapshotSet),
         );
 
-        // Caret tracking + overlay push.
         app.register_type::<crate::cursor::TerminalCursorBlink>();
         app.add_systems(
             Update,
@@ -143,15 +129,7 @@ impl Plugin for BevyTerminalPlugin {
                 .after(crate::snapshot::sync_grid_snapshot),
         );
 
-        // Spawn observer fires on `commands.spawn(BevyTerminal)`. We don't
-        // register a Remove observer yet — the EventLoop thread exits when
-        // its PTY is closed (which happens when the OS reaps the process).
-        // Phase 4 may revisit when explicit despawn-during-runtime matters.
         app.add_observer(on_terminal_added);
-
-        // Keyboard firehose: per-event observer that translates keystrokes
-        // to PTY bytes. Routed by `bevy::input_focus::FocusedInput<KeyboardInput>`
-        // — the focused entity is the recipient.
         app.add_observer(crate::input::on_focused_terminal_keyboard);
     }
 }
