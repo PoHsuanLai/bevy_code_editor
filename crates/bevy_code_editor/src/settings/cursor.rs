@@ -1,60 +1,16 @@
-//! Cursor and selection settings
+//! Editor-side cursor settings.
+//!
+//! `CursorSettings` and `CursorStyle` (caret shape, blink, key-repeat
+//! timing) live in `bevy_text_editor`; the terminal needs them too. We
+//! re-export them here so `crate::settings::*` callers don't notice.
+//!
+//! `CursorLineSettings` (the editor's VSCode-style line-highlight band)
+//! stays here — it's editor chrome, not a text-widget primitive.
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
-#[reflect(Resource, Default, Debug)]
-pub struct CursorSettings {
-    pub style: CursorStyle,
-    /// In pixels; for `Line` and `Underline` styles.
-    pub width: f32,
-    /// Fraction of line height.
-    pub height_multiplier: f32,
-    /// Seconds per blink cycle; 0 = no blink.
-    pub blink_rate: f32,
-    pub smooth_animation: bool,
-    pub animation_speed: f32,
-    pub key_repeat: KeyRepeatSettings,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Reflect)]
-#[reflect(Default, Debug)]
-pub struct KeyRepeatSettings {
-    pub initial_delay_ms: u64,
-    pub repeat_delay_ms: u64,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Reflect)]
-#[reflect(Debug, PartialEq)]
-pub enum CursorStyle {
-    Line,
-    Block,
-    Underline,
-}
-
-impl Default for CursorSettings {
-    fn default() -> Self {
-        Self {
-            style: CursorStyle::Line,
-            width: 2.0,
-            height_multiplier: 1.0,
-            blink_rate: 0.5,
-            smooth_animation: true,
-            animation_speed: 10.0,
-            key_repeat: KeyRepeatSettings::default(),
-        }
-    }
-}
-
-impl Default for KeyRepeatSettings {
-    fn default() -> Self {
-        Self {
-            initial_delay_ms: 500,
-            repeat_delay_ms: 50,
-        }
-    }
-}
+pub use bevy_text_editor::{CursorSettings, CursorStyle};
 
 /// VSCode-style cursor-line highlighting.
 #[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]

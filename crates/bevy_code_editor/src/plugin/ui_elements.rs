@@ -8,7 +8,6 @@ use crate::text_view::{
 use crate::types::*;
 use bevy::prelude::*;
 use bevy_text_engine::FontConfig;
-use bevy_text_editor::ScrollConfig;
 
 /// Push selection rectangles into `TextViewOverlays` for all cursors.
 ///
@@ -371,61 +370,6 @@ pub(crate) fn update_indent_guides(
     for i in entity_index..existing_guides.len() {
         let (_, _, ref mut visibility, _) = &mut existing_guides[i];
         **visibility = Visibility::Hidden;
-    }
-}
-
-/// Animate smooth scrolling by interpolating towards target scroll offset
-pub(crate) fn animate_smooth_scroll(
-    mut editor_query: Query<
-        (
-            &mut TextViewState,
-            &super::scrollbar::ScrollbarDragState,
-            &ScrollConfig,
-        ),
-        With<CodeEditor>,
-    >,
-    time: Res<Time>,
-) {
-    for (mut tv, scrollbar_drag, scroll_cfg) in editor_query.iter_mut() {
-        // When dragging scrollbar or smooth scrolling disabled, apply target immediately
-        let is_dragging = scrollbar_drag.is_dragging;
-
-        let use_smooth = scroll_cfg.smooth && !is_dragging;
-
-        if !use_smooth {
-            // Instant update - no interpolation
-            if (tv.target_scroll_offset - tv.scroll_offset).abs() > 0.001 {
-                tv.scroll_offset = tv.target_scroll_offset;
-            }
-            if (tv.target_horizontal_scroll_offset - tv.horizontal_scroll_offset).abs() > 0.001 {
-                tv.horizontal_scroll_offset = tv.target_horizontal_scroll_offset;
-            }
-            continue;
-        }
-
-        // Smooth scrolling interpolation factor (higher = faster)
-        // Using exponential decay for natural feel
-        let smoothness = 12.0; // Adjust for desired smoothness
-        let dt = time.delta_secs();
-        let t = 1.0 - (-smoothness * dt).exp();
-
-        // Vertical scroll animation
-        let vertical_diff = tv.target_scroll_offset - tv.scroll_offset;
-        if vertical_diff.abs() > 0.1 {
-            tv.scroll_offset += vertical_diff * t;
-        } else if vertical_diff.abs() > 0.0 {
-            // Snap to target when close enough
-            tv.scroll_offset = tv.target_scroll_offset;
-        }
-
-        // Horizontal scroll animation
-        let horizontal_diff = tv.target_horizontal_scroll_offset - tv.horizontal_scroll_offset;
-        if horizontal_diff.abs() > 0.1 {
-            tv.horizontal_scroll_offset += horizontal_diff * t;
-        } else if horizontal_diff.abs() > 0.0 {
-            // Snap to target when close enough
-            tv.horizontal_scroll_offset = tv.target_horizontal_scroll_offset;
-        }
     }
 }
 

@@ -8,16 +8,19 @@
 pub mod anchor;
 pub mod components;
 pub mod cursor_movement;
+pub mod cursor_settings;
 pub mod edit;
 pub mod editing_events;
 pub mod handlers;
 pub mod history;
 pub mod interaction;
+pub mod key_repeat;
 pub mod picking;
 pub mod plugin;
 pub mod prelude;
 pub mod selection;
 pub mod state;
+pub mod theme;
 pub mod typing;
 
 pub use anchor::{Anchor, AnchorBias, AnchorRange, AnchorSet, TextEdit};
@@ -32,3 +35,6 @@ pub use state::{
     CursorState, EditDelta, EditHistoryState, EditPoint, IndentConfig, OnEdit, SelectionState,
     SnapshotPreEdit, TextEditor,
 };
+pub use cursor_settings::{caret_overlay, cursor_blink_visible, CursorSettings, CursorStyle};
+pub use key_repeat::{KeyRepeatSettings, KeyRepeatState};
+pub use theme::EditTheme;

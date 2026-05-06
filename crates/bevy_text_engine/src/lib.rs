@@ -24,17 +24,20 @@
 //! ```
 
 pub mod gpu;
+pub mod ui;
 pub mod view;
 
 pub use gpu::*;
+pub use ui::*;
 pub use view::*;
 
 pub mod prelude {
     //! Common types for spawning and rendering text views.
     pub use crate::gpu::{GlyphAtlasPlugin, InstancedTextRenderPlugin};
+    pub use crate::ui::{Scrollbar, ScrollbarOrientation, ScrollbarPlugin, ScrollState};
     pub use crate::view::{
         Block, BlockLayoutConfig, BlockList, DisplayLayout, FontConfig, FontSynthesis,
-        HiddenLines, LayoutWrap, LineStyles, RunWithText, StyleRun, TextEnginePlugin,
-        TextEnginePlugins, TextView, TextViewState, TextViewViewport,
+        HiddenLines, LayoutWrap, LineStyles, RenderTheme, RunWithText, StyleRun,
+        TextEnginePlugin, TextEnginePlugins, TextView, TextViewState, TextViewViewport,
     };
 }

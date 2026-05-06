@@ -282,14 +282,15 @@ impl Plugin for CodeEditorPlugin {
         // propagation flows through the event bus.
         app.add_observer(crate::input::on_edit_invalidate_caches);
 
-        // Add state update systems in ApplyStateSet (convert targets to actual state)
+        // Auto-scroll-to-cursor sets target_scroll_offset; the actual
+        // animation toward target lives in `bevy_text_engine` (smooth) and
+        // `bevy_text_editor::apply_instant_scroll` (instant when
+        // `ScrollConfig.smooth = false`). Both already run for any TextView,
+        // so the editor only needs the cursor-target setter.
         app.add_systems(
             Update,
-            (
-                ui_elements::animate_smooth_scroll,
-                ui_elements::auto_scroll_to_cursor.run_if(ui_elements::should_auto_scroll),
-            )
-                .chain()
+            ui_elements::auto_scroll_to_cursor
+                .run_if(ui_elements::should_auto_scroll)
                 .in_set(ApplyStateSet),
         );
 

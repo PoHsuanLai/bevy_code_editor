@@ -414,9 +414,7 @@ pub fn dispatch_action_events(
         if action_state.just_pressed(&action) {
             action_to_execute = Some(action);
             if action.is_repeatable() {
-                key_repeat_state.current_action = Some(action);
-                key_repeat_state.press_start = Some(now);
-                key_repeat_state.last_repeat = None;
+                key_repeat_state.arm(action, now);
             }
             break;
         }
@@ -426,27 +424,11 @@ pub fn dispatch_action_events(
     if action_to_execute.is_none() {
         if let Some(current_action) = key_repeat_state.current_action {
             if action_state.pressed(&current_action) {
-                let initial_delay = cursor_settings.key_repeat.initial_delay_ms as f64 / 1000.0;
-                let repeat_interval = cursor_settings.key_repeat.repeat_delay_ms as f64 / 1000.0;
-                if let Some(press_start) = key_repeat_state.press_start {
-                    let elapsed = now.duration_since(press_start).as_secs_f64();
-                    if elapsed >= initial_delay {
-                        let should_repeat = match key_repeat_state.last_repeat {
-                            Some(last) => {
-                                now.duration_since(last).as_secs_f64() >= repeat_interval
-                            }
-                            None => true,
-                        };
-                        if should_repeat {
-                            action_to_execute = Some(current_action);
-                            key_repeat_state.last_repeat = Some(now);
-                        }
-                    }
+                if let Some(action) = key_repeat_state.tick(now, &cursor_settings.key_repeat) {
+                    action_to_execute = Some(action);
                 }
             } else {
-                key_repeat_state.current_action = None;
-                key_repeat_state.press_start = None;
-                key_repeat_state.last_repeat = None;
+                key_repeat_state.release();
             }
         }
     }

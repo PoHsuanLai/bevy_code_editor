@@ -12,3 +12,4 @@ pub use crate::selection::{Selection, SelectionCollection};
 pub use crate::state::{
     CursorState, EditHistoryState, IndentConfig, OnEdit, SelectionState, TextEditor,
 };
+pub use crate::theme::EditTheme;

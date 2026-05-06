@@ -17,6 +17,7 @@ use super::overlay::TextViewOverlays;
 use super::render::{render_layout, GlyphBatchComponent, TextViewBatch};
 use super::state::TextViewState;
 use super::styling::LayoutWrap;
+use super::theme::RenderTheme;
 use super::viewport::TextViewViewport;
 use crate::gpu::{atlas_ready, GlyphAtlas, GlyphAtlasPlugin, InstancedTextRenderPlugin};
 
@@ -57,6 +58,7 @@ impl Plugin for TextEnginePlugin {
             .register_type::<super::overlay::RectOverlay>()
             .register_type::<super::overlay::RowVertical>()
             .register_type::<LayoutWrap>()
+            .register_type::<RenderTheme>()
             .register_type::<TextView>()
             .register_type::<TextViewBatchEntity>()
             .register_type::<TextViewOverlays>()
@@ -89,7 +91,8 @@ impl Plugin for TextEnginePlugin {
     }
 }
 
-/// Full bundle: [`GlyphAtlasPlugin`] + [`InstancedTextRenderPlugin`] + [`TextEnginePlugin`].
+/// Full bundle: [`GlyphAtlasPlugin`] + [`InstancedTextRenderPlugin`]
+/// + [`TextEnginePlugin`] + [`crate::ui::ScrollbarPlugin`].
 pub struct TextEnginePlugins;
 
 impl PluginGroup for TextEnginePlugins {
@@ -98,6 +101,7 @@ impl PluginGroup for TextEnginePlugins {
             .add(GlyphAtlasPlugin)
             .add(InstancedTextRenderPlugin)
             .add(TextEnginePlugin)
+            .add(crate::ui::ScrollbarPlugin)
     }
 }
 

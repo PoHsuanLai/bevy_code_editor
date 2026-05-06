@@ -7,7 +7,6 @@
 //! - `input/multi_cursor.rs` — multi-cursor add/remove
 
 use bevy::prelude::*;
-use std::time::Instant;
 
 use super::display_map::{HighlightedToken, LineSegment};
 
@@ -283,22 +282,12 @@ pub struct IndentGuide {
     pub line_index: usize,
 }
 
-/// Per-input-manager key-repeat state.
+/// Per-input-manager key-repeat state for editor actions.
 ///
-/// Attached to the same entity as `EditorInputManager`. `Instant` isn't
-/// `Reflect`; only the action enum is observable through reflection.
-#[derive(Component, Default, Reflect)]
-#[reflect(Component, Default)]
-pub struct KeyRepeatState {
-    /// The action currently being repeated (if any)
-    pub current_action: Option<crate::input::EditorAction>,
-    /// When the action key was first pressed
-    #[reflect(ignore)]
-    pub press_start: Option<Instant>,
-    /// When the last repeat occurred
-    #[reflect(ignore)]
-    pub last_repeat: Option<Instant>,
-}
+/// Re-export of the generic [`bevy_text_editor::KeyRepeatState`] specialized
+/// to [`crate::input::EditorAction`]. Attached to the same entity as
+/// `EditorInputManager`.
+pub type KeyRepeatState = bevy_text_editor::KeyRepeatState<crate::input::EditorAction>;
 
 /// Represents a matched bracket pair
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Reflect)]

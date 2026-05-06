@@ -9,6 +9,7 @@ pub mod render;
 pub mod snapshot;
 pub mod state;
 pub mod styling;
+pub mod theme;
 pub mod viewport;
 
 pub use font::{FontConfig, FontSynthesis};
@@ -26,4 +27,5 @@ pub use snapshot::{
 };
 pub use state::TextViewState;
 pub use styling::{BlockList, HiddenLines, LayoutWrap, LineStyles, RunWithText};
+pub use theme::RenderTheme;
 pub use viewport::{TextViewViewport, ViewportOrigin};

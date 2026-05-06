@@ -136,22 +136,11 @@ pub(crate) fn push_cursor_overlays(
         // line-highlight uses `z = 0`.
         overlays.rects.retain(|r| r.z != 1);
 
-        // Blink: skip pushing during the off-phase. Always visible for half a second
-        // after movement, then alternates at `blink_rate` Hz.
-        let blink_visible = if cursor_settings.blink_rate == 0.0 {
-            true
-        } else {
-            let time_since_move = time.elapsed_secs_f64() - cursor.cursor_moved_time;
-            let blink_pause_duration = 0.5;
-            if time_since_move < blink_pause_duration {
-                true
-            } else {
-                let blink_time = (time_since_move - blink_pause_duration) as f32;
-                let blink_phase = (blink_time * cursor_settings.blink_rate) % 1.0;
-                blink_phase < 0.5
-            }
-        };
-        if !blink_visible {
+        if !bevy_text_editor::cursor_blink_visible(
+            cursor_settings.blink_rate,
+            time.elapsed_secs_f64(),
+            cursor.cursor_moved_time,
+        ) {
             overlays.version = overlays.version.wrapping_add(1);
             continue;
         }
@@ -177,21 +166,15 @@ pub(crate) fn push_cursor_overlays(
                 .map(|(r, b)| (r as usize, b))
                 .unwrap_or_else(|| (fold_state.actual_to_display_line(line_index), byte_in_line));
 
-            let glyph_x = layout
-                .and_then(|l| l.x_at_byte(display_row as u32, byte_in_row));
+            let glyph_x = layout.and_then(|l| l.x_at_byte(display_row as u32, byte_in_row));
             let x_left = glyph_x.unwrap_or(col_index as f32 * char_width);
-            let x_right = x_left + cursor_settings.width;
 
-            overlays.rects.push(RectOverlay {
-                display_row: display_row as u32,
-                x_range: x_left..x_right,
-                vertical: RowVertical::Caret {
-                    height_fraction: cursor_settings.height_multiplier,
-                },
-                color: theme.cursor,
-                z: 1, // above text
-                corners: bevy_text_engine::CornerRadii::ZERO,
-            });
+            overlays.rects.push(bevy_text_editor::caret_overlay(
+                display_row as u32,
+                x_left,
+                &cursor_settings,
+                theme.cursor,
+            ));
         }
 
         overlays.version = overlays.version.wrapping_add(1);

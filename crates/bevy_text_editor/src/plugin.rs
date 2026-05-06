@@ -48,6 +48,32 @@ impl Plugin for TextInteractionPlugin {
         app.add_observer(on_pointer_release);
         app.add_observer(on_pointer_scroll);
         app.add_observer(on_focused_keyboard);
+
+        // Instant snap for entities with `ScrollConfig.smooth = false`. Runs
+        // before the engine's smooth-scroll animator, so the animator sees
+        // target == offset and is a no-op for those entities.
+        app.add_systems(Update, apply_instant_scroll.before(
+            bevy_text_engine::view::plugin::TextViewRenderSet,
+        ));
+    }
+}
+
+/// Snap `scroll_offset` to `target_scroll_offset` for entities whose
+/// `ScrollConfig` has `smooth = false`. Runs before engine animation; for
+/// smooth entities this is a no-op (we leave the gap for the engine to ease).
+fn apply_instant_scroll(
+    mut q: Query<(&mut bevy_text_engine::TextViewState, &ScrollConfig)>,
+) {
+    for (mut tv, cfg) in q.iter_mut() {
+        if cfg.smooth {
+            continue;
+        }
+        if (tv.target_scroll_offset - tv.scroll_offset).abs() > 0.001 {
+            tv.scroll_offset = tv.target_scroll_offset;
+        }
+        if (tv.target_horizontal_scroll_offset - tv.horizontal_scroll_offset).abs() > 0.001 {
+            tv.horizontal_scroll_offset = tv.target_horizontal_scroll_offset;
+        }
     }
 }
 
@@ -88,6 +114,10 @@ impl Plugin for TextEditorPlugin {
         app.register_type::<IndentConfig>();
         app.register_type::<OnEdit>();
         app.register_type::<SnapshotPreEdit>();
+        app.register_type::<crate::theme::EditTheme>();
+        app.register_type::<crate::cursor_settings::CursorSettings>();
+        app.register_type::<crate::cursor_settings::CursorStyle>();
+        app.init_resource::<crate::cursor_settings::CursorSettings>();
         app.add_message::<OnEdit>();
 
         register_editing_events(app);
