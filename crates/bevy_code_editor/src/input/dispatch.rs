@@ -484,9 +484,8 @@ pub fn dispatch_action_events(
     // Snapshot for the LSP follow-up system before handlers run.
     #[cfg(feature = "lsp")]
     {
-        if let Ok((cursor, tv, _)) = editor_q.get(focused) {
+        if let Ok((cursor, _tv, _)) = editor_q.get(focused) {
             pending.pre_cursor_pos = cursor.cursor_pos;
-            pending.pre_content_version = tv.content_version;
         }
         pending.was_delete_backward = matches!(action, EditorAction::DeleteBackward);
         pending.was_horizontal_move = is_horizontal_move(action);

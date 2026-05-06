@@ -159,31 +159,6 @@ pub struct EditorDisplayState {
     pub invalidate_lines_from: Option<usize>,
 }
 
-/// Bundled mutable refs to the editor's per-entity buffer state.
-///
-/// Editing operations (`insert_char`, `delete_*`, undo/redo, action dispatch)
-/// always need the same components together — `SelectionState`,
-/// `EditHistoryState`, `SyntaxCacheState`, `EditorDisplayState`, `CursorState`,
-/// `TextBuffer`, `ScrollState`, `ContentMetrics`. This struct lets system
-/// functions accept them as one `&mut EditorBuf<'_>` instead of many positional
-/// `&mut` parameters.
-///
-/// Helpers below the dispatcher level still take individual `&mut`s — the
-/// goal here is to slim system signatures and the action dispatcher, not to
-/// rewrite ~145 internal call sites.
-pub struct EditorBuf<'a> {
-    pub sel: &'a mut crate::types::SelectionState,
-    pub hist: &'a mut crate::types::EditHistoryState,
-    pub syntax: &'a mut SyntaxCacheState,
-    pub display: &'a mut EditorDisplayState,
-    pub cursor: &'a mut crate::types::CursorState,
-    pub buffer: &'a mut crate::text_view::TextBuffer,
-    pub scroll: &'a mut crate::text_view::ScrollState,
-    pub metrics: &'a mut crate::text_view::ContentMetrics,
-}
-
-/// Component markers for editor entities
-
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 pub struct EditorText;
