@@ -1,11 +1,12 @@
-//! Phase-2 demo: spawn a terminal, render the alacritty grid via
-//! `bevy_text_engine`. No keyboard input yet — that arrives in Phase 3.
+//! Single-pane terminal demo. Spawns a `BevyTerminal`, fills the
+//! window. Type into it; resize it; drag-select; Cmd+C / Cmd+V (or
+//! Ctrl+Shift+C / Ctrl+Shift+V on Linux/Windows).
 //!
 //! Run with: `cargo run -p bevy_terminal --example basic_terminal`
 
 use bevy::prelude::*;
 use bevy_terminal::prelude::*;
-use bevy_text_engine::{FontConfig, TextEnginePlugins, TextViewViewport};
+use bevy_text_engine::TextEnginePlugins;
 
 fn main() {
     App::new()

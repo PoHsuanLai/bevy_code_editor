@@ -1655,6 +1655,7 @@ dependencies = [
  "alacritty_terminal",
  "arboard",
  "bevy",
+ "bevy_code_editor",
  "bevy_text_editor",
  "bevy_text_engine",
  "crossbeam-channel",

@@ -2,15 +2,13 @@
 //! wire spawn / drain / shutdown, idempotently add input-focus and
 //! picking infrastructure.
 //!
-//! System set order mirrors the editor's pattern:
+//! System sets — chained, each is a phase of one frame:
 //!
 //! ```text
-//! TerminalInputSet            ← keyboard + leafwing tick
-//! TerminalActionDispatchSet   ← TerminalAction → typed *Requested messages
-//! TerminalPtyDrainSet         ← drain crossbeam Receiver, mutate Term
-//! TerminalApplyStateSet       ← scroll animation, mode flag updates
-//! TerminalSnapshotSet         ← Term → GridSnapshot + LineStyles + BlockList
-//! TerminalRenderingSet        ← engine's render set (we run after Snapshot)
+//! TerminalPtyDrainSet      ← drain crossbeam Receiver, mirror term mode
+//! TerminalApplyStateSet    ← clipboard handlers, viewport-driven resize
+//! TerminalSnapshotSet      ← Term grid → LineStyles + caret overlay
+//!                           (engine's LayoutProduceSet runs after this)
 //! ```
 
 use bevy::prelude::*;
@@ -25,12 +23,6 @@ use crate::types::{
 };
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct TerminalInputSet;
-
-#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct TerminalActionDispatchSet;
-
-#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TerminalPtyDrainSet;
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -38,9 +30,6 @@ pub struct TerminalApplyStateSet;
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TerminalSnapshotSet;
-
-#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct TerminalRenderingSet;
 
 #[derive(Default)]
 pub struct BevyTerminalPlugin;
@@ -107,12 +96,9 @@ impl Plugin for BevyTerminalPlugin {
         app.configure_sets(
             Update,
             (
-                TerminalInputSet,
-                TerminalActionDispatchSet.after(TerminalInputSet),
-                TerminalPtyDrainSet.after(TerminalActionDispatchSet),
+                TerminalPtyDrainSet,
                 TerminalApplyStateSet.after(TerminalPtyDrainSet),
                 TerminalSnapshotSet.after(TerminalApplyStateSet),
-                TerminalRenderingSet.after(TerminalSnapshotSet),
             )
                 .chain(),
         );

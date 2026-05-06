@@ -157,7 +157,8 @@ pub struct TerminalThemeConfig {
 
 impl Default for TerminalThemeConfig {
     fn default() -> Self {
-        // VS Code dark+ palette.
+        // VS Code "Dark+" palette. Hosts that want a different look should
+        // override the component on spawn or mutate it at runtime.
         let ansi = [
             Color::srgb(0.000, 0.000, 0.000), // 0 black
             Color::srgb(0.804, 0.000, 0.000), // 1 red
