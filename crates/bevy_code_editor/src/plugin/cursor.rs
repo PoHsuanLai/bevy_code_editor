@@ -41,7 +41,6 @@ impl Plugin for CursorPlugin {
             .register_type::<Separator>()
             .register_type::<crate::types::events::TextEditEvent>()
             .register_type::<ViewportConfig>()
-            .register_type::<ViewportDimensions>()
             .register_type::<crate::input::EditorAction>()
             .register_type::<super::editor_ui_plugin::EditorCamera>()
             .register_type::<super::gpu_line_numbers::GpuLineNumbersBatch>();

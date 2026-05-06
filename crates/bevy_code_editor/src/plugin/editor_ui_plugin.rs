@@ -18,9 +18,7 @@ use bevy_text_engine::FontConfig;
 
 use crate::settings::*;
 use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
-use crate::types::{
-    CodeEditor, Separator, ViewportConfig, ViewportDimensions,
-};
+use crate::types::{CodeEditor, Separator, ViewportConfig};
 use bevy_camera::Viewport;
 
 /// Marker component for the editor camera
@@ -59,11 +57,9 @@ impl Plugin for EditorUiPlugin {
         );
 
         // Update viewport when window resizes (if auto_resize_to_window is true)
-        // or sync from ViewportDimensions resource (if auto_resize_to_window is false)
-        app.add_systems(
-            Update,
-            (detect_viewport_resize, sync_viewport_from_resource),
-        );
+        // Auto-resize when ViewportConfig.auto_resize_to_window is true.
+        // Otherwise hosts write directly to each editor's TextViewViewport.
+        app.add_systems(Update, detect_viewport_resize);
 
         // Update separator position when viewport changes
         app.add_systems(Update, update_separator_on_resize.run_if(viewport_changed));
@@ -294,27 +290,6 @@ fn detect_viewport_resize(
                 viewport.width = new_width;
                 viewport.height = new_height;
             }
-        }
-    }
-}
-
-/// Sync ViewportDimensions resource → TextViewViewport component.
-/// When auto_resize_to_window is false, the host app sets ViewportDimensions
-/// and this system propagates size to the per-entity TextViewViewport.
-/// `origin` is NOT propagated — in render-to-texture mode the camera is
-/// centered at origin, so TextViewViewport keeps `ViewportOrigin::CenteredOrtho`.
-fn sync_viewport_from_resource(
-    config: Res<ViewportConfig>,
-    dims: Res<ViewportDimensions>,
-    mut viewport_query: Query<&mut TextViewViewport, With<CodeEditor>>,
-) {
-    if config.auto_resize_to_window {
-        return;
-    }
-    for mut viewport in viewport_query.iter_mut() {
-        if viewport.width != dims.width || viewport.height != dims.height {
-            viewport.width = dims.width;
-            viewport.height = dims.height;
         }
     }
 }

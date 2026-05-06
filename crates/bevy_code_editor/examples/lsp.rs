@@ -25,7 +25,7 @@ use bevy_code_editor::lsp_ui::state::{
 use bevy_code_editor::prelude::*;
 use bevy_text_engine::FontConfig;
 use bevy_code_editor::text_view::TextViewViewport;
-use bevy_code_editor::types::{CodeEditor, CursorState, ViewportDimensions};
+use bevy_code_editor::types::{CodeEditor, CursorState};
 use bevy_egui::{egui, EguiContexts};
 use bevy_lsp::{LspClient, LspDocument, LspMessage};
 use bevy_markdown::{MarkdownDoc, MarkdownLinks, MarkdownViewerPlugin};
@@ -294,7 +294,7 @@ fn cursor_screen_pos(
     scroll: &ScrollState,
     font: &FontConfig,
     viewport_offset: &LspEguiViewportOffset,
-    viewport: &ViewportDimensions,
+    viewport: &TextViewViewport,
 ) -> (f32, f32) {
     let char_index = char_index.min(buffer.rope.len_chars());
     let line_index = buffer.rope.char_to_line(char_index);
@@ -320,7 +320,7 @@ fn position_popup(
     popup_height: f32,
     line_height: f32,
     viewport_offset: &LspEguiViewportOffset,
-    viewport: &ViewportDimensions,
+    viewport: &TextViewViewport,
     prefer_above: bool,
 ) -> egui::Pos2 {
     let vp_left = viewport_offset.screen_offset.x;
@@ -360,7 +360,7 @@ fn render_completion_egui(
         With<CodeEditor>,
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Res<ViewportDimensions>,
+    viewport: Single<&TextViewViewport, With<CodeEditor>>,
 ) {
     let Ok((completion_state, cursor_state, buffer, scroll, font)) = query.single() else {
         return;
@@ -384,7 +384,7 @@ fn render_completion_egui(
         scroll,
         font,
         &viewport_offset,
-        &viewport,
+        *viewport,
     );
 
     let theme = ctx.armas_theme();
@@ -412,7 +412,7 @@ fn render_completion_egui(
         popup_height,
         font.line_height,
         &viewport_offset,
-        &viewport,
+        *viewport,
         false,
     );
 
@@ -548,7 +548,7 @@ fn render_hover_egui(
         With<CodeEditor>,
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Res<ViewportDimensions>,
+    viewport: Single<&TextViewViewport, With<CodeEditor>>,
 ) {
     let Ok((hover_state, completion_state, buffer, scroll, font)) = query.single() else {
         return;
@@ -575,7 +575,7 @@ fn render_hover_egui(
         scroll,
         font,
         &viewport_offset,
-        &viewport,
+        *viewport,
     );
 
     let theme = ctx.armas_theme();
@@ -593,7 +593,7 @@ fn render_hover_egui(
         estimated_height,
         font.line_height,
         &viewport_offset,
-        &viewport,
+        *viewport,
         prefer_above,
     );
 
@@ -636,7 +636,7 @@ fn render_hover_markdown(
     mut commands: Commands,
     editors: Query<(&LspHoverPopup, &TextBuffer, &ScrollState, &FontConfig), With<CodeEditor>>,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Res<ViewportDimensions>,
+    viewport: Single<&TextViewViewport, With<CodeEditor>>,
     existing: Query<Entity, With<MarkdownHoverPopup>>,
 ) {
     let Ok((hover_state, buffer, scroll, font)) = editors.single() else {
@@ -657,7 +657,7 @@ fn render_hover_markdown(
     }
 
     let (cursor_x, cursor_y) =
-        cursor_screen_pos(hover_state.trigger_char_index, buffer, scroll, font, &viewport_offset, &viewport);
+        cursor_screen_pos(hover_state.trigger_char_index, buffer, scroll, font, &viewport_offset, *viewport);
 
     let popup_width = 520.0_f32;
     let popup_height = estimate_markdown_popup_height(&hover_state.content, font);
@@ -667,7 +667,7 @@ fn render_hover_markdown(
         popup_width,
         popup_height,
         font.line_height,
-        &viewport,
+        *viewport,
     );
 
     let viewport_for_layout = TextViewViewport {
@@ -738,7 +738,7 @@ fn position_popup_world(
     popup_width: f32,
     popup_height: f32,
     line_height: f32,
-    viewport: &ViewportDimensions,
+    viewport: &TextViewViewport,
 ) -> Vec2 {
     let half_w = viewport.width as f32 * 0.5;
     let half_h = viewport.height as f32 * 0.5;
@@ -780,7 +780,7 @@ fn render_signature_help_egui(
         With<CodeEditor>,
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Res<ViewportDimensions>,
+    viewport: Single<&TextViewViewport, With<CodeEditor>>,
 ) {
     let Ok((sig_state, cursor_state, buffer, scroll, font)) = query.single() else {
         return;
@@ -807,7 +807,7 @@ fn render_signature_help_egui(
         scroll,
         font,
         &viewport_offset,
-        &viewport,
+        *viewport,
     );
 
     let theme = ctx.armas_theme();
@@ -821,7 +821,7 @@ fn render_signature_help_egui(
         estimated_height,
         font.line_height,
         &viewport_offset,
-        &viewport,
+        *viewport,
         true,
     );
 
@@ -912,7 +912,7 @@ fn render_code_actions_egui(
         With<CodeEditor>,
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Res<ViewportDimensions>,
+    viewport: Single<&TextViewViewport, With<CodeEditor>>,
 ) {
     let Ok((action_state, cursor_state, buffer, scroll, font)) = query.single() else {
         return;
@@ -931,7 +931,7 @@ fn render_code_actions_egui(
         scroll,
         font,
         &viewport_offset,
-        &viewport,
+        *viewport,
     );
 
     let theme = ctx.armas_theme();
@@ -949,7 +949,7 @@ fn render_code_actions_egui(
         popup_height,
         font.line_height,
         &viewport_offset,
-        &viewport,
+        *viewport,
         false,
     );
 
@@ -1031,7 +1031,7 @@ fn render_rename_egui(
         With<CodeEditor>,
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Res<ViewportDimensions>,
+    viewport: Single<&TextViewViewport, With<CodeEditor>>,
 ) {
     let Ok((mut rename_state, buffer, scroll, lsp_client, lsp_document, font)) = query.single_mut() else {
         return;
@@ -1058,7 +1058,7 @@ fn render_rename_egui(
     };
 
     let (cursor_x, cursor_y) =
-        cursor_screen_pos(char_index, buffer, scroll, font, &viewport_offset, &viewport);
+        cursor_screen_pos(char_index, buffer, scroll, font, &viewport_offset, *viewport);
 
     let theme = ctx.armas_theme();
     let rename_width = (rename_state.new_name.len() as f32 * font.char_width + 40.0).max(150.0);
@@ -1069,7 +1069,7 @@ fn render_rename_egui(
         font.line_height + 10.0,
         font.line_height,
         &viewport_offset,
-        &viewport,
+        *viewport,
         false,
     );
 

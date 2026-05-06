@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// UI visual settings. Layout dimensions are computed by the UI plugin and
-/// stored in `ViewportDimensions` for decoupling.
+/// written into each editor's `TextViewViewport` component.
 #[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
 #[reflect(Resource, Default, Debug)]
 pub struct UiSettings {

@@ -9,8 +9,9 @@
 use bevy::prelude::*;
 
 
-/// When `true`, viewport auto-resizes to window; when `false`, the host manages
-/// [`ViewportDimensions`] manually.
+/// When `true`, viewport auto-resizes to window; when `false`, the host
+/// writes directly to each editor's [`crate::text_view::TextViewViewport`]
+/// component.
 #[derive(Resource, Clone, Copy, Debug, Reflect)]
 #[reflect(Resource, Default, Debug)]
 pub struct ViewportConfig {
@@ -21,51 +22,6 @@ impl Default for ViewportConfig {
     fn default() -> Self {
         Self {
             auto_resize_to_window: true,
-        }
-    }
-}
-
-/// Viewport size and computed layout. The UI plugin sets the layout fields;
-/// the host may also manage them manually.
-#[derive(Resource, Clone, Copy, Debug, Reflect)]
-#[reflect(Resource, Default, Debug)]
-pub struct ViewportDimensions {
-    pub width: u32,
-    pub height: u32,
-    /// How the top-left maps to world coords. See [`crate::text_view::ViewportOrigin`].
-    pub origin: crate::text_view::ViewportOrigin,
-    pub text_area_left: f32,
-    pub text_area_top: f32,
-    /// 0 for views without a gutter.
-    pub gutter_width: f32,
-    pub separator_x: f32,
-}
-
-impl ViewportDimensions {
-    /// World-space top-left of the viewport, resolving the origin enum.
-    pub fn origin_position(&self) -> Vec2 {
-        match self.origin {
-            crate::text_view::ViewportOrigin::CenteredOrtho => Vec2::new(
-                -(self.width as f32) / 2.0,
-                self.height as f32 / 2.0,
-            ),
-            crate::text_view::ViewportOrigin::ScreenAbsolute(p) => p,
-        }
-    }
-
-}
-
-impl Default for ViewportDimensions {
-    fn default() -> Self {
-        Self {
-            width: 800,
-            height: 600,
-            origin: crate::text_view::ViewportOrigin::CenteredOrtho,
-            // Default layout values (can be overridden by UI plugin)
-            text_area_left: 80.0,
-            text_area_top: 10.0,
-            gutter_width: 60.0,
-            separator_x: 70.0,
         }
     }
 }

@@ -126,9 +126,7 @@ impl Plugin for CodeEditorPlugin {
         #[cfg(feature = "lsp")]
         app.init_resource::<LspSettings>();
 
-        // Initialize core resources
         app.init_resource::<ViewportConfig>();
-        app.init_resource::<ViewportDimensions>();
 
         // BracketMatchState, GotoLineState, FoldState, and KeyRepeatState are
         // per-editor / per-input-manager components (cascaded via #[require]);
