@@ -239,10 +239,7 @@ fn compute_viewport_layout(
             0.0
         };
 
-        // Compute separator position (right edge of gutter)
-        viewport.separator_x = viewport.gutter_width;
-
-        // Compute text area left position (gutter + code margin)
+        // Text area starts past the gutter + a code margin.
         viewport.text_area_left = viewport.gutter_width + ui.code_margin_left;
 
         // Top margin for text area
@@ -317,7 +314,7 @@ fn setup_editor_ui(
                     ..default()
                 },
                 Transform::from_translation(to_bevy_coords_left_aligned(
-                    viewport.separator_x,
+                    viewport.gutter_width,
                     viewport_height / 2.0,
                     viewport_width,
                     viewport_height,
@@ -358,7 +355,7 @@ fn update_separator_on_resize(
 
         // Update position (critical when viewport width changes or offset changes)
         transform.translation = to_bevy_coords_left_aligned(
-            viewport.separator_x,
+            viewport.gutter_width,
             viewport_height / 2.0,
             viewport_width,
             viewport_height,

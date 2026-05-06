@@ -33,9 +33,9 @@ pub struct TextViewViewport {
     pub hit_test_position: bevy::math::Vec2,
     pub text_area_left: f32,
     pub text_area_top: f32,
-    /// 0 for non-editor views.
+    /// 0 for views without a gutter. Editor IDE chrome (the line numbers
+    /// gutter) draws its separator at this x; non-editor views ignore it.
     pub gutter_width: f32,
-    pub separator_x: f32,
 }
 
 impl Default for TextViewViewport {
@@ -48,7 +48,6 @@ impl Default for TextViewViewport {
             text_area_left: 0.0,
             text_area_top: 8.0,
             gutter_width: 0.0,
-            separator_x: 0.0,
         }
     }
 }

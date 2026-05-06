@@ -358,9 +358,9 @@ pub(crate) fn update_fold_indicators(
             let hidden_above = count_hidden_lines_before(line_idx);
             let display_line = line_idx.saturating_sub(hidden_above);
 
-            // Position in fold gutter (between line numbers and separator)
-            // In VSCode style, this is a narrow gutter just before the separator
-            let x_offset = viewport.separator_x - 12.0; // Just before the separator
+            // Fold indicator sits just before the right edge of the gutter
+            // (VSCode style — between the line numbers and the separator).
+            let x_offset = viewport.gutter_width - 12.0;
             let y_offset =
                 viewport.text_area_top + scroll.scroll_offset + (display_line as f32 * line_height);
 

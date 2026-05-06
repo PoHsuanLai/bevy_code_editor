@@ -122,8 +122,8 @@ pub fn on_fold_gutter_press(
         return;
     };
 
-    let gutter_start = viewport.separator_x - 18.0;
-    let gutter_end = viewport.separator_x + 5.0;
+    let gutter_start = viewport.gutter_width - 18.0;
+    let gutter_end = viewport.gutter_width + 5.0;
     if local_pos.x < gutter_start || local_pos.x >= gutter_end {
         return;
     }
