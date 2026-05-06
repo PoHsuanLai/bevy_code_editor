@@ -82,17 +82,15 @@ impl Plugin for BevyTerminalPlugin {
             .add_message::<TerminalCopySelection>()
             .add_message::<TerminalPaste>();
 
-        // Resources.
         app.init_resource::<TerminalEventLoopRegistry>();
-        // CursorSettings is the editor-tier resource that drives caret shape +
-        // blink. We init it idempotently so terminals work without
-        // TextEditorPlugin.
         app.init_resource::<bevy_text_editor::CursorSettings>();
         app.register_type::<bevy_text_editor::CursorSettings>();
         app.register_type::<bevy_text_editor::CursorStyle>();
+        app.register_type::<bevy_text_engine::RenderTheme>();
+        app.register_type::<bevy_text_editor::EditTheme>();
 
         // System-set chain. Engine's `LayoutProduceSet` reads our LineStyles
-        // and TextViewState, so it must run *after* our SnapshotSet.
+        // and TextBuffer, so it must run *after* our SnapshotSet.
         app.configure_sets(
             Update,
             (

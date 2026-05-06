@@ -6,12 +6,12 @@ use crate::state::{CursorState, EditHistoryState, SelectionState, TextEditor};
 use arboard::Clipboard;
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy_text_engine::TextViewState;
+use bevy_text_engine::TextBuffer;
 
 pub fn handle_copy(
     mut events: MessageReader<CopyRequested>,
     input_focus: Res<InputFocus>,
-    q: Query<(&SelectionState, &TextViewState), With<TextEditor>>,
+    q: Query<(&SelectionState, &TextBuffer), With<TextEditor>>,
 ) {
     if events.read().next().is_none() {
         return;
@@ -19,13 +19,13 @@ pub fn handle_copy(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((sel, tv)) = q.get(entity) else {
+    let Ok((sel, buffer)) = q.get(entity) else {
         return;
     };
     if let Some((start, end)) = sel.primary_range() {
-        let start = start.min(tv.rope.len_chars());
-        let end = end.min(tv.rope.len_chars());
-        let text = tv.rope.slice(start..end).to_string();
+        let start = start.min(buffer.rope.len_chars());
+        let end = end.min(buffer.rope.len_chars());
+        let text = buffer.rope.slice(start..end).to_string();
         if let Ok(mut clipboard) = Clipboard::new() {
             let _ = clipboard.set_text(text);
         }
@@ -40,7 +40,7 @@ pub fn handle_cut(
             &mut SelectionState,
             &mut EditHistoryState,
             &mut CursorState,
-            &mut TextViewState,
+            &mut TextBuffer,
         ),
         With<TextEditor>,
     >,
@@ -51,21 +51,22 @@ pub fn handle_cut(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut hist, mut cursor, mut tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut hist, mut cursor, mut buffer)) = q.get_mut(entity) else {
         return;
     };
     let Some((start, end)) = sel.primary_range() else {
         return;
     };
-    let selected_text = tv.rope.slice(
-        start.min(tv.rope.len_chars())..end.min(tv.rope.len_chars()),
-    ).to_string();
+    let selected_text = buffer
+        .rope
+        .slice(start.min(buffer.rope.len_chars())..end.min(buffer.rope.len_chars()))
+        .to_string();
 
     if let Ok(mut clipboard) = Clipboard::new() {
         let _ = clipboard.set_text(selected_text);
     }
 
-    let outcome = hist.replace_range(&mut tv, start, end, "", EditKind::Other, true);
+    let outcome = hist.replace_range(&mut buffer, start, end, "", EditKind::Other, true);
     cursor.cursor_pos = outcome.new_cursor_pos;
     sel.apply_primary_cursor(&cursor);
 }
@@ -78,7 +79,7 @@ pub fn handle_paste(
             &mut SelectionState,
             &mut EditHistoryState,
             &mut CursorState,
-            &mut TextViewState,
+            &mut TextBuffer,
         ),
         With<TextEditor>,
     >,
@@ -89,7 +90,7 @@ pub fn handle_paste(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut hist, mut cursor, mut tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut hist, mut cursor, mut buffer)) = q.get_mut(entity) else {
         return;
     };
     let Ok(mut clipboard) = Clipboard::new() else {
@@ -100,7 +101,7 @@ pub fn handle_paste(
     };
 
     let (start, end) = sel.primary_range().unwrap_or((cursor.cursor_pos, cursor.cursor_pos));
-    let outcome = hist.replace_range(&mut tv, start, end, &text, EditKind::Paste, true);
+    let outcome = hist.replace_range(&mut buffer, start, end, &text, EditKind::Paste, true);
     cursor.cursor_pos = outcome.new_cursor_pos;
     sel.apply_primary_cursor(&cursor);
 }

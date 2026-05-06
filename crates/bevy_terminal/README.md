@@ -50,7 +50,7 @@ fn main() {
 | `TerminalThemeConfig` | 16-color ANSI palette + block bgs. |
 | `TerminalScrollback` | Max scrollback lines. |
 | `TerminalCursorBlink` | Phase-reset state for the caret. |
-| (engine substrate) | `TextView`, `TextViewState`, `LineStyles`, … |
+| (engine substrate) | `TextView`, `TextBuffer`, `ScrollState`, `LineStyles`, … |
 | (text_editor) | `SelectionState`, `EditTheme`, `ScrollConfig`. |
 
 ## Messages

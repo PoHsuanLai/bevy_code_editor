@@ -9,7 +9,7 @@ use crate::editing_events::*;
 use crate::state::{CursorState, SelectionState, TextEditor};
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy_text_engine::TextViewState;
+use bevy_text_engine::TextBuffer;
 
 type EditorView<'w, 's> = Query<
     'w,
@@ -17,7 +17,7 @@ type EditorView<'w, 's> = Query<
     (
         &'static mut SelectionState,
         &'static mut CursorState,
-        &'static mut TextViewState,
+        &'static TextBuffer,
     ),
     With<TextEditor>,
 >;
@@ -33,11 +33,11 @@ pub fn handle_select_left(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
     let anchor = cursor.cursor_pos;
-    move_cursor(&mut cursor, &tv.rope, -1);
+    move_cursor(&mut cursor, &buffer.rope, -1);
     sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
@@ -52,11 +52,11 @@ pub fn handle_select_right(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
     let anchor = cursor.cursor_pos;
-    move_cursor(&mut cursor, &tv.rope, 1);
+    move_cursor(&mut cursor, &buffer.rope, 1);
     sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
@@ -71,11 +71,11 @@ pub fn handle_select_up(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
     let anchor = cursor.cursor_pos;
-    move_cursor_up(&mut cursor, &tv.rope);
+    move_cursor_up(&mut cursor, &buffer.rope);
     sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
@@ -90,11 +90,11 @@ pub fn handle_select_down(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
     let anchor = cursor.cursor_pos;
-    move_cursor_down(&mut cursor, &tv.rope);
+    move_cursor_down(&mut cursor, &buffer.rope);
     sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
@@ -109,11 +109,11 @@ pub fn handle_select_word_left(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
     let anchor = cursor.cursor_pos;
-    move_cursor_word_left(&mut cursor, &tv.rope);
+    move_cursor_word_left(&mut cursor, &buffer.rope);
     sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
@@ -128,11 +128,11 @@ pub fn handle_select_word_right(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
     let anchor = cursor.cursor_pos;
-    move_cursor_word_right(&mut cursor, &tv.rope);
+    move_cursor_word_right(&mut cursor, &buffer.rope);
     sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
@@ -147,11 +147,11 @@ pub fn handle_select_line_start(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
     let anchor = cursor.cursor_pos;
-    move_cursor_line_start(&mut cursor, &tv.rope);
+    move_cursor_line_start(&mut cursor, &buffer.rope);
     sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
@@ -166,11 +166,11 @@ pub fn handle_select_line_end(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
     let anchor = cursor.cursor_pos;
-    move_cursor_line_end(&mut cursor, &tv.rope);
+    move_cursor_line_end(&mut cursor, &buffer.rope);
     sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
@@ -185,10 +185,10 @@ pub fn handle_select_all(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    let end = tv.rope.len_chars();
+    let end = buffer.rope.len_chars();
     cursor.cursor_pos = end;
     sel.selections.set_selection(end, 0);
 }
@@ -209,7 +209,7 @@ pub fn handle_clear_selection(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut cursor, _tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, _buffer)) = q.get_mut(entity) else {
         return;
     };
 

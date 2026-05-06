@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 /// Source markdown text. The plugin watches `Changed<MarkdownDoc>` and
 /// rebuilds the entity's `DisplayLayout` on edit. Spawn alongside the
-/// usual text-engine bundle (`TextView`, `TextViewState`, `FontConfig`,
-/// `TextViewViewport`) — the plugin fills the rest.
+/// usual text-engine bundle (`TextView`, `TextBuffer`, `ScrollState`,
+/// `ContentMetrics`, `FontConfig`, `TextViewViewport`) — the plugin fills the rest.
 #[derive(Component, Clone, Debug)]
 pub struct MarkdownDoc {
     pub source: String,

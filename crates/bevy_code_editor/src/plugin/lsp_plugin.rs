@@ -103,7 +103,7 @@ impl Plugin for LspPlugin {
         app.add_message::<crate::types::events::ApplyCompletionEvent>();
 
         // Core LSP-driven systems. These query each editor entity for both
-        // editor state (CursorState, TextViewState) and per-editor LSP
+        // editor state (CursorState, TextBuffer) and per-editor LSP
         // Components (LspClient, LspDocument, popup state, debounce timers).
         app.add_systems(
             Update,

@@ -17,7 +17,7 @@ use bevy::prelude::*;
 use bevy_text_engine::FontConfig;
 
 use crate::settings::*;
-use crate::text_view::{TextViewState, TextViewViewport};
+use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
 use crate::types::{
     CodeEditor, Separator, ViewportConfig, ViewportDimensions,
 };
@@ -129,15 +129,17 @@ impl Plugin for EditorUiPlugin {
 
         // Editor scrollbar config update (feature-gated)
         // Run when scroll/content changes, viewport resizes, or scrollbar settings change.
-        // Replaces the previous `Changed<CodeEditorState>` filter (now removed —
-        // `TextViewState` is the actual mutable scroll/content carrier).
         app.add_systems(
             Update,
             update_editor_scrollbar
                 .run_if(
-                    (|query: Query<(), (With<CodeEditor>, Changed<TextViewState>)>| {
-                        !query.is_empty()
-                    })
+                    (|query: Query<
+                        (),
+                        (
+                            With<CodeEditor>,
+                            Or<(Changed<TextBuffer>, Changed<ScrollState>)>,
+                        ),
+                    >| { !query.is_empty() })
                     .or(viewport_changed)
                     .or(resource_changed::<ScrollbarSettings>),
                 )
@@ -399,10 +401,8 @@ fn update_font_metrics(
     fonts: Res<Assets<bevy::text::Font>>,
 ) {
     for mut font in editors.iter_mut() {
-        // Measure '0' for monospace width. Shape via cosmic-text — shape.width
-        // is the exact advance. Resolves the entity's Handle<Font> if set.
-        let font_id = font.font.as_ref().and_then(|h| atlas.ensure_font(h, &fonts));
-        let width = atlas.shape_line("0", font.size, font_id).width;
+        let font_id = atlas.ensure_font(&font.font, &fonts);
+        let width = atlas.shape_line("0", font.font_size, font_id).width;
         if width > 0.0 && (font.char_width - width).abs() > 0.01 {
             info!(
                 "Updating font char_width from {:.3} to {:.3} (measured)",

@@ -8,7 +8,7 @@
 //!   parse pipeline (writers) and the editor's `produce_line_styles`
 //!   producer (reader) can share access without each owning their own copy.
 //! - [`EditorParseSource`] / [`EditorBufferSnapshot`]: bridge between the
-//!   editor's `TextViewState` (per-entity rope + version) and
+//!   editor's `TextBuffer` (per-entity rope + version) and
 //!   `bevy_tree_sitter`'s [`bevy_tree_sitter::ParseSource`] trait. The
 //!   `parse_dirty` system in bevy_tree_sitter reads from this Component
 //!   to drive async parses.
@@ -16,7 +16,7 @@
 //!   `Changed<bevy_tree_sitter::SyntaxTree>` and mirrors the freshly-parsed
 //!   tree (plus its rope snapshot) into the per-entity provider so the
 //!   styling layer's highlight queries find it. Also bumps
-//!   `TextViewState.content_version` to fully invalidate the glyph cache.
+//!   `TextBuffer.content_version` to fully invalidate the glyph cache.
 //! - [`init_editor_syntax`]: startup system that attaches the per-entity
 //!   `SyntaxInner` Arc + the `EditorParseSource` Component and configures
 //!   the provider's highlights query from a [`bevy_tree_sitter::Language`]
@@ -25,9 +25,7 @@
 use crate::types::CodeEditor;
 use crate::types::LineSegment;
 #[cfg(feature = "tree-sitter")]
-use crate::text_view::TextViewState;
-#[cfg(feature = "tree-sitter")]
-use crate::types::SyntaxCacheState;
+use crate::text_view::TextBuffer;
 use bevy::prelude::*;
 use std::sync::{Arc, RwLock};
 
@@ -350,13 +348,13 @@ fn ranges_to_segments(
 /// reads. Held behind `Arc<RwLock<_>>` so:
 ///
 /// - The `sync_editor_parse_source` system updates it each frame from
-///   the entity's `TextViewState`.
+///   the entity's `TextBuffer`.
 /// - The `bevy_tree_sitter::parse_dirty` system reads `content_version` +
 ///   `snapshot` from it (through the `EditorParseSource`'s `ParseSource`
 ///   impl) to decide whether to kick off a new parse, and what rope to
 ///   feed to the worker.
 ///
-/// The version stored here lags `TextViewState.content_version` by at
+/// The version stored here lags `TextBuffer.content_version` by at
 /// most one frame — same staleness profile as the old global-resource
 /// pipeline.
 #[cfg(feature = "tree-sitter")]
@@ -482,47 +480,40 @@ pub(crate) fn react_language_changed(
 }
 
 #[cfg(feature = "tree-sitter")]
-/// Mirror `TextViewState.rope` + `content_version` into the per-entity
+/// Mirror `TextBuffer.rope` + `content_version` into the per-entity
 /// `EditorBufferSnapshot` so the next `parse_dirty` tick sees the latest
-/// content. Runs in `ApplyStateSet` after edits land on `TextViewState`.
+/// content. Runs in `ApplyStateSet` after edits land on `TextBuffer`.
 pub(crate) fn sync_editor_parse_source(
-    editors: Query<(&TextViewState, &EditorParseBufferRef), With<CodeEditor>>,
+    editors: Query<(&TextBuffer, &EditorParseBufferRef), With<CodeEditor>>,
 ) {
-    for (tv, buf_ref) in editors.iter() {
+    for (buffer, buf_ref) in editors.iter() {
         let mut buf = buf_ref.0.write().unwrap();
         // Hot path: only write if something changed. RwLock writes are
         // cheap but the rope clone in particular is one Arc bump we'd
         // rather skip when nothing's changed.
-        if buf.content_version == tv.content_version {
+        if buf.content_version == buffer.content_version {
             continue;
         }
-        buf.rope = tv.rope.clone();
-        buf.content_version = tv.content_version;
+        buf.rope = buffer.rope.clone();
+        buf.content_version = buffer.content_version;
     }
 }
 
 #[cfg(feature = "tree-sitter")]
-/// React to a freshly-completed parse — written by `bevy_tree_sitter`'s
-/// `parse_dirty` into the entity's [`bevy_tree_sitter::SyntaxTree`] —
-/// by mirroring the new tree (and its rope) into the per-entity provider
-/// so highlight queries find it.
-///
-/// Mirrors the old `handle_parse_completed`: bumps `content_version` so the
-/// line-glyph cache fully invalidates (otherwise pre-parse plain-color glyph
-/// runs persist on screen). Sets `last_highlighted_version` to match the
-/// bumped version so we don't trigger an immediate re-parse loop.
+/// React to a freshly-completed parse by mirroring the new tree (and its
+/// rope) into the per-entity provider so highlight queries find it.
+/// Loop prevention lives on `EditorSyntaxState::applied_content_version`.
 pub(crate) fn mirror_syntax_tree_to_provider(
     mut editor_query: Query<
         (
             &bevy_tree_sitter::SyntaxTree,
             &EditorSyntaxState,
-            &mut SyntaxCacheState,
-            &TextViewState,
+            &TextBuffer,
         ),
         (With<CodeEditor>, Changed<bevy_tree_sitter::SyntaxTree>),
     >,
 ) {
-    for (syntax_tree, syntax_state, mut syntax_cache, tv) in editor_query.iter_mut() {
+    for (syntax_tree, syntax_state, buffer) in editor_query.iter_mut() {
         let Some(tree) = syntax_tree.tree.as_ref() else {
             continue;
         };
@@ -540,7 +531,7 @@ pub(crate) fn mirror_syntax_tree_to_provider(
         }
         if let Some(provider) = &mut inner.provider {
             provider.cached_tree = Some(tree.clone());
-            provider.cached_rope = Some(tv.rope.clone());
+            provider.cached_rope = Some(buffer.rope.clone());
             if provider.cached_parser.is_none() {
                 if let Some(ref language) = provider.cached_language {
                     let mut parser = bevy_tree_sitter::ts::Parser::new();
@@ -553,37 +544,14 @@ pub(crate) fn mirror_syntax_tree_to_provider(
             inner.applied_content_version = syntax_tree.content_version;
         }
         drop(guard);
-
-        syntax_cache.last_highlighted_version = syntax_tree.content_version;
-        // Don't touch `tv.content_version`. The downstream chain is:
-        // `Changed<SyntaxTree>` (this system's filter writes a fresh tick)
-        // → `produce_line_styles` re-styles → `LineStyles` Arc swaps →
-        // engine refingerprints and rebuilds the layout. Bumping
-        // `content_version` here used to feed back through
-        // `sync_editor_parse_source` into a runaway re-parse loop.
-    }
-}
-
-#[cfg(feature = "tree-sitter")]
-fn send_text_edit_events(
-    mut editor_query: Query<(&mut SyntaxCacheState, &TextViewState), With<CodeEditor>>,
-    mut writer: MessageWriter<crate::types::events::TextEditEvent>,
-) {
-    for (mut syntax_cache, tv) in editor_query.iter_mut() {
-        if let Some(delta) = syntax_cache.pending_tree_sitter_edit.take() {
-            let pre = syntax_cache.pending_pre_edit_rope.take();
-            writer.write(
-                crate::types::events::TextEditEvent::new(delta, tv.content_version)
-                    .with_pre_edit_rope(pre),
-            );
-        }
     }
 }
 
 #[cfg(feature = "tree-sitter")]
 /// Apply edits synchronously to the cached tree (tree interpolation).
 ///
-/// Runs after `send_text_edit_events`. Routes through
+/// Reads [`crate::types::events::TextEditEvent`] (emitted by the
+/// `on_edit_invalidate_caches` observer). Routes through
 /// [`bevy_tree_sitter::ParseSource::apply_edit`] on the editor's
 /// `ParseSourceComp` — the editor's impl forwards to the per-entity
 /// provider's `apply_sync_edit`. Tree stays valid for highlighting queries
@@ -660,11 +628,11 @@ impl Plugin for SyntaxPlugin {
 
             // Edit pipeline ordering:
             //   1. react_language_changed: install provider
-            //   2. sync_editor_parse_source: mirror tv.rope into buffer snapshot
-            //   3. send_text_edit_events: drain SyntaxCacheState.pending_tree_sitter_edit
-            //   4. record_edits_for_incremental_parsing: tree.edit() + sync re-parse
-            //   5. parse_dirty (ParseSet): kicks off async re-parse with the synced rope
-            // Steps 2 and 4 must be ordered: 4 reads the rope mirror via
+            //   2. sync_editor_parse_source: mirror buffer.rope into the parse-source snapshot
+            //   3. record_edits_for_incremental_parsing: tree.edit() + sync re-parse,
+            //      reading TextEditEvent emitted by the on_edit_invalidate_caches observer
+            //   4. parse_dirty (ParseSet): async re-parse with the synced rope
+            // Steps 2 and 3 must be ordered: 3 reads the rope mirror via
             // ParseSourceComp::apply_edit, so 2 must mirror the post-edit
             // rope first.
             app.add_systems(
@@ -672,7 +640,6 @@ impl Plugin for SyntaxPlugin {
                 (
                     react_language_changed,
                     sync_editor_parse_source,
-                    send_text_edit_events,
                     record_edits_for_incremental_parsing,
                 )
                     .chain()

@@ -14,7 +14,9 @@ use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use ropey::Rope;
 
-use bevy_text_engine::{DisplayLayout, FontConfig, TextView, TextViewState, TextViewViewport};
+use bevy_text_engine::{
+    ContentMetrics, DisplayLayout, FontConfig, ScrollState, TextBuffer, TextView, TextViewViewport,
+};
 
 use crate::components::{ScrollConfig, TextViewDragState};
 use crate::state::{CursorState, SelectionState};
@@ -85,20 +87,20 @@ pub fn screen_to_char_pos(
 /// - `Line` — full-line slice (already snapped to whole lines by
 ///   `expand_to_lines`, so this is identical to the char-range path
 ///   but kept distinct for clarity).
-pub fn copy_selection(sel: &SelectionState, tv: &TextViewState) -> bool {
+pub fn copy_selection(sel: &SelectionState, buffer: &TextBuffer) -> bool {
     let Some((start, end)) = sel.primary_range() else {
         return false;
     };
     let mode = sel.selections.primary().mode;
-    let len = tv.rope.len_chars();
+    let len = buffer.rope.len_chars();
     let start = start.min(len);
     let end = end.min(len);
     if start == end {
         return false;
     }
     let text = match mode {
-        crate::selection::SelectionMode::Block => block_slice(&tv.rope, start, end),
-        _ => tv.rope.slice(start..end).to_string(),
+        crate::selection::SelectionMode::Block => block_slice(&buffer.rope, start, end),
+        _ => buffer.rope.slice(start..end).to_string(),
     };
     if text.is_empty() {
         return false;
@@ -156,13 +158,15 @@ fn block_slice(rope: &Rope, start: usize, end: usize) -> String {
 /// look up the target entity's components and apply the scroll.
 ///
 /// Horizontal scroll only fires when the view's content width exceeds the
-/// available text area (via `TextViewState.max_content_width`); the
+/// available text area (via `ContentMetrics.max_content_width`); the
 /// display-map producer maintains that field as it shapes lines.
 pub fn on_pointer_scroll(
     trigger: On<Pointer<Scroll>>,
     mut views: Query<
         (
-            &mut TextViewState,
+            &TextBuffer,
+            &mut ScrollState,
+            &ContentMetrics,
             &TextViewViewport,
             &FontConfig,
             Option<&ScrollConfig>,
@@ -171,7 +175,8 @@ pub fn on_pointer_scroll(
     >,
 ) {
     let entity = trigger.event().entity;
-    let Ok((mut tv, viewport, font, scroll_cfg)) = views.get_mut(entity) else {
+    let Ok((buffer, mut scroll, metrics, viewport, font, scroll_cfg)) = views.get_mut(entity)
+    else {
         return;
     };
 
@@ -185,15 +190,15 @@ pub fn on_pointer_scroll(
     if dx.abs() > 0.0 {
         let viewport_width = viewport.width as f32;
         let available_text_width = viewport_width - viewport.text_area_left;
-        if tv.max_content_width > available_text_width {
+        if metrics.max_content_width > available_text_width {
             let scroll_delta = dx * font.char_width * scroll_cfg.speed;
-            let max_h = (tv.max_content_width - available_text_width).max(0.0);
+            let max_h = (metrics.max_content_width - available_text_width).max(0.0);
             if scroll_cfg.smooth {
-                tv.target_horizontal_scroll_offset =
-                    (tv.target_horizontal_scroll_offset + scroll_delta).clamp(0.0, max_h);
+                scroll.target_horizontal_scroll_offset =
+                    (scroll.target_horizontal_scroll_offset + scroll_delta).clamp(0.0, max_h);
             } else {
-                tv.horizontal_scroll_offset =
-                    (tv.horizontal_scroll_offset + scroll_delta).clamp(0.0, max_h);
+                scroll.horizontal_scroll_offset =
+                    (scroll.horizontal_scroll_offset + scroll_delta).clamp(0.0, max_h);
             }
         }
     }
@@ -201,16 +206,16 @@ pub fn on_pointer_scroll(
     // Vertical scroll.
     if dy.abs() > 0.0 {
         let scroll_delta = dy * font.line_height * scroll_cfg.speed;
-        let line_count = tv.rope.len_lines();
+        let line_count = buffer.rope.len_lines();
         let content_height = line_count as f32 * font.line_height;
         let viewport_height = viewport.height as f32;
         let max_scroll =
             (-(content_height - viewport_height + viewport.text_area_top)).min(0.0);
         if scroll_cfg.smooth {
-            tv.target_scroll_offset =
-                (tv.target_scroll_offset + scroll_delta).clamp(max_scroll, 0.0);
+            scroll.target_scroll_offset =
+                (scroll.target_scroll_offset + scroll_delta).clamp(max_scroll, 0.0);
         } else {
-            tv.scroll_offset = (tv.scroll_offset + scroll_delta).clamp(max_scroll, 0.0);
+            scroll.scroll_offset = (scroll.scroll_offset + scroll_delta).clamp(max_scroll, 0.0);
         }
     }
 }
@@ -230,7 +235,8 @@ pub fn on_pointer_press(
     mut views: Query<
         (
             &mut TextViewDragState,
-            &TextViewState,
+            &TextBuffer,
+            &ScrollState,
             &TextViewViewport,
             &FontConfig,
             Option<&DisplayLayout>,
@@ -247,7 +253,8 @@ pub fn on_pointer_press(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((mut drag_state, tv, viewport, font, layout, sel, cursor)) = views.get_mut(entity)
+    let Ok((mut drag_state, buffer, scroll, viewport, font, layout, sel, cursor)) =
+        views.get_mut(entity)
     else {
         return;
     };
@@ -259,9 +266,9 @@ pub fn on_pointer_press(
 
     let char_pos = screen_to_char_pos(
         local_pos,
-        &tv.rope,
+        &buffer.rope,
         layout.as_deref(),
-        tv.scroll_offset,
+        scroll.scroll_offset,
         font,
         viewport,
         None,
@@ -313,13 +320,13 @@ pub fn on_pointer_press(
         match mode {
             crate::selection::SelectionMode::Semantic => {
                 let mut s = crate::selection::Selection::cursor(char_pos);
-                s.expand_semantic(&tv.rope, crate::selection::DEFAULT_SEMANTIC_ESCAPE_CHARS);
+                s.expand_semantic(&buffer.rope, crate::selection::DEFAULT_SEMANTIC_ESCAPE_CHARS);
                 sel.selections.clear_secondary();
                 *sel.selections.primary_mut() = s;
             }
             crate::selection::SelectionMode::Line => {
                 let mut s = crate::selection::Selection::cursor(char_pos);
-                s.expand_to_lines(&tv.rope);
+                s.expand_to_lines(&buffer.rope);
                 sel.selections.clear_secondary();
                 *sel.selections.primary_mut() = s;
             }
@@ -334,7 +341,7 @@ pub fn on_pointer_press(
     }
     drag_state.is_dragging = true;
     drag_state.drag_start_pos = Some(char_pos);
-    drag_state.drag_start_scroll_offset = tv.scroll_offset;
+    drag_state.drag_start_scroll_offset = scroll.scroll_offset;
     drag_state.last_screen_pos = Some(viewport.hit_test_position + local_pos);
     input_focus.set(entity);
 }
@@ -358,7 +365,8 @@ pub fn on_pointer_drag(
     mut views: Query<
         (
             &mut TextViewDragState,
-            &TextViewState,
+            &TextBuffer,
+            &ScrollState,
             &TextViewViewport,
             &FontConfig,
             Option<&DisplayLayout>,
@@ -372,7 +380,8 @@ pub fn on_pointer_drag(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((mut drag_state, tv, viewport, font, layout, sel, cursor)) = views.get_mut(entity)
+    let Ok((mut drag_state, buffer, scroll, viewport, font, layout, sel, cursor)) =
+        views.get_mut(entity)
     else {
         return;
     };
@@ -392,9 +401,9 @@ pub fn on_pointer_drag(
     let local_pos = cursor_pos - viewport.hit_test_position;
     let char_pos = screen_to_char_pos(
         local_pos,
-        &tv.rope,
+        &buffer.rope,
         layout.as_deref(),
-        tv.scroll_offset,
+        scroll.scroll_offset,
         font,
         viewport,
         Some(drag_state.drag_start_scroll_offset),
@@ -408,10 +417,10 @@ pub fn on_pointer_drag(
             let mut s = crate::selection::Selection::with_mode(char_pos, start, mode);
             match mode {
                 crate::selection::SelectionMode::Semantic => {
-                    s.expand_semantic(&tv.rope, crate::selection::DEFAULT_SEMANTIC_ESCAPE_CHARS);
+                    s.expand_semantic(&buffer.rope, crate::selection::DEFAULT_SEMANTIC_ESCAPE_CHARS);
                 }
                 crate::selection::SelectionMode::Line => {
-                    s.expand_to_lines(&tv.rope);
+                    s.expand_to_lines(&buffer.rope);
                 }
                 _ => {}
             }
@@ -459,13 +468,13 @@ pub fn on_pointer_release(
 pub fn on_focused_keyboard(
     trigger: On<FocusedInput<KeyboardInput>>,
     views: Query<
-        (&SelectionState, &TextViewState),
+        (&SelectionState, &TextBuffer),
         (With<TextView>, Without<crate::state::TextEditor>),
     >,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     let entity = trigger.event().focused_entity;
-    let Ok((sel, tv)) = views.get(entity) else {
+    let Ok((sel, buffer)) = views.get(entity) else {
         return;
     };
 
@@ -484,5 +493,5 @@ pub fn on_focused_keyboard(
         return;
     }
 
-    copy_selection(sel, tv);
+    copy_selection(sel, buffer);
 }

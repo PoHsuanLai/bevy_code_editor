@@ -9,7 +9,7 @@
 use bevy::prelude::*;
 
 use crate::settings::*;
-use crate::text_view::{TextViewState, TextViewViewport};
+use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
 use crate::types::{CodeEditor, CursorState};
 use bevy_text_engine::FontConfig;
 
@@ -27,7 +27,8 @@ pub fn sync_completion_popup(
         (
             &LspCompletionPopup,
             &CursorState,
-            &TextViewState,
+            &TextBuffer,
+            &ScrollState,
             &TextViewViewport,
             &FontConfig,
         ),
@@ -37,7 +38,7 @@ pub fn sync_completion_popup(
     lsp: Res<LspSettings>,
     existing: Query<Entity, With<CompletionPopupData>>,
 ) {
-    let Ok((completion_state, cursor_state, tv, _vp, font)) = query.single() else {
+    let Ok((completion_state, cursor_state, buffer, scroll, _vp, font)) = query.single() else {
         return;
     };
     let filtered_items = completion_state.filtered_items();
@@ -51,16 +52,16 @@ pub fn sync_completion_popup(
     }
 
     // Calculate position
-    let cursor_pos = cursor_state.cursor_pos.min(tv.rope.len_chars());
-    let line_index = tv.rope.char_to_line(cursor_pos);
-    let line_start = tv.rope.line_to_char(line_index);
+    let cursor_pos = cursor_state.cursor_pos.min(buffer.rope.len_chars());
+    let line_index = buffer.rope.char_to_line(cursor_pos);
+    let line_start = buffer.rope.line_to_char(line_index);
     let col_index = cursor_pos - line_start;
 
     let char_width = font.char_width;
     let line_height = font.line_height;
 
     let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
-    let y_offset = ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
+    let y_offset = ui.margin_top + scroll.scroll_offset + ((line_index + 1) as f32 * line_height);
 
     // Calculate dynamic width
     let max_char_count = filtered_items
@@ -133,13 +134,13 @@ pub fn sync_completion_popup(
 pub fn sync_hover_popup(
     mut commands: Commands,
     query: Query<
-        (&LspHoverPopup, &TextViewState, &TextViewViewport, &FontConfig),
+        (&LspHoverPopup, &TextBuffer, &ScrollState, &TextViewViewport, &FontConfig),
         With<CodeEditor>,
     >,
     ui: Res<UiSettings>,
     existing: Query<Entity, With<HoverPopupData>>,
 ) {
-    let Ok((hover_state, tv, _vp, font)) = query.single() else {
+    let Ok((hover_state, buffer, scroll, _vp, font)) = query.single() else {
         return;
     };
 
@@ -150,18 +151,18 @@ pub fn sync_hover_popup(
         return;
     }
 
-    let trigger_char_index = hover_state.trigger_char_index.min(tv.rope.len_chars());
-    let line_index = tv.rope.char_to_line(trigger_char_index);
-    let line_start = tv.rope.line_to_char(line_index);
+    let trigger_char_index = hover_state.trigger_char_index.min(buffer.rope.len_chars());
+    let line_index = buffer.rope.char_to_line(trigger_char_index);
+    let line_start = buffer.rope.line_to_char(line_index);
     let col_index = trigger_char_index - line_start;
 
     let char_width = font.char_width;
     let line_height = font.line_height;
 
     let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
-    let y_offset = ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
+    let y_offset = ui.margin_top + scroll.scroll_offset + ((line_index + 1) as f32 * line_height);
 
-    let font_size = font.size * 0.9;
+    let font_size = font.font_size * 0.9;
     let padding = 10.0;
 
     let max_line_chars = hover_state
@@ -203,7 +204,8 @@ pub fn sync_signature_help_popup(
         (
             &LspSignatureHelpPopup,
             &CursorState,
-            &TextViewState,
+            &TextBuffer,
+            &ScrollState,
             &TextViewViewport,
             &FontConfig,
         ),
@@ -212,7 +214,7 @@ pub fn sync_signature_help_popup(
     ui: Res<UiSettings>,
     existing: Query<Entity, With<SignatureHelpPopupData>>,
 ) {
-    let Ok((sig_state, cursor_state, tv, _vp, font)) = query.single() else {
+    let Ok((sig_state, cursor_state, buffer, scroll, _vp, font)) = query.single() else {
         return;
     };
 
@@ -230,9 +232,9 @@ pub fn sync_signature_help_popup(
         return;
     };
 
-    let cursor_pos = cursor_state.cursor_pos.min(tv.rope.len_chars());
-    let line_index = tv.rope.char_to_line(cursor_pos);
-    let line_start = tv.rope.line_to_char(line_index);
+    let cursor_pos = cursor_state.cursor_pos.min(buffer.rope.len_chars());
+    let line_index = buffer.rope.char_to_line(cursor_pos);
+    let line_start = buffer.rope.line_to_char(line_index);
     let col_index = cursor_pos - line_start;
 
     let char_width = font.char_width;
@@ -240,9 +242,9 @@ pub fn sync_signature_help_popup(
 
     let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
     let y_offset =
-        ui.margin_top + tv.scroll_offset + (line_index as f32 * line_height) - line_height;
+        ui.margin_top + scroll.scroll_offset + (line_index as f32 * line_height) - line_height;
 
-    let font_size = font.size * 0.9;
+    let font_size = font.font_size * 0.9;
     let padding = 8.0;
 
     let sig_label = &signature.label;
@@ -298,7 +300,8 @@ pub fn sync_code_actions_popup(
         (
             &LspCodeActionsPopup,
             &CursorState,
-            &TextViewState,
+            &TextBuffer,
+            &ScrollState,
             &TextViewViewport,
             &FontConfig,
         ),
@@ -307,7 +310,7 @@ pub fn sync_code_actions_popup(
     ui: Res<UiSettings>,
     existing: Query<Entity, With<CodeActionsPopupData>>,
 ) {
-    let Ok((action_state, cursor_state, tv, _vp, font)) = query.single() else {
+    let Ok((action_state, cursor_state, buffer, scroll, _vp, font)) = query.single() else {
         return;
     };
 
@@ -318,14 +321,14 @@ pub fn sync_code_actions_popup(
         return;
     }
 
-    let cursor_pos = cursor_state.cursor_pos.min(tv.rope.len_chars());
-    let line_index = tv.rope.char_to_line(cursor_pos);
+    let cursor_pos = cursor_state.cursor_pos.min(buffer.rope.len_chars());
+    let line_index = buffer.rope.char_to_line(cursor_pos);
 
     let line_height = font.line_height;
     let char_width = font.char_width;
 
     let x_offset = ui.code_margin_left - 20.0;
-    let y_offset = ui.margin_top + tv.scroll_offset + ((line_index + 1) as f32 * line_height);
+    let y_offset = ui.margin_top + scroll.scroll_offset + ((line_index + 1) as f32 * line_height);
 
     let max_label_len = action_state
         .actions
@@ -393,13 +396,13 @@ pub fn sync_code_actions_popup(
 pub fn sync_rename_input(
     mut commands: Commands,
     query: Query<
-        (&LspRenamePopup, &TextViewState, &TextViewViewport, &FontConfig),
+        (&LspRenamePopup, &ScrollState, &TextViewViewport, &FontConfig),
         With<CodeEditor>,
     >,
     ui: Res<UiSettings>,
     existing: Query<Entity, With<RenameInputData>>,
 ) {
-    let Ok((rename_state, tv, _vp, font)) = query.single() else {
+    let Ok((rename_state, scroll, _vp, font)) = query.single() else {
         return;
     };
 
@@ -425,7 +428,7 @@ pub fn sync_rename_input(
 
     let x_offset = ui.code_margin_left + (character as f32 * char_width);
     let y_offset =
-        ui.margin_top + tv.scroll_offset + (line as f32 * line_height) + (line_height / 2.0);
+        ui.margin_top + scroll.scroll_offset + (line as f32 * line_height) + (line_height / 2.0);
 
     let padding_x = 4.0;
     let padding_y = 2.0;
@@ -467,7 +470,7 @@ pub fn sync_inlay_hints(
     query: Query<
         (
             Ref<LspInlayHints>,
-            Ref<TextViewState>,
+            Ref<ScrollState>,
             Ref<TextViewViewport>,
             Ref<FontConfig>,
         ),
@@ -476,12 +479,12 @@ pub fn sync_inlay_hints(
     ui: Res<UiSettings>,
     existing: Query<Entity, With<InlayHintData>>,
 ) {
-    let Ok((hint_state, tv, vp, font)) = query.single() else {
+    let Ok((hint_state, scroll, vp, font)) = query.single() else {
         return;
     };
 
     // Only update if something changed
-    if !hint_state.is_changed() && !tv.is_changed() && !vp.is_changed() && !font.is_changed() {
+    if !hint_state.is_changed() && !scroll.is_changed() && !vp.is_changed() && !font.is_changed() {
         return;
     }
 
@@ -494,7 +497,7 @@ pub fn sync_inlay_hints(
         return;
     }
 
-    let visible_start_line = (tv.scroll_offset / font.line_height) as u32;
+    let visible_start_line = (scroll.scroll_offset / font.line_height) as u32;
     let visible_lines = (vp.height as f32 / font.line_height) as u32 + 2;
     let visible_end_line = visible_start_line + visible_lines;
 
@@ -520,7 +523,7 @@ pub fn sync_inlay_hints(
 
         let x_offset = ui.code_margin_left + (character as f32 * char_width);
         let y_offset =
-            ui.margin_top + tv.scroll_offset + (line as f32 * line_height) + (line_height / 2.0);
+            ui.margin_top + scroll.scroll_offset + (line as f32 * line_height) + (line_height / 2.0);
 
         let kind = match hint.kind {
             Some(lsp_types::InlayHintKind::TYPE) => InlayHintKind::Type,
@@ -548,7 +551,7 @@ pub fn sync_document_highlights(
     query: Query<
         (
             Ref<LspDocumentHighlights>,
-            &TextViewState,
+            &ScrollState,
             Ref<TextViewViewport>,
             Ref<FontConfig>,
         ),
@@ -557,11 +560,11 @@ pub fn sync_document_highlights(
     existing: Query<Entity, With<DocumentHighlightData>>,
     mut last_scroll: Local<f32>,
 ) {
-    let Ok((highlight_state, tv, vp, font)) = query.single() else {
+    let Ok((highlight_state, scroll, vp, font)) = query.single() else {
         return;
     };
 
-    let scroll_changed = (tv.scroll_offset - *last_scroll).abs() > 0.01;
+    let scroll_changed = (scroll.scroll_offset - *last_scroll).abs() > 0.01;
     if !highlight_state.is_changed()
         && !vp.is_changed()
         && !font.is_changed()
@@ -569,7 +572,7 @@ pub fn sync_document_highlights(
     {
         return;
     }
-    *last_scroll = tv.scroll_offset;
+    *last_scroll = scroll.scroll_offset;
 
     for entity in existing.iter() {
         commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
@@ -583,7 +586,7 @@ pub fn sync_document_highlights(
     let char_width = font.char_width;
     let line_height = font.line_height;
 
-    let visible_start_line = (tv.scroll_offset / line_height) as u32;
+    let visible_start_line = (scroll.scroll_offset / line_height) as u32;
     let visible_lines = (viewport_height / line_height) as u32 + 2;
     let visible_end_line = visible_start_line + visible_lines;
 
@@ -606,7 +609,7 @@ pub fn sync_document_highlights(
         // The sprite renderer treats `position.y` as a viewport-local offset
         // below world_top, so we feed in the row center.
         let row_center = |line_idx: u32| -> f32 {
-            vp.text_area_top + tv.scroll_offset + (line_idx as f32 * line_height)
+            vp.text_area_top + scroll.scroll_offset + (line_idx as f32 * line_height)
         };
         let col_x = |col: u32| -> f32 {
             vp.text_area_left + (col as f32 * char_width)

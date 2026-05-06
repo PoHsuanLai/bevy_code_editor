@@ -62,17 +62,18 @@ impl Plugin for TextInteractionPlugin {
 /// `ScrollConfig` has `smooth = false`. Runs before engine animation; for
 /// smooth entities this is a no-op (we leave the gap for the engine to ease).
 fn apply_instant_scroll(
-    mut q: Query<(&mut bevy_text_engine::TextViewState, &ScrollConfig)>,
+    mut q: Query<(&mut bevy_text_engine::ScrollState, &ScrollConfig)>,
 ) {
-    for (mut tv, cfg) in q.iter_mut() {
+    for (mut scroll, cfg) in q.iter_mut() {
         if cfg.smooth {
             continue;
         }
-        if (tv.target_scroll_offset - tv.scroll_offset).abs() > 0.001 {
-            tv.scroll_offset = tv.target_scroll_offset;
+        if (scroll.target_scroll_offset - scroll.scroll_offset).abs() > 0.001 {
+            scroll.scroll_offset = scroll.target_scroll_offset;
         }
-        if (tv.target_horizontal_scroll_offset - tv.horizontal_scroll_offset).abs() > 0.001 {
-            tv.horizontal_scroll_offset = tv.target_horizontal_scroll_offset;
+        if (scroll.target_horizontal_scroll_offset - scroll.horizontal_scroll_offset).abs() > 0.001
+        {
+            scroll.horizontal_scroll_offset = scroll.target_horizontal_scroll_offset;
         }
     }
 }

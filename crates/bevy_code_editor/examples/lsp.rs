@@ -29,7 +29,7 @@ use bevy_code_editor::types::{CodeEditor, CursorState, ViewportDimensions};
 use bevy_egui::{egui, EguiContexts};
 use bevy_lsp::{LspClient, LspDocument, LspMessage};
 use bevy_markdown::{MarkdownDoc, MarkdownLinks, MarkdownViewerPlugin};
-use bevy_text_engine::{DisplayLayout, TextView, TextViewState};
+use bevy_text_engine::{ContentMetrics, DisplayLayout, ScrollState, TextBuffer, TextView};
 #[cfg(feature = "tree-sitter")]
 use bevy_tree_sitter::Language;
 
@@ -213,8 +213,8 @@ fn render_inlay_hints(
             (
                 Text2d::new(&hint.label),
                 TextFont {
-                    font: font.font.clone().unwrap_or_default(),
-                    font_size: font.size * theme.inlay_hints.font_size_multiplier,
+                    font: font.font.clone(),
+                    font_size: font.font_size * theme.inlay_hints.font_size_multiplier,
                     ..default()
                 },
                 TextColor(color),
@@ -290,23 +290,24 @@ struct LspEguiViewportOffset {
 /// Cursor screen position (x, y at top of cursor line).
 fn cursor_screen_pos(
     char_index: usize,
-    tv: &TextViewState,
+    buffer: &TextBuffer,
+    scroll: &ScrollState,
     font: &FontConfig,
     viewport_offset: &LspEguiViewportOffset,
     viewport: &ViewportDimensions,
 ) -> (f32, f32) {
-    let char_index = char_index.min(tv.rope.len_chars());
-    let line_index = tv.rope.char_to_line(char_index);
-    let line_start = tv.rope.line_to_char(line_index);
+    let char_index = char_index.min(buffer.rope.len_chars());
+    let line_index = buffer.rope.char_to_line(char_index);
+    let line_start = buffer.rope.line_to_char(line_index);
     let col_index = char_index - line_start;
 
     let x = viewport_offset.screen_offset.x
         + viewport.text_area_left
         + (col_index as f32 * font.char_width)
-        - tv.horizontal_scroll_offset;
+        - scroll.horizontal_scroll_offset;
     let y = viewport_offset.screen_offset.y
         + viewport.text_area_top
-        + ((line_index as f32 - tv.scroll_offset / font.line_height) * font.line_height);
+        + ((line_index as f32 - scroll.scroll_offset / font.line_height) * font.line_height);
 
     (x, y)
 }
@@ -355,13 +356,13 @@ fn position_popup(
 fn render_completion_egui(
     mut contexts: EguiContexts,
     query: Query<
-        (&LspCompletionPopup, &CursorState, &TextViewState, &FontConfig),
+        (&LspCompletionPopup, &CursorState, &TextBuffer, &ScrollState, &FontConfig),
         With<CodeEditor>,
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Res<ViewportDimensions>,
 ) {
-    let Ok((completion_state, cursor_state, tv, font)) = query.single() else {
+    let Ok((completion_state, cursor_state, buffer, scroll, font)) = query.single() else {
         return;
     };
     let filtered_items = completion_state.filtered_items();
@@ -379,7 +380,8 @@ fn render_completion_egui(
 
     let (cursor_x, cursor_y) = cursor_screen_pos(
         cursor_state.cursor_pos,
-        tv,
+        buffer,
+        scroll,
         font,
         &viewport_offset,
         &viewport,
@@ -464,13 +466,13 @@ fn render_completion_egui(
                                     ui.label(
                                         egui::RichText::new(item.kind_icon())
                                             .color(detail_color)
-                                            .size(font.size * 0.9),
+                                            .size(font.font_size * 0.9),
                                     );
 
                                     ui.label(
                                         egui::RichText::new(item.label())
                                             .color(text_color)
-                                            .size(font.size),
+                                            .size(font.font_size),
                                     );
 
                                     if let Some(detail) = item.detail() {
@@ -480,7 +482,7 @@ fn render_completion_egui(
                                                 ui.label(
                                                     egui::RichText::new(detail)
                                                         .color(detail_color)
-                                                        .size(font.size * 0.8),
+                                                        .size(font.font_size * 0.8),
                                                 );
                                             },
                                         );
@@ -525,7 +527,7 @@ fn render_completion_egui(
                             ui.label(
                                 egui::RichText::new(docs)
                                     .color(theme.foreground())
-                                    .size(font.size * 0.9),
+                                    .size(font.font_size * 0.9),
                             );
                         });
                     });
@@ -542,13 +544,13 @@ fn render_completion_egui(
 fn render_hover_egui(
     mut contexts: EguiContexts,
     query: Query<
-        (&LspHoverPopup, &LspCompletionPopup, &TextViewState, &FontConfig),
+        (&LspHoverPopup, &LspCompletionPopup, &TextBuffer, &ScrollState, &FontConfig),
         With<CodeEditor>,
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Res<ViewportDimensions>,
 ) {
-    let Ok((hover_state, completion_state, tv, font)) = query.single() else {
+    let Ok((hover_state, completion_state, buffer, scroll, font)) = query.single() else {
         return;
     };
     if !hover_state.visible || hover_state.content.is_empty() {
@@ -569,7 +571,8 @@ fn render_hover_egui(
 
     let (cursor_x, cursor_y) = cursor_screen_pos(
         hover_state.trigger_char_index,
-        tv,
+        buffer,
+        scroll,
         font,
         &viewport_offset,
         &viewport,
@@ -608,7 +611,7 @@ fn render_hover_egui(
                     ui.label(
                         egui::RichText::new(&hover_state.content)
                             .color(theme.card_foreground())
-                            .size(font.size * 0.9),
+                            .size(font.font_size * 0.9),
                     );
                 });
         });
@@ -631,12 +634,12 @@ struct MarkdownHoverPopup;
 /// short-circuit when the format isn't theirs.
 fn render_hover_markdown(
     mut commands: Commands,
-    editors: Query<(&LspHoverPopup, &TextViewState, &FontConfig), With<CodeEditor>>,
+    editors: Query<(&LspHoverPopup, &TextBuffer, &ScrollState, &FontConfig), With<CodeEditor>>,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Res<ViewportDimensions>,
     existing: Query<Entity, With<MarkdownHoverPopup>>,
 ) {
-    let Ok((hover_state, tv, font)) = editors.single() else {
+    let Ok((hover_state, buffer, scroll, font)) = editors.single() else {
         return;
     };
 
@@ -654,7 +657,7 @@ fn render_hover_markdown(
     }
 
     let (cursor_x, cursor_y) =
-        cursor_screen_pos(hover_state.trigger_char_index, tv, font, &viewport_offset, &viewport);
+        cursor_screen_pos(hover_state.trigger_char_index, buffer, scroll, font, &viewport_offset, &viewport);
 
     let popup_width = 520.0_f32;
     let popup_height = estimate_markdown_popup_height(&hover_state.content, font);
@@ -702,7 +705,9 @@ fn render_hover_markdown(
             ),
             Transform::from_translation(pos_with_z),
             TextView,
-            TextViewState::default(),
+            TextBuffer::default(),
+            ScrollState::default(),
+            ContentMetrics::default(),
             viewport_for_layout,
             font.clone(),
             MarkdownDoc::new(hover_state.content.clone()),
@@ -768,7 +773,8 @@ fn render_signature_help_egui(
         (
             &LspSignatureHelpPopup,
             &CursorState,
-            &TextViewState,
+            &TextBuffer,
+            &ScrollState,
             &FontConfig,
         ),
         With<CodeEditor>,
@@ -776,7 +782,7 @@ fn render_signature_help_egui(
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Res<ViewportDimensions>,
 ) {
-    let Ok((sig_state, cursor_state, tv, font)) = query.single() else {
+    let Ok((sig_state, cursor_state, buffer, scroll, font)) = query.single() else {
         return;
     };
     if !sig_state.visible || sig_state.signatures.is_empty() {
@@ -797,7 +803,8 @@ fn render_signature_help_egui(
 
     let (cursor_x, cursor_y) = cursor_screen_pos(
         cursor_state.cursor_pos,
-        tv,
+        buffer,
+        scroll,
         font,
         &viewport_offset,
         &viewport,
@@ -844,7 +851,7 @@ fn render_signature_help_egui(
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         let label = &signature.label;
-                        let text_size = font.size * 0.9;
+                        let text_size = font.font_size * 0.9;
 
                         if let Some((start, end)) = active_param_range {
                             let before = label.get(..start).unwrap_or(label);
@@ -889,7 +896,7 @@ fn render_signature_help_egui(
                                     sig_state.signatures.len()
                                 ))
                                 .color(theme.muted_foreground())
-                                .size(font.size * 0.75),
+                                .size(font.font_size * 0.75),
                             );
                         }
                     });
@@ -901,13 +908,13 @@ fn render_signature_help_egui(
 fn render_code_actions_egui(
     mut contexts: EguiContexts,
     query: Query<
-        (&LspCodeActionsPopup, &CursorState, &TextViewState, &FontConfig),
+        (&LspCodeActionsPopup, &CursorState, &TextBuffer, &ScrollState, &FontConfig),
         With<CodeEditor>,
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Res<ViewportDimensions>,
 ) {
-    let Ok((action_state, cursor_state, tv, font)) = query.single() else {
+    let Ok((action_state, cursor_state, buffer, scroll, font)) = query.single() else {
         return;
     };
     if !action_state.visible || action_state.actions.is_empty() {
@@ -920,7 +927,8 @@ fn render_code_actions_egui(
 
     let (_, cursor_y) = cursor_screen_pos(
         cursor_state.cursor_pos,
-        tv,
+        buffer,
+        scroll,
         font,
         &viewport_offset,
         &viewport,
@@ -994,12 +1002,12 @@ fn render_code_actions_egui(
                                     ui.label(
                                         egui::RichText::new(icon)
                                             .color(theme.muted_foreground())
-                                            .size(font.size * 0.85),
+                                            .size(font.font_size * 0.85),
                                     );
                                     ui.label(
                                         egui::RichText::new(title)
                                             .color(text_color)
-                                            .size(font.size),
+                                            .size(font.font_size),
                                     );
                                 });
                             });
@@ -1014,7 +1022,8 @@ fn render_rename_egui(
     mut query: Query<
         (
             &mut LspRenamePopup,
-            &TextViewState,
+            &TextBuffer,
+            &ScrollState,
             &LspClient,
             Option<&LspDocument>,
             &FontConfig,
@@ -1024,7 +1033,7 @@ fn render_rename_egui(
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Res<ViewportDimensions>,
 ) {
-    let Ok((mut rename_state, tv, lsp_client, lsp_document, font)) = query.single_mut() else {
+    let Ok((mut rename_state, buffer, scroll, lsp_client, lsp_document, font)) = query.single_mut() else {
         return;
     };
     if !rename_state.visible {
@@ -1041,15 +1050,15 @@ fn render_rename_egui(
     };
 
     let line = range.start.line as usize;
-    let char_index = if line < tv.rope.len_lines() {
-        let line_start = tv.rope.line_to_char(line);
+    let char_index = if line < buffer.rope.len_lines() {
+        let line_start = buffer.rope.line_to_char(line);
         line_start + range.start.character as usize
     } else {
-        tv.rope.len_chars()
+        buffer.rope.len_chars()
     };
 
     let (cursor_x, cursor_y) =
-        cursor_screen_pos(char_index, tv, font, &viewport_offset, &viewport);
+        cursor_screen_pos(char_index, buffer, scroll, font, &viewport_offset, &viewport);
 
     let theme = ctx.armas_theme();
     let rename_width = (rename_state.new_name.len() as f32 * font.char_width + 40.0).max(150.0);
@@ -1079,7 +1088,7 @@ fn render_rename_egui(
                 .show(ui, |ui| {
                     let response = ui.add(
                         egui::TextEdit::singleline(&mut rename_state.new_name)
-                            .font(egui::FontId::proportional(font.size))
+                            .font(egui::FontId::proportional(font.font_size))
                             .desired_width(rename_width - 20.0),
                     );
                     response.request_focus();
@@ -1195,21 +1204,21 @@ fn display_lsp_info(query: Query<&LspClient, (With<CodeEditor>, Changed<LspClien
 /// The input system doesn't emit RequestCompletionEvent yet, so this bridges
 /// the gap by watching for content changes and firing completion at the cursor.
 fn auto_request_completion(
-    editor_query: Query<(&CursorState, Ref<TextViewState>), With<CodeEditor>>,
+    editor_query: Query<(&CursorState, Ref<TextBuffer>), With<CodeEditor>>,
     mut writer: MessageWriter<bevy_code_editor::types::events::RequestCompletionEvent>,
 ) {
-    let Ok((cursor, tv)) = editor_query.single() else {
+    let Ok((cursor, buffer)) = editor_query.single() else {
         return;
     };
 
     // pending_update was removed in the snapshot-Arc refactor. Drive completion
-    // off Bevy's Changed detection on TextViewState — fires when the rope or
-    // scroll moves, which is the same trigger condition.
-    if !tv.is_changed() {
+    // off Bevy's Changed detection on TextBuffer — fires when the rope changes,
+    // which is the trigger condition we want.
+    if !buffer.is_changed() {
         return;
     }
 
-    let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
+    let cursor_pos = cursor.cursor_pos.min(buffer.rope.len_chars());
     if cursor_pos == 0 {
         return;
     }

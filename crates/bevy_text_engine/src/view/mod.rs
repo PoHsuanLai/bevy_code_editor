@@ -25,7 +25,7 @@ pub use snapshot::{
     trivial_layout, Block, BlockBorder, BlockDecoration, BlockLayoutConfig, BlockRect,
     ShapedLine, StyleRun, TextDecoration,
 };
-pub use state::TextViewState;
+pub use state::{ContentMetrics, ScrollState, TextBuffer};
 pub use styling::{BlockList, HiddenLines, LayoutWrap, LineStyles, RunWithText};
 pub use theme::RenderTheme;
 pub use viewport::{TextViewViewport, ViewportOrigin};

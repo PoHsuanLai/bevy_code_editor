@@ -9,7 +9,7 @@ use crate::editing_events::*;
 use crate::state::{CursorState, SelectionState, TextEditor};
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy_text_engine::TextViewState;
+use bevy_text_engine::TextBuffer;
 
 type EditorView<'w, 's> = Query<
     'w,
@@ -17,7 +17,7 @@ type EditorView<'w, 's> = Query<
     (
         &'static mut SelectionState,
         &'static mut CursorState,
-        &'static mut TextViewState,
+        &'static TextBuffer,
     ),
     With<TextEditor>,
 >;
@@ -37,10 +37,10 @@ pub fn handle_move_cursor_left(
     let Some(entity) = focused(&input_focus) else {
         return;
     };
-    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor(&mut cursor, &tv.rope, -1);
+    move_cursor(&mut cursor, &buffer.rope, -1);
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -55,10 +55,10 @@ pub fn handle_move_cursor_right(
     let Some(entity) = focused(&input_focus) else {
         return;
     };
-    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor(&mut cursor, &tv.rope, 1);
+    move_cursor(&mut cursor, &buffer.rope, 1);
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -73,10 +73,10 @@ pub fn handle_move_cursor_up(
     let Some(entity) = focused(&input_focus) else {
         return;
     };
-    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor_up(&mut cursor, &tv.rope);
+    move_cursor_up(&mut cursor, &buffer.rope);
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -91,10 +91,10 @@ pub fn handle_move_cursor_down(
     let Some(entity) = focused(&input_focus) else {
         return;
     };
-    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor_down(&mut cursor, &tv.rope);
+    move_cursor_down(&mut cursor, &buffer.rope);
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -109,10 +109,10 @@ pub fn handle_move_cursor_word_left(
     let Some(entity) = focused(&input_focus) else {
         return;
     };
-    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor_word_left(&mut cursor, &tv.rope);
+    move_cursor_word_left(&mut cursor, &buffer.rope);
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -127,10 +127,10 @@ pub fn handle_move_cursor_word_right(
     let Some(entity) = focused(&input_focus) else {
         return;
     };
-    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor_word_right(&mut cursor, &tv.rope);
+    move_cursor_word_right(&mut cursor, &buffer.rope);
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -145,10 +145,10 @@ pub fn handle_move_cursor_line_start(
     let Some(entity) = focused(&input_focus) else {
         return;
     };
-    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor_line_start(&mut cursor, &tv.rope);
+    move_cursor_line_start(&mut cursor, &buffer.rope);
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -163,10 +163,10 @@ pub fn handle_move_cursor_line_end(
     let Some(entity) = focused(&input_focus) else {
         return;
     };
-    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor_line_end(&mut cursor, &tv.rope);
+    move_cursor_line_end(&mut cursor, &buffer.rope);
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -181,7 +181,7 @@ pub fn handle_move_cursor_document_start(
     let Some(entity) = focused(&input_focus) else {
         return;
     };
-    let Ok((mut sel, mut cursor, _tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, _buffer)) = q.get_mut(entity) else {
         return;
     };
     cursor.cursor_pos = 0;
@@ -199,10 +199,10 @@ pub fn handle_move_cursor_document_end(
     let Some(entity) = focused(&input_focus) else {
         return;
     };
-    let Ok((mut sel, mut cursor, tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    cursor.cursor_pos = tv.rope.len_chars();
+    cursor.cursor_pos = buffer.rope.len_chars();
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -217,7 +217,7 @@ pub fn handle_move_cursor_page_up(
     let Some(entity) = focused(&input_focus) else {
         return;
     };
-    let Ok((mut sel, cursor, _tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, cursor, _buffer)) = q.get_mut(entity) else {
         return;
     };
     // TODO: page-up was a TODO pre-refactor too.
@@ -235,7 +235,7 @@ pub fn handle_move_cursor_page_down(
     let Some(entity) = focused(&input_focus) else {
         return;
     };
-    let Ok((mut sel, cursor, _tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, cursor, _buffer)) = q.get_mut(entity) else {
         return;
     };
     // TODO: page-down was a TODO pre-refactor too.

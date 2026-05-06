@@ -2,8 +2,8 @@
 //! editable text.
 //!
 //! Pair with `bevy_text_engine::prelude::*` which supplies the rendering
-//! primitives (`TextView`, `TextViewState`, `TextViewViewport`,
-//! `FontConfig`, the engine plugin group).
+//! primitives (`TextView`, `TextBuffer`, `ScrollState`, `ContentMetrics`,
+//! `TextViewViewport`, `FontConfig`, the engine plugin group).
 
 pub use crate::components::{ScrollConfig, TextViewDragState};
 pub use crate::interaction::{copy_selection, screen_to_char_pos};

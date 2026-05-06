@@ -7,7 +7,7 @@
 use alacritty_terminal::event::Notify;
 use bevy::prelude::*;
 use bevy_text_editor::{copy_selection, SelectionState};
-use bevy_text_engine::TextViewState;
+use bevy_text_engine::TextBuffer;
 
 use crate::messages::{
     TerminalCopySelection, TerminalPaste, TerminalRunCommand, TerminalWriteBytes,
@@ -19,13 +19,13 @@ use crate::types::{TerminalInputMode, TerminalSession};
 /// (which honors `SelectionMode` for block / line / semantic copies).
 pub fn handle_copy_selection(
     mut events: MessageReader<TerminalCopySelection>,
-    q: Query<(&SelectionState, &TextViewState)>,
+    q: Query<(&SelectionState, &TextBuffer)>,
 ) {
     for ev in events.read() {
-        let Ok((sel, tv)) = q.get(ev.entity) else {
+        let Ok((sel, buffer)) = q.get(ev.entity) else {
             continue;
         };
-        let _ = copy_selection(sel, tv);
+        let _ = copy_selection(sel, buffer);
     }
 }
 

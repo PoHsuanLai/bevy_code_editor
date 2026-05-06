@@ -16,7 +16,7 @@ use super::state::{
     UnifiedCompletionItem,
 };
 use crate::settings::LspSettings;
-use crate::text_view::TextViewState;
+use crate::text_view::TextBuffer;
 use crate::types::events::{
     ApplyCompletionEvent, DismissCompletionEvent, RequestCompletionEvent, RequestHoverEvent,
     RequestRenameEvent, RequestSignatureHelpEvent, TextEditEvent,
@@ -39,7 +39,7 @@ pub fn listen_text_edit_events(
     mut events: MessageReader<TextEditEvent>,
     mut query: Query<
         (
-            &TextViewState,
+            &TextBuffer,
             &LspClient,
             Option<&mut LspDocument>,
             &bevy_lsp::ServerCapabilities,
@@ -48,7 +48,7 @@ pub fn listen_text_edit_events(
     >,
     settings: Res<LspSettings>,
 ) {
-    let Ok((tv, lsp_client, lsp_document, caps)) = query.single_mut() else {
+    let Ok((buffer, lsp_client, lsp_document, caps)) = query.single_mut() else {
         return;
     };
     let Some(mut lsp_document) = lsp_document else {
@@ -81,14 +81,14 @@ pub fn listen_text_edit_events(
             // `start_byte` to `new_end_byte`. We use the current rope here
             // — for a single edit per frame this is correct; for batched
             // edits in one frame, callers should be aware that only the
-            // last event's `tv.rope` matches `new_end_byte`. Today the
+            // last event's `buffer.rope` matches `new_end_byte`. Today the
             // editor produces one edit per frame, so this is fine.
             let new_text = if delta.start_byte == delta.new_end_byte {
                 String::new()
             } else {
-                let new_start_char = tv.rope.byte_to_char(delta.start_byte);
-                let new_end_char = tv.rope.byte_to_char(delta.new_end_byte);
-                tv.rope.slice(new_start_char..new_end_char).chars().collect()
+                let new_start_char = buffer.rope.byte_to_char(delta.start_byte);
+                let new_end_char = buffer.rope.byte_to_char(delta.new_end_byte);
+                buffer.rope.slice(new_start_char..new_end_char).chars().collect()
             };
             changes.push(TextDocumentContentChangeEvent {
                 range: Some(Range { start, end }),
@@ -98,7 +98,7 @@ pub fn listen_text_edit_events(
         }
         lsp_client.send(LspMessage::DidChange { uri, version, changes });
     } else {
-        let text: String = tv.rope.chunks().collect();
+        let text: String = buffer.rope.chunks().collect();
         lsp_client.send(LspMessage::DidChange {
             uri,
             version,
@@ -115,7 +115,7 @@ pub fn listen_completion_requests(
     mut events: MessageReader<RequestCompletionEvent>,
     mut query: Query<
         (
-            &TextViewState,
+            &TextBuffer,
             Option<&LspDocument>,
             &bevy_lsp::ServerCapabilities,
             &mut LspDebounceTimers,
@@ -123,7 +123,7 @@ pub fn listen_completion_requests(
         With<CodeEditor>,
     >,
 ) {
-    let Ok((tv, lsp_document, caps, mut debounce)) = query.single_mut() else {
+    let Ok((buffer, lsp_document, caps, mut debounce)) = query.single_mut() else {
         return;
     };
     let Some(lsp_document) = lsp_document else {
@@ -133,7 +133,7 @@ pub fn listen_completion_requests(
     for event in events.read() {
         debounce.pending_completion = Some(PendingLspRequest {
             uri: lsp_document.uri.clone(),
-            position: rope_char_to_lsp_position(&tv.rope, event.cursor_char, enc),
+            position: rope_char_to_lsp_position(&buffer.rope, event.cursor_char, enc),
         });
         debounce.completion_timer.reset();
     }
@@ -143,7 +143,7 @@ pub fn listen_hover_requests(
     mut events: MessageReader<RequestHoverEvent>,
     mut query: Query<
         (
-            &TextViewState,
+            &TextBuffer,
             Option<&LspDocument>,
             &bevy_lsp::ServerCapabilities,
             &mut LspDebounceTimers,
@@ -151,7 +151,7 @@ pub fn listen_hover_requests(
         With<CodeEditor>,
     >,
 ) {
-    let Ok((tv, lsp_document, caps, mut debounce)) = query.single_mut() else {
+    let Ok((buffer, lsp_document, caps, mut debounce)) = query.single_mut() else {
         return;
     };
     let Some(lsp_document) = lsp_document else {
@@ -161,7 +161,7 @@ pub fn listen_hover_requests(
     for event in events.read() {
         debounce.pending_hover = Some(PendingLspRequest {
             uri: lsp_document.uri.clone(),
-            position: rope_char_to_lsp_position(&tv.rope, event.cursor_char, enc),
+            position: rope_char_to_lsp_position(&buffer.rope, event.cursor_char, enc),
         });
         debounce.hover_timer.reset();
     }
@@ -171,7 +171,7 @@ pub fn listen_rename_requests(
     mut events: MessageReader<RequestRenameEvent>,
     mut query: Query<
         (
-            &TextViewState,
+            &TextBuffer,
             Option<&LspDocument>,
             &LspClient,
             &bevy_lsp::ServerCapabilities,
@@ -180,7 +180,7 @@ pub fn listen_rename_requests(
         With<CodeEditor>,
     >,
 ) {
-    let Ok((tv, lsp_document, lsp_client, caps, mut rename_state)) = query.single_mut() else {
+    let Ok((buffer, lsp_document, lsp_client, caps, mut rename_state)) = query.single_mut() else {
         return;
     };
     let Some(lsp_document) = lsp_document else {
@@ -188,7 +188,7 @@ pub fn listen_rename_requests(
     };
     let enc = caps.position_encoding();
     for event in events.read() {
-        let position = rope_char_to_lsp_position(&tv.rope, event.cursor_char, enc);
+        let position = rope_char_to_lsp_position(&buffer.rope, event.cursor_char, enc);
         rename_state.start_prepare(position);
         lsp_client.send(LspMessage::PrepareRename {
             uri: lsp_document.uri.clone(),
@@ -201,7 +201,7 @@ pub fn listen_signature_help_requests(
     mut events: MessageReader<RequestSignatureHelpEvent>,
     mut query: Query<
         (
-            &TextViewState,
+            &TextBuffer,
             Option<&LspDocument>,
             &LspClient,
             &bevy_lsp::ServerCapabilities,
@@ -210,7 +210,7 @@ pub fn listen_signature_help_requests(
         With<CodeEditor>,
     >,
 ) {
-    let Ok((tv, lsp_document, lsp_client, caps, mut sig_help_state)) = query.single_mut() else {
+    let Ok((buffer, lsp_document, lsp_client, caps, mut sig_help_state)) = query.single_mut() else {
         return;
     };
     let Some(lsp_document) = lsp_document else {
@@ -221,7 +221,7 @@ pub fn listen_signature_help_requests(
         sig_help_state.dismiss();
         lsp_client.send(LspMessage::SignatureHelp {
             uri: lsp_document.uri.clone(),
-            position: rope_char_to_lsp_position(&tv.rope, event.cursor_char, enc),
+            position: rope_char_to_lsp_position(&buffer.rope, event.cursor_char, enc),
             id: sig_help_state.request_id,
         });
     }
@@ -304,11 +304,11 @@ pub fn drive_completion_resolve(
 /// anchor) hides the menu immediately.
 pub fn dismiss_completion_on_cursor_move(
     mut query: Query<
-        (Ref<CursorState>, &TextViewState, &mut LspCompletionPopup),
+        (Ref<CursorState>, &TextBuffer, &mut LspCompletionPopup),
         With<CodeEditor>,
     >,
 ) {
-    let Ok((cursor, tv, mut completion_state)) = query.single_mut() else {
+    let Ok((cursor, buffer, mut completion_state)) = query.single_mut() else {
         return;
     };
     if !completion_state.visible || !cursor.is_changed() {
@@ -317,8 +317,8 @@ pub fn dismiss_completion_on_cursor_move(
     let start = completion_state.start_char_index;
     let pos = cursor.cursor_pos;
     let is_word = |c: char| c.is_alphanumeric() || c == '_';
-    let in_anchor_range = pos >= start && pos <= tv.rope.len_chars();
-    let prev_is_word = pos > 0 && is_word(tv.rope.char(pos - 1));
+    let in_anchor_range = pos >= start && pos <= buffer.rope.len_chars();
+    let prev_is_word = pos > 0 && is_word(buffer.rope.char(pos - 1));
     if !in_anchor_range || !prev_is_word {
         completion_state.dismiss();
     }
@@ -417,13 +417,13 @@ pub fn advance_tabstop_session(
             &mut bevy_text_editor::SelectionState,
             &mut bevy_text_editor::EditHistoryState,
             &mut CursorState,
-            &TextViewState,
+            &TextBuffer,
             &mut TabstopSession,
         ),
         With<CodeEditor>,
     >,
 ) {
-    let Ok((mut sel, hist, mut cursor, tv, mut session)) = query.single_mut() else {
+    let Ok((mut sel, hist, mut cursor, buffer, mut session)) = query.single_mut() else {
         // Drain events even when there's no session entity (avoid leaks).
         let _ = tab_events.read().count();
         let _ = clear_events.read().count();
@@ -465,8 +465,8 @@ pub fn advance_tabstop_session(
     }
     session.current = next;
     let stop = session.stops[next].clone();
-    let s = hist.resolve_anchor(&tv.rope, &stop.start);
-    let e = hist.resolve_anchor(&tv.rope, &stop.end);
+    let s = hist.resolve_anchor(&buffer.rope, &stop.start);
+    let e = hist.resolve_anchor(&buffer.rope, &stop.end);
     cursor.cursor_pos = e;
     if s != e {
         sel.selections = bevy_text_editor::SelectionCollection::with_selection(e, s);
@@ -482,14 +482,14 @@ pub fn end_tabstop_session_on_cursor_leave(
     mut query: Query<
         (
             Ref<CursorState>,
-            &TextViewState,
+            &TextBuffer,
             &mut bevy_text_editor::EditHistoryState,
             &mut TabstopSession,
         ),
         With<CodeEditor>,
     >,
 ) {
-    let Ok((cursor, tv, hist, mut session)) = query.single_mut() else {
+    let Ok((cursor, buffer, hist, mut session)) = query.single_mut() else {
         return;
     };
     if !session.is_active() || !cursor.is_changed() {
@@ -500,8 +500,8 @@ pub fn end_tabstop_session_on_cursor_leave(
     let mut min_start = usize::MAX;
     let mut max_end = 0;
     for stop in session.stops.iter().skip(session.current) {
-        let s = hist.resolve_anchor(&tv.rope, &stop.start);
-        let e = hist.resolve_anchor(&tv.rope, &stop.end);
+        let s = hist.resolve_anchor(&buffer.rope, &stop.start);
+        let e = hist.resolve_anchor(&buffer.rope, &stop.end);
         min_start = min_start.min(s);
         max_end = max_end.max(e);
     }
@@ -523,7 +523,7 @@ pub fn listen_apply_completion(
             &mut bevy_text_editor::SelectionState,
             &mut bevy_text_editor::EditHistoryState,
             &mut CursorState,
-            &mut TextViewState,
+            &mut TextBuffer,
             &mut LspCompletionPopup,
             &mut TabstopSession,
         ),
@@ -534,7 +534,7 @@ pub fn listen_apply_completion(
         mut sel,
         mut hist,
         mut cursor_state,
-        mut tv,
+        mut buffer,
         mut completion_state,
         mut session,
     )) = query.single_mut()
@@ -548,9 +548,9 @@ pub fn listen_apply_completion(
         }
         let item = &filtered[event.item_index];
 
-        let cursor_pos = cursor_state.cursor_pos.min(tv.rope.len_chars());
-        let line = tv.rope.char_to_line(cursor_pos);
-        let line_start = tv.rope.line_to_char(line);
+        let cursor_pos = cursor_state.cursor_pos.min(buffer.rope.len_chars());
+        let line = buffer.rope.char_to_line(cursor_pos);
+        let line_start = buffer.rope.line_to_char(line);
         let start_pos = completion_state.start_char_index.max(line_start).min(cursor_pos);
 
         // Decide whether the item carries snippet syntax. LSP marks this
@@ -572,7 +572,7 @@ pub fn listen_apply_completion(
         };
 
         let outcome = hist.replace_range(
-            &mut tv,
+            &mut buffer,
             start_pos,
             cursor_pos,
             &plain_text,
@@ -594,12 +594,12 @@ pub fn listen_apply_completion(
                     let abs_start = inserted_start + stop.start;
                     let abs_end = inserted_start + stop.end;
                     let start_anchor = hist.create_anchor(
-                        &tv.rope,
+                        &buffer.rope,
                         abs_start,
                         bevy_text_editor::AnchorBias::Left,
                     );
                     let end_anchor = hist.create_anchor(
-                        &tv.rope,
+                        &buffer.rope,
                         abs_end,
                         bevy_text_editor::AnchorBias::Right,
                     );
@@ -614,8 +614,8 @@ pub fn listen_apply_completion(
                 // Move cursor to first tabstop and select its placeholder
                 // range (if any).
                 if let Some(first) = session.stops.first() {
-                    let s = hist.resolve_anchor(&tv.rope, &first.start);
-                    let e = hist.resolve_anchor(&tv.rope, &first.end);
+                    let s = hist.resolve_anchor(&buffer.rope, &first.start);
+                    let e = hist.resolve_anchor(&buffer.rope, &first.end);
                     cursor_state.cursor_pos = e;
                     if s != e {
                         sel.selections =

@@ -9,7 +9,7 @@
 //! What remains here is the handful of editor-only helpers: bracket
 //! auto-close predicates and LSP completion / `did_change` glue.
 
-use crate::text_view::TextViewState;
+use crate::text_view::TextBuffer;
 #[cfg(feature = "lsp")]
 use crate::settings::LspSettings;
 use crate::types::*;
@@ -38,10 +38,10 @@ pub struct LspBuf<'a> {
 }
 
 /// Insert a closing bracket / quote without moving the cursor (auto-close).
-pub fn insert_closing_char(cursor: &CursorState, tv: &mut TextViewState, c: char) {
-    let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
-    tv.rope.insert_char(cursor_pos, c);
-    tv.content_version += 1;
+pub fn insert_closing_char(cursor: &CursorState, buffer: &mut TextBuffer, c: char) {
+    let cursor_pos = cursor.cursor_pos.min(buffer.rope.len_chars());
+    buffer.rope.insert_char(cursor_pos, c);
+    buffer.content_version += 1;
 }
 
 /// Get the closing bracket for an opening bracket.

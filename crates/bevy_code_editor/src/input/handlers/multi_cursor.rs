@@ -13,7 +13,7 @@ type EditorView<'w, 's> = Query<
     (
         &'static mut SelectionState,
         &'static mut CursorState,
-        &'static mut crate::text_view::TextViewState,
+        &'static crate::text_view::TextBuffer,
     ),
     With<CodeEditor>,
 >;
@@ -29,10 +29,10 @@ pub fn handle_add_cursor_at_next_occurrence(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut cursor, mut tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    add_cursor_at_next_occurrence(&mut sel, &mut cursor, &mut tv);
+    add_cursor_at_next_occurrence(&mut sel, &mut cursor, buffer);
 }
 
 pub fn handle_add_cursor_above(
@@ -46,10 +46,10 @@ pub fn handle_add_cursor_above(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut cursor, mut tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    add_cursor_above(&mut sel, &mut cursor, &mut tv);
+    add_cursor_above(&mut sel, &mut cursor, buffer);
 }
 
 pub fn handle_add_cursor_below(
@@ -63,10 +63,10 @@ pub fn handle_add_cursor_below(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut cursor, mut tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    add_cursor_below(&mut sel, &mut cursor, &mut tv);
+    add_cursor_below(&mut sel, &mut cursor, buffer);
 }
 
 pub fn handle_clear_secondary_cursors(
@@ -80,7 +80,7 @@ pub fn handle_clear_secondary_cursors(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut cursor, _tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, _buffer)) = q.get_mut(entity) else {
         return;
     };
     if sel.has_multiple_cursors() {
@@ -92,23 +92,23 @@ pub fn handle_clear_secondary_cursors(
 fn add_cursor_above(
     sel: &mut SelectionState,
     cursor: &mut CursorState,
-    tv: &mut crate::text_view::TextViewState,
+    buffer: &crate::text_view::TextBuffer,
 ) {
     let primary_pos = sel.selections.primary().head_offset();
-    let line_idx = tv.rope.char_to_line(primary_pos);
+    let line_idx = buffer.rope.char_to_line(primary_pos);
 
     if line_idx == 0 {
         return;
     }
 
-    let line_start = tv.rope.line_to_char(line_idx);
+    let line_start = buffer.rope.line_to_char(line_idx);
     let col_offset = primary_pos - line_start;
 
-    let prev_line_start = tv.rope.line_to_char(line_idx - 1);
-    let prev_line_len = tv.rope.line(line_idx - 1).len_chars().saturating_sub(1);
+    let prev_line_start = buffer.rope.line_to_char(line_idx - 1);
+    let prev_line_len = buffer.rope.line(line_idx - 1).len_chars().saturating_sub(1);
     let new_pos = prev_line_start + col_offset.min(prev_line_len);
 
-    sel.add_cursor_at(tv, new_pos);
+    sel.add_cursor_at(buffer, new_pos);
     sel.refresh_primary_cursor(cursor);
 }
 
@@ -116,22 +116,22 @@ fn add_cursor_above(
 fn add_cursor_below(
     sel: &mut SelectionState,
     cursor: &mut CursorState,
-    tv: &mut crate::text_view::TextViewState,
+    buffer: &crate::text_view::TextBuffer,
 ) {
     let primary_pos = sel.selections.primary().head_offset();
-    let line_idx = tv.rope.char_to_line(primary_pos);
+    let line_idx = buffer.rope.char_to_line(primary_pos);
 
-    if line_idx + 1 >= tv.rope.len_lines() {
+    if line_idx + 1 >= buffer.rope.len_lines() {
         return;
     }
 
-    let line_start = tv.rope.line_to_char(line_idx);
+    let line_start = buffer.rope.line_to_char(line_idx);
     let col_offset = primary_pos - line_start;
 
-    let next_line_start = tv.rope.line_to_char(line_idx + 1);
-    let next_line_len = tv.rope.line(line_idx + 1).len_chars().saturating_sub(1);
+    let next_line_start = buffer.rope.line_to_char(line_idx + 1);
+    let next_line_len = buffer.rope.line(line_idx + 1).len_chars().saturating_sub(1);
     let new_pos = next_line_start + col_offset.min(next_line_len);
 
-    sel.add_cursor_at(tv, new_pos);
+    sel.add_cursor_at(buffer, new_pos);
     sel.refresh_primary_cursor(cursor);
 }

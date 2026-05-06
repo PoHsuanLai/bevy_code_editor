@@ -1,7 +1,7 @@
 //! Text editing operations on [`EditHistoryState`].
 //!
 //! Insert, delete, undo / redo, set_text, anchor management. Methods mutate
-//! the rope on the entity's [`bevy_text_engine::TextViewState`], the cursor
+//! the rope on the entity's [`bevy_text_engine::TextBuffer`], the cursor
 //! / selection components, and bookkeeping fields on `EditHistoryState`.
 //!
 //! Editor-level systems read [`EditHistoryState::pending_byte_edit`] (set by
@@ -9,7 +9,7 @@
 //! [`EditHistoryState::invalidate_lines_from`] (set when an edit changes
 //! line structure for entity-pool invalidation), then clear them.
 
-use bevy_text_engine::TextViewState;
+use bevy_text_engine::{ContentMetrics, TextBuffer};
 use ropey::Rope;
 
 use crate::anchor::{Anchor, AnchorBias, TextEdit};
@@ -48,35 +48,35 @@ impl EditHistoryState {
     /// programmatic edits that shouldn't push a new transaction).
     pub fn replace_range(
         &mut self,
-        tv: &mut TextViewState,
+        buffer: &mut TextBuffer,
         start_char: usize,
         end_char: usize,
         text: &str,
         kind: EditKind,
         record_history: bool,
     ) -> EditOutcome {
-        let len = tv.rope.len_chars();
+        let len = buffer.rope.len_chars();
         let start = start_char.min(len);
         let end = end_char.min(len).max(start);
 
         let removed_text: String = if start < end {
-            tv.rope.slice(start..end).chars().collect()
+            buffer.rope.slice(start..end).chars().collect()
         } else {
             String::new()
         };
         let inserted_chars = text.chars().count();
         let inserted_bytes = text.len();
 
-        let start_byte = tv.rope.char_to_byte(start);
-        let end_byte = tv.rope.char_to_byte(end);
-        let start_position = point_at_byte(&tv.rope, start_byte);
-        let old_end_position = point_at_byte(&tv.rope, end_byte);
+        let start_byte = buffer.rope.char_to_byte(start);
+        let end_byte = buffer.rope.char_to_byte(end);
+        let start_position = point_at_byte(&buffer.rope, start_byte);
+        let old_end_position = point_at_byte(&buffer.rope, end_byte);
 
         // Capture pre-edit rope when an LSP-style consumer asked for it.
         // Ropey's structural sharing makes this O(log n); the snapshot is
         // dropped same-frame after the OnEdit observer chain runs.
         if self.snapshot_pre_edits && self.pre_edit_rope.is_none() {
-            self.pre_edit_rope = Some(tv.rope.clone());
+            self.pre_edit_rope = Some(buffer.rope.clone());
         }
 
         if start < end {
@@ -87,18 +87,18 @@ impl EditHistoryState {
         }
 
         if start < end {
-            tv.rope.remove(start..end);
+            buffer.rope.remove(start..end);
         }
         if !text.is_empty() {
-            tv.rope.insert(start, text);
+            buffer.rope.insert(start, text);
         }
-        tv.content_version += 1;
+        buffer.content_version += 1;
 
         let new_end_byte = start_byte + inserted_bytes;
         let new_cursor_pos = start + inserted_chars;
 
         if removed_text.contains('\n') || text.contains('\n') {
-            self.invalidate_lines_from = Some(tv.rope.char_to_line(start));
+            self.invalidate_lines_from = Some(buffer.rope.char_to_line(start));
         }
 
         if record_history && (!removed_text.is_empty() || !text.is_empty()) {
@@ -118,7 +118,7 @@ impl EditHistoryState {
             new_end_byte,
             start_position,
             old_end_position,
-            new_end_position: point_at_byte(&tv.rope, new_end_byte),
+            new_end_position: point_at_byte(&buffer.rope, new_end_byte),
         });
 
         EditOutcome {
@@ -132,14 +132,14 @@ impl EditHistoryState {
         &mut self,
         sel: &mut SelectionState,
         cursor: &mut CursorState,
-        tv: &mut TextViewState,
+        buffer: &mut TextBuffer,
         c: char,
     ) {
-        let pos = cursor.cursor_pos.min(tv.rope.len_chars());
+        let pos = cursor.cursor_pos.min(buffer.rope.len_chars());
         let kind = if c == '\n' { EditKind::Newline } else { EditKind::Insert };
         let mut buf = [0u8; 4];
         let s = c.encode_utf8(&mut buf);
-        let outcome = self.replace_range(tv, pos, pos, s, kind, true);
+        let outcome = self.replace_range(buffer, pos, pos, s, kind, true);
         cursor.cursor_pos = outcome.new_cursor_pos;
         sel.apply_primary_cursor(cursor);
     }
@@ -148,13 +148,13 @@ impl EditHistoryState {
         &mut self,
         sel: &mut SelectionState,
         cursor: &mut CursorState,
-        tv: &mut TextViewState,
+        buffer: &mut TextBuffer,
     ) {
         if cursor.cursor_pos == 0 {
             return;
         }
         let outcome = self.replace_range(
-            tv,
+            buffer,
             cursor.cursor_pos - 1,
             cursor.cursor_pos,
             "",
@@ -169,13 +169,13 @@ impl EditHistoryState {
         &mut self,
         sel: &mut SelectionState,
         cursor: &mut CursorState,
-        tv: &mut TextViewState,
+        buffer: &mut TextBuffer,
     ) {
-        if cursor.cursor_pos >= tv.rope.len_chars() {
+        if cursor.cursor_pos >= buffer.rope.len_chars() {
             return;
         }
         self.replace_range(
-            tv,
+            buffer,
             cursor.cursor_pos,
             cursor.cursor_pos + 1,
             "",
@@ -187,13 +187,13 @@ impl EditHistoryState {
 
     /// Insert text at a specific position (used for undo/redo). Skips
     /// history recording — the caller already manages the transaction.
-    pub fn insert_text_at(&mut self, tv: &mut TextViewState, pos: usize, text: &str) {
-        self.replace_range(tv, pos, pos, text, EditKind::Other, false);
+    pub fn insert_text_at(&mut self, buffer: &mut TextBuffer, pos: usize, text: &str) {
+        self.replace_range(buffer, pos, pos, text, EditKind::Other, false);
     }
 
     /// Remove text range (used for undo/redo). Skips history recording.
-    pub fn remove_range(&mut self, tv: &mut TextViewState, start: usize, end: usize) {
-        self.replace_range(tv, start, end, "", EditKind::Other, false);
+    pub fn remove_range(&mut self, buffer: &mut TextBuffer, start: usize, end: usize) {
+        self.replace_range(buffer, start, end, "", EditKind::Other, false);
     }
 
     /// Perform undo operation. Returns `true` if anything was undone.
@@ -201,16 +201,16 @@ impl EditHistoryState {
         &mut self,
         sel: &mut SelectionState,
         cursor: &mut CursorState,
-        tv: &mut TextViewState,
+        buffer: &mut TextBuffer,
     ) -> bool {
         if let Some(transaction) = self.history.pop_undo() {
             for op in transaction.operations.iter().rev() {
                 if !op.inserted_text.is_empty() {
                     let end_pos = op.position + op.inserted_text.chars().count();
-                    self.remove_range(tv, op.position, end_pos);
+                    self.remove_range(buffer, op.position, end_pos);
                 }
                 if !op.removed_text.is_empty() {
-                    self.insert_text_at(tv, op.position, &op.removed_text);
+                    self.insert_text_at(buffer, op.position, &op.removed_text);
                 }
             }
 
@@ -231,16 +231,16 @@ impl EditHistoryState {
         &mut self,
         sel: &mut SelectionState,
         cursor: &mut CursorState,
-        tv: &mut TextViewState,
+        buffer: &mut TextBuffer,
     ) -> bool {
         if let Some(transaction) = self.history.pop_redo() {
             for op in transaction.operations.iter() {
                 if !op.removed_text.is_empty() {
                     let end_pos = op.position + op.removed_text.chars().count();
-                    self.remove_range(tv, op.position, end_pos);
+                    self.remove_range(buffer, op.position, end_pos);
                 }
                 if !op.inserted_text.is_empty() {
-                    self.insert_text_at(tv, op.position, &op.inserted_text);
+                    self.insert_text_at(buffer, op.position, &op.inserted_text);
                 }
             }
 
@@ -262,16 +262,17 @@ impl EditHistoryState {
         &mut self,
         sel: &mut SelectionState,
         cursor: &mut CursorState,
-        tv: &mut TextViewState,
+        buffer: &mut TextBuffer,
+        metrics: &mut ContentMetrics,
         text: &str,
     ) {
-        let old_len = tv.rope.len_chars();
-        self.replace_range(tv, 0, old_len, text, EditKind::Other, false);
+        let old_len = buffer.rope.len_chars();
+        self.replace_range(buffer, 0, old_len, text, EditKind::Other, false);
         self.anchors.clear();
-        cursor.cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
+        cursor.cursor_pos = cursor.cursor_pos.min(buffer.rope.len_chars());
         sel.selections = SelectionCollection::with_cursor(cursor.cursor_pos);
-        tv.max_content_width = 0.0;
-        tv.max_width_line = None;
+        metrics.max_content_width = 0.0;
+        metrics.max_width_line = None;
     }
 
     /// Create an anchor at the given position.
@@ -329,15 +330,15 @@ impl SelectionState {
     }
 
     /// Add a new cursor at the given position (clamped to the rope length).
-    pub fn add_cursor_at(&mut self, tv: &TextViewState, position: usize) {
-        let position = position.min(tv.rope.len_chars());
+    pub fn add_cursor_at(&mut self, buffer: &TextBuffer, position: usize) {
+        let position = position.min(buffer.rope.len_chars());
         self.selections.add_cursor(position);
     }
 
     /// Add a new cursor with a selection range (both endpoints clamped).
-    pub fn add_cursor_with_range(&mut self, tv: &TextViewState, head: usize, anchor: usize) {
-        let head = head.min(tv.rope.len_chars());
-        let anchor = anchor.min(tv.rope.len_chars());
+    pub fn add_cursor_with_range(&mut self, buffer: &TextBuffer, head: usize, anchor: usize) {
+        let head = head.min(buffer.rope.len_chars());
+        let anchor = anchor.min(buffer.rope.len_chars());
         self.selections.add_selection_range(head, anchor);
     }
 

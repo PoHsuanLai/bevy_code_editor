@@ -1,5 +1,5 @@
 //! Walk the alacritty `Term` once per frame, build a fresh
-//! `TextViewState.rope` of cell text, and write per-line `LineStyles`
+//! `TextBuffer.rope` of cell text, and write per-line `LineStyles`
 //! capturing fg/bg/bold/italic/underline. Engine's `produce_layouts`
 //! picks them up automatically.
 
@@ -11,7 +11,7 @@ use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::TermMode;
 use bevy::prelude::*;
 use bevy_text_engine::{
-    LineStyles, RenderTheme, RunWithText, StyleRun, TextViewState, TextViewViewport,
+    LineStyles, RenderTheme, RunWithText, StyleRun, TextBuffer, TextViewViewport,
 };
 use ropey::Rope;
 use vte::ansi::{Color as AnsiColor, NamedColor, Rgb};
@@ -26,7 +26,7 @@ use crate::types::{TerminalGridSnapshot, TerminalSession, TerminalThemeConfig};
 pub fn sync_grid_snapshot(
     mut q: Query<(
         &TerminalSession,
-        &mut TextViewState,
+        &mut TextBuffer,
         &TextViewViewport,
         &TerminalThemeConfig,
         &RenderTheme,
@@ -34,7 +34,7 @@ pub fn sync_grid_snapshot(
         &mut TerminalGridSnapshot,
     )>,
 ) {
-    for (session, mut tv, _viewport, palette, render, mut line_styles, mut snapshot) in
+    for (session, mut buffer, _viewport, palette, render, mut line_styles, mut snapshot) in
         q.iter_mut()
     {
         let term = session.terminal.lock();
@@ -113,9 +113,9 @@ pub fn sync_grid_snapshot(
 
         let new_rope = Rope::from_str(&text);
         // Only swap if changed — avoids spurious DisplayLayout invalidation.
-        if rope_text_differs(&tv.rope, &new_rope) {
-            tv.rope = new_rope;
-            tv.content_version = tv.content_version.wrapping_add(1);
+        if rope_text_differs(&buffer.rope, &new_rope) {
+            buffer.rope = new_rope;
+            buffer.content_version = buffer.content_version.wrapping_add(1);
         }
 
         *line_styles = LineStyles::new(by_line, 0..rows as u32);

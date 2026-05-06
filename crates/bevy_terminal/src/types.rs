@@ -28,7 +28,9 @@ use crate::session::EventProxy;
 #[reflect(Component, Default)]
 #[require(
     bevy_text_engine::TextView,
-    bevy_text_engine::TextViewState,
+    bevy_text_engine::TextBuffer,
+    bevy_text_engine::ScrollState,
+    bevy_text_engine::ContentMetrics,
     bevy_text_engine::TextViewViewport,
     bevy_text_engine::FontConfig,
     bevy_text_engine::LineStyles,

@@ -19,7 +19,7 @@
 //! [`screen_to_char_pos`] helper so editors with active fold regions see the
 //! click land on the right buffer line.
 
-use crate::text_view::{TextViewState, TextViewViewport};
+use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
 use crate::types::*;
 use bevy::picking::events::{Pointer, Press};
 #[cfg(feature = "lsp")]
@@ -103,7 +103,7 @@ pub fn on_fold_gutter_press(
     trigger: On<Pointer<Press>>,
     mut editor_query: Query<
         (
-            &TextViewState,
+            &ScrollState,
             &TextViewViewport,
             &mut FoldState,
             &FontConfig,
@@ -115,7 +115,7 @@ pub fn on_fold_gutter_press(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((tv, viewport, mut fold_state, font)) = editor_query.get_mut(entity) else {
+    let Ok((scroll, viewport, mut fold_state, font)) = editor_query.get_mut(entity) else {
         return;
     };
     let Some(local_pos) = trigger.event().hit.position.map(|p| Vec2::new(p.x, p.y)) else {
@@ -128,7 +128,7 @@ pub fn on_fold_gutter_press(
         return;
     }
 
-    let relative_y = local_pos.y - viewport.text_area_top + tv.scroll_offset;
+    let relative_y = local_pos.y - viewport.text_area_top + scroll.scroll_offset;
     let display_row = (relative_y / font.line_height).max(0.0) as usize;
     let buffer_line = fold_state.display_to_actual_line(display_row);
 
@@ -149,7 +149,8 @@ pub fn on_alt_click(
         (
             &mut SelectionState,
             &mut CursorState,
-            &TextViewState,
+            &TextBuffer,
+            &ScrollState,
             &TextViewViewport,
             &FoldState,
             &FontConfig,
@@ -170,7 +171,7 @@ pub fn on_alt_click(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((mut sel, mut cursor, tv, viewport, fold_state, font, layout)) =
+    let Ok((mut sel, mut cursor, buffer, scroll, viewport, fold_state, font, layout)) =
         editor_query.get_mut(entity)
     else {
         return;
@@ -182,16 +183,16 @@ pub fn on_alt_click(
     let char_pos = screen_to_char_pos(
         local_pos,
         &HitTestCtx {
-            rope: &tv.rope,
+            rope: &buffer.rope,
             layout: layout.as_deref(),
             font,
             viewport,
             fold_state,
-            current_scroll_offset: tv.scroll_offset,
+            current_scroll_offset: scroll.scroll_offset,
         },
     );
 
-    sel.add_cursor_at(tv, char_pos);
+    sel.add_cursor_at(buffer, char_pos);
     sel.refresh_primary_cursor(&mut cursor);
 
     #[cfg(feature = "lsp")]
@@ -210,7 +211,8 @@ pub fn on_ctrl_click_goto_definition(
     trigger: On<Pointer<Press>>,
     editor_query: Query<
         (
-            &TextViewState,
+            &TextBuffer,
+            &ScrollState,
             &TextViewViewport,
             &FoldState,
             &FontConfig,
@@ -231,7 +233,7 @@ pub fn on_ctrl_click_goto_definition(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((tv, viewport, fold_state, font, layout)) = editor_query.get(entity) else {
+    let Ok((buffer, scroll, viewport, fold_state, font, layout)) = editor_query.get(entity) else {
         return;
     };
     let Ok((lsp_client, lsp_document)) = lsp_query.get(entity) else {
@@ -247,17 +249,17 @@ pub fn on_ctrl_click_goto_definition(
     let char_pos = screen_to_char_pos(
         local_pos,
         &HitTestCtx {
-            rope: &tv.rope,
+            rope: &buffer.rope,
             layout: layout.as_deref(),
             font,
             viewport,
             fold_state,
-            current_scroll_offset: tv.scroll_offset,
+            current_scroll_offset: scroll.scroll_offset,
         },
     );
 
     let lsp_position = bevy_lsp::rope_char_to_lsp_position(
-        &tv.rope,
+        &buffer.rope,
         char_pos,
         bevy_lsp::PositionEncoding::Utf16,
     );
@@ -279,7 +281,8 @@ pub fn on_pointer_move_for_hover(
     trigger: On<Pointer<Move>>,
     editor_query: Query<
         (
-            &TextViewState,
+            &TextBuffer,
+            &ScrollState,
             &TextViewViewport,
             &FoldState,
             &FontConfig,
@@ -294,7 +297,7 @@ pub fn on_pointer_move_for_hover(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((tv, viewport, fold_state, font, layout)) = editor_query.get(entity) else {
+    let Ok((buffer, scroll, viewport, fold_state, font, layout)) = editor_query.get(entity) else {
         return;
     };
     let Ok(mut hover_state) = hover_query.get_mut(entity) else {
@@ -307,12 +310,12 @@ pub fn on_pointer_move_for_hover(
     let char_pos = screen_to_char_pos(
         local_pos,
         &HitTestCtx {
-            rope: &tv.rope,
+            rope: &buffer.rope,
             layout: layout.as_deref(),
             font,
             viewport,
             fold_state,
-            current_scroll_offset: tv.scroll_offset,
+            current_scroll_offset: scroll.scroll_offset,
         },
     );
 
@@ -347,7 +350,7 @@ pub fn on_pointer_out_for_hover(
 /// Editor crate only; under `feature = "lsp"`.
 #[cfg(feature = "lsp")]
 pub fn tick_lsp_hover_timer(
-    mut editor_query: Query<&TextViewState, With<CodeEditor>>,
+    editor_query: Query<&TextBuffer, With<CodeEditor>>,
     mut state_query: Query<
         (
             Entity,
@@ -360,7 +363,7 @@ pub fn tick_lsp_hover_timer(
     time: Res<Time>,
 ) {
     for (entity, lsp_client, lsp_document, mut hover_state) in state_query.iter_mut() {
-        let Ok(tv) = editor_query.get_mut(entity) else {
+        let Ok(buffer) = editor_query.get(entity) else {
             continue;
         };
         let Some(timer) = hover_state.timer.as_mut() else {
@@ -373,14 +376,14 @@ pub fn tick_lsp_hover_timer(
         let Some(doc) = lsp_document else { continue };
 
         // Clamp to last char of line (exclude newline).
-        let current_char_pos = hover_state.trigger_char_index.min(tv.rope.len_chars());
-        let line_index = tv.rope.char_to_line(current_char_pos);
-        let line_start = tv.rope.line_to_char(line_index);
-        let line_len = tv.rope.line(line_index).len_chars();
+        let current_char_pos = hover_state.trigger_char_index.min(buffer.rope.len_chars());
+        let line_index = buffer.rope.char_to_line(current_char_pos);
+        let line_start = buffer.rope.line_to_char(line_index);
+        let line_len = buffer.rope.line(line_index).len_chars();
         let clamped =
             line_start + (current_char_pos - line_start).min(line_len.saturating_sub(1));
         let lsp_position = bevy_lsp::rope_char_to_lsp_position(
-            &tv.rope,
+            &buffer.rope,
             clamped,
             bevy_lsp::PositionEncoding::Utf16,
         );

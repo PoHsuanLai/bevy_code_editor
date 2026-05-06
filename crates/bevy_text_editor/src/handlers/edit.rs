@@ -11,7 +11,7 @@ use crate::history::EditKind;
 use crate::state::{CursorState, EditHistoryState, IndentConfig, SelectionState, TextEditor};
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy_text_engine::TextViewState;
+use bevy_text_engine::{ContentMetrics, TextBuffer};
 
 type EditorBufQuery<'w, 's> = Query<
     'w,
@@ -20,7 +20,20 @@ type EditorBufQuery<'w, 's> = Query<
         &'static mut SelectionState,
         &'static mut EditHistoryState,
         &'static mut CursorState,
-        &'static mut TextViewState,
+        &'static mut TextBuffer,
+    ),
+    With<TextEditor>,
+>;
+
+type EditorSetTextQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut SelectionState,
+        &'static mut EditHistoryState,
+        &'static mut CursorState,
+        &'static mut TextBuffer,
+        &'static mut ContentMetrics,
     ),
     With<TextEditor>,
 >;
@@ -32,13 +45,13 @@ pub fn insert_char(
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
     cursor: &mut CursorState,
-    tv: &mut TextViewState,
+    buffer: &mut TextBuffer,
     c: char,
 ) {
     if sel.selections.primary().has_selection() {
-        delete_selection(sel, hist, cursor, tv);
+        delete_selection(sel, hist, cursor, buffer);
     }
-    hist.insert_char(sel, cursor, tv, c);
+    hist.insert_char(sel, cursor, buffer, c);
 }
 
 /// Delete the active selection range and record one undo operation.
@@ -46,12 +59,12 @@ pub fn delete_selection(
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
     cursor: &mut CursorState,
-    tv: &mut TextViewState,
+    buffer: &mut TextBuffer,
 ) {
     let Some((start, end)) = sel.primary_range() else {
         return;
     };
-    let outcome = hist.replace_range(tv, start, end, "", EditKind::Other, true);
+    let outcome = hist.replace_range(buffer, start, end, "", EditKind::Other, true);
     cursor.cursor_pos = outcome.new_cursor_pos;
     sel.apply_primary_cursor(cursor);
 }
@@ -67,10 +80,10 @@ pub fn handle_insert_newline(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut hist, mut cursor, mut tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut hist, mut cursor, mut buffer)) = q.get_mut(entity) else {
         return;
     };
-    insert_char(&mut sel, &mut hist, &mut cursor, &mut tv, '\n');
+    insert_char(&mut sel, &mut hist, &mut cursor, &mut buffer, '\n');
 }
 
 pub fn handle_insert_tab(
@@ -85,16 +98,16 @@ pub fn handle_insert_tab(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut hist, mut cursor, mut tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut hist, mut cursor, mut buffer)) = q.get_mut(entity) else {
         return;
     };
     let indent = indent_q.get(entity).copied().unwrap_or_default();
     if indent.use_spaces {
         for _ in 0..indent.tab_width {
-            insert_char(&mut sel, &mut hist, &mut cursor, &mut tv, ' ');
+            insert_char(&mut sel, &mut hist, &mut cursor, &mut buffer, ' ');
         }
     } else {
-        insert_char(&mut sel, &mut hist, &mut cursor, &mut tv, '\t');
+        insert_char(&mut sel, &mut hist, &mut cursor, &mut buffer, '\t');
     }
 }
 
@@ -109,13 +122,13 @@ pub fn handle_delete_backward(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut hist, mut cursor, mut tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut hist, mut cursor, mut buffer)) = q.get_mut(entity) else {
         return;
     };
     if sel.selections.primary().has_selection() {
-        delete_selection(&mut sel, &mut hist, &mut cursor, &mut tv);
+        delete_selection(&mut sel, &mut hist, &mut cursor, &mut buffer);
     } else {
-        hist.delete_backward(&mut sel, &mut cursor, &mut tv);
+        hist.delete_backward(&mut sel, &mut cursor, &mut buffer);
     }
 }
 
@@ -130,13 +143,13 @@ pub fn handle_delete_forward(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut hist, mut cursor, mut tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut hist, mut cursor, mut buffer)) = q.get_mut(entity) else {
         return;
     };
     if sel.selections.primary().has_selection() {
-        delete_selection(&mut sel, &mut hist, &mut cursor, &mut tv);
+        delete_selection(&mut sel, &mut hist, &mut cursor, &mut buffer);
     } else {
-        hist.delete_forward(&mut sel, &mut cursor, &mut tv);
+        hist.delete_forward(&mut sel, &mut cursor, &mut buffer);
     }
 }
 
@@ -151,13 +164,13 @@ pub fn handle_delete_word_backward(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut hist, mut cursor, mut tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut hist, mut cursor, mut buffer)) = q.get_mut(entity) else {
         return;
     };
     if sel.selections.primary().has_selection() {
-        delete_selection(&mut sel, &mut hist, &mut cursor, &mut tv);
+        delete_selection(&mut sel, &mut hist, &mut cursor, &mut buffer);
     } else {
-        delete_word_backward(&mut sel, &mut hist, &mut cursor, &mut tv);
+        delete_word_backward(&mut sel, &mut hist, &mut cursor, &mut buffer);
     }
 }
 
@@ -172,13 +185,13 @@ pub fn handle_delete_word_forward(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut hist, mut cursor, mut tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut hist, mut cursor, mut buffer)) = q.get_mut(entity) else {
         return;
     };
     if sel.selections.primary().has_selection() {
-        delete_selection(&mut sel, &mut hist, &mut cursor, &mut tv);
+        delete_selection(&mut sel, &mut hist, &mut cursor, &mut buffer);
     } else {
-        delete_word_forward(&mut sel, &mut hist, &mut cursor, &mut tv);
+        delete_word_forward(&mut sel, &mut hist, &mut cursor, &mut buffer);
     }
 }
 
@@ -198,10 +211,10 @@ pub fn handle_undo(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut hist, mut cursor, mut tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut hist, mut cursor, mut buffer)) = q.get_mut(entity) else {
         return;
     };
-    let _ = hist.undo(&mut sel, &mut cursor, &mut tv);
+    let _ = hist.undo(&mut sel, &mut cursor, &mut buffer);
 }
 
 pub fn handle_redo(
@@ -215,10 +228,10 @@ pub fn handle_redo(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut hist, mut cursor, mut tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut hist, mut cursor, mut buffer)) = q.get_mut(entity) else {
         return;
     };
-    let _ = hist.redo(&mut sel, &mut cursor, &mut tv);
+    let _ = hist.redo(&mut sel, &mut cursor, &mut buffer);
 }
 
 /// Delete from word start to cursor.
@@ -226,14 +239,14 @@ pub fn delete_word_backward(
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
     cursor: &mut CursorState,
-    tv: &mut TextViewState,
+    buffer: &mut TextBuffer,
 ) {
-    let word_start = crate::cursor_movement::find_word_boundary_left(&tv.rope, cursor.cursor_pos);
+    let word_start = crate::cursor_movement::find_word_boundary_left(&buffer.rope, cursor.cursor_pos);
     if word_start >= cursor.cursor_pos {
         return;
     }
     let outcome = hist.replace_range(
-        tv,
+        buffer,
         word_start,
         cursor.cursor_pos,
         "",
@@ -249,14 +262,14 @@ pub fn delete_word_forward(
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
     cursor: &mut CursorState,
-    tv: &mut TextViewState,
+    buffer: &mut TextBuffer,
 ) {
-    let word_end = crate::cursor_movement::find_word_boundary_right(&tv.rope, cursor.cursor_pos);
+    let word_end = crate::cursor_movement::find_word_boundary_right(&buffer.rope, cursor.cursor_pos);
     if word_end <= cursor.cursor_pos {
         return;
     }
     hist.replace_range(
-        tv,
+        buffer,
         cursor.cursor_pos,
         word_end,
         "",
@@ -275,11 +288,11 @@ pub fn handle_replace_range(
     mut q: EditorBufQuery,
 ) {
     for event in events.read() {
-        let Ok((mut sel, mut hist, mut cursor, mut tv)) = q.get_mut(event.entity) else {
+        let Ok((mut sel, mut hist, mut cursor, mut buffer)) = q.get_mut(event.entity) else {
             continue;
         };
         let outcome = hist.replace_range(
-            &mut tv,
+            &mut buffer,
             event.start_char,
             event.end_char,
             &event.text,
@@ -296,12 +309,14 @@ pub fn handle_replace_range(
 /// Apply `SetTextRequested` events. Replaces the whole buffer.
 pub fn handle_set_text(
     mut events: MessageReader<SetTextRequested>,
-    mut q: EditorBufQuery,
+    mut q: EditorSetTextQuery,
 ) {
     for event in events.read() {
-        let Ok((mut sel, mut hist, mut cursor, mut tv)) = q.get_mut(event.entity) else {
+        let Ok((mut sel, mut hist, mut cursor, mut buffer, mut metrics)) =
+            q.get_mut(event.entity)
+        else {
             continue;
         };
-        hist.set_text(&mut sel, &mut cursor, &mut tv, &event.text);
+        hist.set_text(&mut sel, &mut cursor, &mut buffer, &mut metrics, &event.text);
     }
 }

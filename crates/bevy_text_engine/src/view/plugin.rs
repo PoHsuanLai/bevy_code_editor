@@ -15,7 +15,7 @@ use super::layout::DisplayLayout;
 use super::layout_builder::{produce_block_layout, produce_layouts, LayoutProduceSet};
 use super::overlay::TextViewOverlays;
 use super::render::{render_layout, GlyphBatchComponent, TextViewBatch};
-use super::state::TextViewState;
+use super::state::{ContentMetrics, ScrollState, TextBuffer};
 use super::styling::LayoutWrap;
 use super::theme::RenderTheme;
 use super::viewport::TextViewViewport;
@@ -32,7 +32,9 @@ pub struct TextViewRenderSet;
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 #[require(
-    TextViewState,
+    TextBuffer,
+    ScrollState,
+    ContentMetrics,
     TextViewViewport,
     DisplayLayout,
     TextViewOverlays,
@@ -62,7 +64,9 @@ impl Plugin for TextEnginePlugin {
             .register_type::<TextView>()
             .register_type::<TextViewBatchEntity>()
             .register_type::<TextViewOverlays>()
-            .register_type::<TextViewState>()
+            .register_type::<TextBuffer>()
+            .register_type::<ScrollState>()
+            .register_type::<ContentMetrics>()
             .register_type::<TextViewViewport>()
             .register_type::<super::viewport::ViewportOrigin>();
 
@@ -105,7 +109,7 @@ impl PluginGroup for TextEnginePlugins {
     }
 }
 
-fn animate_text_view_scroll(mut query: Query<&mut TextViewState, With<TextView>>, time: Res<Time>) {
+fn animate_text_view_scroll(mut query: Query<&mut ScrollState, With<TextView>>, time: Res<Time>) {
     let dt = time.delta_secs();
     let lerp_speed = 12.0; // exponential decay
 
@@ -134,7 +138,7 @@ pub(crate) fn update_text_views(
     mut text_views: Query<
         (
             Entity,
-            &TextViewState,
+            &ScrollState,
             &TextViewViewport,
             &FontConfig,
             Ref<DisplayLayout>,
@@ -148,16 +152,10 @@ pub(crate) fn update_text_views(
     mut images: ResMut<Assets<Image>>,
     fonts: Res<Assets<bevy::text::Font>>,
 ) {
-    for (tv_entity, state, viewport, font, layout, overlays, batch_entity_opt, render_layers) in
+    for (tv_entity, scroll, viewport, font, layout, overlays, batch_entity_opt, render_layers) in
         text_views.iter_mut()
     {
-        // ensure_font is O(1) after first registration, so calling it for
-        // empty slots is free. FontFaces lets the renderer pick per-run
-        // without touching the atlas.
-        let regular = font
-            .font
-            .as_ref()
-            .and_then(|h| atlas.ensure_font(h, &fonts));
+        let regular = atlas.ensure_font(&font.font, &fonts);
         let bold = font
             .font_bold
             .as_ref()
@@ -196,23 +194,23 @@ pub(crate) fn update_text_views(
             viewport,
             &mut atlas,
             content_start_x,
-            state.horizontal_scroll_offset,
-            font.size,
+            scroll.horizontal_scroll_offset,
+            font.font_size,
             faces,
         );
 
         atlas.update_texture(&mut images);
 
         let line_height = layout.line_height;
-        let scroll_dist = state.scroll_offset.abs();
+        let scroll_dist = scroll.scroll_offset.abs();
         let start_pixels = scroll_dist - viewport.text_area_top;
         let first_visible = (start_pixels / line_height).floor().max(0.0) as usize;
         let visible_count = ((viewport.height as f32) / line_height).ceil() as usize;
         let last_visible = first_visible + visible_count;
 
         let batch_data = TextViewBatch {
-            built_at_scroll: state.scroll_offset,
-            built_at_horizontal_scroll: state.horizontal_scroll_offset,
+            built_at_scroll: scroll.scroll_offset,
+            built_at_horizontal_scroll: scroll.horizontal_scroll_offset,
             first_line: first_visible,
             last_line: last_visible,
             built_at_width: viewport.width,

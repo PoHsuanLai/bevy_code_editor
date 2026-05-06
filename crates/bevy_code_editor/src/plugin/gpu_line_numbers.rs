@@ -6,7 +6,7 @@ use bevy_text_engine::gpu::GlyphAtlas;
 use bevy_text_engine::FontConfig;
 use crate::settings::*;
 use crate::text_view::render::{GlyphBatchComponent, GlyphInstance};
-use crate::text_view::{TextViewState, TextViewViewport};
+use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
 use crate::types::*;
 use bevy::prelude::*;
 
@@ -32,7 +32,8 @@ pub(crate) fn update_gpu_line_numbers(
         (
             Entity,
             &SelectionState,
-            &TextViewState,
+            &TextBuffer,
+            &ScrollState,
             &TextViewViewport,
             Ref<FoldState>,
             &FontConfig,
@@ -55,7 +56,7 @@ pub(crate) fn update_gpu_line_numbers(
         return;
     }
 
-    for (editor_entity, sel, tv, viewport, fold_state, font, theme) in editor_query.iter() {
+    for (editor_entity, sel, buffer, scroll, viewport, fold_state, font, theme) in editor_query.iter() {
     // Check if we need to update
     let fold_changed = fold_state.is_changed();
 
@@ -66,11 +67,11 @@ pub(crate) fn update_gpu_line_numbers(
     if !fold_changed {
         // Check if existing batch is still valid
         if let Some((entity, batch)) = existing_batch_for_editor {
-            let scroll_changed = (batch.built_at_scroll - tv.scroll_offset).abs() > 0.01;
+            let scroll_changed = (batch.built_at_scroll - scroll.scroll_offset).abs() > 0.01;
             let viewport_changed =
                 batch.built_at_width != viewport.width || batch.built_at_height != viewport.height;
 
-            if !scroll_changed && !viewport_changed && batch.built_at_version == tv.content_version
+            if !scroll_changed && !viewport_changed && batch.built_at_version == buffer.content_version
             {
                 commands.entity(entity).insert(Visibility::Visible);
                 continue;
@@ -79,7 +80,7 @@ pub(crate) fn update_gpu_line_numbers(
     }
 
     let line_height = font.line_height;
-    let font_size = font.size;
+    let font_size = font.font_size;
     let _viewport_width = viewport.width as f32;
     let viewport_height = viewport.height as f32;
 
@@ -88,14 +89,14 @@ pub(crate) fn update_gpu_line_numbers(
         .selections
         .iter()
         .map(|s| {
-            let pos = s.head_offset().min(tv.rope.len_chars());
-            tv.rope.char_to_line(pos)
+            let pos = s.head_offset().min(buffer.rope.len_chars());
+            buffer.rope.char_to_line(pos)
         })
         .collect();
 
     // Calculate visible line range
     let buffer_lines = performance.viewport_buffer_lines as f32;
-    let viewport_top = -tv.scroll_offset - line_height * buffer_lines;
+    let viewport_top = -scroll.scroll_offset - line_height * buffer_lines;
     let viewport_bottom = viewport_top + viewport_height + line_height * buffer_lines * 2.0;
 
     let first_visible_display_row = ((viewport_top - viewport.text_area_top) / line_height)
@@ -104,7 +105,7 @@ pub(crate) fn update_gpu_line_numbers(
     let last_visible_display_row =
         ((viewport_bottom - viewport.text_area_top) / line_height).ceil() as usize;
 
-    let total_buffer_lines = tv.line_count();
+    let total_buffer_lines = buffer.line_count();
     let has_folding = !fold_state.regions.is_empty();
 
     // Calculate starting buffer line and display row
@@ -144,7 +145,7 @@ pub(crate) fn update_gpu_line_numbers(
         // Calculate base Y position with baseline offset to match main text
         let baseline_offset = font_size * 0.32;
         let base_y = viewport.text_area_top
-            + tv.scroll_offset
+            + scroll.scroll_offset
             + (current_display_row as f32 * line_height)
             + baseline_offset;
 
@@ -168,7 +169,7 @@ pub(crate) fn update_gpu_line_numbers(
         // Shape the line number text via cosmic-text. `shape.width` gives an
         // exact pixel width for right-alignment, and `shape.glyphs` carry the
         // per-glyph pen-x and atlas cache_key the renderer needs.
-        let font_id = font.font.as_ref().and_then(|h| atlas.ensure_font(h, &fonts));
+        let font_id = atlas.ensure_font(&font.font, &fonts);
         let shape = atlas.shape_line(&line_number_text, font_size, font_id);
 
         // Right-align: start X so that text ends near the right edge of gutter (with padding)
@@ -235,8 +236,8 @@ pub(crate) fn update_gpu_line_numbers(
             })
             .insert(GpuLineNumbersBatch {
                 editor: editor_entity,
-                built_at_version: tv.content_version,
-                built_at_scroll: tv.scroll_offset,
+                built_at_version: buffer.content_version,
+                built_at_scroll: scroll.scroll_offset,
                 built_at_width: viewport.width,
                 built_at_height: viewport.height,
             })
@@ -252,8 +253,8 @@ pub(crate) fn update_gpu_line_numbers(
             GlobalTransform::default(),
             GpuLineNumbersBatch {
                 editor: editor_entity,
-                built_at_version: tv.content_version,
-                built_at_scroll: tv.scroll_offset,
+                built_at_version: buffer.content_version,
+                built_at_scroll: scroll.scroll_offset,
                 built_at_width: viewport.width,
                 built_at_height: viewport.height,
             },

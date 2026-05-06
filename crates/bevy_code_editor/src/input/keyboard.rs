@@ -52,7 +52,7 @@ pub fn on_focused_keyboard(
             &mut SelectionState,
             &mut EditHistoryState,
             &mut CursorState,
-            &mut crate::text_view::TextViewState,
+            &mut crate::text_view::TextBuffer,
         ),
         With<CodeEditor>,
     >,
@@ -73,7 +73,7 @@ pub fn on_focused_keyboard(
 ) {
     let entity = trigger.event().focused_entity;
 
-    let Ok((mut sel, mut hist, mut cursor, mut tv)) = editor_query.get_mut(entity) else {
+    let Ok((mut sel, mut hist, mut cursor, mut buffer)) = editor_query.get_mut(entity) else {
         return;
     };
 
@@ -149,7 +149,7 @@ pub fn on_focused_keyboard(
                     &mut sel,
                     &mut hist,
                     &mut cursor,
-                    &mut tv,
+                    &mut buffer,
                     &brackets,
                     #[cfg(feature = "lsp")]
                     &lsp,
@@ -168,7 +168,7 @@ pub fn on_focused_keyboard(
         }
         Key::Space => {
             bevy_text_editor::handlers::edit::insert_char(
-                &mut sel, &mut hist, &mut cursor, &mut tv, ' ',
+                &mut sel, &mut hist, &mut cursor, &mut buffer, ' ',
             );
             #[cfg(feature = "lsp")]
             {
@@ -189,7 +189,7 @@ fn insert_typed_char(
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
     cursor: &mut CursorState,
-    tv: &mut crate::text_view::TextViewState,
+    buffer: &mut crate::text_view::TextBuffer,
     brackets: &BracketSettings,
     #[cfg(feature = "lsp")] lsp: &LspSettings,
     #[cfg(feature = "lsp")] lsp_client: &bevy_lsp::LspClient,
@@ -202,24 +202,24 @@ fn insert_typed_char(
 ) {
     if brackets.auto_close_quotes
         && get_closing_quote(c).is_some()
-        && should_skip_auto_close(cursor, &tv.rope, c)
+        && should_skip_auto_close(cursor, &buffer.rope, c)
     {
-        move_cursor(cursor, &tv.rope, 1);
+        move_cursor(cursor, &buffer.rope, 1);
         return;
     }
     if brackets.auto_close {
         let is_closing_bracket = brackets.pairs.iter().any(|(_, close)| *close == c);
-        if is_closing_bracket && should_skip_auto_close(cursor, &tv.rope, c) {
-            move_cursor(cursor, &tv.rope, 1);
+        if is_closing_bracket && should_skip_auto_close(cursor, &buffer.rope, c) {
+            move_cursor(cursor, &buffer.rope, 1);
             return;
         }
     }
 
-    bevy_text_editor::handlers::edit::insert_char(sel, hist, cursor, tv, c);
+    bevy_text_editor::handlers::edit::insert_char(sel, hist, cursor, buffer, c);
 
     if brackets.auto_close {
         if let Some(closing) = get_closing_bracket(c, &brackets.pairs) {
-            insert_closing_char(cursor, tv, closing);
+            insert_closing_char(cursor, buffer, closing);
         }
     }
     if brackets.auto_close_quotes {
@@ -227,7 +227,7 @@ fn insert_typed_char(
             let should_close = if c == '\'' {
                 let cur_pos = cursor.cursor_pos;
                 if cur_pos >= 2 {
-                    !tv.rope.char(cur_pos - 2).is_alphanumeric()
+                    !buffer.rope.char(cur_pos - 2).is_alphanumeric()
                 } else {
                     true
                 }
@@ -235,7 +235,7 @@ fn insert_typed_char(
                 true
             };
             if should_close {
-                insert_closing_char(cursor, tv, closing);
+                insert_closing_char(cursor, buffer, closing);
             }
         }
     }
@@ -253,7 +253,7 @@ fn insert_typed_char(
             // gate. When tree-sitter isn't ready, default to allow.
             let in_completion_context = match syntax_state {
                 Some(state) => {
-                    let byte = tv.rope.char_to_byte(cursor_pos);
+                    let byte = buffer.rope.char_to_byte(cursor_pos);
                     state.is_completion_context(byte)
                 }
                 None => true,
@@ -277,7 +277,7 @@ fn insert_typed_char(
                     }
                 } else if cursor_pos >= trigger.len() {
                     let start = cursor_pos - trigger.len();
-                    let recent_text: String = tv.rope.slice(start..cursor_pos).chars().collect();
+                    let recent_text: String = buffer.rope.slice(start..cursor_pos).chars().collect();
                     if recent_text == *trigger {
                         is_trigger = true;
                         break;
@@ -289,22 +289,22 @@ fn insert_typed_char(
                 completion_state.dismiss();
                 request_completion(
                     cursor,
-                    &tv.rope,
+                    &buffer.rope,
                     lsp_client,
                     completion_state,
                     lsp_document.as_deref(),
                 );
             } else if (c.is_alphanumeric() || c == '_') && in_completion_context {
                 if completion_state.visible {
-                    update_completion_filter(cursor, &tv.rope, completion_state);
+                    update_completion_filter(cursor, &buffer.rope, completion_state);
                 } else {
-                    let word_start = find_word_start(&tv.rope, cursor.cursor_pos);
+                    let word_start = find_word_start(&buffer.rope, cursor.cursor_pos);
                     let word_len = cursor.cursor_pos - word_start;
                     if word_len >= lsp.completion.min_word_length {
                         completion_state.start_char_index = word_start;
                         request_completion(
                             cursor,
-                            &tv.rope,
+                            &buffer.rope,
                             lsp_client,
                             completion_state,
                             lsp_document.as_deref(),

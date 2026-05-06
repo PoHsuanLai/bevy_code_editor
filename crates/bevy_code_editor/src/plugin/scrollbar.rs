@@ -2,7 +2,7 @@
 //!
 //! Provides a reusable scrollbar component that can be added to any entity
 
-use crate::text_view::{TextViewState, TextViewViewport};
+use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
 use crate::types::CodeEditor;
 use bevy::prelude::*;
 use bevy_text_engine::FontConfig;
@@ -145,7 +145,8 @@ fn handle_scrollbar_mouse(
     mut editor_query: Query<
         (
             &mut crate::types::CursorState,
-            &mut TextViewState,
+            &TextBuffer,
+            &mut ScrollState,
             &TextViewViewport,
             &mut ScrollbarDragState,
             &FontConfig,
@@ -161,7 +162,9 @@ fn handle_scrollbar_mouse(
     };
     let cursor_pos_window_opt = window.cursor_position();
 
-    for (mut cursor_state, mut tv, viewport, mut drag_state, font) in editor_query.iter_mut() {
+    for (mut cursor_state, buffer, mut scroll, viewport, mut drag_state, font) in
+        editor_query.iter_mut()
+    {
     let Some(cursor_pos_window) = cursor_pos_window_opt else {
         // No cursor, release drag if active
         if mouse_button.just_released(MouseButton::Left) {
@@ -201,12 +204,12 @@ fn handle_scrollbar_mouse(
                     trace!(
                         "[Scrollbar] DRAG STARTED at cursor_y={}, scroll_offset={}",
                         cursor_y,
-                        tv.scroll_offset
+                        scroll.scroll_offset
                     );
                     drag_state.is_dragging = true;
                     drag_state.dragging_entity = Some(entity);
                     drag_state.drag_start_y = cursor_y;
-                    drag_state.drag_start_scroll = tv.scroll_offset;
+                    drag_state.drag_start_scroll = scroll.scroll_offset;
                     break;
                 }
             }
@@ -229,7 +232,7 @@ fn handle_scrollbar_mouse(
                 if scrollable_range > 0.0 {
                     // Calculate total scrollable content
                     let line_height = font.line_height;
-                    let total_lines = tv.line_count();
+                    let total_lines = buffer.line_count();
                     let total_content_height = total_lines as f32 * line_height;
                     let viewport_height = viewport.height as f32;
                     // Account for text_area_top margin (matches mouse wheel calculation)
@@ -243,8 +246,8 @@ fn handle_scrollbar_mouse(
 
                     // For scrollbar dragging, update both target AND actual scroll immediately
                     // This ensures the scrollbar thumb stays in sync with the drag position
-                    tv.target_scroll_offset = new_scroll_offset;
-                    tv.scroll_offset = new_scroll_offset;
+                    scroll.target_scroll_offset = new_scroll_offset;
+                    scroll.scroll_offset = new_scroll_offset;
 
                     // IMPORTANT: Update last_cursor_pos to prevent auto_scroll_to_cursor from
                     // snapping back after drag release. We keep the cursor at the same position
@@ -260,11 +263,11 @@ fn handle_scrollbar_mouse(
         if drag_state.is_dragging {
             trace!(
                 "[Scrollbar] DRAG ENDED at scroll_offset={}, target={}",
-                tv.scroll_offset,
-                tv.target_scroll_offset
+                scroll.scroll_offset,
+                scroll.target_scroll_offset
             );
             // Ensure target matches actual to prevent smooth scroll animation after release
-            tv.target_scroll_offset = tv.scroll_offset;
+            scroll.target_scroll_offset = scroll.scroll_offset;
         }
         drag_state.is_dragging = false;
         drag_state.dragging_entity = None;
@@ -298,7 +301,8 @@ fn update_scrollbars(
     >,
     editor_query: Query<
         (
-            &TextViewState,
+            &TextBuffer,
+            &ScrollState,
             &TextViewViewport,
             &ScrollbarDragState,
             &FontConfig,
@@ -307,14 +311,14 @@ fn update_scrollbars(
     >,
     mut last_scroll: Local<f32>,
 ) {
-    for (tv, viewport, drag_state, font) in editor_query.iter() {
+    for (buffer, scroll, viewport, drag_state, font) in editor_query.iter() {
     // Only update if scroll offset changed (but always update during drag for smooth thumb movement)
-    let scroll_changed = (*last_scroll - tv.scroll_offset).abs() >= 0.01;
+    let scroll_changed = (*last_scroll - scroll.scroll_offset).abs() >= 0.01;
     if !scroll_changed && !drag_state.is_dragging {
         continue;
     }
     if scroll_changed {
-        *last_scroll = tv.scroll_offset;
+        *last_scroll = scroll.scroll_offset;
     }
 
     for (scrollbar_entity, scrollbar) in scrollbar_query.iter() {
@@ -335,14 +339,14 @@ fn update_scrollbars(
 
         // Calculate scroll progress from editor state
         let line_height = font.line_height;
-        let total_lines = tv.line_count();
+        let total_lines = buffer.line_count();
         let total_content_height = total_lines as f32 * line_height;
         let viewport_height = viewport.height as f32;
         // Account for text_area_top margin (matches drag and mouse wheel calculation)
         let max_scroll = (total_content_height - viewport_height + viewport.text_area_top).max(0.0);
 
         let scroll_progress = if max_scroll > 0.0 {
-            (-tv.scroll_offset / max_scroll).clamp(0.0, 1.0)
+            (-scroll.scroll_offset / max_scroll).clamp(0.0, 1.0)
         } else {
             0.0
         };
@@ -435,7 +439,7 @@ pub fn update_editor_scrollbar(
     mut commands: Commands,
     editor_query: Query<
         (
-            &TextViewState,
+            &TextBuffer,
             &TextViewViewport,
             &FontConfig,
         ),
@@ -452,11 +456,11 @@ pub fn update_editor_scrollbar(
         return;
     }
 
-    for (tv, viewport, font) in editor_query.iter() {
+    for (buffer, viewport, font) in editor_query.iter() {
         let viewport_height = viewport.height as f32;
         let viewport_width = viewport.width as f32;
         let line_height = font.line_height;
-        let total_lines = tv.line_count();
+        let total_lines = buffer.line_count();
         let total_content_height = total_lines as f32 * line_height;
 
         // Scrollbar position (always at right edge)

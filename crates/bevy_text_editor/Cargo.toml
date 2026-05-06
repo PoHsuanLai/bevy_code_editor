@@ -10,7 +10,7 @@ keywords = ["bevy", "text", "editor", "input", "selection"]
 categories = ["game-development"]
 
 [dependencies]
-# Text rendering primitives (TextView, TextViewState, TextViewViewport, FontConfig).
+# Text rendering primitives (TextView, TextBuffer, ScrollState, TextViewViewport, FontConfig).
 bevy_text_engine = { path = "../bevy_text_engine" }
 
 # Match the editor's bevy feature set so this crate composes cleanly with it.

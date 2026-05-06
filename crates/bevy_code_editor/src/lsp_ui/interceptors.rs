@@ -10,7 +10,7 @@ use crate::input::actions;
 use crate::input::keybindings::EditorAction;
 use crate::lsp_ui::state::LspCompletionPopup;
 use crate::settings::LspSettings;
-use crate::text_view::TextViewState;
+use crate::text_view::TextBuffer;
 use crate::types::{CodeEditor, CursorState};
 use bevy::ecs::world::Mut;
 use bevy::prelude::*;
@@ -35,7 +35,7 @@ pub fn completion_popup_intercept(
     editor_q: &mut Query<
         (
             &mut CursorState,
-            &mut TextViewState,
+            &mut TextBuffer,
             &mut crate::types::fold::GotoLineState,
         ),
         With<CodeEditor>,
@@ -68,7 +68,7 @@ pub fn completion_popup_intercept(
             true
         }
         EditorAction::InsertNewline | EditorAction::InsertTab => {
-            if let Ok((cursor, _tv, _)) = editor_q.get(focused) {
+            if let Ok((cursor, _buffer, _)) = editor_q.get(focused) {
                 actions::apply_completion(
                     focused,
                     cursor.cursor_pos,

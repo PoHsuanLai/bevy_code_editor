@@ -1,10 +1,10 @@
 //! Editor-side text-view module.
 //!
 //! The generic primitives (`TextView`, `DisplayLayout`, `ShapedLine`,
-//! `StyleRun`, `RectOverlay`, `TextViewState`, `TextViewViewport`,
-//! `render_layout`, `TextEnginePlugin`, `TextEnginePlugins`, …) live in
-//! [`bevy_text_engine`] and are re-exported here so existing
-//! `use bevy_code_editor::text_view::…;` paths keep resolving.
+//! `StyleRun`, `RectOverlay`, `TextBuffer`, `ScrollState`, `ContentMetrics`,
+//! `TextViewViewport`, `render_layout`, `TextEnginePlugin`,
+//! `TextEnginePlugins`, …) live in [`bevy_text_engine`] and are re-exported
+//! here so existing `use bevy_code_editor::text_view::…;` paths keep resolving.
 //!
 //! Interaction (`TextViewDragState`, `ScrollConfig`,
 //! `TextInteractionPlugin`, `screen_to_char_pos`, `copy_selection`)
@@ -17,10 +17,10 @@
 //! stores have been collapsed into the unified `SelectionState`.
 
 pub use bevy_text_engine::view::{
-    layout, overlay, render, snapshot, state, viewport, DisplayLayout, GlyphBatchComponent,
-    GlyphInstance, RectOverlay, RowVertical, ShapedLine, StyleRun, TextView, TextViewBatch,
-    TextViewBatchEntity, TextViewOverlays, TextViewRenderSet, TextViewState, TextViewViewport,
-    ViewportOrigin,
+    layout, overlay, render, snapshot, state, viewport, ContentMetrics, DisplayLayout,
+    GlyphBatchComponent, GlyphInstance, RectOverlay, RowVertical, ScrollState, ShapedLine,
+    StyleRun, TextBuffer, TextView, TextViewBatch, TextViewBatchEntity, TextViewOverlays,
+    TextViewRenderSet, TextViewViewport, ViewportOrigin,
 };
 
 pub use bevy_text_engine::view::snapshot::trivial_layout;

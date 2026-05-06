@@ -11,7 +11,7 @@ pub fn handle_toggle_fold(
     mut q: Query<
         (
             &CursorState,
-            &crate::text_view::TextViewState,
+            &crate::text_view::TextBuffer,
             &mut FoldState,
         ),
         With<CodeEditor>,
@@ -23,10 +23,10 @@ pub fn handle_toggle_fold(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((cursor, tv, mut fold_state)) = q.get_mut(entity) else {
+    let Ok((cursor, buffer, mut fold_state)) = q.get_mut(entity) else {
         return;
     };
-    let line = tv.rope.char_to_line(cursor.cursor_pos);
+    let line = buffer.rope.char_to_line(cursor.cursor_pos);
     fold_state.toggle_fold_at_line(line);
 }
 
@@ -36,7 +36,7 @@ pub fn handle_fold(
     mut q: Query<
         (
             &CursorState,
-            &crate::text_view::TextViewState,
+            &crate::text_view::TextBuffer,
             &mut FoldState,
         ),
         With<CodeEditor>,
@@ -48,10 +48,10 @@ pub fn handle_fold(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((cursor, tv, mut fold_state)) = q.get_mut(entity) else {
+    let Ok((cursor, buffer, mut fold_state)) = q.get_mut(entity) else {
         return;
     };
-    let line = tv.rope.char_to_line(cursor.cursor_pos);
+    let line = buffer.rope.char_to_line(cursor.cursor_pos);
     fold_state.fold_at_line(line);
 }
 
@@ -61,7 +61,7 @@ pub fn handle_unfold(
     mut q: Query<
         (
             &CursorState,
-            &crate::text_view::TextViewState,
+            &crate::text_view::TextBuffer,
             &mut FoldState,
         ),
         With<CodeEditor>,
@@ -73,10 +73,10 @@ pub fn handle_unfold(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((cursor, tv, mut fold_state)) = q.get_mut(entity) else {
+    let Ok((cursor, buffer, mut fold_state)) = q.get_mut(entity) else {
         return;
     };
-    let line = tv.rope.char_to_line(cursor.cursor_pos);
+    let line = buffer.rope.char_to_line(cursor.cursor_pos);
     fold_state.unfold_at_line(line);
 }
 

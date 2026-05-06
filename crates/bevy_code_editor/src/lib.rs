@@ -59,8 +59,9 @@ pub mod prelude {
     //! Convenient re-exports for common editor usage.
     //!
     //! Engine-side primitives (`TextView`, `FontConfig`, `DisplayLayout`,
-    //! `TextViewState`, `TextViewViewport`, `TextEnginePlugin`,
-    //! `TextEnginePlugins`) come in via `bevy_text_engine::prelude::*`. The
+    //! `TextBuffer`, `ScrollState`, `ContentMetrics`, `TextViewViewport`,
+    //! `TextEnginePlugin`, `TextEnginePlugins`) come in via
+    //! `bevy_text_engine::prelude::*`. The
     //! editor adds: the editor plugin (+ `standalone()`'s plugin group), the
     //! UI plugin, the interaction plugin, the `CodeEditor` marker, and the
     //! handful of file/save events + scroll config that hosts touch
@@ -70,7 +71,8 @@ pub mod prelude {
     //! that need them.
 
     // Engine surface — TextEnginePlugins, TextEnginePlugin, TextView,
-    // FontConfig, DisplayLayout, TextViewState, TextViewViewport.
+    // FontConfig, DisplayLayout, TextBuffer, ScrollState, ContentMetrics,
+    // TextViewViewport.
     pub use bevy_text_engine::prelude::*;
 
     // Editor plugin + its standalone PluginGroup, and the interaction +

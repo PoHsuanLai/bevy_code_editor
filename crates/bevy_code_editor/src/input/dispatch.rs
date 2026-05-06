@@ -362,7 +362,7 @@ pub fn dispatch_action_events(
     #[cfg(feature = "lsp")] mut editor_q: Query<
         (
             &mut CursorState,
-            &mut crate::text_view::TextViewState,
+            &mut crate::text_view::TextBuffer,
             &mut GotoLineState,
         ),
         With<CodeEditor>,
@@ -370,7 +370,7 @@ pub fn dispatch_action_events(
     #[cfg(not(feature = "lsp"))] mut editor_q: Query<
         (
             &CursorState,
-            &crate::text_view::TextViewState,
+            &crate::text_view::TextBuffer,
             &mut GotoLineState,
         ),
         With<CodeEditor>,
@@ -468,8 +468,8 @@ pub fn dispatch_action_events(
     // editor's current state.
     match action {
         EditorAction::Save => {
-            if let Ok((_cursor, tv, _)) = editor_q.get(focused) {
-                let content: String = tv.rope.chars().collect();
+            if let Ok((_cursor, buffer, _)) = editor_q.get(focused) {
+                let content: String = buffer.rope.chars().collect();
                 writers.save.write(SaveRequested { content });
             }
             return;

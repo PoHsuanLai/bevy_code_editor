@@ -7,9 +7,9 @@
 //! crates.
 //!
 //! - [`gpu`]: glyph atlas, instanced rendering pipeline, WGSL shaders.
-//! - [`view`]: `TextView`, `TextViewState`, `DisplayLayout`, `ShapedLine`,
-//!   `StyleRun`, `RectOverlay`, `render_layout`, `TextEnginePlugin`,
-//!   `TextEnginePlugins`.
+//! - [`view`]: `TextView`, `TextBuffer`, `ScrollState`, `ContentMetrics`,
+//!   `DisplayLayout`, `ShapedLine`, `StyleRun`, `RectOverlay`,
+//!   `render_layout`, `TextEnginePlugin`, `TextEnginePlugins`.
 //!
 //! ## Quick start
 //!
@@ -34,10 +34,10 @@ pub use view::*;
 pub mod prelude {
     //! Common types for spawning and rendering text views.
     pub use crate::gpu::{GlyphAtlasPlugin, InstancedTextRenderPlugin};
-    pub use crate::ui::{Scrollbar, ScrollbarOrientation, ScrollbarPlugin, ScrollState};
+    pub use crate::ui::{Scrollbar, ScrollbarOrientation, ScrollbarPlugin, ScrollbarState};
     pub use crate::view::{
-        Block, BlockLayoutConfig, BlockList, DisplayLayout, FontConfig, FontSynthesis,
-        HiddenLines, LayoutWrap, LineStyles, RenderTheme, RunWithText, StyleRun,
-        TextEnginePlugin, TextEnginePlugins, TextView, TextViewState, TextViewViewport,
+        Block, BlockLayoutConfig, BlockList, ContentMetrics, DisplayLayout, FontConfig,
+        FontSynthesis, HiddenLines, LayoutWrap, LineStyles, RenderTheme, RunWithText, ScrollState,
+        StyleRun, TextBuffer, TextEnginePlugin, TextEnginePlugins, TextView, TextViewViewport,
     };
 }

@@ -15,7 +15,7 @@
 use bevy::prelude::*;
 use bevy_text_engine::{
     visible_buffer_range, FontConfig, HiddenLines, LayoutProduceSet, LayoutWrap, LineStyles,
-    RunWithText, TextViewState, TextViewViewport,
+    RunWithText, ScrollState, TextBuffer, TextViewViewport,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -119,8 +119,9 @@ pub(crate) fn produce_hidden_lines(
 /// write them into the entity's `LineStyles` Component.
 ///
 /// Runs when any input that affects styling output changes (per-entity
-/// `Changed<>` filter): `TextViewState`, `TextViewViewport`, `HiddenLines`,
-/// `ThemeConfig`, `SyntaxTheme`, and (with `tree-sitter`) `SyntaxTree`.
+/// `Changed<>` filter): `TextBuffer`, `ScrollState`, `TextViewViewport`,
+/// `HiddenLines`, `ThemeConfig`, `SyntaxTheme`, and (with `tree-sitter`)
+/// `SyntaxTree`.
 ///
 /// Uses [`visible_buffer_range`] to scope work to lines about to render —
 /// the engine's layout system uses the same helper, so producer and
@@ -130,7 +131,8 @@ pub(crate) fn produce_line_styles(
     mut editors: Query<
         (
             Entity,
-            &TextViewState,
+            &TextBuffer,
+            &ScrollState,
             &TextViewViewport,
             &FontConfig,
             Option<&LayoutWrap>,
@@ -147,7 +149,8 @@ pub(crate) fn produce_line_styles(
         (
             With<CodeEditor>,
             Or<(
-                Changed<TextViewState>,
+                Changed<TextBuffer>,
+                Changed<ScrollState>,
                 Changed<TextViewViewport>,
                 Changed<HiddenLines>,
                 Changed<ThemeConfig>,
@@ -161,7 +164,8 @@ pub(crate) fn produce_line_styles(
         (
             With<CodeEditor>,
             Or<(
-                Changed<TextViewState>,
+                Changed<TextBuffer>,
+                Changed<ScrollState>,
                 Changed<TextViewViewport>,
                 Changed<HiddenLines>,
                 Changed<ThemeConfig>,
@@ -175,22 +179,33 @@ pub(crate) fn produce_line_styles(
         return;
     }
 
-    for (entity, state, viewport, font, wrap, hidden, mut syntax, mut line_styles, theme, syntax_theme) in
-        editors.iter_mut()
+    for (
+        entity,
+        buffer,
+        scroll,
+        viewport,
+        font,
+        wrap,
+        hidden,
+        mut syntax,
+        mut line_styles,
+        theme,
+        syntax_theme,
+    ) in editors.iter_mut()
     {
         if !dirty.contains(&entity) {
             continue;
         }
 
         let wrap = wrap.copied().unwrap_or_default();
-        let range = visible_buffer_range(state, viewport, font, wrap, hidden);
+        let range = visible_buffer_range(buffer, scroll, viewport, font, wrap, hidden);
         if range.start >= range.end {
             *line_styles = LineStyles::new(HashMap::new(), 0..0);
             continue;
         }
 
         let mut by_line: HashMap<u32, Vec<RunWithText>> = HashMap::new();
-        let total_lines = state.line_count();
+        let total_lines = buffer.line_count();
         for buffer_line in range.start..range.end {
             if buffer_line >= total_lines {
                 break;
@@ -202,9 +217,9 @@ pub(crate) fn produce_line_styles(
                     continue;
                 }
             }
-            let line_text: String = state.rope.line(buffer_line).to_string();
+            let line_text: String = buffer.rope.line(buffer_line).to_string();
             let line_no_nl = line_text.strip_suffix('\n').unwrap_or(&line_text);
-            let start_byte = state.rope.line_to_byte(buffer_line);
+            let start_byte = buffer.rope.line_to_byte(buffer_line);
 
             let mut per_line = syntax.highlight_range(
                 line_no_nl,

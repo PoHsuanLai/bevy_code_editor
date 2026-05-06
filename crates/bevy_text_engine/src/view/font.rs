@@ -4,19 +4,20 @@
 use bevy::prelude::*;
 use bevy::text::Font;
 
-/// Font sizing + handles. The atlas registers handle bytes on first use.
+/// Per-entity font configuration.
 ///
-/// Bold/italic slots are optional; missing ones fall back to the regular face
-/// with synthesis (stroke-doubling for bold, skew for italic), matching the CSS
-/// `font-synthesis: weight | style` defaults. `char_width` is a fallback
-/// advance used when `shape: None` (the `trivial_layout` path).
+/// Field names mirror Bevy's [`bevy::text::TextFont`] (`font`, `font_size`) so
+/// spawn-site syntax matches Bevy text. Multi-face slots (`font_bold`,
+/// `font_italic`, `font_bold_italic`) and synthesis are layered on top —
+/// Bevy doesn't bundle multi-face natively. `line_height` / `char_width`
+/// are layout metrics the renderer falls back to when shaping is off.
 #[derive(Component, Clone, Debug, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct FontConfig {
-    pub size: f32,
+    pub font: Handle<Font>,
+    pub font_size: f32,
     pub line_height: f32,
     pub char_width: f32,
-    pub font: Option<Handle<Font>>,
     pub font_bold: Option<Handle<Font>>,
     pub font_italic: Option<Handle<Font>>,
     pub font_bold_italic: Option<Handle<Font>>,
@@ -26,18 +27,10 @@ pub struct FontConfig {
 /// Whether to synthesize a bold / italic face when the matching slot on
 /// [`FontConfig`] is empty. Both default `true`, matching CSS Fonts L4
 /// `font-synthesis: weight style`.
-///
-/// Disable per-axis when uniform-weight rendering reads better than a
-/// blurry faux-bold (e.g. body text) — the renderer will draw the
-/// regular face unchanged.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Reflect)]
 #[reflect(Default, Debug)]
 pub struct FontSynthesis {
-    /// When `true` and no bold face is loaded, draw bold runs with a
-    /// stroke-doubled regular face (faux bold).
     pub weight: bool,
-    /// When `true` and no italic face is loaded, draw italic runs with
-    /// a skew applied to the regular face (faux italic).
     pub style: bool,
 }
 
@@ -57,14 +50,15 @@ impl Default for FontConfig {
 }
 
 impl FontConfig {
-    /// `line_height = size * 1.5`, `char_width = size * 0.6`,
-    /// `font = Handle::default()` (Bevy's FiraMono-subset when `default_font` is on).
-    pub fn from_size(size: f32) -> Self {
+    /// `line_height = font_size * 1.5`, `char_width = font_size * 0.6`,
+    /// `font = Handle::default()` (Bevy's FiraMono-subset when the
+    /// `default_font` feature is enabled).
+    pub fn from_size(font_size: f32) -> Self {
         Self {
-            size,
-            line_height: size * 1.5,
-            char_width: size * 0.6,
-            font: Some(Handle::default()),
+            font: Handle::default(),
+            font_size,
+            line_height: font_size * 1.5,
+            char_width: font_size * 0.6,
             font_bold: None,
             font_italic: None,
             font_bold_italic: None,
@@ -78,7 +72,7 @@ impl FontConfig {
     }
 
     pub fn with_line_height_multiplier(mut self, multiplier: f32) -> Self {
-        self.line_height = self.size * multiplier;
+        self.line_height = self.font_size * multiplier;
         self
     }
 
@@ -88,7 +82,7 @@ impl FontConfig {
     }
 
     pub fn with_font(mut self, handle: Handle<Font>) -> Self {
-        self.font = Some(handle);
+        self.font = handle;
         self
     }
 
@@ -115,17 +109,17 @@ impl FontConfig {
     /// Resolve a handle for `(bold, italic)`, falling back to the closest
     /// available face. Caller applies synthesis when the regular face is
     /// returned for a styled request.
-    pub fn font_for(&self, bold: bool, italic: bool) -> Option<&Handle<Font>> {
+    pub fn font_for(&self, bold: bool, italic: bool) -> &Handle<Font> {
         match (bold, italic) {
             (true, true) => self
                 .font_bold_italic
                 .as_ref()
                 .or(self.font_bold.as_ref())
                 .or(self.font_italic.as_ref())
-                .or(self.font.as_ref()),
-            (true, false) => self.font_bold.as_ref().or(self.font.as_ref()),
-            (false, true) => self.font_italic.as_ref().or(self.font.as_ref()),
-            (false, false) => self.font.as_ref(),
+                .unwrap_or(&self.font),
+            (true, false) => self.font_bold.as_ref().unwrap_or(&self.font),
+            (false, true) => self.font_italic.as_ref().unwrap_or(&self.font),
+            (false, false) => &self.font,
         }
     }
 }

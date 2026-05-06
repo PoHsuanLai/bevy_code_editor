@@ -10,8 +10,8 @@ use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
 use bevy_markdown::{MarkdownDoc, MarkdownTheme, MarkdownViewerPlugin};
 use bevy_text_engine::{
-    DisplayLayout, FontConfig, FontSynthesis, TextEnginePlugins, TextView, TextViewState,
-    TextViewViewport,
+    ContentMetrics, DisplayLayout, FontConfig, FontSynthesis, ScrollState, TextBuffer,
+    TextEnginePlugins, TextView, TextViewViewport,
 };
 
 const SCROLL_SPEED: f32 = 40.0;
@@ -101,7 +101,9 @@ fn setup_viewer(
 
     commands.spawn((
         TextView,
-        TextViewState::default(),
+        TextBuffer::default(),
+        ScrollState::default(),
+        ContentMetrics::default(),
         TextViewViewport {
             width: logical_w,
             height: logical_h,
@@ -125,12 +127,12 @@ fn setup_viewer(
 /// so the last row stays visible at maximum scroll; the upper bound is 0
 /// so the first row stays at the top.
 fn handle_scroll(
-    mut text_views: Query<(&mut TextViewState, &TextViewViewport, &DisplayLayout), With<TextView>>,
+    mut text_views: Query<(&mut ScrollState, &TextViewViewport, &DisplayLayout), With<TextView>>,
     mut mouse_wheel: MessageReader<bevy::input::mouse::MouseWheel>,
 ) {
     for event in mouse_wheel.read() {
-        for (mut state, viewport, layout) in text_views.iter_mut() {
-            state.target_scroll_offset += event.y * SCROLL_SPEED;
+        for (mut scroll, viewport, layout) in text_views.iter_mut() {
+            scroll.target_scroll_offset += event.y * SCROLL_SPEED;
             // Content height = (last row's bottom) - (first row's top),
             // computed from the live layout's shifted y_top values. The
             // shift cancels out so this is invariant to scroll.
@@ -141,7 +143,7 @@ fn handle_scroll(
                 _ => 0.0,
             };
             let max_scroll = (content_h - viewport.height as f32).max(0.0);
-            state.target_scroll_offset = state.target_scroll_offset.clamp(-max_scroll, 0.0);
+            scroll.target_scroll_offset = scroll.target_scroll_offset.clamp(-max_scroll, 0.0);
         }
     }
 }

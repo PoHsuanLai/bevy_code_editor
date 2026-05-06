@@ -44,7 +44,7 @@ Spawning is one component, like `Text2d` — `#[require(...)]` cascades the supp
 commands.spawn((
     CodeEditor,
     FontConfig::from_size(18.0).with_line_height_multiplier(1.4),
-    TextViewState::with_text("fn main() {}"),
+    TextBuffer::with_text("fn main() {}"),
 ));
 ```
 
@@ -125,11 +125,11 @@ App::new()
 ```rust
 fn handle_save(
     mut events: MessageReader<SaveRequested>,
-    q: Query<&TextViewState>,
+    q: Query<&TextBuffer>,
 ) {
     for SaveRequested { entity, path } in events.read() {
-        if let Ok(state) = q.get(*entity) {
-            std::fs::write(path, state.rope.to_string()).unwrap();
+        if let Ok(buffer) = q.get(*entity) {
+            std::fs::write(path, buffer.rope.to_string()).unwrap();
         }
     }
 }

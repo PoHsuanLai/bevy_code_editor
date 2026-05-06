@@ -6,7 +6,7 @@ This is the rendering layer. It owns no input model, no UI framework choice, no 
 
 ## What's in the box
 
-- **`TextView`** — marker component for a renderable text view. `#[require]` cascades `TextViewState` (rope + scroll), `TextViewViewport` (rect), `DisplayLayout` (rows of glyphs), `FontConfig`, `TextViewOverlays`, and `Pickable` (for `bevy_picking` integration).
+- **`TextView`** — marker component for a renderable text view. `#[require]` cascades `TextBuffer` (rope + version), `ScrollState` (scroll offsets), `ContentMetrics` (max-width cache), `TextViewViewport` (rect), `DisplayLayout` (rows of glyphs), `FontConfig`, `TextViewOverlays`, and `Pickable` (for `bevy_picking` integration).
 - **`FontConfig`** — per-entity font sizing + optional `Handle<bevy_text::Font>`. Carries `size`, `line_height`, `char_width`. Same handle works in `bevy_text::Text2d` and `TextView`.
 - **`DisplayLayout`** — the renderer's input. A list of `ShapedLine`s (text + style runs + per-row line height + padding + indent) plus global metrics. Producers write it; the renderer reads it.
 - **Layout producer** — `produce_layouts` system queries entities with `HiddenLines` / `LineStyles` / `LayoutWrap` Components and writes `DisplayLayout` automatically. Handles soft-wrap with whitespace-aware breaks, fold-aware visibility (via `HiddenLines`), per-row styling (via `LineStyles`). Producers populate these Components via the `visible_buffer_range` helper so the engine and producers agree on which lines are about to render.

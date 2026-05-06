@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use lsp_types::*;
 
 use bevy_text_engine::FontConfig;
-use crate::text_view::{TextViewState, TextViewViewport};
+use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
 use crate::types::{CodeEditor, CursorState};
 
 use super::state::{
@@ -78,7 +78,7 @@ pub fn process_lsp_messages(
             &mut LspClient,
             &mut ServerCapabilities,
             &mut CursorState,
-            &mut TextViewState,
+            &mut TextBuffer,
             Option<&LspDocument>,
             &mut LspCompletionPopup,
             &mut LspHoverPopup,
@@ -100,7 +100,7 @@ pub fn process_lsp_messages(
         mut lsp_client,
         mut capabilities,
         mut cursor_state,
-        tv,
+        buffer,
         lsp_document,
         mut completion_state,
         mut hover_state,
@@ -175,13 +175,13 @@ pub fn process_lsp_messages(
                     let pos = cursor_state.cursor_pos;
                     let start = completion_state.start_char_index;
                     let max_prefix_len =
-                        tv.rope.len_chars().saturating_sub(start);
+                        buffer.rope.len_chars().saturating_sub(start);
                     let end_max = start + max_prefix_len;
                     if pos < start || pos > end_max {
                         false
                     } else {
                         let slice: String =
-                            tv.rope.slice(start..pos).chars().collect();
+                            buffer.rope.slice(start..pos).chars().collect();
                         slice.chars().all(|c| c.is_alphanumeric() || c == '_')
                     }
                 };
@@ -259,10 +259,10 @@ pub fn process_lsp_messages(
                     let line_num = location.range.start.line as usize;
                     let char_in_line = location.range.start.character as usize;
 
-                    if line_num < tv.rope.len_lines() {
-                        let line_start_char = tv.rope.line_to_char(line_num);
+                    if line_num < buffer.rope.len_lines() {
+                        let line_start_char = buffer.rope.line_to_char(line_num);
                         let target_char_pos = line_start_char + char_in_line;
-                        cursor_state.cursor_pos = target_char_pos.min(tv.rope.len_chars());
+                        cursor_state.cursor_pos = target_char_pos.min(buffer.rope.len_chars());
                     }
                 } else {
                     navigate_events.write(NavigateToFileEvent {
@@ -287,7 +287,7 @@ pub fn process_lsp_messages(
 
             LspResponse::Format { edits } => {
                 trace!("[LSP] Format: {} edit(s)", edits.len());
-                apply_text_edits(editor_entity, &tv, edits, &mut replace_writer);
+                apply_text_edits(editor_entity, &buffer, edits, &mut replace_writer);
             }
 
             LspResponse::SignatureHelp {
@@ -355,7 +355,7 @@ pub fn process_lsp_messages(
                 if let Some(changes) = &edit.changes {
                     if let Some(doc) = lsp_document {
                         if let Some(edits) = changes.get(&doc.uri) {
-                            apply_text_edits(editor_entity, &tv, edits.clone(), &mut replace_writer);
+                            apply_text_edits(editor_entity, &buffer, edits.clone(), &mut replace_writer);
                         }
                     }
                 }
@@ -390,7 +390,7 @@ pub fn process_lsp_messages(
 /// and `OnEdit` consistent.
 fn apply_text_edits(
     entity: Entity,
-    tv: &TextViewState,
+    buffer: &TextBuffer,
     edits: Vec<TextEdit>,
     writer: &mut MessageWriter<bevy_text_editor::ReplaceRangeRequested>,
 ) {
@@ -407,15 +407,15 @@ fn apply_text_edits(
         let start_char_col = edit.range.start.character as usize;
         let end_char_col = edit.range.end.character as usize;
 
-        if start_line >= tv.rope.len_lines() {
+        if start_line >= buffer.rope.len_lines() {
             continue;
         }
         let start_pos =
-            (tv.rope.line_to_char(start_line) + start_char_col).min(tv.rope.len_chars());
-        let end_pos = if end_line < tv.rope.len_lines() {
-            (tv.rope.line_to_char(end_line) + end_char_col).min(tv.rope.len_chars())
+            (buffer.rope.line_to_char(start_line) + start_char_col).min(buffer.rope.len_chars());
+        let end_pos = if end_line < buffer.rope.len_lines() {
+            (buffer.rope.line_to_char(end_line) + end_char_col).min(buffer.rope.len_chars())
         } else {
-            tv.rope.len_chars()
+            buffer.rope.len_chars()
         };
 
         writer.write(bevy_text_editor::ReplaceRangeRequested {
@@ -437,7 +437,7 @@ pub fn sync_lsp_document(
     time: Res<Time>,
     mut query: Query<
         (
-            &TextViewState,
+            &TextBuffer,
             &LspClient,
             Option<&mut LspDocument>,
             &mut LspSyncStateExtra,
@@ -445,7 +445,7 @@ pub fn sync_lsp_document(
         With<CodeEditor>,
     >,
 ) {
-    let Ok((tv, lsp_client, lsp_document, mut sync_state)) = query.single_mut() else {
+    let Ok((buffer, lsp_client, lsp_document, mut sync_state)) = query.single_mut() else {
         return;
     };
     if !sync_state.dirty {
@@ -464,7 +464,7 @@ pub fn sync_lsp_document(
         let change = TextDocumentContentChangeEvent {
             range: None,
             range_length: None,
-            text: tv.rope.chunks().collect(),
+            text: buffer.rope.chunks().collect(),
         };
 
         lsp_client.send(LspMessage::DidChange {
@@ -487,7 +487,8 @@ pub fn request_inlay_hints(
         (
             &LspClient,
             &ServerCapabilities,
-            Ref<TextViewState>,
+            Ref<TextBuffer>,
+            Ref<ScrollState>,
             Ref<TextViewViewport>,
             Option<&LspDocument>,
             &mut LspInlayHints,
@@ -496,7 +497,7 @@ pub fn request_inlay_hints(
         With<CodeEditor>,
     >,
 ) {
-    let Ok((lsp_client, capabilities, tv, vp, lsp_document, mut hint_state, font)) =
+    let Ok((lsp_client, capabilities, buffer, scroll, vp, lsp_document, mut hint_state, font)) =
         query.single_mut()
     else {
         return;
@@ -505,7 +506,7 @@ pub fn request_inlay_hints(
         return;
     }
 
-    if !hint_state.needs_refresh && !tv.is_changed() && !vp.is_changed() {
+    if !hint_state.needs_refresh && !buffer.is_changed() && !scroll.is_changed() && !vp.is_changed() {
         return;
     }
 
@@ -514,9 +515,9 @@ pub fn request_inlay_hints(
     };
 
     // Calculate visible range with some buffer
-    let visible_start_line = (tv.scroll_offset / font.line_height) as u32;
+    let visible_start_line = (scroll.scroll_offset / font.line_height) as u32;
     let visible_lines = (vp.height as f32 / font.line_height) as u32 + 10;
-    let visible_end_line = (visible_start_line + visible_lines).min(tv.rope.len_lines() as u32);
+    let visible_end_line = (visible_start_line + visible_lines).min(buffer.rope.len_lines() as u32);
 
     let range = Range {
         start: Position {
@@ -625,14 +626,14 @@ pub fn request_document_highlights(
             &LspClient,
             &ServerCapabilities,
             &CursorState,
-            &TextViewState,
+            &TextBuffer,
             Option<&LspDocument>,
             &mut LspDocumentHighlights,
         ),
         With<CodeEditor>,
     >,
 ) {
-    let Ok((lsp_client, capabilities, cursor_state, tv, lsp_document, mut highlight_state)) =
+    let Ok((lsp_client, capabilities, cursor_state, buffer, lsp_document, mut highlight_state)) =
         query.single_mut()
     else {
         return;
@@ -675,7 +676,7 @@ pub fn request_document_highlights(
     highlight_state.in_flight_position = Some(cursor_pos);
 
     let position = bevy_lsp::rope_char_to_lsp_position(
-        &tv.rope,
+        &buffer.rope,
         cursor_pos,
         bevy_lsp::PositionEncoding::Utf16,
     );

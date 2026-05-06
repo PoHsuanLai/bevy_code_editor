@@ -8,7 +8,7 @@
 //!   pre-scroll layout on the entity as a `BaseMarkdownLayout` component.
 //! - `apply_markdown_scroll`: shifts the cached layout's `y_top` values by
 //!   `scroll_offset + text_area_top` whenever the entity's
-//!   `TextViewState.scroll_offset` (or viewport offsets) change. Cheap —
+//!   `ScrollState.scroll_offset` (or viewport offsets) change. Cheap —
 //!   clones the `Arc<Vec<ShapedLine>>` and rewrites only `y_top`.
 //!
 //! The split keeps scrolling cheap: parse + flatten happen once; per-frame
@@ -18,8 +18,8 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 use bevy_text_engine::{
-    DisplayLayout, FontConfig, RectOverlay, ShapedLine, TextView, TextViewOverlays,
-    TextViewState, TextViewViewport,
+    ContentMetrics, DisplayLayout, FontConfig, RectOverlay, ScrollState, ShapedLine, TextBuffer,
+    TextView, TextViewOverlays, TextViewViewport,
 };
 
 use crate::layout::{layout_markdown, MarkdownLayoutConfig};
@@ -72,7 +72,8 @@ fn rebuild_markdown_layout(
             &MarkdownDoc,
             &FontConfig,
             &TextViewViewport,
-            Option<&mut TextViewState>,
+            Option<&mut TextBuffer>,
+            Option<&mut ContentMetrics>,
         ),
         Or<(
             Changed<MarkdownDoc>,
@@ -81,28 +82,30 @@ fn rebuild_markdown_layout(
         )>,
     >,
 ) {
-    for (entity, doc, font, viewport, state) in q.iter_mut() {
+    for (entity, doc, font, viewport, buffer, metrics) in q.iter_mut() {
         let blocks = parse_markdown(&doc.source);
         let cfg = MarkdownLayoutConfig::from_metrics(
             theme.clone(),
             font.line_height,
             font.char_width,
-            font.size * 0.32,
+            font.font_size * 0.32,
             Some(content_width_px(viewport)),
         );
         let (layout, base_overlays, links) = layout_markdown(&blocks, &cfg);
 
         // Sync the rope so selection / copy reads the rendered text.
         // Source markdown stays in `MarkdownDoc.source`.
-        if let Some(mut state) = state {
+        if let Some(mut buffer) = buffer {
             let rendered: String = layout
                 .lines
                 .iter()
                 .map(|l| l.text.clone())
                 .collect::<Vec<_>>()
                 .join("\n");
-            state.rope = ropey::Rope::from_str(&rendered);
-            state.max_content_width = layout
+            buffer.rope = ropey::Rope::from_str(&rendered);
+        }
+        if let Some(mut metrics) = metrics {
+            metrics.max_content_width = layout
                 .lines
                 .iter()
                 .map(|l| l.shape.as_ref().map(|s| s.width).unwrap_or(0.0))
@@ -134,19 +137,19 @@ fn apply_markdown_scroll(
     q: Query<
         (
             Entity,
-            &TextViewState,
+            &ScrollState,
             &TextViewViewport,
             &BaseMarkdownLayout,
         ),
         Or<(
-            Changed<TextViewState>,
+            Changed<ScrollState>,
             Changed<TextViewViewport>,
             Changed<BaseMarkdownLayout>,
         )>,
     >,
 ) {
-    for (entity, state, viewport, base) in q.iter() {
-        let layout = shift_layout_y(&base.layout, viewport.text_area_top + state.scroll_offset);
+    for (entity, scroll, viewport, base) in q.iter() {
+        let layout = shift_layout_y(&base.layout, viewport.text_area_top + scroll.scroll_offset);
         let overlays = TextViewOverlays {
             rects: base.base_overlays.clone(),
             // Bumping version is what tells the engine's render
@@ -214,7 +217,9 @@ fn content_width_px(viewport: &TextViewViewport) -> f32 {
 #[derive(Bundle, Default)]
 pub struct MarkdownViewerBundle {
     pub view: TextView,
-    pub state: TextViewState,
+    pub buffer: TextBuffer,
+    pub scroll: ScrollState,
+    pub metrics: ContentMetrics,
     pub viewport: TextViewViewport,
     pub font: FontConfig,
     pub doc: MarkdownDoc,

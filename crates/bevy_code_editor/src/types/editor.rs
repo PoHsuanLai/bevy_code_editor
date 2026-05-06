@@ -134,43 +134,13 @@ impl Default for ViewportDimensions {
 )]
 pub struct CodeEditor;
 
-/// Syntax highlighting cache state component.
-#[derive(Component)]
+/// Cached highlighted tokens and line segments. Edit signals ride
+/// [`crate::types::events::TextEditEvent`]; staleness is detected via Bevy's
+/// `Changed<TextBuffer>` change-tick, not a manual version field.
+#[derive(Component, Default)]
 pub struct SyntaxCacheState {
-    /// Cached highlighted tokens
     pub tokens: Vec<HighlightedToken>,
-    /// Cached processed lines for rendering (optimization)
     pub lines: Vec<Vec<LineSegment>>,
-    /// Last content version when highlighting was run
-    pub last_highlighted_version: u64,
-    /// Last content version when line segments were built (PERFORMANCE)
-    pub last_lines_version: u64,
-    /// Last syntax tree version that was rendered (PERFORMANCE)
-    #[cfg(feature = "tree-sitter")]
-    pub last_rendered_tree_version: u64,
-    /// Pending text edit for tree-sitter incremental parsing.
-    #[cfg(feature = "tree-sitter")]
-    pub pending_tree_sitter_edit: Option<bevy_text_editor::EditDelta>,
-    /// Pre-edit rope for the most recent edit. Forwarded to consumers
-    /// (LSP incremental sync) via `TextEditEvent`. Populated only when
-    /// the editor has the [`bevy_text_editor::SnapshotPreEdit`] marker.
-    pub pending_pre_edit_rope: Option<ropey::Rope>,
-}
-
-impl Default for SyntaxCacheState {
-    fn default() -> Self {
-        Self {
-            tokens: Vec::new(),
-            lines: Vec::new(),
-            last_highlighted_version: u64::MAX, // Force initial highlighting
-            last_lines_version: 0,
-            #[cfg(feature = "tree-sitter")]
-            last_rendered_tree_version: 0,
-            #[cfg(feature = "tree-sitter")]
-            pending_tree_sitter_edit: None,
-            pending_pre_edit_rope: None,
-        }
-    }
 }
 
 /// Editor display state component — entity pools and line invalidation.
@@ -192,10 +162,11 @@ pub struct EditorDisplayState {
 /// Bundled mutable refs to the editor's per-entity buffer state.
 ///
 /// Editing operations (`insert_char`, `delete_*`, undo/redo, action dispatch)
-/// always need the same six components together — `SelectionState`,
+/// always need the same components together — `SelectionState`,
 /// `EditHistoryState`, `SyntaxCacheState`, `EditorDisplayState`, `CursorState`,
-/// `TextViewState`. This struct lets system functions accept them as one
-/// `&mut EditorBuf<'_>` instead of six positional `&mut` parameters.
+/// `TextBuffer`, `ScrollState`, `ContentMetrics`. This struct lets system
+/// functions accept them as one `&mut EditorBuf<'_>` instead of many positional
+/// `&mut` parameters.
 ///
 /// Helpers below the dispatcher level still take individual `&mut`s — the
 /// goal here is to slim system signatures and the action dispatcher, not to
@@ -206,7 +177,9 @@ pub struct EditorBuf<'a> {
     pub syntax: &'a mut SyntaxCacheState,
     pub display: &'a mut EditorDisplayState,
     pub cursor: &'a mut crate::types::CursorState,
-    pub tv: &'a mut crate::text_view::TextViewState,
+    pub buffer: &'a mut crate::text_view::TextBuffer,
+    pub scroll: &'a mut crate::text_view::ScrollState,
+    pub metrics: &'a mut crate::text_view::ContentMetrics,
 }
 
 /// Component markers for editor entities

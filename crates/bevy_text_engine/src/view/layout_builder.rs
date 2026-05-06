@@ -21,7 +21,7 @@ use super::font::FontConfig;
 use super::layout::DisplayLayout;
 use super::plugin::TextView;
 use super::snapshot::{Block, BlockLayoutConfig, LineShape, ShapedGlyph, ShapedLine, StyleRun};
-use super::state::TextViewState;
+use super::state::{ContentMetrics, ScrollState, TextBuffer};
 use super::styling::{BlockList, HiddenLines, LayoutWrap, LineStyles, RunWithText};
 use super::viewport::TextViewViewport;
 use crate::gpu::GlyphAtlas;
@@ -58,12 +58,13 @@ pub(crate) struct LayoutFingerprint {
 /// engine's [`produce_layouts`] and editor-side producer systems (e.g. the
 /// syntax-styling system) so both agree on which lines are about to render.
 ///
-/// Walks `state.rope` skipping hidden lines, returning `[start, end)` —
+/// Walks `buffer.rope` skipping hidden lines, returning `[start, end)` —
 /// `start` is the first buffer line whose first display row is at or past
 /// the visible top, `end` is one past the last buffer line whose first
 /// display row is past the visible bottom.
 pub fn visible_buffer_range(
-    state: &TextViewState,
+    buffer: &TextBuffer,
+    scroll: &ScrollState,
     viewport: &TextViewViewport,
     font: &FontConfig,
     wrap: LayoutWrap,
@@ -71,16 +72,16 @@ pub fn visible_buffer_range(
 ) -> std::ops::Range<usize> {
     let line_height = font.line_height;
     let char_width = font.char_width;
-    let total = state.line_count();
+    let total = buffer.line_count();
     if total == 0 {
         return 0..0;
     }
 
-    let buffer = line_height * VIEWPORT_BUFFER_LINES as f32;
-    let scroll_dist = state.scroll_offset.abs();
-    let start_pixels = scroll_dist - viewport.text_area_top - buffer;
+    let buf_px = line_height * VIEWPORT_BUFFER_LINES as f32;
+    let scroll_dist = scroll.scroll_offset.abs();
+    let start_pixels = scroll_dist - viewport.text_area_top - buf_px;
     let first_visible_display_row = (start_pixels / line_height).floor().max(0.0) as u32;
-    let visible_count = ((viewport.height as f32 + buffer * 2.0) / line_height).ceil() as u32;
+    let visible_count = ((viewport.height as f32 + buf_px * 2.0) / line_height).ceil() as u32;
     let last_visible_display_row = first_visible_display_row + visible_count;
 
     let approx_wrap_chars = wrap.budget_px.map(|px| (px / char_width).max(1.0) as usize);
@@ -95,7 +96,7 @@ pub fn visible_buffer_range(
     while buffer_line < total && display_row < first_visible_display_row {
         if visible(buffer_line) {
             display_row += approx_display_rows_for_line(
-                &state.rope,
+                &buffer.rope,
                 buffer_line,
                 approx_wrap_chars,
             );
@@ -108,7 +109,7 @@ pub fn visible_buffer_range(
     while buffer_line < total && display_row <= last_visible_display_row {
         if visible(buffer_line) {
             display_row += approx_display_rows_for_line(
-                &state.rope,
+                &buffer.rope,
                 buffer_line,
                 approx_wrap_chars,
             );
@@ -131,7 +132,9 @@ pub(crate) fn produce_layouts(
     mut q: Query<
         (
             Entity,
-            &mut TextViewState,
+            &TextBuffer,
+            &ScrollState,
+            &mut ContentMetrics,
             &TextViewViewport,
             &FontConfig,
             &mut DisplayLayout,
@@ -148,7 +151,7 @@ pub(crate) fn produce_layouts(
     mut last_fingerprints: Local<HashMap<Entity, LayoutFingerprint>>,
 ) {
     let mut alive: std::collections::HashSet<Entity> = std::collections::HashSet::new();
-    for (entity, mut tv_state, tv_viewport, font, mut layout, hidden, styles, wrap) in
+    for (entity, buffer, scroll, mut metrics, tv_viewport, font, mut layout, hidden, styles, wrap) in
         q.iter_mut()
     {
         alive.insert(entity);
@@ -162,13 +165,13 @@ pub(crate) fn produce_layouts(
         let hidden_arc_addr = hidden.map(|h| Arc::as_ptr(&h.0) as usize).unwrap_or(0);
 
         let fingerprint = LayoutFingerprint {
-            content_version: tv_state.content_version,
-            scroll_bits: tv_state.scroll_offset.to_bits(),
-            h_scroll_bits: tv_state.horizontal_scroll_offset.to_bits(),
+            content_version: buffer.content_version,
+            scroll_bits: scroll.scroll_offset.to_bits(),
+            h_scroll_bits: scroll.horizontal_scroll_offset.to_bits(),
             viewport_w: tv_viewport.width,
             viewport_h: tv_viewport.height,
             viewport_top_bits: tv_viewport.text_area_top.to_bits(),
-            font_size_tenths: (font.size * 10.0) as u32,
+            font_size_tenths: (font.font_size * 10.0) as u32,
             line_height_tenths: (font.line_height * 10.0) as u32,
             style_arc_addr,
             hidden_arc_addr,
@@ -184,7 +187,9 @@ pub(crate) fn produce_layouts(
         }
 
         let new_layout = build_display_layout(
-            &mut tv_state,
+            buffer,
+            scroll,
+            &mut metrics,
             tv_viewport,
             font,
             wrap,
@@ -206,7 +211,9 @@ pub(crate) fn produce_layouts(
 /// one-shot non-system build (e.g. tests) can call it directly.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_display_layout(
-    state: &mut TextViewState,
+    buffer: &TextBuffer,
+    scroll: &ScrollState,
+    metrics: &mut ContentMetrics,
     viewport: &TextViewViewport,
     font: &FontConfig,
     wrap: LayoutWrap,
@@ -222,8 +229,8 @@ pub(crate) fn build_display_layout(
     } = wrap;
     let line_height = font.line_height;
     let char_width = font.char_width;
-    let baseline_offset = font.size * 0.32;
-    let total_buffer_lines = state.line_count();
+    let baseline_offset = font.font_size * 0.32;
+    let total_buffer_lines = buffer.line_count();
 
     let line_visible = |buffer_line: usize| -> bool {
         hidden.map(|h| h.is_visible(buffer_line)).unwrap_or(true)
@@ -237,12 +244,12 @@ pub(crate) fn build_display_layout(
 
     // Visible range — same math as the helper, inlined here to also feed
     // first/last_visible_display_row for the y_top calculation.
-    let buffer = line_height * VIEWPORT_BUFFER_LINES as f32;
-    let scroll_dist = state.scroll_offset.abs();
-    let start_pixels = scroll_dist - viewport.text_area_top - buffer;
+    let buf_px = line_height * VIEWPORT_BUFFER_LINES as f32;
+    let scroll_dist = scroll.scroll_offset.abs();
+    let start_pixels = scroll_dist - viewport.text_area_top - buf_px;
     let first_visible_display_row = (start_pixels / line_height).floor().max(0.0) as u32;
     let visible_count =
-        ((viewport.height as f32 + buffer * 2.0) / line_height).ceil() as u32;
+        ((viewport.height as f32 + buf_px * 2.0) / line_height).ceil() as u32;
     let last_visible_display_row = first_visible_display_row + visible_count;
 
     let approx_wrap_chars = wrap_budget_px.map(|px| (px / char_width).max(1.0) as usize);
@@ -256,7 +263,7 @@ pub(crate) fn build_display_layout(
             while buffer_line < total_buffer_lines && display_row < first_visible_display_row {
                 if line_visible(buffer_line) {
                     let rows = approx_display_rows_for_line(
-                        &state.rope,
+                        &buffer.rope,
                         buffer_line,
                         approx_wrap_chars,
                     );
@@ -282,7 +289,7 @@ pub(crate) fn build_display_layout(
             break;
         }
 
-        let rope_line = state.rope.line(buffer_line);
+        let rope_line = buffer.rope.line(buffer_line);
         let line_text: String = rope_line.to_string();
 
         let styled = line_style_runs(buffer_line as u32);
@@ -317,27 +324,24 @@ pub(crate) fn build_display_layout(
         // just emit a zero-advance glyph for it.
         let shape = atlas_opt.as_deref_mut().map(|atlas| {
             let shape_text = render_text.strip_suffix('\n').unwrap_or(&render_text);
-            let font_id = match (font.font.as_ref(), fonts) {
-                (Some(h), Some(fs)) => atlas.ensure_font(h, fs),
-                _ => None,
-            };
-            Arc::new(atlas.shape_line(shape_text, font.size, font_id))
+            let font_id = fonts.and_then(|fs| atlas.ensure_font(&font.font, fs));
+            Arc::new(atlas.shape_line(shape_text, font.font_size, font_id))
         });
 
         // Discover horizontal-scrollbar extent: track the widest shaped line
         // seen so far. Producer-driven so the consumer reads real pixel
         // widths.
         if let Some(s) = shape.as_ref() {
-            if s.width > state.max_content_width {
-                state.max_content_width = s.width;
-                state.max_width_line = Some(buffer_line);
+            if s.width > metrics.max_content_width {
+                metrics.max_content_width = s.width;
+                metrics.max_width_line = Some(buffer_line);
             }
         }
 
         // y_top for a given display_row.
         let y_top_for = |display_row: u32| -> f32 {
             viewport.text_area_top
-                + state.scroll_offset
+                + scroll.scroll_offset
                 + display_row as f32 * line_height
                 - line_height * 0.5
         };
@@ -357,7 +361,7 @@ pub(crate) fn build_display_layout(
                     let row_shape = Arc::new(LineShape {
                         glyphs: row.glyphs.clone(),
                         width: row.width,
-                        font_size: shape.as_ref().map(|s| s.font_size).unwrap_or(font.size),
+                        font_size: shape.as_ref().map(|s| s.font_size).unwrap_or(font.font_size),
                     });
                     shaped_lines.push(ShapedLine {
                         display_row: current_display_row,
@@ -404,7 +408,7 @@ pub(crate) fn build_display_layout(
     // count. With wrap off, that's just the visible buffer-line count.
     let total_display_rows: u32 = (0..total_buffer_lines)
         .filter(|&l| line_visible(l))
-        .map(|l| approx_display_rows_for_line(&state.rope, l, approx_wrap_chars))
+        .map(|l| approx_display_rows_for_line(&buffer.rope, l, approx_wrap_chars))
         .sum();
 
     DisplayLayout {
@@ -644,7 +648,7 @@ pub(crate) fn produce_block_layout(
         let fg_l = layout.default_fg.to_linear();
         let fingerprint = BlockLayoutFingerprint {
             block_arc_addr: Arc::as_ptr(&blocks.0) as usize,
-            font_size_tenths: (font.size * 10.0) as u32,
+            font_size_tenths: (font.font_size * 10.0) as u32,
             line_height_tenths: (font.line_height * 10.0) as u32,
             char_width_tenths: (font.char_width * 10.0) as u32,
             wrap_chars,
@@ -663,7 +667,7 @@ pub(crate) fn produce_block_layout(
             line_height: font.line_height,
             char_width: font.char_width,
             // Mirror of the editor's baseline-offset convention; ~32% of font size.
-            baseline_offset: font.size * 0.32,
+            baseline_offset: font.font_size * 0.32,
             default_fg: layout.default_fg,
             default_wrap_chars: if wrap_chars > 0 { Some(wrap_chars as usize) } else { None },
         };

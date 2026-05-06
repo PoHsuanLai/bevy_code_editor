@@ -125,7 +125,9 @@ fn setup_text_view(mut commands: Commands, windows: Query<&Window>) {
             full_text.push('\n');
         }
     }
-    let state = TextViewState::with_text(&full_text);
+    let buffer = TextBuffer::with_text(&full_text);
+    let scroll = ScrollState::default();
+    let metrics = ContentMetrics::default();
 
     // Build the display layout directly. Match the editor's font defaults so
     // the demo's metrics line up with what `update_text_views` uses.
@@ -142,7 +144,9 @@ fn setup_text_view(mut commands: Commands, windows: Query<&Window>) {
 
     commands.spawn((
         TextView,
-        state,
+        buffer,
+        scroll,
+        metrics,
         TextViewViewport {
             width: window.physical_width(),
             height: window.physical_height(),
@@ -156,14 +160,14 @@ fn setup_text_view(mut commands: Commands, windows: Query<&Window>) {
 
 /// Handle mouse wheel scrolling for the text view
 fn handle_scroll(
-    mut text_views: Query<&mut TextViewState, With<TextView>>,
+    mut text_views: Query<&mut ScrollState, With<TextView>>,
     mut mouse_wheel: MessageReader<bevy::input::mouse::MouseWheel>,
 ) {
     let scroll_speed = 40.0;
     for event in mouse_wheel.read() {
-        for mut state in text_views.iter_mut() {
-            state.target_scroll_offset += event.y * scroll_speed;
-            state.target_scroll_offset = state.target_scroll_offset.min(0.0);
+        for mut scroll in text_views.iter_mut() {
+            scroll.target_scroll_offset += event.y * scroll_speed;
+            scroll.target_scroll_offset = scroll.target_scroll_offset.min(0.0);
         }
     }
 }

@@ -1,6 +1,6 @@
 //! Generic, picking-driven scrollbar widget.
 //!
-//! Spawn a [`Scrollbar`] entity with a [`ScrollState`]; the plugin spawns
+//! Spawn a [`Scrollbar`] entity with a [`ScrollbarState`]; the plugin spawns
 //! the track and thumb as child entities (sprites + [`Pickable`]) and
 //! drives drag through `bevy_picking` observers. No window-coordinate
 //! math, no global drag resource — each scrollbar entity holds its own
@@ -8,7 +8,7 @@
 //!
 //! ```rust,ignore
 //! use bevy::prelude::*;
-//! use bevy_text_engine::ui::{ScrollbarPlugin, Scrollbar, ScrollState};
+//! use bevy_text_engine::ui::{ScrollbarPlugin, Scrollbar, ScrollbarState};
 //!
 //! App::new()
 //!     .add_plugins(DefaultPlugins)
@@ -16,7 +16,7 @@
 //!     .add_systems(Startup, |mut commands: Commands| {
 //!         commands.spawn((
 //!             Scrollbar::default(),
-//!             ScrollState::new(2000.0, 600.0),
+//!             ScrollbarState::new(2000.0, 600.0),
 //!         ));
 //!     });
 //! ```
@@ -32,7 +32,7 @@ pub struct ScrollbarPlugin;
 impl Plugin for ScrollbarPlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<Scrollbar>()
-            .register_type::<ScrollState>()
+            .register_type::<ScrollbarState>()
             .register_type::<ScrollbarOrientation>()
             .register_type::<ScrollbarDragState>()
             .register_type::<ScrollbarTrack>()
@@ -45,7 +45,7 @@ impl Plugin for ScrollbarPlugin {
 /// How much content fits in how big a viewport, and where we are in it.
 #[derive(Component, Clone, Debug, Reflect)]
 #[reflect(Component, Default)]
-pub struct ScrollState {
+pub struct ScrollbarState {
     pub content_size: f32,
     pub viewport_size: f32,
     /// 0 = top/left; negative = scrolled down/right.
@@ -54,7 +54,7 @@ pub struct ScrollState {
     pub target_scroll_offset: f32,
 }
 
-impl Default for ScrollState {
+impl Default for ScrollbarState {
     fn default() -> Self {
         Self {
             content_size: 100.0,
@@ -65,7 +65,7 @@ impl Default for ScrollState {
     }
 }
 
-impl ScrollState {
+impl ScrollbarState {
     pub fn new(content_size: f32, viewport_size: f32) -> Self {
         Self {
             content_size,
@@ -182,7 +182,7 @@ pub struct ScrollbarDragState {
 fn on_thumb_press(
     trigger: On<Pointer<Press>>,
     thumbs: Query<&ScrollbarThumb>,
-    mut bars: Query<(&Scrollbar, &ScrollState, &mut ScrollbarDragState)>,
+    mut bars: Query<(&Scrollbar, &ScrollbarState, &mut ScrollbarDragState)>,
 ) {
     if trigger.event().button != PointerButton::Primary {
         return;
@@ -202,7 +202,7 @@ fn on_thumb_press(
 fn on_thumb_drag(
     trigger: On<Pointer<Drag>>,
     thumbs: Query<&ScrollbarThumb>,
-    mut bars: Query<(&Scrollbar, &mut ScrollState, &ScrollbarDragState)>,
+    mut bars: Query<(&Scrollbar, &mut ScrollbarState, &ScrollbarDragState)>,
 ) {
     if trigger.event().button != PointerButton::Primary {
         return;
@@ -267,7 +267,7 @@ fn pointer_axis(orientation: ScrollbarOrientation, pos: Vec2) -> f32 {
 #[allow(clippy::type_complexity)]
 fn update_scrollbars(
     mut commands: Commands,
-    bars: Query<(Entity, &Scrollbar, &ScrollState)>,
+    bars: Query<(Entity, &Scrollbar, &ScrollbarState)>,
     mut tracks: Query<(
         &ScrollbarTrack,
         &mut Transform,

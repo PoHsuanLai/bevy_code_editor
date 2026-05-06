@@ -15,7 +15,7 @@ pub fn handle_request_completion(
     mut events: MessageReader<RequestCompletionRequested>,
     input_focus: Res<InputFocus>,
     editor_q: Query<
-        (&CursorState, &crate::text_view::TextViewState),
+        (&CursorState, &crate::text_view::TextBuffer),
         With<CodeEditor>,
     >,
     mut lsp_q: Query<
@@ -33,7 +33,7 @@ pub fn handle_request_completion(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((cursor, tv)) = editor_q.get(entity) else {
+    let Ok((cursor, buffer)) = editor_q.get(entity) else {
         return;
     };
     let Ok((lsp_client, lsp_document, mut completion_state)) = lsp_q.get_mut(entity) else {
@@ -41,7 +41,7 @@ pub fn handle_request_completion(
     };
     request_completion(
         cursor,
-        &tv.rope,
+        &buffer.rope,
         lsp_client,
         &mut completion_state,
         lsp_document,
@@ -57,7 +57,7 @@ pub fn handle_goto_definition(mut events: MessageReader<GotoDefinitionRequested>
 pub fn handle_rename_symbol(
     mut events: MessageReader<RenameSymbolRequested>,
     input_focus: Res<InputFocus>,
-    editor_q: Query<(&CursorState, &crate::text_view::TextViewState), With<CodeEditor>>,
+    editor_q: Query<(&CursorState, &crate::text_view::TextBuffer), With<CodeEditor>>,
     mut lsp_q: Query<
         (
             &bevy_lsp::LspClient,
@@ -74,7 +74,7 @@ pub fn handle_rename_symbol(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((cursor, tv)) = editor_q.get(entity) else {
+    let Ok((cursor, buffer)) = editor_q.get(entity) else {
         return;
     };
     let Ok((lsp_client, lsp_document, capabilities, mut rename_state)) = lsp_q.get_mut(entity)
@@ -88,7 +88,7 @@ pub fn handle_rename_symbol(
         return;
     };
     let position = bevy_lsp::rope_char_to_lsp_position(
-        &tv.rope,
+        &buffer.rope,
         cursor.cursor_pos,
         bevy_lsp::PositionEncoding::Utf16,
     );

@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 use crate::settings::*;
-use crate::text_view::{TextViewState, TextViewViewport};
+use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
 use crate::types::*;
 use bevy::prelude::*;
 use bevy_text_engine::FontConfig;
@@ -130,19 +130,19 @@ pub(crate) fn find_opening_bracket(
 
 pub(crate) fn update_bracket_match(
     mut editor_query: Query<
-        (&CursorState, &TextViewState, &mut BracketMatchState),
+        (&CursorState, &TextBuffer, &mut BracketMatchState),
         With<CodeEditor>,
     >,
     brackets: Res<BracketSettings>,
 ) {
-    for (cursor, tv, mut bracket_state) in editor_query.iter_mut() {
+    for (cursor, buffer, mut bracket_state) in editor_query.iter_mut() {
         if !brackets.enabled {
             bracket_state.current_match = None;
             continue;
         }
 
-        let cursor_pos = cursor.cursor_pos.min(tv.rope.len_chars());
-        bracket_state.current_match = find_matching_bracket(&tv.rope, cursor_pos, &brackets.pairs);
+        let cursor_pos = cursor.cursor_pos.min(buffer.rope.len_chars());
+        bracket_state.current_match = find_matching_bracket(&buffer.rope, cursor_pos, &brackets.pairs);
     }
 }
 
@@ -150,7 +150,8 @@ pub(crate) fn update_bracket_highlight(
     mut commands: Commands,
     editor_query: Query<
         (
-            &TextViewState,
+            &TextBuffer,
+            &ScrollState,
             &TextViewViewport,
             &BracketMatchState,
             &FoldState,
@@ -173,7 +174,7 @@ pub(crate) fn update_bracket_highlight(
     let mut entity_index_global: usize = 0;
     let mut any_match = false;
 
-    for (tv, viewport, bracket_state, fold_state, font, layout, theme) in editor_query.iter() {
+    for (buffer, scroll, viewport, bracket_state, fold_state, font, layout, theme) in editor_query.iter() {
     match &bracket_state.current_match {
         Some(bracket_match) => {
             any_match = true;
@@ -191,20 +192,20 @@ pub(crate) fn update_bracket_highlight(
             ];
 
             for (bracket_idx, &bracket_pos) in positions.iter().enumerate() {
-                let line_idx = tv.rope.char_to_line(bracket_pos);
+                let line_idx = buffer.rope.char_to_line(bracket_pos);
 
                 if fold_state.is_line_hidden(line_idx) {
                     continue;
                 }
 
-                let line_start = tv.rope.line_to_char(line_idx);
+                let line_start = buffer.rope.line_to_char(line_idx);
                 let col_idx = bracket_pos - line_start;
 
                 // Pixel x of the bracket glyph and its visual width. With wrap
                 // on, the bracket might be on a soft-wrap continuation row, so
                 // resolve (display_row, byte_in_row) via the layout. Falls
                 // back to fold-state + char_width math when off-viewport.
-                let line = tv.rope.line(line_idx);
+                let line = buffer.rope.line(line_idx);
                 let col_clamped = col_idx.min(line.len_chars());
                 let next_col = (col_idx + 1).min(line.len_chars());
                 let start_byte = line.slice(..col_clamped).len_bytes();
@@ -236,12 +237,12 @@ pub(crate) fn update_bracket_highlight(
 
                 let x_offset = viewport.text_area_left + glyph_x;
                 let y_offset =
-                    viewport.text_area_top + tv.scroll_offset + (display_row as f32 * line_height);
+                    viewport.text_area_top + scroll.scroll_offset + (display_row as f32 * line_height);
 
                 // Calculate base position (center of the bracket character cell)
                 // Camera viewport handles panel positioning, so no offset_x here
                 let base_x = viewport.world_left() + x_offset + glyph_width / 2.0
-                    - tv.horizontal_scroll_offset;
+                    - scroll.horizontal_scroll_offset;
                 let base_y = viewport.world_top() - y_offset;
 
                 if use_box_style {

@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 
 use crate::types::{CursorState, SelectionState};
-use crate::text_view::TextViewState;
+use crate::text_view::TextBuffer;
 
 /// Per-editor "go to line" dialog state.
 #[derive(Clone, Debug, Default, Component, Reflect)]
@@ -23,15 +23,15 @@ impl GotoLineState {
         &self,
         sel: &mut SelectionState,
         cursor: &mut CursorState,
-        tv: &mut TextViewState,
+        buffer: &TextBuffer,
     ) -> bool {
         if let Some(line_num) = self.parse_line_number() {
-            let total_lines = tv.rope.len_lines();
+            let total_lines = buffer.rope.len_lines();
             // 1-indexed input → 0-indexed, clamped
             let target_line = line_num
                 .saturating_sub(1)
                 .min(total_lines.saturating_sub(1));
-            let char_pos = tv.rope.line_to_char(target_line);
+            let char_pos = buffer.rope.line_to_char(target_line);
             cursor.cursor_pos = char_pos;
             sel.apply_primary_cursor(cursor);
 

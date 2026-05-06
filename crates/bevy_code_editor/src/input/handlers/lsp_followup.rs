@@ -43,8 +43,8 @@ pub struct PendingActionFollowup {
 pub fn lsp_followup(
     mut pending: ResMut<PendingActionFollowup>,
     input_focus: Res<InputFocus>,
-    mut editor_q: Query<
-        (&CursorState, &crate::text_view::TextViewState),
+    editor_q: Query<
+        (&CursorState, &crate::text_view::TextBuffer),
         With<CodeEditor>,
     >,
     mut lsp_q: Query<
@@ -65,7 +65,7 @@ pub fn lsp_followup(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((cursor, tv)) = editor_q.get_mut(entity) else {
+    let Ok((cursor, buffer)) = editor_q.get(entity) else {
         return;
     };
     let Ok((lsp_client, lsp_document, mut completion_state)) = lsp_q.get_mut(entity) else {
@@ -84,7 +84,7 @@ pub fn lsp_followup(
         if cursor.cursor_pos > completion_state.start_char_index {
             crate::input::actions::update_completion_filter(
                 cursor,
-                &tv.rope,
+                &buffer.rope,
                 &mut completion_state,
             );
         } else if cursor.cursor_pos == completion_state.start_char_index {
@@ -97,7 +97,7 @@ pub fn lsp_followup(
 
     // didChange is fired by `listen_text_edit_events` whenever the
     // OnEdit pipeline produces a TextEditEvent — no need here.
-    let _ = (tv, lsp_client, lsp_document, snapshot.pre_content_version);
+    let _ = (buffer, lsp_client, lsp_document, snapshot.pre_content_version);
 }
 
 /// Drain any unhandled action-event queues so they don't accumulate when LSP

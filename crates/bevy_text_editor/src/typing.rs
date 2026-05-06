@@ -12,7 +12,7 @@
 use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
 use bevy::input_focus::FocusedInput;
 use bevy::prelude::*;
-use bevy_text_engine::TextViewState;
+use bevy_text_engine::TextBuffer;
 
 use crate::handlers::edit::insert_char;
 use crate::state::{CursorState, EditHistoryState, SelectionState, TextEditor};
@@ -37,14 +37,14 @@ pub fn on_focused_keyboard_typing(
             &mut SelectionState,
             &mut EditHistoryState,
             &mut CursorState,
-            &mut TextViewState,
+            &mut TextBuffer,
         ),
         With<TextEditor>,
     >,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     let entity = trigger.event().focused_entity;
-    let Ok((mut sel, mut hist, mut cursor, mut tv)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut hist, mut cursor, mut buffer)) = q.get_mut(entity) else {
         return;
     };
 
@@ -63,11 +63,11 @@ pub fn on_focused_keyboard_typing(
                 if c.is_control() {
                     continue;
                 }
-                insert_char(&mut sel, &mut hist, &mut cursor, &mut tv, c);
+                insert_char(&mut sel, &mut hist, &mut cursor, &mut buffer, c);
             }
         }
         Key::Space => {
-            insert_char(&mut sel, &mut hist, &mut cursor, &mut tv, ' ');
+            insert_char(&mut sel, &mut hist, &mut cursor, &mut buffer, ' ');
         }
         _ => {}
     }
