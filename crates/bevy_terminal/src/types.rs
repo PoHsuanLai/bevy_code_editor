@@ -32,7 +32,12 @@ use crate::session::EventProxy;
     bevy_text_engine::TextViewViewport,
     bevy_text_engine::FontConfig,
     bevy_text_engine::LineStyles,
-    bevy_text_engine::BlockList,
+    // NOT BlockList — engine's `produce_layouts` filters out entities
+    // that carry it (BlockList is the "static-content" path, mutually
+    // exclusive with the rope + LineStyles path we use here). When
+    // Phase 5 (OSC 133 command blocks) lands, that path will spawn
+    // child entities with their own BlockList rather than putting it
+    // on the BevyTerminal root.
     bevy_text_engine::HiddenLines,
     bevy_text_engine::RenderTheme,
     bevy_text_editor::SelectionState,

@@ -18,14 +18,16 @@ fn main() {
             }),
             ..default()
         }))
-        .add_plugins(CodeEditorPlugin)
+        // CodeEditorStandalone bundles CodeEditorPlugin + EditorUiPlugin
+        // (which inserts EditorRenderConfig). Plain CodeEditorPlugin alone
+        // panics in update_scrollbars without it.
+        .add_plugins(CodeEditorPlugin::standalone())
         .add_plugins(BevyTerminalPlugin)
-        .add_systems(Startup, (setup_camera, layout_panes))
+        // No manual `Camera2d` — `CodeEditorStandalone` spawns its own
+        // `EditorCamera` and a second active camera with the same render
+        // target produces "Camera order ambiguities" warnings.
+        .add_systems(Startup, layout_panes)
         .run();
-}
-
-fn setup_camera(mut commands: Commands) {
-    commands.spawn(Camera2d);
 }
 
 fn layout_panes(
