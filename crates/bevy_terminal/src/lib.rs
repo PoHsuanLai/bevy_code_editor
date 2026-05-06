@@ -30,6 +30,7 @@ pub mod input;
 pub mod messages;
 pub mod plugin;
 pub mod session;
+pub mod shell_integration;
 pub mod snapshot;
 pub mod types;
 pub mod viewport;

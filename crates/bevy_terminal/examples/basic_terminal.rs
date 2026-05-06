@@ -64,10 +64,17 @@ fn spawn_terminal(
 }
 
 fn log_events(
+    mut ready: MessageReader<TerminalReady>,
     mut titles: MessageReader<TerminalTitleChanged>,
     mut bells: MessageReader<TerminalBellRang>,
     mut exits: MessageReader<TerminalExited>,
+    mut cwd: MessageReader<TerminalCwdChanged>,
+    mut finished: MessageReader<TerminalBlockFinished>,
+    mut selected: MessageReader<TerminalBlockSelected>,
 ) {
+    for ev in ready.read() {
+        info!("ready({:?}): {}x{}", ev.entity, ev.cols, ev.rows);
+    }
     for ev in titles.read() {
         info!("title({:?}): {:?}", ev.entity, ev.title);
     }
@@ -76,5 +83,17 @@ fn log_events(
     }
     for ev in exits.read() {
         info!("exit: {:?}", ev);
+    }
+    for ev in cwd.read() {
+        info!("cwd({:?}): {}", ev.entity, ev.cwd);
+    }
+    for ev in finished.read() {
+        info!(
+            "block_finished({:?}): id={} exit={:?}",
+            ev.entity, ev.block_id, ev.exit_code
+        );
+    }
+    for ev in selected.read() {
+        info!("block_selected({:?}): id={}", ev.entity, ev.block_id);
     }
 }
