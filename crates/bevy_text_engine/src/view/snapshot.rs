@@ -67,21 +67,26 @@ pub struct StyleRun {
     pub bg: Option<Color>,
     /// 1.0 = normal, 1.3 = header, etc. 0.0 means use line default.
     pub font_scale: f32,
-    /// Horizontal skew for italic simulation (~0.2 = italic).
+    /// Horizontal skew applied to glyphs in this run (~0.2 = italic-ish).
+    /// Set explicitly to force a skew regardless of italic-face availability;
+    /// the renderer also writes this when `italic = true` and no italic face
+    /// is loaded (synthetic italic, controlled by
+    /// `FontConfig.font_synthesis.style`).
     pub skew: f32,
     pub corner_radius: f32,
-    /// Font weight (100..=900). `None` = layout default.
-    ///
-    /// Currently informational: the renderer ships a single font face, so
-    /// distinct weights produce identical output. A future phase will load
-    /// per-weight faces and key the glyph atlas by `(char, size, weight,
-    /// family)`. Producers should still set this so the data contract is
-    /// in place when the rasterizer catches up.
+    /// Font weight (100..=900). `None` = layout default. The renderer maps
+    /// `Some(w >= 600)` to the entity's bold face when one is loaded;
+    /// otherwise (and when `FontConfig.font_synthesis.weight` is on) it
+    /// synthesizes by stroke-doubling the regular face.
     pub font_weight: Option<u16>,
+    /// Italic flag. The renderer maps `true` to the entity's italic (or
+    /// bold-italic) face when one is loaded; otherwise (and when
+    /// `FontConfig.font_synthesis.style` is on) it synthesizes via skew.
+    pub italic: bool,
     /// Font family name. `None` = layout default. `Arc<str>` so consumers can
-    /// reuse the same family pointer across many runs cheaply.
-    ///
-    /// Same caveat as `font_weight`: currently informational.
+    /// reuse the same family pointer across many runs cheaply. Currently
+    /// informational: the renderer's per-entity font slots take precedence;
+    /// family-by-name resolution is a follow-up.
     pub font_family: Option<Arc<str>>,
     /// Decoration drawn alongside the text (underline/strikethrough/squiggle).
     /// Currently informational; rendering pass landing in a follow-up phase.
@@ -103,6 +108,7 @@ impl StyleRun {
             skew: 0.0,
             corner_radius: 0.0,
             font_weight: None,
+            italic: false,
             font_family: None,
             decoration: None,
             link: None,
@@ -717,6 +723,7 @@ mod tests {
             skew: 0.0,
             corner_radius: 0.0,
             font_weight: None,
+            italic: false,
             font_family: None,
             decoration: None,
             link: None,

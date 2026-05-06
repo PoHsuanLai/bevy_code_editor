@@ -1,0 +1,30 @@
+[package]
+name = "bevy_markdown"
+version = "0.1.0"
+edition = "2021"
+authors = ["PoHsuanLai"]
+license = "MIT OR Apache-2.0"
+description = "Read-only markdown viewer plugin for Bevy. Parses CommonMark with pulldown-cmark and renders rich text (headings, bold, italic, code blocks, lists, links) via bevy_text_engine."
+repository = "https://github.com/PoHsuanLai/bevy_code_editor"
+keywords = ["bevy", "markdown", "text", "rendering", "viewer"]
+categories = ["game-development", "rendering", "text-processing"]
+
+[dependencies]
+bevy = { version = "0.18", default-features = false, features = [
+    "bevy_render",
+    "bevy_core_pipeline",
+    "bevy_asset",
+    "bevy_sprite",
+    "bevy_sprite_render",
+    "bevy_color",
+    "bevy_mesh",
+    "bevy_camera",
+    "bevy_log",
+    "bevy_text",
+] }
+bevy_text_engine = { path = "../bevy_text_engine" }
+pulldown-cmark = { version = "0.12", default-features = false }
+ropey = "1.6"
+
+[dev-dependencies]
+bevy = { version = "0.18", features = ["bevy_window", "bevy_winit", "default_font"] }

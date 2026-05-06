@@ -207,7 +207,7 @@ fn selection_rect(display_row: u32, x_range: std::ops::Range<f32>, color: Color)
         vertical: RowVertical::Full,
         color,
         z: -1,
-        corner_radius: 0.0,
+        corners: bevy_text_engine::CornerRadii::ZERO,
     }
 }
 

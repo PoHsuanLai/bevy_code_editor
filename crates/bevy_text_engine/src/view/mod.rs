@@ -11,15 +11,15 @@ pub mod state;
 pub mod styling;
 pub mod viewport;
 
-pub use font::FontConfig;
+pub use font::{FontConfig, FontSynthesis};
 pub use layout::DisplayLayout;
 pub use layout_builder::{
     approx_display_rows_for_line, slice_runs, visible_buffer_range, wrap_into_rows,
     LayoutProduceSet, WrapRow,
 };
-pub use overlay::{RectOverlay, RowVertical, TextViewOverlays};
+pub use overlay::{CornerRadii, RectOverlay, RowVertical, TextViewOverlays};
 pub use plugin::{TextEnginePlugin, TextEnginePlugins, TextView, TextViewBatchEntity, TextViewRenderSet};
-pub use render::{render_layout, GlyphBatchComponent, GlyphInstance, TextViewBatch};
+pub use render::{render_layout, FontFaces, GlyphBatchComponent, GlyphInstance, TextViewBatch};
 pub use snapshot::{
     trivial_layout, Block, BlockBorder, BlockDecoration, BlockLayoutConfig, BlockRect,
     ShapedLine, StyleRun, TextDecoration,

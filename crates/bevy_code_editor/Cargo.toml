@@ -90,6 +90,11 @@ tree-sitter-c = "0.23"
 bevy_egui = "0.39"
 armas = { git = "https://github.com/PoHsuanLai/Armas.git", default-features = false, features = ["basic"] }
 
+# `examples/lsp.rs` uses `bevy_markdown` to render LSP hover content as
+# styled text when the server returns Markdown. Library code does not
+# depend on this — the renderer lives entirely inside the example.
+bevy_markdown = { path = "../bevy_markdown" }
+
 [features]
 default = ["tree-sitter"]
 

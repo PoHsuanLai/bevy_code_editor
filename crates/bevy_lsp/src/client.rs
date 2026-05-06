@@ -488,8 +488,10 @@ fn hover(server: &ServerSocket, tx: &Tx, uri: Url, position: Position) {
     };
     spawn::<HoverRequest>(server, tx, params, |result, tx| {
         if let Some(h) = result {
+            let (content, kind) = extract_hover_content(&h.contents);
             emit(tx, LspResponse::Hover {
-                content: extract_hover_content(&h.contents),
+                content,
+                kind,
                 range: h.range,
             });
         }
@@ -675,17 +677,64 @@ fn rename(server: &ServerSocket, tx: &Tx, uri: Url, position: Position, new_name
     });
 }
 
-fn extract_hover_content(contents: &HoverContents) -> String {
+/// Flatten an LSP `HoverContents` into a single text + markup-kind pair.
+///
+/// `MarkupContent` already carries a `kind`, so we pass it through.
+/// `MarkedString::LanguageString` is a fenced code block in markdown
+/// terms (the `language` field becomes the fence info string), so
+/// when any element of an `Array` is a `LanguageString`, the result
+/// is treated as Markdown. A bare `MarkedString::String` is plain text.
+fn extract_hover_content(contents: &HoverContents) -> (String, MarkupKind) {
     match contents {
-        HoverContents::Markup(markup) => markup.value.clone(),
-        HoverContents::Scalar(s) => marked_string(s),
-        HoverContents::Array(arr) => arr.iter().map(marked_string).collect::<Vec<_>>().join("\n"),
+        HoverContents::Markup(markup) => (markup.value.clone(), markup.kind.clone()),
+        HoverContents::Scalar(s) => marked_string_with_kind(s),
+        HoverContents::Array(arr) => {
+            let any_lang = arr
+                .iter()
+                .any(|ms| matches!(ms, MarkedString::LanguageString(_)));
+            let mut out = String::new();
+            for (i, ms) in arr.iter().enumerate() {
+                if i > 0 {
+                    out.push('\n');
+                }
+                out.push_str(&render_marked_string(ms, any_lang));
+            }
+            let kind = if any_lang {
+                MarkupKind::Markdown
+            } else {
+                MarkupKind::PlainText
+            };
+            (out, kind)
+        }
     }
 }
 
-fn marked_string(ms: &MarkedString) -> String {
+/// Single `MarkedString` → `(content, kind)`. A `LanguageString` is
+/// rendered as a fenced markdown code block so the markdown renderer
+/// downstream can treat it uniformly.
+fn marked_string_with_kind(ms: &MarkedString) -> (String, MarkupKind) {
+    match ms {
+        MarkedString::String(s) => (s.clone(), MarkupKind::PlainText),
+        MarkedString::LanguageString(ls) => (
+            format!("```{}\n{}\n```", ls.language, ls.value),
+            MarkupKind::Markdown,
+        ),
+    }
+}
+
+/// Render one `MarkedString` element of a hover array. When the array
+/// is heterogeneous (mixing language-strings with plain text) we render
+/// the whole thing as markdown, fencing language blocks accordingly;
+/// when all elements are plain text we just concatenate.
+fn render_marked_string(ms: &MarkedString, force_markdown: bool) -> String {
     match ms {
         MarkedString::String(s) => s.clone(),
-        MarkedString::LanguageString(ls) => ls.value.clone(),
+        MarkedString::LanguageString(ls) => {
+            if force_markdown {
+                format!("```{}\n{}\n```", ls.language, ls.value)
+            } else {
+                ls.value.clone()
+            }
+        }
     }
 }

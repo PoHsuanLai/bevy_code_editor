@@ -199,9 +199,9 @@ pub(crate) fn update_gpu_line_numbers(
                 size: info.size,
                 color: color_arr,
                 z_index: 0.0, // Line numbers at same level as main text
-                corner_radius: 0.0,
+                corner_radii: [0.0; 4],
                 skew: 0.0,
-                _padding: 0.0,
+                _padding: [0.0; 2],
             };
 
             instances.push(instance);

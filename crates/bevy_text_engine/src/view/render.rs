@@ -7,16 +7,94 @@
 //! per-line/per-run colors into the `ShapedLine.runs`. This module turns
 //! that into per-glyph quads ready for the instanced pipeline.
 
+use std::sync::Arc;
+
 use bevy::prelude::*;
 
 use crate::gpu::GlyphAtlas;
 
+use super::font::FontSynthesis;
 use super::layout::{line_x_at_byte, DisplayLayout};
 use super::overlay::TextViewOverlays;
-use super::snapshot::ShapedLine;
+use super::snapshot::{ShapedLine, StyleRun};
 use super::viewport::TextViewViewport;
 
-/// Glyph instance data for GPU rendering
+/// Resolved font faces for one render call. The renderer picks per-run
+/// based on `StyleRun.font_weight` (≥600 ⇒ bold) and `StyleRun.italic`,
+/// falling back to `regular` and synthesizing the missing axis when
+/// `synthesis` permits.
+///
+/// Built once per text-view per frame in [`super::plugin::update_text_views`]
+/// from the entity's `FontConfig` (each `Handle<Font>` is registered with
+/// the atlas's cosmic-text font system on first use).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FontFaces {
+    pub regular: Option<cosmic_text::fontdb::ID>,
+    pub bold: Option<cosmic_text::fontdb::ID>,
+    pub italic: Option<cosmic_text::fontdb::ID>,
+    pub bold_italic: Option<cosmic_text::fontdb::ID>,
+    pub synthesis: FontSynthesis,
+}
+
+impl FontFaces {
+    /// Single-face shorthand. Bold/italic slots empty, synthesis on.
+    /// Used by trivial-layout consumers that don't care about styling.
+    pub fn single(regular: Option<cosmic_text::fontdb::ID>) -> Self {
+        Self {
+            regular,
+            bold: None,
+            italic: None,
+            bold_italic: None,
+            synthesis: FontSynthesis::default(),
+        }
+    }
+
+    /// Resolve a face for a `(bold, italic)` request. Returns the matching
+    /// loaded face when available, else falls back to the closest loaded
+    /// face on the requested axis (bold-italic → bold → regular, etc.).
+    fn pick(&self, bold: bool, italic: bool) -> Option<cosmic_text::fontdb::ID> {
+        match (bold, italic) {
+            (true, true) => self.bold_italic.or(self.bold).or(self.italic).or(self.regular),
+            (true, false) => self.bold.or(self.regular),
+            (false, true) => self.italic.or(self.regular),
+            (false, false) => self.regular,
+        }
+    }
+
+    /// Whether this `(bold, italic)` request needs synthesis: weight when
+    /// the bold slot is empty, style when the italic slot is empty.
+    fn needs_synth(&self, bold: bool, italic: bool) -> (bool, bool) {
+        let bold_synth = bold
+            && self.synthesis.weight
+            && match (bold, italic) {
+                (true, true) => self.bold_italic.is_none() && self.bold.is_none(),
+                (true, false) => self.bold.is_none(),
+                _ => false,
+            };
+        let italic_synth = italic
+            && self.synthesis.style
+            && match (bold, italic) {
+                (true, true) => self.bold_italic.is_none() && self.italic.is_none(),
+                (false, true) => self.italic.is_none(),
+                _ => false,
+            };
+        (bold_synth, italic_synth)
+    }
+}
+
+/// Map a `StyleRun.font_weight` to "bold or not". CSS-style threshold:
+/// `>= 600` is bold (semibold and above).
+fn run_is_bold(run: &StyleRun) -> bool {
+    matches!(run.font_weight, Some(w) if w >= 600)
+}
+
+/// Glyph instance data for GPU rendering.
+///
+/// `corner_radii` carries per-corner radii `[tl, tr, bl, br]`. Background
+/// rects use this for asymmetric rounding (e.g. multi-row code-block
+/// panels — first row rounds top corners, last row rounds bottom).
+/// Glyphs leave it `[0.0; 4]` since text never rounds. Layout is sized
+/// to match the WGSL vertex inputs in `text.wgsl`.
 #[derive(Clone, Copy, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct GlyphInstance {
@@ -25,12 +103,15 @@ pub struct GlyphInstance {
     pub uv_max: Vec2,
     pub size: Vec2,
     pub color: [f32; 4],
+    /// Per-corner radii in pixels: `[top_left, top_right, bottom_left, bottom_right]`.
+    /// `[0.0; 4]` = sharp.
+    pub corner_radii: [f32; 4],
     pub z_index: f32,
-    /// Corner radius in pixels (0 = sharp corners, used for background rects)
-    pub corner_radius: f32,
     /// Horizontal skew factor for italic simulation (0.0 = normal, ~0.2 = italic)
     pub skew: f32,
-    pub _padding: f32,
+    /// Pad to 16-byte alignment so `array_stride` matches WebGPU's
+    /// vertex buffer requirements.
+    pub _padding: [f32; 2],
 }
 
 /// Marker component for a text view's GPU batch entity
@@ -73,7 +154,7 @@ pub fn render_layout(
     content_start_x: f32,
     horizontal_scroll_offset: f32,
     font_size: f32,
-    font_id: Option<cosmic_text::fontdb::ID>,
+    faces: FontFaces,
 ) -> Vec<GlyphInstance> {
     let default_line_height = layout.line_height;
     let char_width = layout.char_width;
@@ -160,9 +241,9 @@ pub fn render_layout(
                 ),
                 color: linear_rgba(bg),
                 z_index: 0.0,
-                corner_radius: line_corner_radius,
+                corner_radii: [line_corner_radius; 4],
                 skew: 0.0,
-                _padding: 0.0,
+                _padding: [0.0; 2],
             });
         }
 
@@ -175,19 +256,27 @@ pub fn render_layout(
         };
 
         // Shape-driven path is used when the line carries a `LineShape` shaped
-        // at this font_size and no run wants a font_scale override. Runs with
-        // `font_scale != 0.0/1.0` need re-shaping at a different size, which
-        // happens on demand inside `emit_unshaped_run_glyphs`.
+        // at this font_size, no run wants a font_scale override, and no run
+        // requests a non-regular face. Bold / italic runs need re-shaping
+        // against the matching face — they fall through to the unshaped
+        // path which picks the right `font_id` per run.
         let shape_usable = line
             .shape
             .as_ref()
             .filter(|s| (s.font_size - font_size).abs() < f32::EPSILON)
-            .filter(|_| line.runs.iter().all(|r| r.font_scale == 0.0 || r.font_scale == 1.0));
+            .filter(|_| {
+                line.runs.iter().all(|r| {
+                    (r.font_scale == 0.0 || r.font_scale == 1.0)
+                        && !run_is_bold(r)
+                        && !r.italic
+                })
+            });
 
         if line.runs.is_empty() {
             let style = RunStyle {
                 color: linear_rgba(layout.default_fg),
                 skew: 0.0,
+                stroke_double: false,
             };
             if let Some(shape) = shape_usable {
                 emit_shaped_run_glyphs(
@@ -209,7 +298,7 @@ pub fn render_layout(
                         start_x: 0.0,
                     },
                     atlas,
-                    font_id,
+                    faces.regular,
                     &mut text_instances,
                 );
             }
@@ -222,29 +311,23 @@ pub fn render_layout(
                 let seg_x_start = line_byte_to_x(line, run.byte_range.start, char_width);
                 let seg_x_end = line_byte_to_x(line, run.byte_range.end, char_width);
 
-                // Per-run background (skip if it duplicates the line bg)
-                if let Some(bg) = run.bg {
-                    if line.line_bg != Some(bg) {
-                        below_instances.push(GlyphInstance {
-                            position: Vec2::new(
-                                viewport_world_left + line_x + seg_x_start,
-                                viewport_world_top - line.y_top - line_height * 0.5,
-                            ),
-                            uv_min: atlas.solid_uv.uv_min,
-                            uv_max: atlas.solid_uv.uv_max,
-                            size: Vec2::new((seg_x_end - seg_x_start).max(0.0), line_height),
-                            color: linear_rgba(bg),
-                            z_index: 0.0,
-                            corner_radius: run.corner_radius,
-                            skew: 0.0,
-                            _padding: 0.0,
-                        });
-                    }
-                }
+                let bold = run_is_bold(run);
+                let italic = run.italic;
+                let (synth_bold, synth_italic) = faces.needs_synth(bold, italic);
+                let run_face = faces.pick(bold, italic);
 
+                // Synthesis: if no italic face is loaded, use the run's
+                // explicit skew or apply the synthetic-italic default.
+                // Bold synthesis is a glyph-level stroke double.
+                let effective_skew = if synth_italic && run.skew == 0.0 {
+                    SYNTHETIC_ITALIC_SKEW
+                } else {
+                    run.skew
+                };
                 let style = RunStyle {
                     color: linear_rgba(run.fg),
-                    skew: run.skew,
+                    skew: effective_skew,
+                    stroke_double: synth_bold,
                 };
                 let seg_font_size = if run.font_scale > 0.0 {
                     font_size * run.font_scale
@@ -252,27 +335,55 @@ pub fn render_layout(
                     font_size
                 };
 
-                if let Some(shape) = shape_usable {
-                    emit_shaped_run_glyphs(
-                        &shape.glyphs,
-                        run.byte_range.clone(),
-                        anchor,
-                        style,
-                        atlas,
-                        &mut text_instances,
-                    );
+                // For runs with a background, emit the bg and the glyphs
+                // from the same shape so the bg can size itself to the
+                // glyphs' actual ink bounds (not the advance edges, which
+                // include trailing side-bearing whitespace). For runs
+                // without a bg, take the cheap shaped-or-unshaped path.
+                if let Some(bg) = run.bg {
+                    if line.line_bg != Some(bg) {
+                        emit_run_with_bg(
+                            line,
+                            run,
+                            anchor,
+                            style,
+                            seg_x_start,
+                            seg_x_end,
+                            seg_font_size,
+                            line_height,
+                            baseline_offset,
+                            bg,
+                            atlas,
+                            run_face,
+                            shape_usable,
+                            &mut below_instances,
+                            &mut text_instances,
+                        );
+                    } else {
+                        emit_run_glyphs_only(
+                            line,
+                            run,
+                            anchor,
+                            style,
+                            seg_x_start,
+                            seg_font_size,
+                            atlas,
+                            run_face,
+                            shape_usable,
+                            &mut text_instances,
+                        );
+                    }
                 } else {
-                    emit_unshaped_run_glyphs(
+                    emit_run_glyphs_only(
                         line,
-                        run.byte_range.clone(),
+                        run,
                         anchor,
                         style,
-                        RunMetrics {
-                            font_size: seg_font_size,
-                            start_x: seg_x_start,
-                        },
+                        seg_x_start,
+                        seg_font_size,
                         atlas,
-                        font_id,
+                        run_face,
+                        shape_usable,
                         &mut text_instances,
                     );
                 }
@@ -325,12 +436,32 @@ struct RowAnchor {
     base_y: f32,
 }
 
-/// Per-run paint attributes. `color` is pre-linearized; `skew` carries italic
-/// simulation. `corner_radius: 0.0` since glyphs themselves don't round.
+/// Default skew when a run wants italic but no italic face is loaded. ~12°
+/// is the synthetic-italic angle most browsers use; matches the value
+/// applied by FreeType's slant transform.
+const SYNTHETIC_ITALIC_SKEW: f32 = 0.21;
+
+/// Synthetic-bold stroke offset in pixels. The renderer emits each glyph
+/// twice — once at pen-x, once at pen-x + this — to thicken strokes when
+/// no bold face is loaded. ~0.6 px gives a noticeable weight bump without
+/// turning text into a smear; matches typical browser faux-bold.
+const SYNTHETIC_BOLD_STROKE_PX: f32 = 0.6;
+
+/// Horizontal padding for a per-run background quad, expressed as a
+/// fraction of the line's `font_size`. Equivalent to `0.25em` on each
+/// side — matches typical CSS `<code>` padding and scales with font
+/// size, font weight, and DPI without any hand-tuned constants.
+const INLINE_BG_HPAD_EM: f32 = 0.25;
+
+/// Per-run paint attributes. `color` is pre-linearized. `skew` carries
+/// italic simulation. `stroke_double` triggers synthetic bold (each glyph
+/// drawn twice with `SYNTHETIC_BOLD_STROKE_PX` x-offset).
+/// `corner_radius: 0.0` since glyphs themselves don't round.
 #[derive(Clone, Copy)]
 struct RunStyle {
     color: [f32; 4],
     skew: f32,
+    stroke_double: bool,
 }
 
 /// Build a glyph quad from an atlas hit. Centralizes the legacy/shaped paint
@@ -353,9 +484,23 @@ fn glyph_quad(
         size: info.size,
         color: style.color,
         z_index: 0.0,
-        corner_radius: 0.0,
+        corner_radii: [0.0; 4],
         skew: style.skew,
-        _padding: 0.0,
+        _padding: [0.0; 2],
+    }
+}
+
+/// Emit a glyph (and its synthetic-bold twin if requested) into `out`.
+fn push_glyph(
+    info: crate::gpu::GlyphInfo,
+    pen_x: f32,
+    anchor: RowAnchor,
+    style: RunStyle,
+    out: &mut Vec<GlyphInstance>,
+) {
+    out.push(glyph_quad(info, pen_x, anchor, style));
+    if style.stroke_double {
+        out.push(glyph_quad(info, pen_x + SYNTHETIC_BOLD_STROKE_PX, anchor, style));
     }
 }
 
@@ -376,7 +521,7 @@ fn emit_shaped_run_glyphs(
         let Some((info, _)) = atlas.get_or_rasterize_glyph(g.cache_key) else {
             continue;
         };
-        out.push(glyph_quad(info, g.x, anchor, style));
+        push_glyph(info, g.x, anchor, style, out);
     }
 }
 
@@ -418,7 +563,172 @@ fn emit_unshaped_run_glyphs(
         let Some((info, _)) = atlas.get_or_rasterize_glyph(g.cache_key) else {
             continue;
         };
-        out.push(glyph_quad(info, metrics.start_x + g.x, anchor, style));
+        push_glyph(info, metrics.start_x + g.x, anchor, style, out);
+    }
+}
+
+/// Emit a per-run background quad sized to the glyphs' actual ink bounds,
+/// then emit the glyphs themselves. Sharing the shaping result between
+/// the bg-sizing pass and the glyph-emit pass lets the bg hug the visible
+/// glyphs (no trailing right-side-bearing whitespace, no leading
+/// left-side-bearing slack) — symmetric across font, weight, and size
+/// without any em-relative or pixel-relative magic constants.
+#[allow(clippy::too_many_arguments)]
+fn emit_run_with_bg(
+    line: &ShapedLine,
+    run: &StyleRun,
+    anchor: RowAnchor,
+    style: RunStyle,
+    seg_x_start: f32,
+    seg_x_end: f32,
+    seg_font_size: f32,
+    line_height: f32,
+    baseline_offset: f32,
+    bg: bevy::prelude::Color,
+    atlas: &mut GlyphAtlas,
+    run_face: Option<cosmic_text::fontdb::ID>,
+    shape_usable: Option<&Arc<super::snapshot::LineShape>>,
+    below: &mut Vec<GlyphInstance>,
+    text: &mut Vec<GlyphInstance>,
+) {
+    // Shape (or reuse the line's shape) and walk the run's glyphs to find
+    // both the leftmost ink boundary and the rightmost. Fall back to
+    // advance-edge bounds if shaping fails.
+    let (ink_left, ink_right) = run_ink_bounds(
+        line,
+        run,
+        seg_x_start,
+        seg_x_end,
+        seg_font_size,
+        atlas,
+        run_face,
+        shape_usable,
+    );
+
+    let baseline_y_off = line_height * 0.5 + baseline_offset;
+    let cap_to_descender = baseline_y_off + baseline_offset * 0.6;
+    let text_band_above = cap_to_descender * 0.25;
+    let band_top_y_off = baseline_y_off - text_band_above;
+    // Equal padding on each side, scaled to the run's font size.
+    let hpad = INLINE_BG_HPAD_EM * seg_font_size;
+    let bg_x = ink_left - hpad;
+    let bg_w = (ink_right - ink_left + hpad * 2.0).max(0.0);
+    below.push(GlyphInstance {
+        position: Vec2::new(
+            anchor.viewport_world_left + anchor.line_x + bg_x,
+            anchor.viewport_world_top - line.y_top - band_top_y_off - cap_to_descender * 0.5,
+        ),
+        uv_min: atlas.solid_uv.uv_min,
+        uv_max: atlas.solid_uv.uv_max,
+        size: Vec2::new(bg_w, cap_to_descender),
+        color: linear_rgba(bg),
+        z_index: 0.0,
+        corner_radii: [run.corner_radius; 4],
+        skew: 0.0,
+        _padding: [0.0; 2],
+    });
+
+    emit_run_glyphs_only(
+        line,
+        run,
+        anchor,
+        style,
+        seg_x_start,
+        seg_font_size,
+        atlas,
+        run_face,
+        shape_usable,
+        text,
+    );
+}
+
+/// Emit just the run's glyphs — shape-or-unshaped path, no bg, no extra work.
+#[allow(clippy::too_many_arguments)]
+fn emit_run_glyphs_only(
+    line: &ShapedLine,
+    run: &StyleRun,
+    anchor: RowAnchor,
+    style: RunStyle,
+    seg_x_start: f32,
+    seg_font_size: f32,
+    atlas: &mut GlyphAtlas,
+    run_face: Option<cosmic_text::fontdb::ID>,
+    shape_usable: Option<&Arc<super::snapshot::LineShape>>,
+    out: &mut Vec<GlyphInstance>,
+) {
+    if let Some(shape) = shape_usable {
+        emit_shaped_run_glyphs(
+            &shape.glyphs,
+            run.byte_range.clone(),
+            anchor,
+            style,
+            atlas,
+            out,
+        );
+    } else {
+        emit_unshaped_run_glyphs(
+            line,
+            run.byte_range.clone(),
+            anchor,
+            style,
+            RunMetrics {
+                font_size: seg_font_size,
+                start_x: seg_x_start,
+            },
+            atlas,
+            run_face,
+            out,
+        );
+    }
+}
+
+/// Inspect each glyph in the run, rasterize to read its ink bounds
+/// (`info.offset.x .. info.offset.x + info.size.x`), and return the
+/// run's combined `(ink_left, ink_right)` in line-local pixels. Falls
+/// back to `(seg_x_start, seg_x_end)` (the advance bounds) when
+/// shaping returns no usable glyphs.
+#[allow(clippy::too_many_arguments)]
+fn run_ink_bounds(
+    line: &ShapedLine,
+    run: &StyleRun,
+    seg_x_start: f32,
+    seg_x_end: f32,
+    seg_font_size: f32,
+    atlas: &mut GlyphAtlas,
+    run_face: Option<cosmic_text::fontdb::ID>,
+    shape_usable: Option<&Arc<super::snapshot::LineShape>>,
+) -> (f32, f32) {
+    let mut min_x = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+
+    // Shape-usable path: scan the line's pre-shaped glyphs in the run's
+    // byte range and use their actual cache-key info.
+    if let Some(shape) = shape_usable {
+        for g in &shape.glyphs {
+            if g.byte_index < run.byte_range.start || g.byte_index >= run.byte_range.end {
+                continue;
+            }
+            if let Some((info, _)) = atlas.get_or_rasterize_glyph(g.cache_key) {
+                min_x = min_x.min(g.x + info.offset.x);
+                max_x = max_x.max(g.x + info.offset.x + info.size.x);
+            }
+        }
+    } else if let Some(slice) = line.text.get(run.byte_range.clone()) {
+        let shape_text = slice.strip_suffix('\n').unwrap_or(slice);
+        let shape = atlas.shape_line(shape_text, seg_font_size, run_face);
+        for g in &shape.glyphs {
+            if let Some((info, _)) = atlas.get_or_rasterize_glyph(g.cache_key) {
+                let glyph_x = seg_x_start + g.x;
+                min_x = min_x.min(glyph_x + info.offset.x);
+                max_x = max_x.max(glyph_x + info.offset.x + info.size.x);
+            }
+        }
+    }
+
+    if min_x.is_finite() && max_x.is_finite() && max_x > min_x {
+        (min_x, max_x)
+    } else {
+        (seg_x_start, seg_x_end)
     }
 }
 
@@ -479,9 +789,9 @@ fn push_block_decorations(
                 size: Vec2::new(width, height),
                 color: linear_rgba(bg),
                 z_index: 0.0,
-                corner_radius: block.decoration.corner_radius,
+                corner_radii: [block.decoration.corner_radius; 4],
                 skew: 0.0,
-                _padding: 0.0,
+                _padding: [0.0; 2],
             });
         }
 
@@ -497,9 +807,9 @@ fn push_block_decorations(
                     size: Vec2::new(width, bw),
                     color: bc,
                     z_index: 0.0,
-                    corner_radius: 0.0,
+                    corner_radii: [0.0; 4],
                     skew: 0.0,
-                    _padding: 0.0,
+                    _padding: [0.0; 2],
                 });
                 // Bottom edge.
                 out.push(GlyphInstance {
@@ -509,9 +819,9 @@ fn push_block_decorations(
                     size: Vec2::new(width, bw),
                     color: bc,
                     z_index: 0.0,
-                    corner_radius: 0.0,
+                    corner_radii: [0.0; 4],
                     skew: 0.0,
-                    _padding: 0.0,
+                    _padding: [0.0; 2],
                 });
                 // Left edge — full height between top and bottom.
                 out.push(GlyphInstance {
@@ -521,9 +831,9 @@ fn push_block_decorations(
                     size: Vec2::new(bw, height),
                     color: bc,
                     z_index: 0.0,
-                    corner_radius: 0.0,
+                    corner_radii: [0.0; 4],
                     skew: 0.0,
-                    _padding: 0.0,
+                    _padding: [0.0; 2],
                 });
                 // Right edge.
                 out.push(GlyphInstance {
@@ -533,9 +843,9 @@ fn push_block_decorations(
                     size: Vec2::new(bw, height),
                     color: bc,
                     z_index: 0.0,
-                    corner_radius: 0.0,
+                    corner_radii: [0.0; 4],
                     skew: 0.0,
-                    _padding: 0.0,
+                    _padding: [0.0; 2],
                 });
             }
         }
@@ -596,6 +906,12 @@ fn push_overlay_quad(
         super::overlay::RowVertical::Full => {
             (baseline_y_off - text_band_above_baseline, cap_to_descender)
         }
+        super::overlay::RowVertical::FullLeaded => {
+            // Flush stacking: each row's overlay covers `[y_top, y_top +
+            // line_height]`, so adjacent rows in a multi-row panel butt
+            // up exactly with no gap between them.
+            (0.0, line_height)
+        }
         super::overlay::RowVertical::Caret { height_fraction } => {
             let h = (cap_to_descender * height_fraction).max(1.0);
             (baseline_y_off - h * 0.25, h)
@@ -623,9 +939,14 @@ fn push_overlay_quad(
         size: Vec2::new(width, height),
         color: linear_rgba(rect.color),
         z_index: 0.0,
-        corner_radius: rect.corner_radius,
+        corner_radii: [
+            rect.corners.tl,
+            rect.corners.tr,
+            rect.corners.bl,
+            rect.corners.br,
+        ],
         skew: 0.0,
-        _padding: 0.0,
+        _padding: [0.0; 2],
     });
 }
 

@@ -290,7 +290,9 @@ impl SpecializedRenderPipeline for InstancedTextPipeline {
     type Key = u32; // MSAA sample count
 
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
-        // Instance buffer layout
+        // Instance buffer layout. Offsets match the field order in
+        // `GlyphInstance` (`view::render`); see that struct for the
+        // semantic meaning of each attribute.
         let instance_layout = VertexBufferLayout {
             array_stride: std::mem::size_of::<GlyphInstance>() as u64,
             step_mode: VertexStepMode::Instance,
@@ -325,22 +327,22 @@ impl SpecializedRenderPipeline for InstancedTextPipeline {
                     offset: 32,
                     shader_location: 4,
                 },
-                // z_index (f32)
+                // corner_radii (vec4: [tl, tr, bl, br])
                 VertexAttribute {
-                    format: VertexFormat::Float32,
+                    format: VertexFormat::Float32x4,
                     offset: 48,
                     shader_location: 5,
                 },
-                // corner_radius (f32)
+                // z_index (f32)
                 VertexAttribute {
                     format: VertexFormat::Float32,
-                    offset: 52,
+                    offset: 64,
                     shader_location: 6,
                 },
                 // skew (f32)
                 VertexAttribute {
                     format: VertexFormat::Float32,
-                    offset: 56,
+                    offset: 68,
                     shader_location: 7,
                 },
             ],

@@ -182,10 +182,33 @@ pub(crate) fn update_text_views(
     for (tv_entity, state, viewport, font, layout, overlays, batch_entity_opt, render_layers) in
         text_views.iter_mut()
     {
-        let font_id = font
+        // Resolve all four optional faces up front. `ensure_font` is O(1)
+        // after first registration, so paying it for the empty slots is
+        // free. Collected into a `FontFaces` so the renderer can pick
+        // per-run without touching the atlas.
+        let regular = font
             .font
             .as_ref()
             .and_then(|h| atlas.ensure_font(h, &fonts));
+        let bold = font
+            .font_bold
+            .as_ref()
+            .and_then(|h| atlas.ensure_font(h, &fonts));
+        let italic = font
+            .font_italic
+            .as_ref()
+            .and_then(|h| atlas.ensure_font(h, &fonts));
+        let bold_italic = font
+            .font_bold_italic
+            .as_ref()
+            .and_then(|h| atlas.ensure_font(h, &fonts));
+        let faces = super::render::FontFaces {
+            regular,
+            bold,
+            italic,
+            bold_italic,
+            synthesis: font.font_synthesis,
+        };
         // Skip-on-unchanged: if neither the display layout nor the overlays
         // changed since last frame, the GPU batch is still valid — skip the
         // rebuild + atlas upload entirely.
@@ -209,7 +232,7 @@ pub(crate) fn update_text_views(
             content_start_x,
             state.horizontal_scroll_offset,
             font.size,
-            font_id,
+            faces,
         );
 
         atlas.update_texture(&mut images);

@@ -219,14 +219,15 @@ pub fn process_lsp_messages(
                 }
             }
 
-            LspResponse::Hover { content, range } => {
+            LspResponse::Hover { content, kind, range } => {
                 #[cfg(debug_assertions)]
-                debug!("[LSP] Hover: {} chars", content.len());
+                debug!("[LSP] Hover: {} chars ({kind:?})", content.len());
 
                 if !content.is_empty() {
                     if let Some(pending_pos) = hover_state.pending_char_index {
                         if pending_pos == hover_state.trigger_char_index {
                             hover_state.content = content;
+                            hover_state.kind = kind;
                             hover_state.range = range;
                             hover_state.visible = true;
                         }

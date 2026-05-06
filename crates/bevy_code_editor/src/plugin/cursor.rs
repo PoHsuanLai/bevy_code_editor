@@ -190,7 +190,7 @@ pub(crate) fn push_cursor_overlays(
                 },
                 color: theme.cursor,
                 z: 1, // above text
-                corner_radius: 0.0,
+                corners: bevy_text_engine::CornerRadii::ZERO,
             });
         }
 
@@ -266,7 +266,7 @@ pub(crate) fn update_cursor_line_highlight(
                     },
                     color: border_color,
                     z: 0,
-                    corner_radius: 0.0,
+                    corners: bevy_text_engine::CornerRadii::ZERO,
                 });
                 overlays.rects.push(RectOverlay {
                     display_row: display_row as u32,
@@ -276,7 +276,7 @@ pub(crate) fn update_cursor_line_highlight(
                     },
                     color: border_color,
                     z: 0,
-                    corner_radius: 0.0,
+                    corners: bevy_text_engine::CornerRadii::ZERO,
                 });
             }
 
@@ -340,7 +340,7 @@ pub(crate) fn update_cursor_line_highlight(
                         vertical: RowVertical::Full,
                         color: word_highlight_color,
                         z: 0,
-                        corner_radius: 0.0,
+                        corners: bevy_text_engine::CornerRadii::ZERO,
                     });
                 } else {
                     // Multi-row word (rare in practice — only happens if a wrap
@@ -355,7 +355,7 @@ pub(crate) fn update_cursor_line_highlight(
                         vertical: RowVertical::Full,
                         color: word_highlight_color,
                         z: 0,
-                        corner_radius: 0.0,
+                        corners: bevy_text_engine::CornerRadii::ZERO,
                     });
                 }
             }

@@ -151,9 +151,16 @@ pub enum LspResponse {
     /// `id` echoes the matching `ResolveCompletionItem` request.
     ResolvedCompletionItem { id: u64, item: CompletionItem },
 
-    /// Hover response
+    /// Hover response.
+    ///
+    /// `kind` reports the source format the LSP server returned. Most
+    /// servers (rust-analyzer, gopls, pyright) send `Markdown`; some
+    /// older or simpler servers send `PlainText`. UI consumers route
+    /// the markdown path through a markdown renderer when `kind == Markdown`
+    /// and fall back to plain-text rendering otherwise.
     Hover {
         content: String,
+        kind: MarkupKind,
         range: Option<Range>,
     },
 

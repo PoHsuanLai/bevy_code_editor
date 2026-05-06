@@ -389,12 +389,16 @@ fn get_word_at_position(rope: &ropey::Rope, char_pos: usize) -> Option<String> {
 /// Per-editor hover popup state.
 ///
 /// Was `bevy_lsp::HoverState` (Resource).
-#[derive(Component, Default)]
+#[derive(Component)]
 pub struct LspHoverPopup {
     /// Whether the hover box is currently visible
     pub visible: bool,
-    /// Content to display in the hover box (markdown)
+    /// Content to display in the hover box. Format is described by `kind`.
     pub content: String,
+    /// Source format of `content`. UI consumers route the markdown path
+    /// through a markdown renderer when `kind == Markdown`; otherwise
+    /// they fall back to plain-text rendering.
+    pub kind: MarkupKind,
     /// The character index in the document where the mouse currently is
     pub trigger_char_index: usize,
     /// The character index for which we sent the hover request (to match response)
@@ -407,11 +411,31 @@ pub struct LspHoverPopup {
     pub request_sent: bool,
 }
 
+impl Default for LspHoverPopup {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            content: String::new(),
+            // Default to plain text — servers that send markdown override
+            // this on the response. Picking `PlainText` as the default
+            // keeps cold-state rendering deterministic regardless of
+            // whether the markdown feature is on.
+            kind: MarkupKind::PlainText,
+            trigger_char_index: 0,
+            pending_char_index: None,
+            timer: None,
+            range: None,
+            request_sent: false,
+        }
+    }
+}
+
 impl LspHoverPopup {
     /// Reset hover state
     pub fn reset(&mut self) {
         self.visible = false;
         self.content.clear();
+        self.kind = MarkupKind::PlainText;
         self.timer = None;
         self.range = None;
         self.request_sent = false;
