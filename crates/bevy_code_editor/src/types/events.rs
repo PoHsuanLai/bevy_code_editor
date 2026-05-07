@@ -118,3 +118,33 @@ impl ApplyCompletionEvent {
         Self { item_index }
     }
 }
+
+/// Inbound: swap the editor's `bevy_tree_sitter::Language` component to one
+/// the host already constructed (e.g. picked from a language registry by
+/// filename). Triggers a re-parse and re-highlight on the next frame.
+/// `language` is `Option` so hosts can clear back to "no syntax."
+///
+/// Not Reflect: `bevy_tree_sitter::Language` carries `tree_sitter::Language`
+/// FFI state. Gated on the `tree-sitter` feature.
+#[cfg(feature = "tree-sitter")]
+#[derive(Message, Clone)]
+pub struct SetLanguageRequested {
+    pub entity: Entity,
+    pub language: Option<bevy_tree_sitter::Language>,
+}
+
+/// Outbound: a fold region's `is_folded` flipped, or a `fold_all` /
+/// `unfold_all` was applied. Hosts can subscribe to update gutter
+/// affordances (chevrons), minimap markers, or layout caches without
+/// polling `Changed<FoldState>` (which fires on any field write — including
+/// content_version bumps from the detector).
+///
+/// `start_line` is the region's start line; `is_folded` is the new state.
+/// For bulk operations (`fold_all`/`unfold_all`) an event fires per region.
+#[derive(Message, Clone, Debug, Reflect)]
+#[reflect(Clone, Debug)]
+pub struct EditorFoldStateChanged {
+    pub entity: Entity,
+    pub start_line: usize,
+    pub is_folded: bool,
+}

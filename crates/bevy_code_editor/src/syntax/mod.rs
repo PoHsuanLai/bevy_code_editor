@@ -7,5 +7,7 @@
 //! `HighlightRange`s into colored `LineSegment`s.
 
 pub mod highlighter;
+#[cfg(feature = "tree-sitter")]
+pub mod language_swap;
 
 pub use highlighter::map_highlight_color;

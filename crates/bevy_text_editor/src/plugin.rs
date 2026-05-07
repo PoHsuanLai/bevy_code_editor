@@ -14,7 +14,10 @@ use crate::interaction::{
     on_focused_keyboard, on_pointer_drag, on_pointer_press, on_pointer_release, on_pointer_scroll,
 };
 use crate::picking::text_view_picking_backend;
-use crate::state::{EditHistoryState, IndentConfig, OnEdit, SnapshotPreEdit, TextEditor};
+use crate::state::{
+    CursorState, EditHistoryState, IndentConfig, OnEdit, SelectionState, SnapshotPreEdit,
+    TextEditor,
+};
 use crate::typing::on_focused_keyboard_typing;
 
 /// Contains `emit_edit_triggers`. Schedule downstream systems `.after(EditEmitSet)`.
@@ -118,8 +121,12 @@ impl Plugin for TextEditorPlugin {
         app.register_type::<crate::theme::EditTheme>();
         app.register_type::<crate::cursor_settings::CursorSettings>();
         app.register_type::<crate::cursor_settings::CursorStyle>();
+        app.register_type::<crate::editing_events::CursorMoved>();
+        app.register_type::<crate::editing_events::SelectionChanged>();
         app.init_resource::<crate::cursor_settings::CursorSettings>();
         app.add_message::<OnEdit>();
+        app.add_message::<crate::editing_events::CursorMoved>();
+        app.add_message::<crate::editing_events::SelectionChanged>();
 
         register_editing_events(app);
 
@@ -132,7 +139,12 @@ impl Plugin for TextEditorPlugin {
         app.configure_sets(Update, EditEmitSet);
         app.add_systems(
             Update,
-            (mirror_snapshot_marker, emit_edit_triggers)
+            (
+                mirror_snapshot_marker,
+                emit_edit_triggers,
+                emit_cursor_moved,
+                emit_selection_changed,
+            )
                 .chain()
                 .in_set(EditEmitSet),
         );
@@ -168,6 +180,66 @@ pub fn emit_edit_triggers(
             pre_edit_rope,
         });
     }
+}
+
+/// Compare each editor's `cursor_pos` to the previous frame's, emit one
+/// `CursorMoved` per actual movement. The state's `last_cursor_pos` is the
+/// auto-scroll detector's field; we keep our own tracker so we don't race
+/// with that system's reads.
+pub fn emit_cursor_moved(
+    mut writer: MessageWriter<crate::editing_events::CursorMoved>,
+    q: Query<(Entity, &CursorState), With<TextEditor>>,
+    mut last: Local<std::collections::HashMap<Entity, usize>>,
+) {
+    for (entity, cursor) in q.iter() {
+        let prev = last.insert(entity, cursor.cursor_pos);
+        if prev != Some(cursor.cursor_pos) {
+            writer.write(crate::editing_events::CursorMoved {
+                entity,
+                from: prev.unwrap_or(cursor.cursor_pos),
+                to: cursor.cursor_pos,
+            });
+        }
+    }
+    last.retain(|e, _| q.get(*e).is_ok());
+}
+
+/// Watch the selection collection for any change (anchor/head/mode/count)
+/// and emit `SelectionChanged`. Hashes the collection's anchored points so
+/// the dedupe survives a re-construction that produces the same selection.
+pub fn emit_selection_changed(
+    mut writer: MessageWriter<crate::editing_events::SelectionChanged>,
+    q: Query<(Entity, &SelectionState), (With<TextEditor>, Changed<SelectionState>)>,
+    mut last: Local<std::collections::HashMap<Entity, u64>>,
+    all: Query<Entity, With<TextEditor>>,
+) {
+    use std::hash::{Hash, Hasher};
+    for (entity, sel) in q.iter() {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for s in sel.selections.iter() {
+            s.head_offset().hash(&mut hasher);
+            s.anchor_offset().hash(&mut hasher);
+        }
+        sel.selections.iter().count().hash(&mut hasher);
+        let fingerprint = hasher.finish();
+
+        if last.get(&entity) == Some(&fingerprint) {
+            continue;
+        }
+        last.insert(entity, fingerprint);
+
+        let total: usize = sel
+            .selections
+            .iter()
+            .map(|s| s.end() - s.start())
+            .sum();
+        writer.write(crate::editing_events::SelectionChanged {
+            entity,
+            selection_count: sel.selections.iter().count(),
+            total_chars_selected: total,
+        });
+    }
+    last.retain(|e, _| all.get(*e).is_ok());
 }
 
 fn register_editing_events(app: &mut App) {

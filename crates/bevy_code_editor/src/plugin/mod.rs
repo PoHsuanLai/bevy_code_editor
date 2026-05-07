@@ -159,6 +159,10 @@ impl Plugin for CodeEditorPlugin {
         // registered here.
         app.add_message::<SaveRequested>();
         app.add_message::<OpenRequested>();
+        app.add_message::<crate::types::events::EditorFoldStateChanged>();
+        app.register_type::<crate::types::events::EditorFoldStateChanged>();
+        #[cfg(feature = "tree-sitter")]
+        app.add_message::<crate::types::events::SetLanguageRequested>();
         register_ide_action_events(app);
 
         #[cfg(feature = "lsp")]
@@ -326,6 +330,24 @@ fn register_handler_systems(app: &mut App) {
             // File / dialog (1)
             file::handle_goto_line,
         )
+            .in_set(InputSet)
+            .after(ActionDispatchSet),
+    );
+
+    // Emits per-region `EditorFoldStateChanged` events when `is_folded` flips.
+    // Runs after the fold-action handlers so transitions from this frame's
+    // input show up on the bus immediately.
+    app.add_systems(
+        Update,
+        folding::emit_fold_state_changed
+            .in_set(InputSet)
+            .after(folding::handle_unfold_all),
+    );
+
+    #[cfg(feature = "tree-sitter")]
+    app.add_systems(
+        Update,
+        crate::syntax::language_swap::handle_set_language
             .in_set(InputSet)
             .after(ActionDispatchSet),
     );

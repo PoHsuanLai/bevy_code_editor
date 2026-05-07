@@ -88,6 +88,9 @@ pub mod prelude {
 
     // Editor marker + save/open events.
     pub use crate::types::editor::{CodeEditor, OpenRequested, SaveRequested};
+    pub use crate::types::events::EditorFoldStateChanged;
+    #[cfg(feature = "tree-sitter")]
+    pub use crate::types::events::SetLanguageRequested;
 
     // Editable-text widget types from `bevy_text_editor`. Re-exported so
     // prelude users get them without a separate import.
