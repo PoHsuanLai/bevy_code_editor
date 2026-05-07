@@ -11,14 +11,15 @@
 //!                           (engine's LayoutProduceSet runs after this)
 //! ```
 
+use bevy::app::PluginGroupBuilder;
 use bevy::prelude::*;
 use bevy_text_engine::view::layout_builder::LayoutProduceSet;
 
 use crate::drain::drain_pty_events;
 use crate::messages::*;
-use crate::session::{on_terminal_added, TerminalEventLoopRegistry};
+use crate::session::{on_terminal_removed, open_pending_sessions, TerminalEventLoopRegistry};
 use crate::types::{
-    BevyTerminal, TerminalBlockState, TerminalColorPalette, TerminalGridSnapshot,
+    BevyTerminal, TerminalBlockState, TerminalColorPalette, TerminalConfig, TerminalGridSnapshot,
     TerminalInputMode, TerminalScrollFollow, TerminalScrollback, TerminalShellInfo,
 };
 
@@ -44,6 +45,7 @@ impl Plugin for BevyTerminalPlugin {
         }
 
         app.register_type::<BevyTerminal>()
+            .register_type::<TerminalConfig>()
             .register_type::<TerminalGridSnapshot>()
             .register_type::<TerminalShellInfo>()
             .register_type::<TerminalInputMode>()
@@ -55,6 +57,7 @@ impl Plugin for BevyTerminalPlugin {
             .register_type::<TerminalTitleChanged>()
             .register_type::<TerminalBellRang>()
             .register_type::<TerminalReady>()
+            .register_type::<TerminalSpawnFailed>()
             .register_type::<TerminalCwdChanged>()
             .register_type::<TerminalBlockFinished>()
             .register_type::<TerminalBlockSelected>()
@@ -78,6 +81,7 @@ impl Plugin for BevyTerminalPlugin {
             .add_message::<TerminalTitleChanged>()
             .add_message::<TerminalBellRang>()
             .add_message::<TerminalReady>()
+            .add_message::<TerminalSpawnFailed>()
             .add_message::<TerminalCwdChanged>()
             .add_message::<TerminalBlockFinished>()
             .add_message::<TerminalBlockSelected>()
@@ -114,9 +118,14 @@ impl Plugin for BevyTerminalPlugin {
         app.configure_sets(Update, LayoutProduceSet.after(TerminalSnapshotSet));
 
         app.add_systems(Update, drain_pty_events.in_set(TerminalPtyDrainSet));
+        // Open the PTY before resizing it: spawn first, sync second.
         app.add_systems(
             Update,
-            crate::viewport::sync_terminal_size.in_set(TerminalApplyStateSet),
+            (
+                open_pending_sessions,
+                crate::viewport::sync_terminal_size.after(open_pending_sessions),
+            )
+                .in_set(TerminalApplyStateSet),
         );
         app.add_systems(
             Update,
@@ -167,8 +176,29 @@ impl Plugin for BevyTerminalPlugin {
                 .after(crate::snapshot::sync_grid_snapshot),
         );
 
-        app.add_observer(on_terminal_added);
+        app.add_observer(on_terminal_removed);
         app.add_observer(crate::input::on_focused_terminal_keyboard);
         app.add_observer(crate::blocks_pick::on_terminal_block_press);
+    }
+}
+
+/// Full bundle for embedders: registers `BevyTerminalPlugin` plus the
+/// supporting plugins terminals need (text engine GPU + view + scrollbar,
+/// input dispatch, text interaction). Mirrors `bevy_code_editor::CodeEditorPlugins`.
+///
+/// Disable individual entries with `.build().disable::<T>()` when composing
+/// with hosts that already own one of the dependencies.
+pub struct BevyTerminalPlugins;
+
+impl PluginGroup for BevyTerminalPlugins {
+    fn build(self) -> PluginGroupBuilder {
+        PluginGroupBuilder::start::<Self>()
+            .add(bevy_text_engine::gpu::GlyphAtlasPlugin)
+            .add(bevy_text_engine::gpu::InstancedTextRenderPlugin)
+            .add(bevy_text_engine::view::plugin::TextEnginePlugin)
+            .add(bevy_text_engine::ui::ScrollbarPlugin)
+            .add(bevy::input_focus::InputDispatchPlugin)
+            .add(bevy_text_editor::TextInteractionPlugin)
+            .add(BevyTerminalPlugin)
     }
 }

@@ -45,12 +45,22 @@ pub struct TerminalBellRang {
 }
 
 /// PTY is up and the initial dimensions are known. Emitted once per session
-/// from `on_terminal_added` once the writer + reader threads are wired.
+/// once the writer + reader threads are wired.
 #[derive(Message, Clone, Debug, Reflect)]
 pub struct TerminalReady {
     pub entity: Entity,
     pub cols: u16,
     pub rows: u16,
+}
+
+/// PTY allocation or shell spawn failed. Emitted once for the offending
+/// entity; the entity is despawned in the same system. Hosts can subscribe
+/// to surface a UI error or retry with a different `TerminalConfig`.
+#[derive(Message, Clone, Debug, Reflect)]
+pub struct TerminalSpawnFailed {
+    pub entity: Entity,
+    /// Human-readable error from the PTY backend / OS.
+    pub error: String,
 }
 
 /// OSC 7 — shell announced a new working directory.

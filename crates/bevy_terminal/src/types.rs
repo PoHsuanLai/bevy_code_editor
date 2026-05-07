@@ -16,7 +16,9 @@ use crate::backend;
 /// Spawn this on an entity to make it a terminal; the `#[require]`
 /// cascade brings in rendering substrate, selection state, terminal
 /// state, theme, and `Pickable` for mouse routing. PTY + child shell
-/// start in the `On<Add, BevyTerminal>` observer in `crate::session`.
+/// open lazily once `TextViewViewport` and `FontConfig` produce a
+/// non-zero (cols, rows), so the shell never renders a stale 80×24
+/// frame. Configure shell / argv / env / cwd via [`TerminalConfig`].
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 #[require(
@@ -44,6 +46,43 @@ use crate::backend;
     Pickable,
 )]
 pub struct BevyTerminal;
+
+/// Per-spawn shell configuration. Optional — omit and the session uses
+/// `$SHELL` (or `powershell.exe` on Windows), no extra args, the user's
+/// `$HOME` as cwd, and no environment overrides on top of the parent's.
+///
+/// Insert alongside `BevyTerminal` to override any subset of these:
+///
+/// ```rust,ignore
+/// commands.spawn((
+///     BevyTerminal,
+///     TerminalConfig {
+///         shell: Some("bash".into()),
+///         args: vec!["-l".into()],
+///         env: vec![("TERM".into(), "xterm-256color".into())],
+///         cwd: Some("/work".into()),
+///     },
+///     font,
+///     viewport,
+/// ));
+/// ```
+///
+/// Read once when the PTY is opened. Mutating fields after the session
+/// exists has no effect — despawn and respawn instead.
+#[derive(Component, Clone, Debug, Default, Reflect)]
+#[reflect(Component, Default)]
+pub struct TerminalConfig {
+    /// Program to launch. `None` → fall back to `$SHELL` (Unix) /
+    /// `powershell.exe` (Windows).
+    pub shell: Option<String>,
+    /// Arguments passed to the shell.
+    pub args: Vec<String>,
+    /// Environment overrides layered on top of the parent process's env.
+    /// Stored as a `Vec` rather than a `HashMap` to keep `Reflect` happy.
+    pub env: Vec<(String, String)>,
+    /// Working directory. `None` → `$HOME` on Unix, parent's cwd on Windows.
+    pub cwd: Option<String>,
+}
 
 #[derive(Component)]
 pub struct TerminalSession {

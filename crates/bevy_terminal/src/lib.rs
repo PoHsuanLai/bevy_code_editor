@@ -37,12 +37,13 @@ pub mod viewport;
 pub mod prelude {
     pub use crate::messages::*;
     pub use crate::plugin::{
-        BevyTerminalPlugin, TerminalApplyStateSet, TerminalPtyDrainSet, TerminalSnapshotSet,
+        BevyTerminalPlugin, BevyTerminalPlugins, TerminalApplyStateSet, TerminalPtyDrainSet,
+        TerminalSnapshotSet,
     };
     pub use crate::types::{
         BevyTerminal, BlockStatus, TerminalBlock, TerminalBlockState, TerminalColorPalette,
-        TerminalGridSnapshot, TerminalInputMode, TerminalScrollFollow, TerminalScrollback,
-        TerminalShellInfo,
+        TerminalConfig, TerminalGridSnapshot, TerminalInputMode, TerminalScrollFollow,
+        TerminalScrollback, TerminalShellInfo,
     };
     // Re-export the bits hosts need to spawn a styled BevyTerminal.
     pub use bevy_text_engine::{FontConfig, TextViewViewport};
