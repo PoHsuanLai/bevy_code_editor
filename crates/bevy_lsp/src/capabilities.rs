@@ -167,4 +167,112 @@ impl ServerCapabilities {
                 _ => false,
             })
     }
+
+    pub fn supports_declaration(&self) -> bool {
+        self.inner.as_ref().is_some_and(|c| c.declaration_provider.is_some())
+    }
+
+    pub fn supports_type_definition(&self) -> bool {
+        self.inner.as_ref().is_some_and(|c| c.type_definition_provider.is_some())
+    }
+
+    pub fn supports_implementation(&self) -> bool {
+        self.inner.as_ref().is_some_and(|c| c.implementation_provider.is_some())
+    }
+
+    pub fn supports_document_symbol(&self) -> bool {
+        self.inner
+            .as_ref()
+            .is_some_and(|c| match &c.document_symbol_provider {
+                Some(OneOf::Left(b)) => *b,
+                Some(OneOf::Right(_)) => true,
+                None => false,
+            })
+    }
+
+    pub fn supports_workspace_symbol(&self) -> bool {
+        self.inner
+            .as_ref()
+            .is_some_and(|c| c.workspace_symbol_provider.is_some())
+    }
+
+    pub fn supports_folding_range(&self) -> bool {
+        self.inner.as_ref().is_some_and(|c| c.folding_range_provider.is_some())
+    }
+
+    pub fn supports_selection_range(&self) -> bool {
+        self.inner.as_ref().is_some_and(|c| c.selection_range_provider.is_some())
+    }
+
+    pub fn supports_range_formatting(&self) -> bool {
+        self.inner
+            .as_ref()
+            .is_some_and(|c| match &c.document_range_formatting_provider {
+                Some(OneOf::Left(b)) => *b,
+                Some(OneOf::Right(_)) => true,
+                None => false,
+            })
+    }
+
+    pub fn supports_on_type_formatting(&self) -> bool {
+        self.inner
+            .as_ref()
+            .is_some_and(|c| c.document_on_type_formatting_provider.is_some())
+    }
+
+    pub fn supports_document_link(&self) -> bool {
+        self.inner.as_ref().is_some_and(|c| c.document_link_provider.is_some())
+    }
+
+    pub fn supports_document_color(&self) -> bool {
+        self.inner.as_ref().is_some_and(|c| c.color_provider.is_some())
+    }
+
+    pub fn supports_linked_editing_range(&self) -> bool {
+        self.inner.as_ref().is_some_and(|c| c.linked_editing_range_provider.is_some())
+    }
+
+    pub fn supports_moniker(&self) -> bool {
+        self.inner.as_ref().is_some_and(|c| c.moniker_provider.is_some())
+    }
+
+    pub fn supports_call_hierarchy(&self) -> bool {
+        self.inner.as_ref().is_some_and(|c| c.call_hierarchy_provider.is_some())
+    }
+
+    pub fn supports_semantic_tokens(&self) -> bool {
+        self.inner.as_ref().is_some_and(|c| c.semantic_tokens_provider.is_some())
+    }
+
+    pub fn supports_pull_diagnostics(&self) -> bool {
+        self.inner.as_ref().is_some_and(|c| c.diagnostic_provider.is_some())
+    }
+
+    /// Whether `textDocument/codeAction` results require a follow-up
+    /// `codeAction/resolve` for their edits.
+    pub fn supports_code_action_resolve(&self) -> bool {
+        self.inner
+            .as_ref()
+            .and_then(|c| c.code_action_provider.as_ref())
+            .and_then(|p| match p {
+                CodeActionProviderCapability::Options(opts) => opts.resolve_provider,
+                _ => None,
+            })
+            .unwrap_or(false)
+    }
+
+    /// Whether the server returns `textDocument/inlayHint` items that
+    /// need follow-up `inlayHint/resolve`.
+    pub fn supports_inlay_hint_resolve(&self) -> bool {
+        self.inner
+            .as_ref()
+            .and_then(|c| match c.inlay_hint_provider.as_ref()? {
+                OneOf::Right(InlayHintServerCapabilities::Options(opts)) => opts.resolve_provider,
+                OneOf::Right(InlayHintServerCapabilities::RegistrationOptions(opts)) => {
+                    opts.inlay_hint_options.resolve_provider
+                }
+                _ => None,
+            })
+            .unwrap_or(false)
+    }
 }

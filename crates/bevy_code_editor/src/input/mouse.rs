@@ -266,6 +266,7 @@ pub fn on_ctrl_click_goto_definition(
     lsp_client.send(LspMessage::GotoDefinition {
         uri: doc.uri.clone(),
         position: lsp_position,
+        id: 0,
     });
 }
 
@@ -401,6 +402,7 @@ pub fn tick_lsp_hover_timer(
         lsp_client.send(LspMessage::Hover {
             uri: doc.uri.clone(),
             position: lsp_position,
+            id: 0,
         });
         hover_state.request_sent = true;
         hover_state.pending_char_index = Some(current_char_pos);

@@ -179,6 +179,7 @@ pub fn listen_rename_requests(
         lsp_client.send(LspMessage::PrepareRename {
             uri: lsp_document.uri.clone(),
             position,
+            id: 0,
         });
     }
 }
@@ -351,6 +352,7 @@ pub fn tick_lsp_debounce_timers(
                 lsp_client.send(LspMessage::Hover {
                     uri: req.uri,
                     position: req.position,
+                    id: 0,
                 });
             }
         }

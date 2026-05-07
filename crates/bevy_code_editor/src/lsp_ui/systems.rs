@@ -626,6 +626,7 @@ pub fn request_inlay_hints(
     lsp_client.send(LspMessage::InlayHint {
         uri: lsp_document.uri.clone(),
         range,
+        id: 0,
     });
 
     hint_state.cached_range = Some(range);
@@ -778,6 +779,7 @@ pub fn request_document_highlights(
     lsp_client.send(LspMessage::DocumentHighlight {
         uri: lsp_document.uri.clone(),
         position,
+        id: 0,
     });
 }
 
@@ -792,6 +794,7 @@ pub fn request_prepare_rename(
         lsp_client.send(LspMessage::PrepareRename {
             uri: uri.clone(),
             position,
+            id: 0,
         });
     }
     // If server supports rename but not prepare, the caller handles the dialog directly.
@@ -811,6 +814,7 @@ pub fn execute_rename(
             uri: uri.clone(),
             position,
             new_name,
+            id: 0,
         });
     }
 }
