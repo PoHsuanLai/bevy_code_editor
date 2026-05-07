@@ -14,8 +14,9 @@ pub const ATLAS_SIZE: u32 = 2048;
 
 const GLYPH_PADDING: u32 = 2;
 
-/// Rasterize at 2x for crisp text on HiDPI displays.
-pub const DPI_SCALE: f32 = 2.0;
+/// Fallback supersampling factor when no window scale factor is available
+/// (e.g. headless tests). Matches the typical Retina display.
+pub const DEFAULT_RASTER_SCALE: f32 = 2.0;
 
 #[derive(Clone, Copy, Debug)]
 pub struct GlyphInfo {
@@ -69,6 +70,10 @@ pub struct GlyphAtlas {
     /// without an LRU. Workload is "scroll past lines once" — recency vs.
     /// frequency doesn't matter much at this size.
     shape_cache_order: VecDeque<u64>,
+    /// Glyph rasterization scale. Tracks the host window's scale_factor so
+    /// HiDPI displays get crisp text and 1x displays don't pay 4x atlas cost.
+    /// Synced each frame by `sync_atlas_scale` via [`GlyphAtlas::set_raster_scale`].
+    raster_scale: f32,
 }
 
 const SHAPE_CACHE_CAPACITY: usize = 8192;
@@ -129,6 +134,7 @@ impl GlyphAtlas {
             },
             shape_cache: HashMap::with_capacity(SHAPE_CACHE_CAPACITY),
             shape_cache_order: VecDeque::with_capacity(SHAPE_CACHE_CAPACITY),
+            raster_scale: DEFAULT_RASTER_SCALE,
         };
 
         atlas.reserve_solid_pixel();
@@ -329,6 +335,27 @@ impl GlyphAtlas {
         self.reserve_solid_pixel();
     }
 
+    /// Current glyph rasterization scale. Glyphs are rasterized at this factor
+    /// times the requested font size and rendered at logical (1x) size.
+    pub fn raster_scale(&self) -> f32 {
+        self.raster_scale
+    }
+
+    /// Set the rasterization scale and invalidate everything keyed on it.
+    /// `cosmic_text::CacheKey` bakes in the scale via `Glyph::physical`, so
+    /// both the glyph atlas cache and the shape cache must be cleared.
+    /// No-op if the scale is unchanged.
+    pub fn set_raster_scale(&mut self, scale: f32) {
+        let scale = scale.max(0.1);
+        if (self.raster_scale - scale).abs() < f32::EPSILON {
+            return;
+        }
+        self.raster_scale = scale;
+        self.shape_cache.clear();
+        self.shape_cache_order.clear();
+        self.clear();
+    }
+
     /// Reserve a 2×2 white pixel region for solid-fill backgrounds.
     fn reserve_solid_pixel(&mut self) {
         if let Some((sx, sy)) = self.allocate(2, 2) {
@@ -372,17 +399,39 @@ impl GlyphAtlas {
     }
 }
 
-/// Inserts [`GlyphAtlas`] at startup.
+/// Inserts [`GlyphAtlas`] at startup and keeps its raster scale synced to
+/// the primary window's `scale_factor` each frame.
 pub struct GlyphAtlasPlugin;
 
 impl Plugin for GlyphAtlasPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_glyph_atlas);
+        app.add_systems(Startup, setup_glyph_atlas)
+            .add_systems(PreUpdate, sync_atlas_scale);
     }
 }
 
-fn setup_glyph_atlas(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
-    commands.insert_resource(GlyphAtlas::new(&mut images));
+fn setup_glyph_atlas(
+    mut commands: Commands,
+    mut images: ResMut<Assets<Image>>,
+    windows: Query<&bevy::window::Window, With<bevy::window::PrimaryWindow>>,
+) {
+    let mut atlas = GlyphAtlas::new(&mut images);
+    if let Ok(window) = windows.single() {
+        atlas.set_raster_scale(window.scale_factor());
+    }
+    commands.insert_resource(atlas);
+}
+
+/// Mirror Bevy's own text pipeline (PR #16264): every frame, compare the
+/// primary window's `scale_factor` to the atlas's cached value and
+/// re-rasterize on mismatch. The setter short-circuits when stable.
+fn sync_atlas_scale(
+    atlas: Option<ResMut<GlyphAtlas>>,
+    windows: Query<&bevy::window::Window, With<bevy::window::PrimaryWindow>>,
+) {
+    let Some(mut atlas) = atlas else { return };
+    let Ok(window) = windows.single() else { return };
+    atlas.set_raster_scale(window.scale_factor());
 }
 
 pub use instanced_extensions::*;
@@ -515,8 +564,9 @@ mod instanced_extensions {
             } else {
                 let layout = &layout_lines[0];
                 let mut glyphs = Vec::with_capacity(layout.glyphs.len());
+                let scale = self.raster_scale;
                 for g in &layout.glyphs {
-                    let physical = g.physical((0.0, 0.0), DPI_SCALE);
+                    let physical = g.physical((0.0, 0.0), scale);
                     glyphs.push(ShapedGlyph {
                         x: g.x,
                         byte_index: g.start,
@@ -602,17 +652,17 @@ mod instanced_extensions {
                         (x + width as u32) as f32 / ATLAS_SIZE as f32,
                         (y + height as u32) as f32 / ATLAS_SIZE as f32,
                     ),
-                    size: Vec2::new(width as f32 / DPI_SCALE, height as f32 / DPI_SCALE),
+                    size: Vec2::new(width as f32 / self.raster_scale, height as f32 / self.raster_scale),
                     offset: Vec2::new(
-                        image.placement.left as f32 / DPI_SCALE,
-                        image.placement.top as f32 / DPI_SCALE,
+                        image.placement.left as f32 / self.raster_scale,
+                        image.placement.top as f32 / self.raster_scale,
                     ),
                     advance: 0.0,
                 };
 
                 let placement = PlacementInfo {
-                    left: image.placement.left as f32 / DPI_SCALE,
-                    top: image.placement.top as f32 / DPI_SCALE,
+                    left: image.placement.left as f32 / self.raster_scale,
+                    top: image.placement.top as f32 / self.raster_scale,
                 };
 
                 self.cache.insert(cache_key, glyph_info);

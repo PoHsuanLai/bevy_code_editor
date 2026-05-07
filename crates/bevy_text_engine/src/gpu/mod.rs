@@ -13,7 +13,7 @@ mod instanced_render;
 use bevy::prelude::*;
 
 pub use atlas::{
-    GlyphAtlas, GlyphAtlasPlugin, GlyphInfo, PlacementInfo, ATLAS_SIZE, DPI_SCALE,
+    GlyphAtlas, GlyphAtlasPlugin, GlyphInfo, PlacementInfo, ATLAS_SIZE, DEFAULT_RASTER_SCALE,
 };
 
 pub use instanced_render::{ExtractedTextGlobals, InstancedTextRenderPlugin};
