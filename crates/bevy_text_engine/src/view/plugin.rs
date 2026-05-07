@@ -101,7 +101,7 @@ impl Plugin for TextEnginePlugin {
 }
 
 /// Full bundle: [`GlyphAtlasPlugin`] + [`InstancedTextRenderPlugin`]
-/// + [`TextEnginePlugin`] + [`crate::ui::ScrollbarPlugin`].
+/// + [`TextEnginePlugin`].
 pub struct TextEnginePlugins;
 
 impl PluginGroup for TextEnginePlugins {
@@ -110,7 +110,6 @@ impl PluginGroup for TextEnginePlugins {
             .add(GlyphAtlasPlugin)
             .add(InstancedTextRenderPlugin)
             .add(TextEnginePlugin)
-            .add(crate::ui::ScrollbarPlugin)
     }
 }
 

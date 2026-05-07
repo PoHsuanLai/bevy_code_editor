@@ -67,10 +67,25 @@ impl Default for CursorSettings {
     }
 }
 
+/// Per-entity blink-phase timestamp.
+///
+/// The "did the cursor just move" detector is domain-specific (an editor
+/// watches a char offset; a terminal watches a grid cell), so each consumer
+/// runs its own detector and writes `last_change_secs = now_secs` whenever
+/// it sees a move. [`cursor_blink_visible`] reads this value to decide
+/// whether the caret is in the solid post-move window or in the regular
+/// blink phase.
+#[derive(Component, Default, Reflect)]
+#[reflect(Component, Default)]
+pub struct BlinkPhase {
+    pub last_change_secs: f64,
+}
+
 /// Returns whether the caret should be drawn this frame.
 ///
 /// `now_secs` is the current time (e.g., `time.elapsed_secs_f64()`).
-/// `last_move_secs` is when the cursor last moved (in the same clock).
+/// `last_move_secs` is when the cursor last moved (in the same clock) —
+/// typically [`BlinkPhase::last_change_secs`].
 /// `blink_rate` of `0.0` disables blinking — the caret stays visible.
 /// `pause_secs` is the post-move solid window before blinking resumes.
 pub fn cursor_blink_visible(

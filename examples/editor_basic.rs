@@ -129,9 +129,8 @@ fn update_cursor_icon(
         // Convert to world coordinates
         let cursor_x = cursor_pos.x - window.width() / 2.0;
 
-        // Calculate code area (from left edge to right before scrollbar)
         let viewport_width = viewport.width as f32;
-        let code_area_right = viewport_width / 2.0 - 20.0; // Leave some margin for scrollbar
+        let code_area_right = viewport_width / 2.0 - 20.0;
 
         // Show text cursor only over code area when focused
         let over_code = cursor_x < code_area_right;

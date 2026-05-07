@@ -11,6 +11,11 @@
 //!   `DisplayLayout`, `ShapedLine`, `StyleRun`, `RectOverlay`,
 //!   `render_layout`, `TextEnginePlugin`, `TextEnginePlugins`.
 //!
+//! Scroll *state* (offset, content size, viewport size) is exposed via
+//! `ScrollState` and `ContentMetrics` on each `TextView` entity. The engine
+//! does not render its own scrollbar — hosts wire up `bevy_ui` scrollbars,
+//! custom overlays, or no scrollbar at all.
+//!
 //! ## Quick start
 //!
 //! ```rust,no_run
@@ -24,17 +29,14 @@
 //! ```
 
 pub mod gpu;
-pub mod ui;
 pub mod view;
 
 pub use gpu::*;
-pub use ui::*;
 pub use view::*;
 
 pub mod prelude {
     //! Common types for spawning and rendering text views.
     pub use crate::gpu::{GlyphAtlasPlugin, InstancedTextRenderPlugin};
-    pub use crate::ui::{Scrollbar, ScrollbarOrientation, ScrollbarPlugin, ScrollbarState};
     pub use crate::view::{
         Block, BlockDecorTheme, BlockLayoutConfig, BlockList, ContentMetrics, DisplayLayout,
         FontConfig, FontSynthesis, HiddenLines, LayoutWrap, LineStyles, RenderTheme, RunWithText,

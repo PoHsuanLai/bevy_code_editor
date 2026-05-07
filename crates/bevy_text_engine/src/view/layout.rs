@@ -27,7 +27,7 @@ pub struct DisplayLayout {
     pub block_rects: Arc<Vec<BlockRect>>,
     /// Display row range covered by `lines` (absolute, into the full document).
     pub visible_rows: Range<u32>,
-    /// Total display row count for the entire document (for scrollbar sizing).
+    /// Total display row count for the entire document (for sizing external scroll UI).
     pub total_display_rows: u32,
     pub line_height: f32,
     /// Width of one column in pixels. Monospace assumption — for proportional fonts

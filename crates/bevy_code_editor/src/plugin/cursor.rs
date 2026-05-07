@@ -55,7 +55,6 @@ impl Plugin for CursorPlugin {
             .register_type::<crate::settings::IndentationSettings>()
             .register_type::<crate::settings::KeyRepeatSettings>()
             .register_type::<crate::settings::PerformanceSettings>()
-            .register_type::<crate::settings::ScrollbarSettings>()
             .register_type::<crate::settings::SyntaxTheme>()
             .register_type::<crate::settings::ThemeConfig>()
             .register_type::<crate::settings::UiSettings>()
@@ -77,15 +76,15 @@ impl Plugin for CursorPlugin {
 }
 
 /// Uses last_cursor_pos_for_blink (separate from last_cursor_pos) to avoid
-/// race conditions with auto_scroll_to_cursor
+/// race conditions with auto_scroll_to_cursor.
 pub(crate) fn track_cursor_movement(
-    mut editor_query: Query<&mut CursorState, With<CodeEditor>>,
+    mut editor_query: Query<(&mut CursorState, &mut bevy_text_editor::BlinkPhase), With<CodeEditor>>,
     time: Res<Time>,
 ) {
-    for mut cursor in editor_query.iter_mut() {
+    for (mut cursor, mut blink) in editor_query.iter_mut() {
         let current_pos = cursor.cursor_pos;
         if current_pos != cursor.last_cursor_pos_for_blink {
-            cursor.cursor_moved_time = time.elapsed_secs_f64();
+            blink.last_change_secs = time.elapsed_secs_f64();
             cursor.last_cursor_pos_for_blink = current_pos;
         }
     }
@@ -105,6 +104,7 @@ pub(crate) fn push_cursor_overlays(
         (
             &SelectionState,
             &CursorState,
+            &bevy_text_editor::BlinkPhase,
             &TextBuffer,
             &TextViewViewport,
             &mut TextViewOverlays,
@@ -118,8 +118,19 @@ pub(crate) fn push_cursor_overlays(
     >,
     time: Res<Time>,
 ) {
-    for (sel, cursor, buffer, _vp, mut overlays, fold_state, font, layout, theme, cursor_settings) in
-        editor_query.iter_mut()
+    for (
+        sel,
+        cursor,
+        blink,
+        buffer,
+        _vp,
+        mut overlays,
+        fold_state,
+        font,
+        layout,
+        theme,
+        cursor_settings,
+    ) in editor_query.iter_mut()
     {
         // Drain any caret rects from the previous frame. We mark them with
         // `z = +1` so we can identify them; selection rects use `z = -1` and
@@ -130,7 +141,7 @@ pub(crate) fn push_cursor_overlays(
             cursor_settings.blink_rate,
             cursor_settings.blink_pause_secs,
             time.elapsed_secs_f64(),
-            cursor.cursor_moved_time,
+            blink.last_change_secs,
         ) {
             overlays.version = overlays.version.wrapping_add(1);
             continue;

@@ -18,8 +18,6 @@ mod syntax;
 mod ui;
 mod wrapping;
 
-mod scrollbar;
-
 #[cfg(feature = "lsp")]
 mod lsp;
 
@@ -29,8 +27,6 @@ pub use performance::*;
 pub use syntax::*;
 pub use ui::*;
 pub use wrapping::*;
-
-pub use scrollbar::*;
 
 // Re-export hoisted timing primitives so existing callers keep importing
 // them through `crate::settings::*` and `crate::settings::KeyRepeatSettings`.

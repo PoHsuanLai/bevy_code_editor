@@ -1734,7 +1734,6 @@ dependencies = [
 name = "bevy_terminal"
 version = "0.1.0"
 dependencies = [
- "arboard",
  "bevy",
  "bevy_code_editor",
  "bevy_text_editor",

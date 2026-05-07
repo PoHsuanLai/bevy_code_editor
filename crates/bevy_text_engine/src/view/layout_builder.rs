@@ -380,9 +380,8 @@ pub(crate) fn build_display_layout(
             Arc::new(atlas.shape_line(shape_text, font.font_size, font_id))
         });
 
-        // Discover horizontal-scrollbar extent: track the widest shaped line
-        // seen so far. Producer-driven so the consumer reads real pixel
-        // widths.
+        // Track the widest shaped line so far so external scroll UI can read
+        // a real pixel extent rather than guessing from char counts.
         if let Some(s) = shape.as_ref() {
             if s.width > metrics.max_content_width {
                 metrics.max_content_width = s.width;
@@ -629,7 +628,7 @@ pub fn slice_runs(runs: &[StyleRun], range: std::ops::Range<usize>) -> Vec<Style
 }
 
 /// Cheap approximate display-row count for a buffer line. Used for
-/// off-screen row accounting (scrollbar sizing, scroll-offset →
+/// off-screen row accounting (sizing external scroll UI, scroll-offset →
 /// first-visible-row translation) without paying the cost of full shaping.
 pub fn approx_display_rows_for_line(
     rope: &ropey::Rope,

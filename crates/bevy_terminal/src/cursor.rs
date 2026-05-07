@@ -5,17 +5,17 @@
 //! ones (same convention the editor uses).
 
 use bevy::prelude::*;
-use bevy_text_editor::{caret_overlay, cursor_blink_visible, CursorSettings, EditTheme};
+use bevy_text_editor::{caret_overlay, cursor_blink_visible, BlinkPhase, CursorSettings, EditTheme};
 use bevy_text_engine::{FontConfig, TextViewOverlays};
 
 use crate::types::TerminalGridSnapshot;
 
-/// Per-terminal caret tracking: just the time of last cursor move so the
-/// blink helper has a phase reference. Cascaded onto every `BevyTerminal`.
+/// Per-terminal grid-cell cache used to detect cursor moves. Paired with
+/// [`bevy_text_editor::BlinkPhase`] on the same entity, which holds the
+/// shared timestamp the blink helper reads.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
-pub struct TerminalCursorBlink {
-    pub last_change_secs: f64,
+pub struct TerminalCursorCell {
     pub last_row: u32,
     pub last_col: u16,
 }
@@ -24,13 +24,13 @@ pub struct TerminalCursorBlink {
 /// editor's behavior: cursor stays solid for half a second after a move).
 pub fn track_cursor_blink(
     time: Res<Time>,
-    mut q: Query<(&TerminalGridSnapshot, &mut TerminalCursorBlink)>,
+    mut q: Query<(&TerminalGridSnapshot, &mut TerminalCursorCell, &mut BlinkPhase)>,
 ) {
-    for (snapshot, mut blink) in q.iter_mut() {
-        if snapshot.cursor_row != blink.last_row || snapshot.cursor_col != blink.last_col {
+    for (snapshot, mut cell, mut blink) in q.iter_mut() {
+        if snapshot.cursor_row != cell.last_row || snapshot.cursor_col != cell.last_col {
             blink.last_change_secs = time.elapsed_secs_f64();
-            blink.last_row = snapshot.cursor_row;
-            blink.last_col = snapshot.cursor_col;
+            cell.last_row = snapshot.cursor_row;
+            cell.last_col = snapshot.cursor_col;
         }
     }
 }
@@ -40,7 +40,7 @@ pub fn push_terminal_caret(
     time: Res<Time>,
     mut q: Query<(
         &TerminalGridSnapshot,
-        &TerminalCursorBlink,
+        &BlinkPhase,
         &FontConfig,
         &EditTheme,
         &CursorSettings,

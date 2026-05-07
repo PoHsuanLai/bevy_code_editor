@@ -9,7 +9,6 @@ pub mod folding;
 pub mod gpu_line_numbers;
 #[cfg(feature = "lsp")]
 pub mod lsp_plugin;
-pub mod scrollbar;
 pub mod syntax_highlighting;
 pub mod ui_elements;
 
@@ -20,8 +19,6 @@ pub use self::brackets::BracketPlugin;
 pub use self::cursor::CursorPlugin;
 pub use self::editor_ui_plugin::{EditorCamera, EditorUiPlugin};
 pub use self::folding::FoldingPlugin;
-pub use self::scrollbar::Scrollbar;
-pub use self::scrollbar::ScrollbarPlugin;
 
 // Re-export syntax highlighting resources publicly for external use
 pub use self::syntax_highlighting::{EditorSyntaxState, SyntaxPlugin};
@@ -86,7 +83,7 @@ pub struct EditorSetupSet;
 /// Editor systems plugin — just the editor's own resources, system sets,
 /// observers, and IDE-specific event/handler wiring. Does **not** add the
 /// engine GPU pipeline, the editable-text core, the input manager, or the
-/// editor sub-plugins (cursor / syntax / folding / brackets / scrollbar / UI).
+/// editor sub-plugins (cursor / syntax / folding / brackets / UI).
 ///
 /// Most hosts should use [`CodeEditorPlugins`] instead — the full bundle.
 /// `CodeEditorPlugin` is for hosts that compose their own version of those
@@ -121,7 +118,6 @@ impl Plugin for CodeEditorPlugin {
         app.init_resource::<CursorLineSettings>();
         app.init_resource::<PerformanceSettings>();
         app.init_resource::<WrappingSettings>();
-        app.init_resource::<ScrollbarSettings>();
         #[cfg(feature = "lsp")]
         app.init_resource::<LspSettings>();
 
@@ -240,8 +236,8 @@ impl Plugin for CodeEditorPlugin {
 
 /// Full editor bundle. Adds the engine GPU pipeline, the editable-text
 /// core, the input manager, [`CodeEditorPlugin`], and every editor sub-
-/// plugin (cursor / syntax / folding / brackets / scrollbar / UI / display
-/// map, plus LSP under the `lsp` feature).
+/// plugin (cursor / syntax / folding / brackets / UI / display map, plus
+/// LSP under the `lsp` feature).
 ///
 /// Disable individual plugins with `.build().disable::<EditorUiPlugin>()`
 /// when composing with hosts that own one of the dependencies directly.
@@ -253,7 +249,6 @@ impl PluginGroup for CodeEditorPlugins {
             .add(bevy_text_engine::gpu::GlyphAtlasPlugin)
             .add(bevy_text_engine::gpu::InstancedTextRenderPlugin)
             .add(bevy_text_engine::view::plugin::TextEnginePlugin)
-            .add(bevy_text_engine::ui::ScrollbarPlugin)
             .add(bevy::input_focus::InputDispatchPlugin)
             .add(bevy_text_editor::TextEditorPlugin::without_typing_observer())
             .add(leafwing_input_manager::plugin::InputManagerPlugin::<
@@ -264,7 +259,6 @@ impl PluginGroup for CodeEditorPlugins {
             .add(syntax_highlighting::SyntaxPlugin)
             .add(FoldingPlugin)
             .add(BracketPlugin)
-            .add(ScrollbarPlugin)
             .add(EditorUiPlugin)
             .add(crate::display_map::DisplayMapPlugin);
         #[cfg(feature = "lsp")]

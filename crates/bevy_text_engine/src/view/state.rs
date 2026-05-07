@@ -63,7 +63,7 @@ pub struct ScrollState {
     pub target_horizontal_scroll_offset: f32,
 }
 
-/// Recomputable layout cache — widest shaped line, used by the horizontal scrollbar.
+/// Recomputable layout cache — widest shaped line, used by external scroll UI to size horizontal extent.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 pub struct ContentMetrics {

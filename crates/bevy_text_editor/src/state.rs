@@ -32,13 +32,12 @@ pub struct SnapshotPreEdit;
 /// `cursor_pos` mirrors `selections.primary().head_offset()`; handlers mutate it
 /// during a keystroke and apply the full `SelectionCollection` update afterward.
 /// `last_cursor_pos` drives auto-scroll detection; `last_cursor_pos_for_blink`
-/// is tracked separately to avoid racing with the auto-scroll system.
+/// is tracked separately to avoid racing with the auto-scroll system, and is
+/// paired with the [`crate::BlinkPhase`] timestamp on the same entity.
 #[derive(Component)]
 pub struct CursorState {
     pub cursor_pos: usize,
     pub last_cursor_pos: usize,
-    /// Seconds since app start when cursor last moved; resets blink animation.
-    pub cursor_moved_time: f64,
     pub last_cursor_pos_for_blink: usize,
 }
 
@@ -47,7 +46,6 @@ impl Default for CursorState {
         Self {
             cursor_pos: 0,
             last_cursor_pos: 0,
-            cursor_moved_time: 0.0,
             last_cursor_pos_for_blink: 0,
         }
     }
@@ -155,6 +153,7 @@ impl Default for IndentConfig {
     TextViewDragState,
     ScrollConfig,
     crate::cursor_settings::CursorSettings,
+    crate::cursor_settings::BlinkPhase,
     crate::interaction::InteractionSettings,
 )]
 pub struct TextEditor;

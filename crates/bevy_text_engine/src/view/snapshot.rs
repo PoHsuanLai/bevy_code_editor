@@ -33,7 +33,7 @@ pub struct LineShape {
     pub glyphs: Vec<ShapedGlyph>,
     /// Total advance of the line in pixels — equals last glyph's pen-x + last advance.
     /// Consumed by the display-map producer to drive `ContentMetrics.max_content_width`
-    /// (the horizontal scrollbar's content extent).
+    /// (the horizontal content extent, exposed for external scroll UI).
     pub width: f32,
     /// Font size at which shaping was performed. Renderer compares against its own
     /// font_size and falls back to the char_width path on mismatch.

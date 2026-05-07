@@ -6,7 +6,7 @@ This is the middle layer in a three-tier stack:
 
 - [`bevy_text_engine`](../bevy_text_engine) — GPU rendering primitives.
 - **`bevy_text_editor`** — interaction + editable text widget (this crate).
-- [`bevy_code_editor`](../bevy_code_editor) — IDE features (multi-cursor, folding, brackets, line numbers, scrollbar UI, LSP UI, syntax highlighting).
+- [`bevy_code_editor`](../bevy_code_editor) — IDE features (multi-cursor, folding, brackets, line numbers, LSP UI, syntax highlighting).
 
 A search box, chat composer, or URL bar uses `TextEditorPlugin` and gets a working editable text field without dragging in the IDE features.
 

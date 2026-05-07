@@ -35,6 +35,7 @@ use crate::backend;
     bevy_text_editor::SelectionState,
     bevy_text_editor::EditTheme,
     bevy_text_editor::CursorSettings,
+    bevy_text_editor::BlinkPhase,
     bevy_text_editor::InteractionSettings,
     bevy_text_editor::ScrollConfig,
     TerminalGridSnapshot,
@@ -44,7 +45,7 @@ use crate::backend;
     TerminalColorPalette,
     TerminalScrollback,
     TerminalScrollFollow,
-    crate::cursor::TerminalCursorBlink,
+    crate::cursor::TerminalCursorCell,
     Pickable,
 )]
 pub struct BevyTerminal;

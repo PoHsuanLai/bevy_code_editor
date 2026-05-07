@@ -41,6 +41,8 @@ pub use state::{
     CursorState, EditDelta, EditHistoryState, EditPoint, IndentConfig, OnEdit, SelectionState,
     SnapshotPreEdit, TextEditor,
 };
-pub use cursor_settings::{caret_overlay, cursor_blink_visible, CursorSettings, CursorStyle};
+pub use cursor_settings::{
+    caret_overlay, cursor_blink_visible, BlinkPhase, CursorSettings, CursorStyle,
+};
 pub use key_repeat::{KeyRepeatSettings, KeyRepeatState};
 pub use theme::EditTheme;

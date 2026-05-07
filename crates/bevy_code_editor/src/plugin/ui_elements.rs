@@ -454,7 +454,7 @@ pub(crate) fn update_indent_guides(
 }
 
 /// Run condition: auto-scroll only fires for editors that have moved their
-/// cursor and aren't currently being mouse-dragged or scrollbar-dragged.
+/// cursor and aren't currently being mouse-dragged.
 ///
 /// Drag suppression is per-entity (Component) — dragging in editor A no
 /// longer blocks auto-scroll in editor B (the previous global Resource shape).
@@ -463,14 +463,13 @@ pub(crate) fn should_auto_scroll(
         (
             &TextBuffer,
             &CursorState,
-            &super::scrollbar::ScrollbarDragState,
             &bevy_text_editor::TextViewDragState,
         ),
         With<CodeEditor>,
     >,
 ) -> bool {
-    for (buffer, cursor, scrollbar_drag, mouse_drag) in editor_query.iter() {
-        if scrollbar_drag.is_dragging || mouse_drag.is_dragging {
+    for (buffer, cursor, mouse_drag) in editor_query.iter() {
+        if mouse_drag.is_dragging {
             continue;
         }
         let cursor_pos = cursor.cursor_pos.min(buffer.rope.len_chars());

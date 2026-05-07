@@ -163,7 +163,8 @@ impl Plugin for BevyTerminalPlugin {
                 .after(crate::snapshot::sync_grid_snapshot),
         );
 
-        app.register_type::<crate::cursor::TerminalCursorBlink>();
+        app.register_type::<crate::cursor::TerminalCursorCell>();
+        app.register_type::<bevy_text_editor::BlinkPhase>();
         app.add_systems(
             Update,
             (
@@ -182,8 +183,8 @@ impl Plugin for BevyTerminalPlugin {
 }
 
 /// Full bundle for embedders: registers `BevyTerminalPlugin` plus the
-/// supporting plugins terminals need (text engine GPU + view + scrollbar,
-/// input dispatch, text interaction). Mirrors `bevy_code_editor::CodeEditorPlugins`.
+/// supporting plugins terminals need (text engine GPU + view, input
+/// dispatch, text interaction). Mirrors `bevy_code_editor::CodeEditorPlugins`.
 ///
 /// Disable individual entries with `.build().disable::<T>()` when composing
 /// with hosts that already own one of the dependencies.
@@ -195,7 +196,6 @@ impl PluginGroup for BevyTerminalPlugins {
             .add(bevy_text_engine::gpu::GlyphAtlasPlugin)
             .add(bevy_text_engine::gpu::InstancedTextRenderPlugin)
             .add(bevy_text_engine::view::plugin::TextEnginePlugin)
-            .add(bevy_text_engine::ui::ScrollbarPlugin)
             .add(bevy::input_focus::InputDispatchPlugin)
             .add(bevy_text_editor::TextInteractionPlugin)
             .add(BevyTerminalPlugin)

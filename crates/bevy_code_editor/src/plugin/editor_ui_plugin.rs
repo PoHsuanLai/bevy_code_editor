@@ -5,10 +5,8 @@
 //! - Selection highlights
 //! - Cursor rendering and animation
 //! - Bracket matching highlights
-//! - Find/replace highlights
 //! - Indent guides
 //! - Fold indicators
-//! - Minimap
 //!
 //! This plugin is optional - users can implement their own UI by
 //! querying the editor state directly.
@@ -17,7 +15,7 @@ use bevy::prelude::*;
 use bevy_text_engine::FontConfig;
 
 use crate::settings::*;
-use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
+use crate::text_view::TextViewViewport;
 use crate::types::{CodeEditor, Separator, ViewportConfig};
 use bevy_camera::Viewport;
 
@@ -35,8 +33,6 @@ use bevy_text_engine::gpu::GlyphAtlas;
 use super::{update_bracket_highlight, update_bracket_match};
 
 use super::update_fold_indicators;
-
-use super::scrollbar::update_editor_scrollbar;
 
 /// Editor UI plugin: renders line numbers, separator, cursor, selection.
 /// Added automatically by `CodeEditorPlugin`.
@@ -121,25 +117,6 @@ impl Plugin for EditorUiPlugin {
                 .chain()
                 .after(update_indent_guides)
                 .in_set(super::RenderingSet),
-        );
-
-        // Editor scrollbar config update (feature-gated)
-        // Run when scroll/content changes, viewport resizes, or scrollbar settings change.
-        app.add_systems(
-            Update,
-            update_editor_scrollbar
-                .run_if(
-                    (|query: Query<
-                        (),
-                        (
-                            With<CodeEditor>,
-                            Or<(Changed<TextBuffer>, Changed<ScrollState>)>,
-                        ),
-                    >| { !query.is_empty() })
-                    .or(viewport_changed)
-                    .or(resource_changed::<ScrollbarSettings>),
-                )
-                .in_set(super::ApplyStateSet),
         );
 
         // Note: cursor systems (track_cursor_movement, update_cursor, animate_cursor)
