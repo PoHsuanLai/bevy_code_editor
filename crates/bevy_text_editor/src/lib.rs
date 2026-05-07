@@ -28,7 +28,7 @@ pub use edit::{point_at_byte, EditOutcome};
 pub use components::{ScrollConfig, TextViewDragState};
 pub use editing_events::*;
 pub use history::{EditHistory, EditKind, EditOperation, EditTransaction};
-pub use interaction::{copy_selection, screen_to_char_pos};
+pub use interaction::{copy_selection, screen_to_char_pos, InteractionSettings};
 pub use plugin::{EditEmitSet, TextEditorPlugin, TextInteractionPlugin};
 pub use selection::{
     Selection, SelectionCollection, SelectionMode, DEFAULT_SEMANTIC_ESCAPE_CHARS,

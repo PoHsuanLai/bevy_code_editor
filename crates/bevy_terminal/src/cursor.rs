@@ -57,6 +57,7 @@ pub fn push_terminal_caret(
         }
         if !cursor_blink_visible(
             cursor_settings.blink_rate,
+            cursor_settings.blink_pause_secs,
             time.elapsed_secs_f64(),
             blink.last_change_secs,
         ) {

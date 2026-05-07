@@ -37,6 +37,10 @@ pub struct CursorSettings {
     pub blink_rate: f32,
     pub smooth_animation: bool,
     pub animation_speed: f32,
+    /// Seconds the caret stays solid after the cursor moves before
+    /// resuming the blink animation. macOS uses ~0.5s, Windows ~0.53s,
+    /// GNOME ~1.2s — set to match the host platform's convention.
+    pub blink_pause_secs: f64,
     pub key_repeat: KeyRepeatSettings,
 }
 
@@ -57,28 +61,32 @@ impl Default for CursorSettings {
             blink_rate: 0.5,
             smooth_animation: true,
             animation_speed: 10.0,
+            blink_pause_secs: 0.5,
             key_repeat: KeyRepeatSettings::default(),
         }
     }
 }
-
-/// Half-second pause after movement before the caret begins blinking.
-const BLINK_PAUSE_SECS: f64 = 0.5;
 
 /// Returns whether the caret should be drawn this frame.
 ///
 /// `now_secs` is the current time (e.g., `time.elapsed_secs_f64()`).
 /// `last_move_secs` is when the cursor last moved (in the same clock).
 /// `blink_rate` of `0.0` disables blinking — the caret stays visible.
-pub fn cursor_blink_visible(blink_rate: f32, now_secs: f64, last_move_secs: f64) -> bool {
+/// `pause_secs` is the post-move solid window before blinking resumes.
+pub fn cursor_blink_visible(
+    blink_rate: f32,
+    pause_secs: f64,
+    now_secs: f64,
+    last_move_secs: f64,
+) -> bool {
     if blink_rate == 0.0 {
         return true;
     }
     let time_since_move = now_secs - last_move_secs;
-    if time_since_move < BLINK_PAUSE_SECS {
+    if time_since_move < pause_secs {
         return true;
     }
-    let blink_time = (time_since_move - BLINK_PAUSE_SECS) as f32;
+    let blink_time = (time_since_move - pause_secs) as f32;
     let phase = (blink_time * blink_rate) % 1.0;
     phase < 0.5
 }

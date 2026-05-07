@@ -128,6 +128,7 @@ pub(crate) fn push_cursor_overlays(
 
         if !bevy_text_editor::cursor_blink_visible(
             cursor_settings.blink_rate,
+            cursor_settings.blink_pause_secs,
             time.elapsed_secs_f64(),
             cursor.cursor_moved_time,
         ) {

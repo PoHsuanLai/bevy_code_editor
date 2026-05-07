@@ -18,7 +18,7 @@ use super::render::{render_layout, GlyphBatchComponent, TextViewBatch};
 use super::state::{ContentMetrics, ScrollState, TextBuffer};
 use super::styling::LayoutWrap;
 use super::theme::{BlockDecorTheme, RenderTheme};
-use super::tuning::TextEngineTuning;
+use super::tuning::LayoutTuning;
 use super::viewport::TextViewViewport;
 use crate::gpu::{atlas_ready, GlyphAtlas, GlyphAtlasPlugin, InstancedTextRenderPlugin};
 
@@ -41,6 +41,7 @@ pub struct TextViewRenderSet;
     TextViewOverlays,
     FontConfig,
     LayoutWrap,
+    LayoutTuning,
     bevy::picking::Pickable,
 )]
 pub struct TextView;
@@ -57,8 +58,7 @@ pub struct TextEnginePlugin;
 
 impl Plugin for TextEnginePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<TextEngineTuning>()
-            .register_type::<TextEngineTuning>();
+        app.register_type::<LayoutTuning>();
 
         app.register_type::<FontConfig>()
             .register_type::<super::overlay::RectOverlay>()

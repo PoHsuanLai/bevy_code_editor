@@ -32,7 +32,8 @@ pub struct TextInteractionPlugin;
 impl Plugin for TextInteractionPlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<ScrollConfig>()
-            .register_type::<TextViewDragState>();
+            .register_type::<TextViewDragState>()
+            .register_type::<crate::interaction::InteractionSettings>();
 
         if !app.is_plugin_added::<bevy::picking::PickingPlugin>() {
             app.add_plugins(DefaultPickingPlugins);

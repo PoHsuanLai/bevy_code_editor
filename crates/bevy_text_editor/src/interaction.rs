@@ -242,6 +242,7 @@ pub fn on_pointer_press(
             Option<&DisplayLayout>,
             Option<&mut SelectionState>,
             Option<&mut CursorState>,
+            Option<&InteractionSettings>,
         ),
         With<TextView>,
     >,
@@ -253,11 +254,12 @@ pub fn on_pointer_press(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((mut drag_state, buffer, scroll, viewport, font, layout, sel, cursor)) =
+    let Ok((mut drag_state, buffer, scroll, viewport, font, layout, sel, cursor, settings)) =
         views.get_mut(entity)
     else {
         return;
     };
+    let interaction = settings.copied().unwrap_or_default();
 
     let local_pos = match trigger.event().hit.position {
         Some(p) => Vec2::new(p.x, p.y),
@@ -290,13 +292,15 @@ pub fn on_pointer_press(
         return;
     }
 
-    // Click-count detection: same-position click within 0.5s bumps count.
+    // Click-count detection: same-position click within
+    // `interaction.multi_click_secs` bumps the count.
     let now = time.elapsed_secs_f64();
     let near_last = drag_state
         .last_press_pos
-        .map(|p| (p - local_pos).length() <= CLICK_RADIUS_PX)
+        .map(|p| (p - local_pos).length() <= interaction.multi_click_radius_px)
         .unwrap_or(false);
-    drag_state.click_count = if near_last && (now - drag_state.last_press_time) <= MULTI_CLICK_SECS
+    drag_state.click_count = if near_last
+        && (now - drag_state.last_press_time) <= interaction.multi_click_secs
     {
         (drag_state.click_count + 1).min(3)
     } else {
@@ -346,12 +350,31 @@ pub fn on_pointer_press(
     input_focus.set(entity);
 }
 
-/// Two consecutive clicks must fall within this window to count as a
-/// multi-click. Matches typical OS double-click thresholds.
-const MULTI_CLICK_SECS: f64 = 0.5;
-/// Two consecutive clicks must fall within this radius (viewport-local
-/// pixels) to count as a multi-click.
-const CLICK_RADIUS_PX: f32 = 4.0;
+/// Per-entity click-gesture tuning. Cascaded onto `TextView` via
+/// `#[require]`, so every interactive view starts with sensible defaults
+/// (~OS conventions). Override on spawn to fit the surface — touch-style
+/// chat panels want a larger `multi_click_radius_px` and longer
+/// `multi_click_secs` than a precision code editor.
+#[derive(Clone, Copy, Debug, Component, Reflect)]
+#[reflect(Component, Default, Debug)]
+pub struct InteractionSettings {
+    /// Two consecutive clicks must fall within this window to count as a
+    /// multi-click. Defaults to 0.5s — matches macOS / typical Linux DEs.
+    /// Windows uses ~0.53s; touch UIs may want 0.75s+.
+    pub multi_click_secs: f64,
+    /// Two consecutive clicks must fall within this radius (viewport-local
+    /// pixels) to count as a multi-click. Defaults to 4 px.
+    pub multi_click_radius_px: f32,
+}
+
+impl Default for InteractionSettings {
+    fn default() -> Self {
+        Self {
+            multi_click_secs: 0.5,
+            multi_click_radius_px: 4.0,
+        }
+    }
+}
 
 /// Drag observer: extend the selection while the primary button is held.
 ///

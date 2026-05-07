@@ -141,6 +141,7 @@ pub(crate) fn produce_layouts(
             Option<&HiddenLines>,
             Option<&LineStyles>,
             Option<&LayoutWrap>,
+            Option<&super::tuning::LayoutTuning>,
         ),
         // Block-driven entities have their layout written by
         // `produce_block_layout`; skip them here to avoid double-writes.
@@ -148,17 +149,26 @@ pub(crate) fn produce_layouts(
     >,
     mut atlas: ResMut<GlyphAtlas>,
     fonts: Res<Assets<bevy::text::Font>>,
-    tuning: Option<Res<super::tuning::TextEngineTuning>>,
     mut last_fingerprints: Local<HashMap<Entity, LayoutFingerprint>>,
 ) {
-    let buffer_lines = tuning
-        .as_deref()
-        .map(|t| t.viewport_buffer_lines)
-        .unwrap_or(VIEWPORT_BUFFER_LINES);
     let mut alive: std::collections::HashSet<Entity> = std::collections::HashSet::new();
-    for (entity, buffer, scroll, mut metrics, tv_viewport, font, mut layout, hidden, styles, wrap) in
-        q.iter_mut()
+    for (
+        entity,
+        buffer,
+        scroll,
+        mut metrics,
+        tv_viewport,
+        font,
+        mut layout,
+        hidden,
+        styles,
+        wrap,
+        tuning,
+    ) in q.iter_mut()
     {
+        let buffer_lines = tuning
+            .map(|t| t.viewport_buffer_lines)
+            .unwrap_or(VIEWPORT_BUFFER_LINES);
         alive.insert(entity);
         let wrap = wrap.copied().unwrap_or_default();
 

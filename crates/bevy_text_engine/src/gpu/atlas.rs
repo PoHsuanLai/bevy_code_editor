@@ -431,13 +431,8 @@ fn setup_glyph_atlas(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
     windows: Query<&bevy::window::Window, With<bevy::window::PrimaryWindow>>,
-    tuning: Option<Res<crate::view::tuning::TextEngineTuning>>,
 ) {
-    let cap = tuning
-        .as_deref()
-        .map(|t| t.shape_cache_capacity)
-        .unwrap_or(DEFAULT_SHAPE_CACHE_CAPACITY);
-    let mut atlas = GlyphAtlas::new_with_font_and_capacity(&mut images, None, cap);
+    let mut atlas = GlyphAtlas::new(&mut images);
     if let Ok(window) = windows.single() {
         atlas.set_raster_scale(window.scale_factor());
     }
