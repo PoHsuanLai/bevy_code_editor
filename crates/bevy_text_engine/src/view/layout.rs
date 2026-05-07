@@ -1,9 +1,4 @@
 //! `DisplayLayout` — the immutable, paint-ready snapshot the renderer consumes.
-//!
-//! The Warp insight: a frame's render is a pure function of its layout. We get
-//! cheap "nothing changed" by comparing `Arc::ptr_eq(&prev.lines, &next.lines)`
-//! and skipping the GPU upload entirely. Scroll-only updates bump
-//! `scroll_version` but reuse the same `lines` Arc.
 
 use bevy::prelude::*;
 use std::ops::Range;
