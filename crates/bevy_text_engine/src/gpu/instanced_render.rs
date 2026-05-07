@@ -1,4 +1,25 @@
-//! GPU instanced text rendering. Based on Bevy's custom_shader_instancing example.
+//! GPU instanced text rendering.
+//!
+//! Architecture: each `TextView` owns a "batch entity" carrying a
+//! `GlyphBatchComponent` (per-glyph instance buffer + atlas handle). A
+//! `SpecializedRenderPipeline` configures:
+//!
+//! - bind group 0 = `Mesh2dPipeline`'s view bind group (view-projection)
+//! - bind group 1 = atlas texture + sampler
+//! - vertex buffer 0 = per-instance glyph attributes (one entry per glyph)
+//!
+//! The vertex shader expands a unit quad from `vertex_index` per glyph and
+//! projects directly through `view.clip_from_world`. Glyph positions are
+//! emitted by `render_layout` in world-space pixels — the editor's camera
+//! positions itself so the panel's top-left sits at world (0, 0).
+//!
+//! Note: this pipeline does NOT integrate with `Mesh2dPipeline`'s per-mesh
+//! bind group (which would let entities have their own `Transform`). That
+//! integration uses `@builtin(instance_index)` to index into a per-entity
+//! transform array, which conflicts with our per-glyph instancing — every
+//! glyph would index a different entity slot. Skipping the per-mesh
+//! transform keeps the engine's instancing model intact at the cost of
+//! losing per-entity positioning.
 
 use bevy::{
     core_pipeline::core_2d::{Transparent2d, CORE_2D_DEPTH_FORMAT},
@@ -6,6 +27,7 @@ use bevy::{
         query::QueryItem,
         system::{lifetimeless::*, SystemParamItem},
     },
+    math::FloatOrd,
     mesh::VertexBufferLayout,
     prelude::*,
     render::{
@@ -15,12 +37,22 @@ use bevy::{
             AddRenderCommand, DrawFunctions, PhaseItem, PhaseItemExtraIndex, RenderCommand,
             RenderCommandResult, SetItemPipeline, TrackedRenderPass, ViewSortedRenderPhases,
         },
-        render_resource::{binding_types::*, ShaderType, *},
+        render_resource::{
+            binding_types::*, BindGroup, BindGroupEntries, BindGroupLayoutDescriptor,
+            BindGroupLayoutEntries, BlendState, Buffer, BufferInitDescriptor, BufferUsages,
+            ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState,
+            FragmentState, MultisampleState, PipelineCache, PrimitiveState, PrimitiveTopology,
+            RenderPipelineDescriptor, SamplerBindingType, ShaderStages, SpecializedRenderPipeline,
+            SpecializedRenderPipelines, StencilFaceState, StencilState, TextureFormat,
+            TextureSampleType, VertexAttribute, VertexFormat, VertexState, VertexStepMode,
+        },
         renderer::RenderDevice,
+        sync_world::MainEntity,
         texture::GpuImage,
-        view::ExtractedView,
+        view::{ExtractedView, ViewTarget},
         Render, RenderApp, RenderSystems,
     },
+    sprite_render::{Mesh2dPipeline, Mesh2dPipelineKey, SetMesh2dViewBindGroup},
 };
 
 use bevy_camera::visibility::RenderLayers;
@@ -35,11 +67,6 @@ impl Plugin for InstancedTextRenderPlugin {
 
         app.add_plugins(ExtractComponentPlugin::<GlyphBatchComponent>::default());
 
-        // The engine does not register an extractor for `ExtractedTextGlobals`;
-        // the orthographic path in `prepare_view_bind_group` derives viewport
-        // and scroll from the projection matrix. Consumers that need to
-        // override that can register their own extract system writing to the
-        // resource.
         let render_app = app.sub_app_mut(RenderApp);
 
         render_app
@@ -50,9 +77,6 @@ impl Plugin for InstancedTextRenderPlugin {
                 (
                     init_instanced_text_pipeline
                         .run_if(not(resource_exists::<InstancedTextPipeline>)),
-                    prepare_view_bind_group
-                        .run_if(resource_exists::<InstancedTextPipeline>)
-                        .in_set(RenderSystems::PrepareResources),
                     queue_instanced_text
                         .run_if(resource_exists::<InstancedTextPipeline>)
                         .in_set(RenderSystems::QueueMeshes),
@@ -78,23 +102,6 @@ impl ExtractComponent for GlyphBatchComponent {
     }
 }
 
-#[derive(Component, Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable, ShaderType)]
-#[repr(C)]
-struct TextGlobals {
-    viewport_size: Vec2,
-    scroll_offset: Vec2,
-}
-
-/// Render-world override for per-view scroll offset / viewport size when a
-/// consumer needs to bypass the projection-matrix path used by
-/// `prepare_view_bind_group`. Optional; if absent, the orthographic path
-/// derives both from `ExtractedView`.
-#[derive(Resource)]
-pub struct ExtractedTextGlobals {
-    pub scroll_offset: Vec2,
-    pub viewport_size: Vec2,
-}
-
 #[derive(Component)]
 pub struct InstanceBuffer {
     pub buffer: Buffer,
@@ -106,75 +113,6 @@ pub struct TextureBindGroup {
     pub bind_group: BindGroup,
 }
 
-/// Prepare view bind group — each view gets its own TextGlobals derived from its projection.
-///
-/// For orthographic cameras (code editor, chat), the viewport size is derived from the
-/// projection matrix: width = 2/m[0][0], height = 2/m[1][1]. This gives the logical
-/// viewport size matching ScalingMode::Fixed, so each camera gets correct NDC conversion.
-fn prepare_view_bind_group(
-    mut commands: Commands,
-    pipeline: Res<InstancedTextPipeline>,
-    pipeline_cache: Res<PipelineCache>,
-    render_device: Res<RenderDevice>,
-    views: Query<(Entity, &ExtractedView)>,
-    globals: Option<Res<ExtractedTextGlobals>>,
-) {
-    let view_layout = pipeline_cache.get_bind_group_layout(&pipeline.view_bind_group_layout);
-    for (entity, view) in &views {
-        let m = &view.clip_from_view;
-        let is_ortho = (m.w_axis.w - 1.0).abs() < 0.001;
-
-        let (scroll_offset, viewport_size) = if is_ortho {
-            // Derive logical viewport from orthographic projection matrix
-            let width = 2.0 / m.x_axis.x;
-            let height = 2.0 / m.y_axis.y;
-            // Use extracted scroll offset if this matches the code editor's viewport
-            let scroll = if let Some(ref g) = globals {
-                if (g.viewport_size.x - width).abs() < 1.0
-                    && (g.viewport_size.y - height).abs() < 1.0
-                {
-                    g.scroll_offset
-                } else {
-                    Vec2::ZERO
-                }
-            } else {
-                Vec2::ZERO
-            };
-            (scroll, Vec2::new(width, height))
-        } else if let Some(ref g) = globals {
-            // Non-ortho fallback: use extracted globals (legacy)
-            (g.scroll_offset, g.viewport_size)
-        } else {
-            let physical = view.viewport.zw().as_vec2();
-            (Vec2::ZERO, physical)
-        };
-
-        let globals_data = TextGlobals {
-            viewport_size,
-            scroll_offset,
-        };
-
-        let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("text_globals_buffer"),
-            contents: bytemuck::bytes_of(&globals_data),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
-
-        let bind_group = render_device.create_bind_group(
-            "text_view_bind_group",
-            &view_layout,
-            &[BindGroupEntry {
-                binding: 0,
-                resource: buffer.as_entire_binding(),
-            }],
-        );
-
-        commands
-            .entity(entity)
-            .insert(TextViewBindGroup { bind_group });
-    }
-}
-
 fn prepare_instance_buffers(
     mut commands: Commands,
     query: Query<(Entity, &GlyphBatchComponent)>,
@@ -183,32 +121,13 @@ fn prepare_instance_buffers(
     pipeline_cache: Res<PipelineCache>,
     gpu_images: Res<RenderAssets<GpuImage>>,
 ) {
-    let texture_layout =
-        pipeline_cache.get_bind_group_layout(&pipeline.texture_bind_group_layout);
-    // We now expect multiple batches (main text + line numbers), so no warning needed.
-    // let batch_count = query.iter().count();
-    // if batch_count > 1 {
-    //     warn!("WARNING: Multiple batch entities detected in render world: {}", batch_count);
-    // }
+    let atlas_layout =
+        pipeline_cache.get_bind_group_layout(&pipeline.atlas_bind_group_layout);
 
     for (entity, batch) in &query {
         if batch.instances.is_empty() {
-            // Remove stale InstanceBuffer so the draw command skips this entity
             commands.entity(entity).remove::<InstanceBuffer>();
             continue;
-        }
-
-        use std::sync::atomic::{AtomicBool, Ordering};
-        static BUFFER_LOGGED: AtomicBool = AtomicBool::new(false);
-        if !BUFFER_LOGGED.swap(true, Ordering::Relaxed) {
-            info!("Preparing {} instances", batch.instances.len());
-            if let Some(first) = batch.instances.first() {
-                info!("First instance in buffer: pos=({}, {}), uv_min=({}, {}), uv_max=({}, {}), size=({}, {})",
-                    first.position.x, first.position.y,
-                    first.uv_min.x, first.uv_min.y,
-                    first.uv_max.x, first.uv_max.y,
-                    first.size.x, first.size.y);
-            }
         }
 
         let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
@@ -224,38 +143,36 @@ fn prepare_instance_buffers(
 
         if let Some(gpu_image) = gpu_images.get(&batch.atlas_texture) {
             let bind_group = render_device.create_bind_group(
-                "text_texture_bind_group",
-                &texture_layout,
+                "text_atlas_bind_group",
+                &atlas_layout,
                 &BindGroupEntries::sequential((&gpu_image.texture_view, &gpu_image.sampler)),
             );
 
             commands
                 .entity(entity)
                 .insert(TextureBindGroup { bind_group });
-        } else {
-            warn!("Atlas texture not found in RenderAssets!");
         }
     }
 }
 
-#[derive(Resource)]
+#[derive(Resource, Clone)]
 pub struct InstancedTextPipeline {
+    view_layout: BindGroupLayoutDescriptor,
     shader: Handle<Shader>,
-    view_bind_group_layout: BindGroupLayoutDescriptor,
-    texture_bind_group_layout: BindGroupLayoutDescriptor,
+    atlas_bind_group_layout: BindGroupLayoutDescriptor,
 }
 
-fn init_instanced_text_pipeline(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let view_bind_group_layout = BindGroupLayoutDescriptor::new(
-        "text_view_layout",
-        &BindGroupLayoutEntries::sequential(
-            ShaderStages::VERTEX_FRAGMENT,
-            (uniform_buffer::<TextGlobals>(false),),
-        ),
-    );
+fn init_instanced_text_pipeline(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mesh2d_pipeline: Option<Res<Mesh2dPipeline>>,
+) {
+    let Some(mesh2d_pipeline) = mesh2d_pipeline else {
+        return;
+    };
 
-    let texture_bind_group_layout = BindGroupLayoutDescriptor::new(
-        "text_texture_layout",
+    let atlas_bind_group_layout = BindGroupLayoutDescriptor::new(
+        "text_atlas_layout",
         &BindGroupLayoutEntries::sequential(
             ShaderStages::FRAGMENT,
             (
@@ -268,19 +185,18 @@ fn init_instanced_text_pipeline(mut commands: Commands, asset_server: Res<AssetS
     let shader = bevy::asset::load_embedded_asset!(asset_server.as_ref(), "text.wgsl");
 
     commands.insert_resource(InstancedTextPipeline {
+        view_layout: mesh2d_pipeline.view_layout.clone(),
         shader,
-        view_bind_group_layout,
-        texture_bind_group_layout,
+        atlas_bind_group_layout,
     });
 }
 
 impl SpecializedRenderPipeline for InstancedTextPipeline {
-    type Key = u32; // MSAA sample count
+    type Key = Mesh2dPipelineKey;
 
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
-        // Instance buffer layout. Offsets match the field order in
-        // `GlyphInstance` (`view::render`); see that struct for the
-        // semantic meaning of each attribute.
+        // Buffer 0: per-glyph instance attributes. Locations 0..=7 match
+        // the field order of `GlyphInstance` in `view::render`.
         let instance_layout = VertexBufferLayout {
             array_stride: std::mem::size_of::<GlyphInstance>() as u64,
             step_mode: VertexStepMode::Instance,
@@ -315,7 +231,7 @@ impl SpecializedRenderPipeline for InstancedTextPipeline {
                     offset: 32,
                     shader_location: 4,
                 },
-                // corner_radii (vec4: [tl, tr, bl, br])
+                // corner_radii (vec4)
                 VertexAttribute {
                     format: VertexFormat::Float32x4,
                     offset: 48,
@@ -336,6 +252,12 @@ impl SpecializedRenderPipeline for InstancedTextPipeline {
             ],
         };
 
+        let format = if key.contains(Mesh2dPipelineKey::HDR) {
+            ViewTarget::TEXTURE_FORMAT_HDR
+        } else {
+            TextureFormat::bevy_default()
+        };
+
         RenderPipelineDescriptor {
             vertex: VertexState {
                 shader: self.shader.clone(),
@@ -348,14 +270,14 @@ impl SpecializedRenderPipeline for InstancedTextPipeline {
                 shader_defs: vec![],
                 entry_point: Some("fragment".into()),
                 targets: vec![Some(ColorTargetState {
-                    format: TextureFormat::bevy_default(),
+                    format,
                     blend: Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                     write_mask: ColorWrites::ALL,
                 })],
             }),
             layout: vec![
-                self.view_bind_group_layout.clone(),
-                self.texture_bind_group_layout.clone(),
+                self.view_layout.clone(),
+                self.atlas_bind_group_layout.clone(),
             ],
             primitive: PrimitiveState {
                 topology: PrimitiveTopology::TriangleList,
@@ -379,7 +301,7 @@ impl SpecializedRenderPipeline for InstancedTextPipeline {
                 },
             }),
             multisample: MultisampleState {
-                count: key,
+                count: key.msaa_samples(),
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
@@ -390,51 +312,59 @@ impl SpecializedRenderPipeline for InstancedTextPipeline {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn queue_instanced_text(
     transparent_2d_draw_functions: Res<DrawFunctions<Transparent2d>>,
     instanced_text_pipeline: Res<InstancedTextPipeline>,
     mut pipelines: ResMut<SpecializedRenderPipelines<InstancedTextPipeline>>,
     pipeline_cache: Res<PipelineCache>,
-    batches: Query<(Entity, Option<&GlobalTransform>, &GlyphBatchComponent)>,
+    batches: Query<(
+        Entity,
+        &MainEntity,
+        Option<&GlobalTransform>,
+        &GlyphBatchComponent,
+    )>,
     mut transparent_render_phases: ResMut<ViewSortedRenderPhases<Transparent2d>>,
-    views: Query<(Entity, &ExtractedView, Option<&RenderLayers>)>,
+    views: Query<(Entity, &ExtractedView, &Msaa, Option<&RenderLayers>)>,
 ) {
     let draw_function = transparent_2d_draw_functions
         .read()
         .id::<DrawInstancedText>();
 
-    for (_view_entity, view, view_layers) in &views {
-        let view_render_layers = view_layers.cloned().unwrap_or(RenderLayers::layer(0));
-
+    for (_view_entity, view, msaa, view_layers) in &views {
         let Some(transparent_phase) = transparent_render_phases.get_mut(&view.retained_view_entity)
         else {
             continue;
         };
 
-        let pipeline_id = pipelines.specialize(&pipeline_cache, &instanced_text_pipeline, 4);
+        let view_render_layers = view_layers.cloned().unwrap_or_default();
 
-        for (entity, global_transform, batch) in &batches {
-            // Filter: only queue batches visible to this view's render layers.
-            // None = no explicit layer = visible to all cameras (skip filtering).
+        let view_key = Mesh2dPipelineKey::from_msaa_samples(msaa.samples())
+            | Mesh2dPipelineKey::from_hdr(view.hdr);
+
+        let pipeline_id =
+            pipelines.specialize(&pipeline_cache, &instanced_text_pipeline, view_key);
+
+        for (entity, main_entity, global_transform, batch) in &batches {
+            // Filter by render layer.
             if let Some(layer) = batch.render_layer {
-                let batch_render_layers = RenderLayers::layer(layer as usize);
-                if !view_render_layers.intersects(&batch_render_layers) {
+                let batch_layers = RenderLayers::layer(layer as usize);
+                if !view_render_layers.intersects(&batch_layers) {
                     continue;
                 }
             }
 
-            // Higher Z renders on top (later in the sorted phase).
             let z = global_transform.map(|t| t.translation().z).unwrap_or(0.0);
 
             transparent_phase.add(Transparent2d {
-                entity: (entity, entity.into()),
+                entity: (entity, *main_entity),
                 pipeline: pipeline_id,
                 draw_function,
-                sort_key: bevy::math::FloatOrd(z),
+                sort_key: FloatOrd(z),
                 batch_range: 0..1,
                 extra_index: PhaseItemExtraIndex::None,
                 extracted_index: usize::MAX,
-                indexed: false, // draw() not draw_indexed()
+                indexed: false,
             });
         }
     }
@@ -442,38 +372,14 @@ fn queue_instanced_text(
 
 type DrawInstancedText = (
     SetItemPipeline,
-    SetViewBindGroup<0>,
-    SetTextureBindGroup<1>,
-    DrawGlyphInstances,
+    SetMesh2dViewBindGroup<0>,
+    SetAtlasBindGroup<1>,
+    DrawTextInstanced,
 );
 
-struct SetViewBindGroup<const I: usize>;
+struct SetAtlasBindGroup<const I: usize>;
 
-impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetViewBindGroup<I> {
-    type Param = ();
-    type ViewQuery = Read<TextViewBindGroup>;
-    type ItemQuery = ();
-
-    fn render<'w>(
-        _item: &P,
-        view_bind_group: &'w TextViewBindGroup,
-        _query: Option<()>,
-        _param: SystemParamItem<'w, '_, Self::Param>,
-        pass: &mut TrackedRenderPass<'w>,
-    ) -> RenderCommandResult {
-        pass.set_bind_group(I, &view_bind_group.bind_group, &[]);
-        RenderCommandResult::Success
-    }
-}
-
-#[derive(Component)]
-struct TextViewBindGroup {
-    bind_group: BindGroup,
-}
-
-struct SetTextureBindGroup<const I: usize>;
-
-impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetTextureBindGroup<I> {
+impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetAtlasBindGroup<I> {
     type Param = ();
     type ViewQuery = ();
     type ItemQuery = Read<TextureBindGroup>;
@@ -481,22 +387,21 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetTextureBindGroup<I> {
     fn render<'w>(
         _item: &P,
         _view: (),
-        texture_bind_group: Option<&'w TextureBindGroup>,
+        atlas_bind_group: Option<&'w TextureBindGroup>,
         _param: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
-        let Some(texture_bind_group) = texture_bind_group else {
+        let Some(bg) = atlas_bind_group else {
             return RenderCommandResult::Skip;
         };
-
-        pass.set_bind_group(I, &texture_bind_group.bind_group, &[]);
+        pass.set_bind_group(I, &bg.bind_group, &[]);
         RenderCommandResult::Success
     }
 }
 
-struct DrawGlyphInstances;
+struct DrawTextInstanced;
 
-impl<P: PhaseItem> RenderCommand<P> for DrawGlyphInstances {
+impl<P: PhaseItem> RenderCommand<P> for DrawTextInstanced {
     type Param = ();
     type ViewQuery = ();
     type ItemQuery = Read<InstanceBuffer>;
@@ -511,23 +416,14 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGlyphInstances {
         let Some(instance_buffer) = instance_buffer else {
             return RenderCommandResult::Skip;
         };
-
         if instance_buffer.length == 0 {
             return RenderCommandResult::Skip;
         }
 
-        use std::sync::atomic::{AtomicBool, Ordering};
-        static DRAW_LOGGED: AtomicBool = AtomicBool::new(false);
-        if !DRAW_LOGGED.swap(true, Ordering::Relaxed) {
-            bevy::log::info!(
-                "DrawGlyphInstances: drawing {} instances, buffer size: {} bytes",
-                instance_buffer.length,
-                instance_buffer.buffer.size()
-            );
-        }
-
+        // The shader expands a unit quad from `vertex_index`, six vertices
+        // per glyph via the triangle-list `0,1,2, 3,4,5` winding mapped
+        // onto BL,BR,TL, TL,BR,TR.
         pass.set_vertex_buffer(0, instance_buffer.buffer.slice(..));
-        // 6 vertices per quad (triangle list), no mesh needed.
         pass.draw(0..6, 0..instance_buffer.length as u32);
 
         RenderCommandResult::Success

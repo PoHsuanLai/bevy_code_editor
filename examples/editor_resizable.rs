@@ -148,9 +148,13 @@ fn setup(
     };
 
     // Set initial viewport position (left/top of panel in window coords).
-    // Both rendering origin and hit-test position track the panel's screen edge.
+    // The TextView entity's `Transform` is now the layout origin — the
+    // engine no longer tracks viewport.origin. Hit-test position still
+    // lives on the viewport.
     let panel_pos = bevy::math::Vec2::new(panel.left, panel.top);
-    viewport.origin = bevy_text_engine::ViewportOrigin::ScreenAbsolute(panel_pos);
+    commands
+        .entity(entity)
+        .insert(Transform::from_translation(panel_pos.extend(0.0)));
     viewport.hit_test_position = panel_pos;
 
     // Spawn 4 border sprites (top, bottom, left, right)

@@ -86,6 +86,10 @@ name = "editor_basic"
 path = "editor_basic.rs"
 
 [[example]]
+name = "editor_screenshot"
+path = "editor_screenshot.rs"
+
+[[example]]
 name = "editor_gpu_text"
 path = "editor_gpu_text.rs"
 

@@ -17,7 +17,7 @@ pub use atlas::{
     DEFAULT_SHAPE_CACHE_CAPACITY,
 };
 
-pub use instanced_render::{ExtractedTextGlobals, InstancedTextRenderPlugin};
+pub use instanced_render::InstancedTextRenderPlugin;
 
 /// System condition: true once the glyph atlas resource exists.
 pub fn atlas_ready(atlas: Option<Res<GlyphAtlas>>) -> bool {

@@ -192,6 +192,13 @@ pub(crate) fn update_bracket_highlight(
             ];
 
             for (bracket_idx, &bracket_pos) in positions.iter().enumerate() {
+                // BracketMatchState may carry stale positions from a previous
+                // frame's rope (e.g., after the user deletes the whole buffer
+                // before update_bracket_match has run). Guard against
+                // out-of-bounds reads against the live rope.
+                if bracket_pos >= buffer.rope.len_chars() {
+                    continue;
+                }
                 let line_idx = buffer.rope.char_to_line(bracket_pos);
 
                 if fold_state.is_line_hidden(line_idx) {

@@ -21,7 +21,77 @@ fn main() {
         .add_plugins(CodeEditorPlugins)
         .add_systems(Startup, setup_camera)
         .add_systems(PostStartup, setup_editor_with_treesitter)
+        .add_systems(Update, debug_toggles)
         .run();
+}
+
+/// Debug actions on mouse-button input.
+///
+/// - Mouse Back  : toggle main text batch visibility
+/// - Mouse Forward : toggle line-numbers GPU batch visibility
+/// - Middle click : dump every glyph instance (position/size/uv) to stderr
+fn debug_toggles(
+    mouse: Res<ButtonInput<MouseButton>>,
+    mut text_batches: Query<
+        &mut Visibility,
+        (
+            With<bevy_text_engine::view::render::GlyphBatchComponent>,
+            Without<bevy_code_editor::plugin::gpu_line_numbers::GpuLineNumbersBatch>,
+        ),
+    >,
+    mut line_batches: Query<
+        &mut Visibility,
+        With<bevy_code_editor::plugin::gpu_line_numbers::GpuLineNumbersBatch>,
+    >,
+    all_batches: Query<(
+        Entity,
+        Option<&Name>,
+        &bevy_text_engine::view::render::GlyphBatchComponent,
+    )>,
+) {
+    if mouse.just_pressed(MouseButton::Back) {
+        for mut vis in text_batches.iter_mut() {
+            *vis = match *vis {
+                Visibility::Hidden => Visibility::Visible,
+                _ => Visibility::Hidden,
+            };
+        }
+        eprintln!("[debug] toggled main text batch visibility");
+    }
+
+    if mouse.just_pressed(MouseButton::Forward) {
+        for mut vis in line_batches.iter_mut() {
+            *vis = match *vis {
+                Visibility::Hidden => Visibility::Visible,
+                _ => Visibility::Hidden,
+            };
+        }
+        eprintln!("[debug] toggled line-numbers batch visibility");
+    }
+
+    if mouse.just_pressed(MouseButton::Middle) {
+        for (e, name, batch) in all_batches.iter() {
+            let label = name.map(|n| n.as_str()).unwrap_or("<unnamed>");
+            eprintln!(
+                "[debug] batch {:?} '{}' — {} instances",
+                e,
+                label,
+                batch.instances.len()
+            );
+            for (i, inst) in batch.instances.iter().enumerate() {
+                eprintln!(
+                    "  [{:>4}] pos=({:>8.2},{:>8.2}) size=({:>6.2},{:>6.2}) uv=({:.4},{:.4})..({:.4},{:.4}) z={} color=[{:.2},{:.2},{:.2},{:.2}]",
+                    i,
+                    inst.position.x, inst.position.y,
+                    inst.size.x, inst.size.y,
+                    inst.uv_min.x, inst.uv_min.y,
+                    inst.uv_max.x, inst.uv_max.y,
+                    inst.z_index,
+                    inst.color[0], inst.color[1], inst.color[2], inst.color[3],
+                );
+            }
+        }
+    }
 }
 
 fn setup_camera(mut commands: Commands) {

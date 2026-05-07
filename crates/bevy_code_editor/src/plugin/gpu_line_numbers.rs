@@ -162,11 +162,17 @@ pub(crate) fn update_gpu_line_numbers(
             break;
         }
 
-        // Calculate base Y position with baseline offset to match main text
+        // Calculate base Y position. Mirrors the main-text formula in
+        // `bevy_text_engine::view::render::render_layout`:
+        //   base_y = line.y_top + line_height/2 + baseline_offset
+        // where `line.y_top = text_area_top + scroll_offset + display_row * line_height`.
+        // Without the `line_height/2` term, line numbers sit half a row
+        // higher than their matching code lines.
         let baseline_offset = font_size * 0.32;
         let base_y = viewport.text_area_top
             + scroll.scroll_offset
             + (current_display_row as f32 * line_height)
+            + line_height * 0.5
             + baseline_offset;
 
         // Line number text (1-indexed)
@@ -202,6 +208,14 @@ pub(crate) fn update_gpu_line_numbers(
             let Some((info, _)) = atlas.get_or_rasterize_glyph(g.cache_key) else {
                 continue;
             };
+
+            // Skip degenerate glyphs (zero-width or zero-height). Fonts
+            // can produce these for whitespace, joiners, or trailing pen
+            // positions; emitting a quad with one zero dimension still
+            // draws a faint 1-pixel line where bilinear sampling bleeds.
+            if info.size.x <= 0.0 || info.size.y <= 0.0 {
+                continue;
+            }
 
             // Calculate screen position (same logic as main text)
             let screen_y = base_y - info.offset.y;
@@ -264,6 +278,10 @@ pub(crate) fn update_gpu_line_numbers(
             })
             .insert(Visibility::Visible);
     } else {
+        // Parent under the editor entity so the editor's `Transform`
+        // cascades. The unit-quad `Mesh2d` is required by the
+        // `Mesh2dPipeline` view extraction so this batch gets a per-
+        // entity `world_from_local` mesh bind group.
         commands.spawn((
             GlyphBatchComponent {
                 instances,

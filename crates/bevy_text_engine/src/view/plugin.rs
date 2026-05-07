@@ -42,6 +42,8 @@ pub struct TextViewRenderSet;
     FontConfig,
     LayoutWrap,
     LayoutTuning,
+    Transform,
+    Visibility,
     bevy::picking::Pickable,
 )]
 pub struct TextView;

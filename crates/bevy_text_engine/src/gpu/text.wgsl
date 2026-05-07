@@ -1,42 +1,35 @@
-// GPU Text Rendering Shader for bevy_code_editor
-// Inspired by Zed's GPUI text rendering approach
+// GPU instanced text rendering shader.
 //
-// This shader renders text glyphs using instanced rendering.
-// Each glyph is a quad that samples from a glyph atlas texture.
+// Each glyph is one instance. The vertex shader expands a unit quad from
+// `vertex_index` for each instance, then projects through the camera's
+// view-projection matrix from `Mesh2dPipeline`'s view bind group.
+//
+// Note: this shader deliberately does NOT use `mesh2d_position_local_to_clip`
+// or `get_world_from_local(instance_index)`. That helper indexes into a
+// per-entity `mesh[]` array using `@builtin(instance_index)` — but our
+// `instance_index` is the per-GLYPH instance, not the per-entity one, so
+// each glyph would read a different (invalid) entity transform. Instead we
+// project glyph positions directly through `view.clip_from_world`. Glyph
+// instance positions are emitted by `render_layout` in world-space pixels.
 
-#import bevy_sprite::mesh2d_vertex_output::VertexOutput
-
-// Uniforms
-struct TextGlobals {
-    viewport_size: vec2<f32>,
-    scroll_offset: vec2<f32>,
-}
-
-@group(0) @binding(0) var<uniform> globals: TextGlobals;
-
-// Atlas texture
-@group(1) @binding(0) var atlas_texture: texture_2d<f32>;
-@group(1) @binding(1) var atlas_sampler: sampler;
+#import bevy_sprite::mesh2d_view_bindings::view
 
 struct FragmentInput {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
     @location(1) color: vec4<f32>,
-    // Local position within the quad (0..size) for rounded corner SDF
+    // Local position within the quad (0..size) for rounded corner SDF.
     @location(2) local_pos: vec2<f32>,
     @location(3) quad_size: vec2<f32>,
     // Per-corner radii: [top_left, top_right, bottom_left, bottom_right].
-    // The fragment SDF picks the matching radius for the corner the
-    // sampled point is nearest, allowing asymmetric rounding (e.g. only
-    // the top corners on the first row of a multi-row block panel).
     @location(4) corner_radii: vec4<f32>,
 }
 
-// Vertex shader - generates quad vertices for each glyph instance
 @vertex
 fn vertex(
     @builtin(vertex_index) vertex_index: u32,
-    @location(0) position: vec2<f32>,
+    // Per-instance glyph attributes (slot 0).
+    @location(0) glyph_position: vec2<f32>,
     @location(1) uv_min: vec2<f32>,
     @location(2) uv_max: vec2<f32>,
     @location(3) size: vec2<f32>,
@@ -45,44 +38,37 @@ fn vertex(
     @location(6) z_index: f32,
     @location(7) skew: f32,
 ) -> FragmentInput {
-    // Generate quad vertices (triangle list: 0,1,2, 3,4,5)
-    // 2 (0,1) -- 5 (1,1)
-    // |         / |
-    // |       /   |
-    // |     /     |
-    // 0 (0,0) --- 1/4 (1,0)
-
-    var vertices = array<vec2<f32>, 6>(
-        vec2<f32>(0.0, 0.0), // BL (v0)
-        vec2<f32>(1.0, 0.0), // BR (v1)
-        vec2<f32>(0.0, 1.0), // TL (v2)
-        vec2<f32>(0.0, 1.0), // TL (v3)
-        vec2<f32>(1.0, 0.0), // BR (v4)
-        vec2<f32>(1.0, 1.0)  // TR (v5)
+    // Six unit-quad vertices in triangle-list order: BL,BR,TL, TL,BR,TR.
+    // The shader expands the quad on the GPU from `vertex_index`; no
+    // mesh asset is bound.
+    var corners = array<vec2<f32>, 6>(
+        vec2<f32>(0.0, 0.0), // 0: BL
+        vec2<f32>(1.0, 0.0), // 1: BR
+        vec2<f32>(0.0, 1.0), // 2: TL
+        vec2<f32>(0.0, 1.0), // 3: TL
+        vec2<f32>(1.0, 0.0), // 4: BR
+        vec2<f32>(1.0, 1.0), // 5: TR
     );
+    let unit_vertex = corners[vertex_index];
 
-    let unit_vertex = vertices[vertex_index];
+    // Glyph position is the quad's bottom-left corner in world-space
+    // pixels (Y up). `render_layout` emits these positions directly.
+    var world_xy = glyph_position + unit_vertex * size;
+    // Italic skew — top of the glyph shifts right by `skew * size.y`.
+    world_xy.x += skew * unit_vertex.y * size.y;
+    // Small per-glyph Z offset preserves overlay ordering (selection bg
+    // beneath text, caret above) under depth test.
+    let world_pos = vec4<f32>(world_xy.x, world_xy.y, z_index * 1e-4, 1.0);
 
-    // Calculate screen position with optional italic skew
-    // Skew shifts x proportionally to y (top of glyph shifts right)
-    var screen_pos = position + unit_vertex * size;
-    screen_pos.x += skew * unit_vertex.y * size.y;
+    let clip_pos = view.clip_from_world * world_pos;
 
-    // Convert to clip space
-    let half_size = globals.viewport_size * 0.5;
-    let clip_pos = screen_pos / half_size;
-
-    // Normalize z_index to clip space (-1 to 1) - higher z_index renders on top
-    // Map z_index range [0, 1000] to clip space [0.0, 1.0] for depth testing
-    let normalized_z = z_index / 1000.0;
-    let final_pos = vec4<f32>(clip_pos.x, clip_pos.y, normalized_z, 1.0);
-
-    // Interpolate UV coordinates
-    // Flip Y for texture space (0=top, 1=bottom) vs geometry space (0=bottom, 1=top)
+    // Atlas UV interpolation. Flip V so 0=top in atlas matches 0=top of the
+    // glyph quad (atlas stores glyphs with origin at top-left, but our
+    // unit_vertex has origin at bottom-left, so we feed `1 - v`).
     let uv = mix(uv_min, uv_max, vec2<f32>(unit_vertex.x, 1.0 - unit_vertex.y));
 
     var out: FragmentInput;
-    out.position = final_pos;
+    out.position = clip_pos;
     out.uv = uv;
     out.color = color;
     out.local_pos = unit_vertex * size;
@@ -90,6 +76,10 @@ fn vertex(
     out.corner_radii = corner_radii;
     return out;
 }
+
+// Atlas binding lives in the second bind group (after view).
+@group(1) @binding(0) var atlas_texture: texture_2d<f32>;
+@group(1) @binding(1) var atlas_sampler: sampler;
 
 // SDF for a rounded rectangle with per-corner radii. `pos` is centered
 // (origin at quad center). `half_size` is half the quad's extent. The
@@ -117,12 +107,20 @@ fn rounded_rect_sdf_per_corner(
     return min(max(q.x, q.y), 0.0) + length(max(q, vec2<f32>(0.0))) - r;
 }
 
-// Fragment shader - samples glyph from atlas and applies color
+// Pick the corner radius for a fragment's quadrant. Mirrors
+// `rounded_rect_sdf_per_corner`'s quadrant selection — kept in sync
+// so the AA gate uses the same radius the SDF uses.
+fn pick_corner_radius(pos: vec2<f32>, radii: vec4<f32>) -> f32 {
+    return select(
+        select(radii.z, radii.w, pos.x > 0.0),
+        select(radii.x, radii.y, pos.x > 0.0),
+        pos.y > 0.0,
+    );
+}
+
 @fragment
 fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     // Rounded corner clipping when any corner has a non-zero radius.
-    // Per-corner: a rect with `[r, r, 0, 0]` rounds only the top corners
-    // (used by the first row of a multi-row block panel).
     let max_radius = max(
         max(in.corner_radii.x, in.corner_radii.y),
         max(in.corner_radii.z, in.corner_radii.w),
@@ -134,25 +132,14 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
         if d > 0.5 {
             discard;
         }
-        // Anti-alias the edge — but only when the fragment is actually
-        // inside a rounded corner's curve. A rect with `[r, r, 0, 0]`
-        // (rounded top, sharp bottom) used to AA-fade its sharp bottom
-        // edge too, since the SDF returns d=0 there and smoothstep
-        // produced ~0.5 alpha. That fade left a half-transparent strip
-        // between adjacent rows in a multi-row panel.
-        //
-        // Inside a rounded-corner quadrant the SDF is curve-driven; on
-        // a sharp edge the SDF degenerates to a straight `q.x` or
-        // `q.y`. We detect this geometrically: pick the corner radius
-        // for the fragment's quadrant, and only apply AA when the
-        // fragment sits inside that corner's bounding square (where
-        // both `q.x > 0` and `q.y > 0` — the curved region).
+        // Anti-alias only the curved region (where both `q.x > 0` and
+        // `q.y > 0` for the corner's bounding square). Sharp edges keep
+        // alpha=1 so adjacent rows don't get half-transparent seams.
         let r = pick_corner_radius(pos, in.corner_radii);
         let q = abs(pos) - center + vec2<f32>(r);
         let in_curve = r > 0.0 && q.x > 0.0 && q.y > 0.0;
         let edge_alpha = select(1.0, 1.0 - smoothstep(-0.5, 0.5, d), in_curve);
 
-        // Sample the glyph alpha from the atlas
         let atlas_sample = textureSample(atlas_texture, atlas_sampler, in.uv);
         let alpha = atlas_sample.a * in.color.a * edge_alpha;
 
@@ -162,7 +149,7 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
         return vec4<f32>(in.color.rgb * alpha, alpha);
     }
 
-    // Standard path (no rounded corners) — unchanged
+    // Standard path (no rounded corners).
     let atlas_sample = textureSample(atlas_texture, atlas_sampler, in.uv);
     let alpha = atlas_sample.a * in.color.a;
 
@@ -171,15 +158,4 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     }
 
     return vec4<f32>(in.color.rgb * alpha, alpha);
-}
-
-// Pick the corner radius for a fragment's quadrant. Mirrors
-// `rounded_rect_sdf_per_corner`'s quadrant selection — kept in sync
-// so the AA gate uses the same radius the SDF uses.
-fn pick_corner_radius(pos: vec2<f32>, radii: vec4<f32>) -> f32 {
-    return select(
-        select(radii.z, radii.w, pos.x > 0.0),
-        select(radii.x, radii.y, pos.x > 0.0),
-        pos.y > 0.0,
-    );
 }

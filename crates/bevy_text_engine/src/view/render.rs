@@ -167,6 +167,10 @@ pub fn render_layout(
     let char_width = layout.char_width;
     let baseline_offset = layout.baseline_offset;
 
+    // Glyph instances are emitted in world-space pixels under the
+    // centered-ortho convention: viewport's top-left is at
+    // `(-width/2, +height/2)` relative to the camera origin. The shader
+    // projects directly through the camera's `view.clip_from_world`.
     let viewport_world_left = viewport.world_left();
     let viewport_world_top = viewport.world_top();
     let line_start_x = content_start_x - horizontal_scroll_offset;
