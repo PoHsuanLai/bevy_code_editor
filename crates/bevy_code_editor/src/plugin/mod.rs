@@ -26,7 +26,6 @@ pub use self::syntax_highlighting::{EditorSyntaxState, SyntaxPlugin};
 // Re-export helper functions and systems for internal plugin use (crate-visible only)
 pub(crate) use self::brackets::{update_bracket_highlight, update_bracket_match};
 pub(crate) use self::cursor::update_cursor_line_highlight;
-pub(crate) use self::folding::update_fold_indicators;
 pub(crate) use self::gpu_line_numbers::update_gpu_line_numbers;
 pub(crate) use self::ui_elements::{update_indent_guides, update_selection_highlight};
 

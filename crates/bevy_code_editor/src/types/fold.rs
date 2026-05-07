@@ -367,14 +367,6 @@ impl FoldState {
     }
 }
 
-/// Component marker for fold gutter indicator entities
-#[derive(Component, Reflect)]
-#[reflect(Component)]
-pub struct FoldIndicator {
-    /// The line this indicator is for
-    pub line_index: usize,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

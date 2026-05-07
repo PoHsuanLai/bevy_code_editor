@@ -1,12 +1,22 @@
 //! Code folding
+//!
+//! Provides the **data + algorithms** for code folding: `FoldState`,
+//! `FoldRegion`, `FoldKind`, and the detection systems that populate them
+//! (tree-sitter walk on a worker thread, brace-matching fallback when
+//! tree-sitter isn't compiled in). The display layout consumes
+//! `FoldState` to hide folded rows.
+//!
+//! No gutter chevron renderer is included. Downstream consumers wanting
+//! `▶`/`▼` indicators read `FoldState` + `ScrollState` + `TextViewViewport`
+//! and emit whatever entity they prefer (Sprite, Text2d, or — best —
+//! `RectOverlay`s into `TextViewOverlays` so they go through the engine's
+//! GPU instanced batch). Click-to-toggle stays wired up via `on_gutter_click`
+//! in `input/mouse.rs` regardless of whether anything is rendered there.
 #![allow(dead_code)]
 
-use super::to_bevy_coords_left_aligned;
-use crate::settings::{ThemeConfig, UiSettings};
-use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
+use crate::text_view::TextBuffer;
 use crate::types::*;
 use bevy::prelude::*;
-use bevy_text_engine::FontConfig;
 
 #[cfg(feature = "tree-sitter")]
 use bevy::tasks::{block_on, futures_lite, AsyncComputeTaskPool, Task};
@@ -344,8 +354,7 @@ pub struct FoldingPlugin;
 
 impl Plugin for FoldingPlugin {
     fn build(&self, _app: &mut App) {
-        _app.register_type::<crate::types::fold::FoldIndicator>()
-            .register_type::<crate::types::fold::FoldKind>()
+        _app.register_type::<crate::types::fold::FoldKind>()
             .register_type::<crate::types::fold::FoldRegion>()
             .register_type::<crate::types::fold::FoldState>()
             .register_type::<crate::types::fold::GotoLineState>();
@@ -372,189 +381,6 @@ impl Plugin for FoldingPlugin {
             Update,
             detect_foldable_regions.in_set(super::ApplyStateSet),
         );
-
-        _app.add_systems(
-            Update,
-            update_fold_indicators
-                .after(super::gpu_line_numbers::update_gpu_line_numbers)
-                .in_set(super::RenderingSet),
-        );
     }
 }
 
-/// Sync per-editor fold-gutter indicator entities (▶/▼ glyphs) with the
-/// current `FoldState` and viewport.
-///
-/// Runs only when something an indicator depends on actually changed. Idle
-/// frames (typing-paused, no scroll) are a complete no-op. Each indicator
-/// write is also gated on a real value change so we don't trip Bevy's
-/// `Changed<>` markers — those would cascade into `Text2d` layout, sprite
-/// extraction, and a render-graph re-walk every frame.
-#[allow(clippy::type_complexity)]
-pub(crate) fn update_fold_indicators(
-    mut commands: Commands,
-    editor_query: Query<
-        (
-            Entity,
-            &TextBuffer,
-            &ScrollState,
-            &TextViewViewport,
-            &FoldState,
-            &FontConfig,
-            &ThemeConfig,
-        ),
-        With<CodeEditor>,
-    >,
-    dirty_editors: Query<
-        Entity,
-        (
-            With<CodeEditor>,
-            Or<(
-                Changed<FoldState>,
-                Changed<ScrollState>,
-                Changed<TextViewViewport>,
-                Changed<FontConfig>,
-            )>,
-        ),
-    >,
-    ui: Res<UiSettings>,
-    mut indicator_query: Query<(
-        Entity,
-        &FoldIndicator,
-        &mut Transform,
-        &mut Text2d,
-        &mut Visibility,
-    )>,
-) {
-    let dirty: std::collections::HashSet<Entity> = dirty_editors.iter().collect();
-    if dirty.is_empty() && !ui.is_changed() {
-        return;
-    }
-
-    let mut existing_indicators: std::collections::HashMap<usize, Entity> =
-        std::collections::HashMap::with_capacity(indicator_query.iter().len());
-    for (entity, indicator, _, _, _) in indicator_query.iter() {
-        existing_indicators.insert(indicator.line_index, entity);
-    }
-    let mut used_indices: std::collections::HashSet<usize> = std::collections::HashSet::new();
-    let mut any_enabled = false;
-
-    for (editor_entity, buffer, scroll, viewport, fold_state, font, theme) in editor_query.iter() {
-        if !fold_state.enabled || !ui.show_line_numbers {
-            continue;
-        }
-        // If nothing on this editor changed and UiSettings didn't flip,
-        // its indicators are already in the right state — skip.
-        if !ui.is_changed() && !dirty.contains(&editor_entity) {
-            // Still mark its visible folds as "used" so we don't hide them
-            // when running for a *different* editor that did change.
-            let line_height = font.line_height;
-            let visible_start_line = ((-scroll.scroll_offset) / line_height).floor() as usize;
-            let visible_lines = ((viewport.height as f32 / line_height).ceil() as usize) + 2;
-            let visible_end_line =
-                (visible_start_line + visible_lines).min(buffer.rope.len_lines());
-            for region in &fold_state.regions {
-                if region.start_line >= visible_start_line
-                    && region.start_line < visible_end_line
-                {
-                    used_indices.insert(region.start_line);
-                }
-            }
-            any_enabled = true;
-            continue;
-        }
-        any_enabled = true;
-
-        let line_height = font.line_height;
-        let font_size = font.font_size;
-        let viewport_width = viewport.width as f32;
-        let viewport_height = viewport.height as f32;
-
-        let visible_start_line = ((-scroll.scroll_offset) / line_height).floor() as usize;
-        let visible_lines = ((viewport_height / line_height).ceil() as usize) + 2;
-        let visible_end_line = (visible_start_line + visible_lines).min(buffer.rope.len_lines());
-
-        for region in &fold_state.regions {
-            if region.start_line < visible_start_line || region.start_line >= visible_end_line {
-                continue;
-            }
-            let line_idx = region.start_line;
-
-            // O(n_folded_regions) — was O(n_regions) probe per indicator.
-            let display_line = fold_state.actual_to_display_line(line_idx);
-            // Skip if folded under an enclosing region (display row collapsed
-            // into the parent's placeholder).
-            if display_line < line_idx
-                && fold_state
-                    .regions
-                    .iter()
-                    .any(|r| r.is_folded && r.start_line < line_idx && r.end_line >= line_idx)
-            {
-                continue;
-            }
-
-            used_indices.insert(line_idx);
-
-            let x_offset = viewport.gutter_width - 12.0;
-            let y_offset = viewport.text_area_top
-                + scroll.scroll_offset
-                + (display_line as f32 * line_height);
-            let translation = to_bevy_coords_left_aligned(
-                x_offset,
-                y_offset,
-                viewport_width,
-                viewport_height,
-                0.0,
-            );
-            let indicator_char = if region.is_folded { "▶" } else { "▼" };
-
-            if let Some(entity) = existing_indicators.get(&line_idx) {
-                if let Ok((_, _, mut transform, mut text, mut visibility)) =
-                    indicator_query.get_mut(*entity)
-                {
-                    if transform.translation != translation {
-                        transform.translation = translation;
-                    }
-                    if text.0 != indicator_char {
-                        text.0 = indicator_char.to_string();
-                    }
-                    if *visibility != Visibility::Visible {
-                        *visibility = Visibility::Visible;
-                    }
-                }
-            } else {
-                let text_font = TextFont {
-                    font: font.font.clone(),
-                    font_size: font_size * 0.7,
-                    ..default()
-                };
-                commands.spawn((
-                    Text2d::new(indicator_char.to_string()),
-                    text_font,
-                    TextColor(theme.line_numbers.with_alpha(0.8)),
-                    Transform::from_translation(translation),
-                    FoldIndicator { line_index: line_idx },
-                    Name::new(format!("FoldIndicator_{}", line_idx)),
-                    Visibility::Visible,
-                ));
-            }
-        }
-    }
-
-    if !any_enabled {
-        // No editor has folding on; hide everything (only if not already hidden).
-        for (_, _, _, _, mut visibility) in indicator_query.iter_mut() {
-            if *visibility != Visibility::Hidden {
-                *visibility = Visibility::Hidden;
-            }
-        }
-    } else {
-        for (_entity, indicator, _, _, mut visibility) in indicator_query.iter_mut() {
-            if !used_indices.contains(&indicator.line_index)
-                && *visibility != Visibility::Hidden
-            {
-                *visibility = Visibility::Hidden;
-            }
-        }
-    }
-}

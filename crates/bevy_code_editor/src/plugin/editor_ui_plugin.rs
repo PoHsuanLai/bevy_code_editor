@@ -32,8 +32,6 @@ use bevy_text_engine::gpu::GlyphAtlas;
 
 use super::{update_bracket_highlight, update_bracket_match};
 
-use super::update_fold_indicators;
-
 /// Editor UI plugin: renders line numbers, separator, cursor, selection.
 /// Added automatically by `CodeEditorPlugin`.
 #[derive(Default)]
@@ -84,13 +82,6 @@ impl Plugin for EditorUiPlugin {
                 .in_set(super::RenderingSet),
         );
 
-        // Fold indicators (feature-gated)
-        app.add_systems(
-            Update,
-            update_fold_indicators
-                .after(update_gpu_line_numbers)
-                .in_set(super::RenderingSet),
-        );
 
         // Overlay producers (selection, cursor-line) write into
         // `TextViewOverlays`; they must run before the engine's
