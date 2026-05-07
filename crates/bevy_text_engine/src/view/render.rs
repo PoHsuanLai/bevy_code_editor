@@ -897,10 +897,11 @@ fn push_overlay_quad(
             (baseline_y_off - text_band_above_baseline, cap_to_descender)
         }
         super::overlay::RowVertical::FullLeaded => {
-            // Flush stacking: each row's overlay covers `[y_top, y_top +
-            // line_height]`, so adjacent rows in a multi-row panel butt
-            // up exactly with no gap between them.
-            (0.0, line_height)
+            // Span the row's full leaded box. `y_top` is the box top, so
+            // the rect runs `[y_top, y_top + line_height]` in screen-Y.
+            // Quad center sits at `y_top + line_height / 2`, which gives
+            // adjacent rows a flush seam.
+            (line_height * 0.5, line_height)
         }
         super::overlay::RowVertical::Caret { height_fraction } => {
             let h = (cap_to_descender * height_fraction).max(1.0);

@@ -48,12 +48,18 @@ pub fn sync_grid_snapshot(
 
                 let attrs = cell.attrs();
                 let fg = resolve_color(attrs.foreground(), palette, render, true);
-                let bg = resolve_color(attrs.background(), palette, render, false);
+                // Only emit a per-cell bg quad when the shell actually set a
+                // non-default background. Default-bg cells let the view's
+                // base `RenderTheme.background` show through.
+                let bg = match attrs.background() {
+                    ColorAttribute::Default => None,
+                    other => Some(resolve_color(other, palette, render, false)),
+                };
 
                 let run_proto = StyleRun {
                     byte_range: 0..0,
                     fg,
-                    bg: Some(bg),
+                    bg,
                     font_scale: 1.0,
                     skew: 0.0,
                     corner_radius: 0.0,

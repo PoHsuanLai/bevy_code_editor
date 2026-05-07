@@ -372,12 +372,12 @@ pub(crate) fn build_display_layout(
             }
         }
 
-        // y_top for a given display_row.
+        // y_top for a given display_row — the row's actual top edge in
+        // screen-Y, with `text_area_top` as origin and `scroll_offset`
+        // applied. Renderer + overlay math derive baseline / band positions
+        // from this, so `y_top` consistently means "top of the leaded box".
         let y_top_for = |display_row: u32| -> f32 {
-            viewport.text_area_top
-                + scroll.scroll_offset
-                + display_row as f32 * line_height
-                - line_height * 0.5
+            viewport.text_area_top + scroll.scroll_offset + display_row as f32 * line_height
         };
 
         // When wrap is on and the shaped line exceeds the budget, split into

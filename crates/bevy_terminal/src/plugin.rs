@@ -13,7 +13,6 @@
 
 use bevy::prelude::*;
 use bevy_text_engine::view::layout_builder::LayoutProduceSet;
-use bevy_text_engine::view::plugin::TextViewRenderSet;
 
 use crate::drain::drain_pty_events;
 use crate::messages::*;
@@ -127,12 +126,6 @@ impl Plugin for BevyTerminalPlugin {
             crate::blocks::extract_blocks
                 .in_set(TerminalSnapshotSet)
                 .after(crate::snapshot::sync_grid_snapshot),
-        );
-        app.add_systems(
-            Update,
-            crate::blocks_overlay::paint_block_overlays
-                .after(LayoutProduceSet)
-                .before(TextViewRenderSet),
         );
 
         app.register_type::<crate::cursor::TerminalCursorBlink>();

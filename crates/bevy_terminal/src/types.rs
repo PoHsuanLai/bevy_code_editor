@@ -127,21 +127,17 @@ pub enum BlockStatus {
     Completed,
 }
 
-/// Per-terminal theme: ANSI 16-color palette + UI colors.
+/// Per-terminal theme: ANSI 16-color palette.
 ///
 /// Pure rendering colors come from `bevy_text_engine::RenderTheme`
 /// (background, foreground); cursor + selection colors from
-/// `bevy_text_editor::EditTheme`. This component carries terminal-specific
-/// extras: the 16 ANSI colors plus block backgrounds.
+/// `bevy_text_editor::EditTheme`. This component carries the
+/// terminal-specific 16 ANSI colors used by the grid snapshot.
 #[derive(Component, Clone, Debug, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct TerminalColorPalette {
     /// ANSI 0..=7 (normal) followed by 8..=15 (bright).
     pub ansi: [Color; 16],
-    /// Background tint for the active command block.
-    pub block_active: Color,
-    /// Background tint for completed blocks.
-    pub block_completed: Color,
 }
 
 impl Default for TerminalColorPalette {
@@ -166,11 +162,7 @@ impl Default for TerminalColorPalette {
             Color::srgb(0.000, 1.000, 1.000), // 14 bright cyan
             Color::srgb(1.000, 1.000, 1.000), // 15 bright white
         ];
-        Self {
-            ansi,
-            block_active: Color::srgba(0.15, 0.15, 0.18, 0.6),
-            block_completed: Color::srgba(0.10, 0.10, 0.13, 0.4),
-        }
+        Self { ansi }
     }
 }
 
