@@ -16,7 +16,7 @@ use crate::types::TerminalGridSnapshot;
 #[reflect(Component, Default)]
 pub struct TerminalCursorBlink {
     pub last_change_secs: f64,
-    pub last_row: u16,
+    pub last_row: u32,
     pub last_col: u16,
 }
 
@@ -66,7 +66,7 @@ pub fn push_terminal_caret(
 
         let x_left = snapshot.cursor_col as f32 * font.char_width;
         overlays.rects.push(caret_overlay(
-            snapshot.cursor_row as u32,
+            snapshot.cursor_row,
             x_left,
             &cursor_settings,
             theme.cursor,

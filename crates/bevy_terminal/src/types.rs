@@ -71,8 +71,10 @@ pub struct TerminalGridSnapshot {
     pub version: u64,
     pub cols: u16,
     pub rows: u16,
-    /// Cursor row in *display* lines (0-based, top of screen).
-    pub cursor_row: u16,
+    /// Cursor row as a buffer-line index (0 = top of scrollback, growing
+    /// downward). The visible window is the last `rows` lines, so when
+    /// scrollback is non-empty `cursor_row >= total_lines - rows`.
+    pub cursor_row: u32,
     /// Cursor column (0-based).
     pub cursor_col: u16,
     /// `true` when the cursor is hidden (DECTCEM off).
