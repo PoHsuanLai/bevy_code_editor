@@ -206,7 +206,7 @@ pub fn on_lsp_hover(
             if let Some(pending_pos) = hover_state.pending_char_index {
                 if pending_pos == hover_state.trigger_char_index {
                     hover_state.content = ev.content.clone();
-                    hover_state.kind = ev.kind;
+                    hover_state.kind = ev.kind.clone();
                     hover_state.range = ev.range;
                     hover_state.visible = true;
                 }
@@ -514,6 +514,7 @@ fn apply_text_edits(
 /// when text changes); the LSP-side version counter lives on `LspDocument`.
 pub fn sync_lsp_document(
     time: Res<Time>,
+    settings: Res<crate::settings::LspSettings>,
     mut query: Query<
         (
             &TextBuffer,
@@ -534,6 +535,10 @@ pub fn sync_lsp_document(
         return;
     };
 
+    let duration = std::time::Duration::from_millis(settings.did_change_delay_ms);
+    if sync_state.timer.duration() != duration {
+        sync_state.timer.set_duration(duration);
+    }
     sync_state.timer.tick(time.delta());
 
     if sync_state.timer.is_finished() {

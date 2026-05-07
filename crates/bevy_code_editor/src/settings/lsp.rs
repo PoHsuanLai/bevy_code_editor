@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// LSP settings
-#[derive(Clone, Debug, Default, Resource, Serialize, Deserialize, Reflect)]
+#[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
 #[reflect(Resource, Default, Debug)]
 pub struct LspSettings {
     /// Auto-completion settings
@@ -13,10 +13,37 @@ pub struct LspSettings {
     /// Hover information settings
     pub hover: HoverSettings,
 
+    /// Debounce before requesting `textDocument/codeAction` after the
+    /// cursor stops moving. Keeps the editor from spamming the server on
+    /// every keystroke.
+    pub code_action_delay_ms: u64,
+
+    /// Debounce before requesting `textDocument/documentHighlight` after
+    /// the cursor stops moving.
+    pub highlight_delay_ms: u64,
+
+    /// Debounce before flushing `textDocument/didChange` after the buffer
+    /// is edited. Lower values mean faster diagnostics; higher values mean
+    /// fewer wasted server-side reparses.
+    pub did_change_delay_ms: u64,
+
     /// Force full-document `textDocument/didChange` payloads instead of
     /// incremental ones. Useful as a recovery flag if a position-encoding
     /// bug ever surfaces in incremental sync. Default `false` (incremental).
     pub full_document_sync: bool,
+}
+
+impl Default for LspSettings {
+    fn default() -> Self {
+        Self {
+            completion: CompletionSettings::default(),
+            hover: HoverSettings::default(),
+            code_action_delay_ms: 250,
+            highlight_delay_ms: 100,
+            did_change_delay_ms: 200,
+            full_document_sync: false,
+        }
+    }
 }
 
 /// How buffer-words feed the completion popup. Mirrors Zed's

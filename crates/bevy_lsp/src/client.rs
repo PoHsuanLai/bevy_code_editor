@@ -106,9 +106,15 @@ impl LspClient {
         };
         self.runtime_handle = Some(handle);
 
-        let stdin = child.stdin.take().expect("Failed to open stdin");
-        let stdout = child.stdout.take().expect("Failed to open stdout");
-        let stderr = child.stderr.take().expect("Failed to open stderr");
+        let stdin = child.stdin.take().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::BrokenPipe, "child stdin missing")
+        })?;
+        let stdout = child.stdout.take().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::BrokenPipe, "child stdout missing")
+        })?;
+        let stderr = child.stderr.take().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::BrokenPipe, "child stderr missing")
+        })?;
 
         let bridge_tx = self.response_tx.clone();
         let (mainloop, server) = async_lsp::MainLoop::new_client(move |_server| {

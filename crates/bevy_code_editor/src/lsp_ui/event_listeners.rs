@@ -113,6 +113,7 @@ pub fn listen_text_edit_events(
 
 pub fn listen_completion_requests(
     mut events: MessageReader<RequestCompletionEvent>,
+    settings: Res<LspSettings>,
     mut query: Query<
         (
             &TextBuffer,
@@ -135,12 +136,16 @@ pub fn listen_completion_requests(
             uri: lsp_document.uri.clone(),
             position: rope_char_to_lsp_position(&buffer.rope, event.cursor_char, enc),
         });
+        debounce
+            .completion_timer
+            .set_duration(std::time::Duration::from_millis(settings.completion.delay_ms));
         debounce.completion_timer.reset();
     }
 }
 
 pub fn listen_hover_requests(
     mut events: MessageReader<RequestHoverEvent>,
+    settings: Res<LspSettings>,
     mut query: Query<
         (
             &TextBuffer,
@@ -163,6 +168,9 @@ pub fn listen_hover_requests(
             uri: lsp_document.uri.clone(),
             position: rope_char_to_lsp_position(&buffer.rope, event.cursor_char, enc),
         });
+        debounce
+            .hover_timer
+            .set_duration(std::time::Duration::from_millis(settings.hover.delay_ms));
         debounce.hover_timer.reset();
     }
 }

@@ -582,14 +582,22 @@ pub struct LspDebounceTimers {
 
 impl Default for LspDebounceTimers {
     fn default() -> Self {
+        // Durations are placeholders — the request-arming code re-sets each
+        // timer's duration from `LspSettings` before resetting it, so what
+        // matters here is that the timer starts in a `finished()` state.
+        let t = |secs: f32| {
+            let mut timer = Timer::from_seconds(secs, TimerMode::Once);
+            timer.tick(std::time::Duration::from_secs_f32(secs));
+            timer
+        };
         Self {
-            completion_timer: Timer::from_seconds(0.05, TimerMode::Once),
+            completion_timer: t(0.1),
             pending_completion: None,
-            hover_timer: Timer::from_seconds(0.15, TimerMode::Once),
+            hover_timer: t(0.3),
             pending_hover: None,
-            code_action_timer: Timer::from_seconds(0.25, TimerMode::Once),
+            code_action_timer: t(0.25),
             pending_code_action: None,
-            highlight_timer: Timer::from_seconds(0.1, TimerMode::Once),
+            highlight_timer: t(0.1),
             pending_highlight: None,
         }
     }
@@ -610,6 +618,7 @@ pub struct LspSyncStateExtra {
 
 impl Default for LspSyncStateExtra {
     fn default() -> Self {
+        // Duration overwritten on first dirty-mark from `LspSettings::did_change_delay_ms`.
         Self {
             dirty: false,
             timer: Timer::from_seconds(0.2, TimerMode::Once),
