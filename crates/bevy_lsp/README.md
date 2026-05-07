@@ -67,10 +67,13 @@ The `LspPlugin` adds `bevy-tokio-tasks::TokioTasksPlugin` if the host hasn't alr
 client.send(LspMessage::Hover {
     uri: doc.uri.clone(),
     position: rope_char_to_lsp_position(&rope, cursor_pos, PositionEncoding::Utf16),
+    id: 0,
 });
 ```
 
-The full set of `LspMessage` variants covers initialize/initialized/did_open/did_change, completion, hover, goto-definition, references, formatting, signature-help, code-action, inlay-hint, execute-command, document-highlight, prepare-rename, rename.
+`LspMessage` covers the full LSP 3.17 surface — initialize / lifecycle, document and workspace sync, completion (+ resolve), hover, signature help, all four goto kinds (declaration / definition / type-definition / implementation), references, documentSymbol, workspace/symbol, foldingRange, selectionRange, code-action (+ resolve), execute-command, formatting (full / range / on-type), inlay hints (+ resolve), document links (+ resolve), document colors, linked editing, moniker, prepareRename / rename, call & type hierarchy, semantic tokens (full / delta / range), pull diagnostics (document / workspace), plus the inbound `Respond*` replies for `workspace/configuration`, `applyEdit`, `showMessageRequest`, `showDocument`, `workDoneProgress/create`, `register/unregisterCapability`, and `workspaceFolders`.
+
+Each request that has a result carries an opaque `id: u64` echoed on the response so consumers can drop stale results when the user moves on.
 
 ## Position helpers
 
@@ -89,13 +92,15 @@ let back = lsp_position_to_rope_char(&rope, pos, PositionEncoding::Utf16);
 
 ## Capability-aware sending
 
-Before sending a feature-specific request, check the server advertises support:
+Before sending a feature-specific request, check the server advertises support via `ServerCapabilities`:
 
 ```rust
-client.send_if_supported(LspMessage::Hover { uri, position }, &capabilities);
+if capabilities.supports_hover() {
+    client.send(LspMessage::Hover { uri, position, id: 0 });
+}
 ```
 
-`Initialize`, `Initialized`, `DidOpen`, `DidChange`, `ExecuteCommand` are always permitted. Everything else is gated on the matching `supports_*()` predicate from `ServerCapabilities`.
+`ServerCapabilities` exposes a `supports_*()` predicate for every gated feature (completion, hover, definition, references, document_symbol, workspace_symbol, folding_range, selection_range, code_actions, range_formatting, on_type_formatting, document_link, document_color, linked_editing_range, moniker, call_hierarchy, semantic_tokens, pull_diagnostics, …) plus resolve-flag predicates (`supports_completion_resolve`, `supports_code_action_resolve`, `supports_inlay_hint_resolve`).
 
 ## What's not here
 

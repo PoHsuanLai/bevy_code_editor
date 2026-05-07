@@ -1110,6 +1110,7 @@ fn render_rename_egui(
                 uri: doc.uri.clone(),
                 position: range.start,
                 new_name: rename_state.new_name.clone(),
+                id: 0,
             });
         }
     }
