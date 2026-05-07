@@ -42,6 +42,14 @@ impl TextViewOverlays {
 /// (the first row rounds top-left/top-right, the last row rounds
 /// bottom-left/bottom-right, middle rows are sharp) read as a single
 /// continuous panel. Use [`CornerRadii::uniform`] for the common case.
+///
+/// **Prefer `RectOverlay` over spawning Sprites** for any decoration
+/// that's row-aligned (highlights, selections, bracket boxes, indent
+/// guides, gutter bars). Overlays go through the engine's instanced
+/// batch in the same draw call as glyphs, share its atlas, and use the
+/// engine's row-anchor convention by definition — they can't drift.
+/// Reach for [`super::anchor::RowMetrics`] only when the decoration
+/// genuinely can't be a rect (custom mesh, popup, Bevy UI node).
 #[derive(Clone, Debug, Reflect)]
 #[reflect(Debug)]
 pub struct RectOverlay {

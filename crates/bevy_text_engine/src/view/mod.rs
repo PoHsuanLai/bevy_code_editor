@@ -1,5 +1,6 @@
 //! View primitives: rope-backed text state, viewport, paint-ready layout, overlays, renderer.
 
+pub mod anchor;
 pub mod font;
 pub mod layout;
 pub mod layout_builder;
@@ -13,6 +14,7 @@ pub mod theme;
 pub mod tuning;
 pub mod viewport;
 
+pub use anchor::{row_metrics, row_metrics_with_baseline, RowMetrics, DEFAULT_BASELINE_OFFSET_RATIO};
 pub use font::{FontConfig, FontSynthesis};
 pub use layout::DisplayLayout;
 pub use layout_builder::{

@@ -119,6 +119,13 @@ pub(crate) fn update_gpu_line_numbers(
         (start, start)
     };
 
+    // Snapshot the engine's row anchor once. The line-number batch
+    // emits glyphs directly (it doesn't go through `render_layout`),
+    // but its baseline must match what the engine paints for the main
+    // text on the same row — `glyph_baseline_screen_y` is the engine's
+    // own formula exposed as a public helper.
+    let metrics = bevy_text_engine::row_metrics(viewport, scroll, font);
+
     // Calculate gutter center X position (camera-relative, not world coords)
     // Camera is at viewport center, so gutter is at -viewport_width/2 + gutter_width/2
     let gutter_center_x = viewport.world_left() + viewport.gutter_width / 2.0;
@@ -162,18 +169,10 @@ pub(crate) fn update_gpu_line_numbers(
             break;
         }
 
-        // Calculate base Y position. Mirrors the main-text formula in
-        // `bevy_text_engine::view::render::render_layout`:
-        //   base_y = line.y_top + line_height/2 + baseline_offset
-        // where `line.y_top = text_area_top + scroll_offset + display_row * line_height`.
-        // Without the `line_height/2` term, line numbers sit half a row
-        // higher than their matching code lines.
-        let baseline_offset = font_size * 0.32;
-        let base_y = viewport.text_area_top
-            + scroll.scroll_offset
-            + (current_display_row as f32 * line_height)
-            + line_height * 0.5
-            + baseline_offset;
+        // Glyph baseline matches the main-text row's baseline by
+        // construction; if the engine ever changes its baseline math,
+        // `glyph_baseline_screen_y` updates and this code follows.
+        let base_y = metrics.glyph_baseline_screen_y(current_display_row as u32);
 
         // Line number text (1-indexed)
         let line_number_text = (buffer_line + 1).to_string();
@@ -220,10 +219,12 @@ pub(crate) fn update_gpu_line_numbers(
             // Calculate screen position (same logic as main text)
             let screen_y = base_y - info.offset.y;
 
-            // Convert to camera-relative world coordinates
-            // Camera is at viewport center, entities positioned relative to camera
+            // Convert to camera-relative world coordinates. Mirrors the
+            // engine's `glyph_quad`: `world_y = world_top - screen_y -
+            // glyph_height`. Camera is at viewport center, entities
+            // positioned relative to camera.
             let world_x = start_x + g.x + info.offset.x;
-            let world_y = viewport.world_top() - screen_y - info.size.y;
+            let world_y = metrics.world_top - screen_y - info.size.y;
 
             let instance = GlyphInstance {
                 position: Vec2::new(world_x, world_y),

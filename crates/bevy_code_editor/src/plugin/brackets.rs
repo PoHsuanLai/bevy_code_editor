@@ -179,9 +179,17 @@ pub(crate) fn update_bracket_highlight(
         Some(bracket_match) => {
             any_match = true;
             let char_width = font.char_width;
-            let line_height = font.line_height;
-            let _viewport_width = viewport.width as f32;
-            let _viewport_height = viewport.height as f32;
+            // Snapshot row geometry once. `RowMetrics` derives world-space
+            // positions using the same anchor math the engine paints with;
+            // every chrome system in the editor reads through it so the
+            // moment `render.rs` changes its convention, every consumer
+            // moves in lockstep.
+            let baseline = layout
+                .map(|l| l.baseline_offset)
+                .unwrap_or(font.font_size * bevy_text_engine::DEFAULT_BASELINE_OFFSET_RATIO);
+            let metrics = bevy_text_engine::row_metrics_with_baseline(
+                viewport, scroll, font, baseline,
+            );
             let use_box_style = matches!(brackets.style, BracketHighlightStyle::Background)
                 || matches!(brackets.style, BracketHighlightStyle::Both);
             let border_thickness = 2.0; // Default thickness
@@ -242,52 +250,47 @@ pub(crate) fn update_bracket_highlight(
                     char_width
                 };
 
-                let x_offset = viewport.text_area_left + glyph_x;
-                let y_offset =
-                    viewport.text_area_top + scroll.scroll_offset + (display_row as f32 * line_height);
-
-                // Calculate base position (center of the bracket character cell)
-                // Camera viewport handles panel positioning, so no offset_x here
-                let base_x = viewport.world_left() + x_offset + glyph_width / 2.0
-                    - scroll.horizontal_scroll_offset;
-                let base_y = viewport.world_top() - y_offset;
+                // Anchor to the row's *glyph band* (cap-to-descender),
+                // not the leaded box — that's what selection highlights
+                // align with, so brackets visually sit with the text.
+                let band = metrics.row_glyph_band(display_row as u32);
+                let band_height = band.height();
+                let band_center_y = (band.min.y + band.max.y) * 0.5;
+                let cell_left = metrics.cell_world_pos_at_x(display_row as u32, glyph_x).x;
+                let base_x = cell_left + glyph_width / 2.0;
 
                 if use_box_style {
-                    // Box style: 4 edges per bracket (top, bottom, left, right)
+                    // Box style: 4 thin edges around the glyph cell.
                     let edges = [
-                        // (x_offset, y_offset, width, height) relative to base position
-                        // Top edge
+                        // (dx, dy from band center, width, height)
                         (
                             0.0,
-                            line_height / 2.0 - border_thickness / 2.0,
+                            band_height / 2.0 - border_thickness / 2.0,
                             glyph_width,
                             border_thickness,
-                        ),
-                        // Bottom edge
+                        ), // top
                         (
                             0.0,
-                            -line_height / 2.0 + border_thickness / 2.0,
+                            -band_height / 2.0 + border_thickness / 2.0,
                             glyph_width,
                             border_thickness,
-                        ),
-                        // Left edge
+                        ), // bottom
                         (
                             -glyph_width / 2.0 + border_thickness / 2.0,
                             0.0,
                             border_thickness,
-                            line_height,
-                        ),
-                        // Right edge
+                            band_height,
+                        ), // left
                         (
                             glyph_width / 2.0 - border_thickness / 2.0,
                             0.0,
                             border_thickness,
-                            line_height,
-                        ),
+                            band_height,
+                        ), // right
                     ];
 
                     for (edge_idx, (dx, dy, w, h)) in edges.iter().enumerate() {
-                        let translation = Vec3::new(base_x + dx, base_y + dy, 0.4);
+                        let translation = Vec3::new(base_x + dx, band_center_y + dy, 0.4);
                         let size = Vec2::new(*w, *h);
 
                         if entity_index_global < highlights.len() {
@@ -313,9 +316,9 @@ pub(crate) fn update_bracket_highlight(
                         entity_index_global += 1;
                     }
                 } else {
-                    // Filled style: single sprite per bracket
-                    let translation = Vec3::new(base_x, base_y, 0.4);
-                    let size = Vec2::new(glyph_width, line_height);
+                    // Filled style: single sprite over the glyph cell.
+                    let translation = Vec3::new(base_x, band_center_y, 0.4);
+                    let size = Vec2::new(glyph_width, band_height);
 
                     if entity_index_global < highlights.len() {
                         let (_, _, ref mut transform, ref mut sprite, ref mut visibility) =

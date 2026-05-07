@@ -297,6 +297,7 @@ pub(crate) fn update_indent_guides(
             &FoldState,
             &FontConfig,
             &ThemeConfig,
+            Option<&DisplayLayout>,
         ),
         With<CodeEditor>,
     >,
@@ -318,7 +319,7 @@ pub(crate) fn update_indent_guides(
     let mut existing_guides: Vec<_> = guide_query.iter_mut().collect();
     let mut entity_index = 0;
 
-    for (buffer, scroll, vp, fold_state, font, theme) in editor_query.iter() {
+    for (buffer, scroll, vp, fold_state, font, theme, layout) in editor_query.iter() {
         let line_height = font.line_height;
         let char_width = font.char_width;
         let viewport_height = vp.height as f32;
@@ -405,15 +406,21 @@ pub(crate) fn update_indent_guides(
             current_display_row += 1;
         }
 
-        for (display_row, level) in needed_guides.iter() {
-            let x_offset = vp.text_area_left + (*level * indent_size) as f32 * char_width;
-            let y_offset =
-                vp.text_area_top + scroll.scroll_offset + (*display_row as f32 * line_height);
+        // Snapshot the engine's row anchor once per editor; consumers
+        // route every position through `RowMetrics` so that if the
+        // engine changes its convention every guide tracks automatically.
+        let baseline = layout
+            .map(|l| l.baseline_offset)
+            .unwrap_or(font.font_size * bevy_text_engine::DEFAULT_BASELINE_OFFSET_RATIO);
+        let metrics = bevy_text_engine::row_metrics_with_baseline(vp, scroll, font, baseline);
 
-            // Position the guide line (thin vertical line)
-            // Camera viewport handles panel positioning, so no offset_x here
-            let sprite_x = vp.world_left() + x_offset - scroll.horizontal_scroll_offset;
-            let sprite_y = vp.world_top() - y_offset;
+        for (display_row, level) in needed_guides.iter() {
+            // Sprite anchor is the row's vertical center within the
+            // leaded box, X at the indent column. line_height = full row.
+            let column_pixel = (*level * indent_size) as f32 * char_width;
+            let cell_top_left = metrics.cell_world_pos_at_x(*display_row as u32, column_pixel);
+            let sprite_x = cell_top_left.x;
+            let sprite_y = cell_top_left.y - line_height * 0.5;
             let translation = Vec3::new(sprite_x, sprite_y, 0.1); // z=0.1 behind text
 
             if entity_index < existing_guides.len() {
