@@ -8,7 +8,10 @@ use std::sync::Arc;
 /// rebuilds the entity's `DisplayLayout` on edit. Spawn alongside the
 /// usual text-engine bundle (`TextView`, `TextBuffer`, `ScrollState`,
 /// `ContentMetrics`, `FontConfig`, `TextViewViewport`) — the plugin fills the rest.
+/// `MarkdownTheme` cascades automatically (defaults to dark); override it
+/// at spawn for per-viewer styling.
 #[derive(Component, Clone, Debug)]
+#[require(crate::theme::MarkdownTheme)]
 pub struct MarkdownDoc {
     pub source: String,
 }

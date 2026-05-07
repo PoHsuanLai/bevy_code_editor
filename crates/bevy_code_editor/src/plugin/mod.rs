@@ -118,7 +118,6 @@ impl Plugin for CodeEditorPlugin {
         app.init_resource::<UiSettings>();
         app.init_resource::<IndentationSettings>();
         app.init_resource::<BracketSettings>();
-        app.init_resource::<CursorSettings>();
         app.init_resource::<CursorLineSettings>();
         app.init_resource::<PerformanceSettings>();
         app.init_resource::<WrappingSettings>();

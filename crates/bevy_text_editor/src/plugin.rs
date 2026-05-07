@@ -123,7 +123,6 @@ impl Plugin for TextEditorPlugin {
         app.register_type::<crate::cursor_settings::CursorStyle>();
         app.register_type::<crate::editing_events::CursorMoved>();
         app.register_type::<crate::editing_events::SelectionChanged>();
-        app.init_resource::<crate::cursor_settings::CursorSettings>();
         app.add_message::<OnEdit>();
         app.add_message::<crate::editing_events::CursorMoved>();
         app.add_message::<crate::editing_events::SelectionChanged>();

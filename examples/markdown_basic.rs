@@ -113,11 +113,10 @@ fn setup_viewer(
         },
         font,
         MarkdownDoc::new(SAMPLE),
+        // Override the default theme with one tuned for this demo's contrast.
+        MarkdownTheme::dark(),
         DisplayLayout::default(),
     ));
-
-    // Override the default theme with one tuned for this demo's contrast.
-    commands.insert_resource(MarkdownTheme::dark());
 }
 
 /// Mouse-wheel scroll, clamped to the laid-out content height.

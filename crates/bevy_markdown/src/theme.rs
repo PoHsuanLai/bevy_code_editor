@@ -9,7 +9,20 @@ use bevy_text_engine::BlockDecorTheme;
 /// and per-element padding. Generic block chrome (inline-code chip,
 /// fenced-code background, blockquote bar, rule color) lives in
 /// [`MarkdownTheme::decor`] as a [`BlockDecorTheme`].
-#[derive(Clone, Debug, Resource)]
+///
+/// Per-entity Component: cascaded onto every `MarkdownDoc` via `#[require]`
+/// so the simple case (one viewer, default theme) needs no extra spawn
+/// boilerplate. Multi-viewer hosts (light README next to dark notebook) can
+/// override the component on the affected entity:
+///
+/// ```rust,ignore
+/// commands.spawn((
+///     MarkdownDoc::new(text),
+///     MarkdownTheme::dark(),
+///     // ...rest of the viewer bundle
+/// ));
+/// ```
+#[derive(Clone, Debug, Component)]
 pub struct MarkdownTheme {
     pub body_fg: Color,
     /// Heading colors indexed by `level - 1` (H1 at index 0).

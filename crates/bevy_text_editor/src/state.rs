@@ -154,5 +154,6 @@ impl Default for IndentConfig {
     IndentConfig,
     TextViewDragState,
     ScrollConfig,
+    crate::cursor_settings::CursorSettings,
 )]
 pub struct TextEditor;

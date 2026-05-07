@@ -49,9 +49,6 @@ pub struct MarkdownViewerPlugin;
 
 impl Plugin for MarkdownViewerPlugin {
     fn build(&self, app: &mut App) {
-        if !app.world().contains_resource::<MarkdownTheme>() {
-            app.insert_resource(MarkdownTheme::default());
-        }
         app.add_systems(
             Update,
             (rebuild_markdown_layout, apply_markdown_scroll).chain(),
@@ -60,16 +57,16 @@ impl Plugin for MarkdownViewerPlugin {
 }
 
 /// Re-parses the markdown source + rebuilds the engine block list when
-/// the doc, font, or viewport changes. Writes a `BaseMarkdownLayout` on
-/// the entity (the un-scrolled layout) which the scroll system reads.
+/// the doc, font, viewport, or theme changes. Writes a `BaseMarkdownLayout`
+/// on the entity (the un-scrolled layout) which the scroll system reads.
 #[allow(clippy::type_complexity)]
 fn rebuild_markdown_layout(
     mut commands: Commands,
-    theme: Res<MarkdownTheme>,
     mut q: Query<
         (
             Entity,
             &MarkdownDoc,
+            &MarkdownTheme,
             &FontConfig,
             &TextViewViewport,
             Option<&mut TextBuffer>,
@@ -77,12 +74,13 @@ fn rebuild_markdown_layout(
         ),
         Or<(
             Changed<MarkdownDoc>,
+            Changed<MarkdownTheme>,
             Changed<FontConfig>,
             Changed<TextViewViewport>,
         )>,
     >,
 ) {
-    for (entity, doc, font, viewport, buffer, metrics) in q.iter_mut() {
+    for (entity, doc, theme, font, viewport, buffer, metrics) in q.iter_mut() {
         let blocks = parse_markdown(&doc.source);
         let cfg = MarkdownLayoutConfig::from_metrics(
             theme.clone(),

@@ -339,7 +339,7 @@ pub fn dispatch_action_events(
         (&ActionState<EditorAction>, &mut KeyRepeatState),
         With<EditorInputManager>,
     >,
-    cursor_settings: Res<CursorSettings>,
+    cursor_settings_q: Query<&CursorSettings, With<CodeEditor>>,
     #[cfg(feature = "lsp")] mut pending: ResMut<PendingActionFollowup>,
     #[cfg(feature = "lsp")] mut editor_q: Query<
         (
@@ -406,6 +406,12 @@ pub fn dispatch_action_events(
     if action_to_execute.is_none() {
         if let Some(current_action) = key_repeat_state.current_action {
             if action_state.pressed(&current_action) {
+                // Pull key-repeat timing from the focused editor's
+                // `CursorSettings`; fall back to default if the focused entity
+                // isn't a CodeEditor (e.g. a terminal pane is focused).
+                let default = CursorSettings::default();
+                let cursor_settings =
+                    cursor_settings_q.get(focused).unwrap_or(&default);
                 if let Some(action) = key_repeat_state.tick(now, &cursor_settings.key_repeat) {
                     action_to_execute = Some(action);
                 }

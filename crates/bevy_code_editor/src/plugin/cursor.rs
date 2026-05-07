@@ -112,13 +112,13 @@ pub(crate) fn push_cursor_overlays(
             &FontConfig,
             Option<&DisplayLayout>,
             &ThemeConfig,
+            &CursorSettings,
         ),
         With<CodeEditor>,
     >,
-    cursor_settings: Res<CursorSettings>,
     time: Res<Time>,
 ) {
-    for (sel, cursor, buffer, _vp, mut overlays, fold_state, font, layout, theme) in
+    for (sel, cursor, buffer, _vp, mut overlays, fold_state, font, layout, theme, cursor_settings) in
         editor_query.iter_mut()
     {
         // Drain any caret rects from the previous frame. We mark them with
@@ -162,7 +162,7 @@ pub(crate) fn push_cursor_overlays(
             overlays.rects.push(bevy_text_editor::caret_overlay(
                 display_row as u32,
                 x_left,
-                &cursor_settings,
+                cursor_settings,
                 theme.cursor,
             ));
         }

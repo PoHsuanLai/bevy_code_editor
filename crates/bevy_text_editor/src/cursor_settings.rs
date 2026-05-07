@@ -13,11 +13,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::key_repeat::KeyRepeatSettings;
 
-/// App-wide cursor appearance + key-repeat timing. A `Resource` rather
-/// than a `Component` because users typically want a single global look —
-/// but this could be split into a per-entity component later if needed.
-#[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
-#[reflect(Resource, Default, Debug)]
+/// Per-entity cursor appearance + key-repeat timing. Cascaded onto every
+/// `TextEditor` (and `BevyTerminal`) by `#[require]`, so the simple case
+/// — one editor, default look — needs no extra spawn boilerplate. Hosts
+/// with multiple editors that want distinct cursor styles override the
+/// component on the affected entity at spawn time:
+///
+/// ```rust,ignore
+/// commands.spawn((
+///     TextEditor,
+///     CursorSettings { blink_rate: 0.0, ..default() },
+/// ));
+/// ```
+#[derive(Clone, Debug, Component, Serialize, Deserialize, Reflect)]
+#[reflect(Component, Default, Debug)]
 pub struct CursorSettings {
     pub style: CursorStyle,
     /// In pixels; for `Line` and `Underline` styles.

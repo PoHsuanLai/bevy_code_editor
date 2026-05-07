@@ -294,7 +294,6 @@ fn detect_viewport_resize(
 /// Setup UI entities (line numbers, cursor, separator) for each `CodeEditor`.
 fn setup_editor_ui(
     mut commands: Commands,
-    _cursor_settings: Res<CursorSettings>,
     ui: Res<UiSettings>,
     editor_query: Query<(&TextViewViewport, &ThemeConfig), With<CodeEditor>>,
 ) {

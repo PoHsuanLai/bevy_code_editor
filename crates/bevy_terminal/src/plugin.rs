@@ -100,7 +100,6 @@ impl Plugin for BevyTerminalPlugin {
             .add_message::<TerminalClear>();
 
         app.init_resource::<TerminalEventLoopRegistry>();
-        app.init_resource::<bevy_text_editor::CursorSettings>();
         app.register_type::<bevy_text_editor::CursorSettings>();
         app.register_type::<bevy_text_editor::CursorStyle>();
         app.register_type::<bevy_text_engine::RenderTheme>();

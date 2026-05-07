@@ -34,6 +34,7 @@ use crate::backend;
     bevy_text_engine::BlockDecorTheme,
     bevy_text_editor::SelectionState,
     bevy_text_editor::EditTheme,
+    bevy_text_editor::CursorSettings,
     bevy_text_editor::ScrollConfig,
     TerminalGridSnapshot,
     TerminalShellInfo,

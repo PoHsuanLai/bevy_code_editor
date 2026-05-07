@@ -37,17 +37,17 @@ pub fn track_cursor_blink(
 
 /// Push the caret rect into the engine's overlays.
 pub fn push_terminal_caret(
-    cursor_settings: Res<CursorSettings>,
     time: Res<Time>,
     mut q: Query<(
         &TerminalGridSnapshot,
         &TerminalCursorBlink,
         &FontConfig,
         &EditTheme,
+        &CursorSettings,
         &mut TextViewOverlays,
     )>,
 ) {
-    for (snapshot, blink, font, theme, mut overlays) in q.iter_mut() {
+    for (snapshot, blink, font, theme, cursor_settings, mut overlays) in q.iter_mut() {
         // Drain previous-frame caret (z=1) — same convention as the editor.
         overlays.rects.retain(|r| r.z != 1);
 
@@ -68,7 +68,7 @@ pub fn push_terminal_caret(
         overlays.rects.push(caret_overlay(
             snapshot.cursor_row,
             x_left,
-            &cursor_settings,
+            cursor_settings,
             theme.cursor,
         ));
         overlays.version = overlays.version.wrapping_add(1);
