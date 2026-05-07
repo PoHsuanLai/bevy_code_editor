@@ -8,7 +8,7 @@
 
 use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
-use bevy_markdown::{MarkdownDoc, MarkdownTheme, MarkdownViewerPlugin};
+use bevy_markdown::{MarkdownDoc, MarkdownViewerPlugin};
 use bevy_text_engine::{
     ContentMetrics, DisplayLayout, FontConfig, FontSynthesis, ScrollState, TextBuffer,
     TextEnginePlugins, TextView, TextViewViewport,
@@ -113,8 +113,6 @@ fn setup_viewer(
         },
         font,
         MarkdownDoc::new(SAMPLE),
-        // Override the default theme with one tuned for this demo's contrast.
-        MarkdownTheme::dark(),
         DisplayLayout::default(),
     ));
 }

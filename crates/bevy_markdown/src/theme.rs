@@ -11,14 +11,16 @@ use bevy_text_engine::BlockDecorTheme;
 /// [`MarkdownTheme::decor`] as a [`BlockDecorTheme`].
 ///
 /// Per-entity Component: cascaded onto every `MarkdownDoc` via `#[require]`
-/// so the simple case (one viewer, default theme) needs no extra spawn
-/// boilerplate. Multi-viewer hosts (light README next to dark notebook) can
-/// override the component on the affected entity:
+/// so the simple case (one viewer) needs no extra spawn boilerplate. Hosts
+/// override fields on a per-entity basis to restyle:
 ///
 /// ```rust,ignore
 /// commands.spawn((
 ///     MarkdownDoc::new(text),
-///     MarkdownTheme::dark(),
+///     MarkdownTheme {
+///         body_fg: Color::srgb(0.1, 0.1, 0.1),
+///         ..default()
+///     },
 ///     // ...rest of the viewer bundle
 /// ));
 /// ```
@@ -42,13 +44,6 @@ pub struct MarkdownTheme {
 
 impl Default for MarkdownTheme {
     fn default() -> Self {
-        Self::dark()
-    }
-}
-
-impl MarkdownTheme {
-    /// Default dark theme — neutral grays + accent blue for links.
-    pub fn dark() -> Self {
         Self {
             body_fg: Color::srgb(0.86, 0.86, 0.88),
             heading_fg: [
