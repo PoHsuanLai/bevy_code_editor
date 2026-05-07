@@ -184,26 +184,21 @@ impl Default for DocumentHighlightsTheme {
 /// Render inlay hints from marker component data (inlined from the
 /// library's old `lsp_ui::render::render_inlay_hints`).
 ///
-/// Routes through `RowMetrics` so the hint sits on the same baseline
-/// the engine paints the surrounding code at; LSP-side `sync.rs`
-/// publishes `(line, character)` and we re-derive the world position
-/// here, ignoring the legacy `position` field.
+/// Routes through `RowMetricsParam` so the hint sits on the same
+/// baseline the engine paints the surrounding code at; LSP-side
+/// `sync.rs` publishes `(line, character)` and we re-derive the world
+/// position here, ignoring the legacy `position` field.
 fn render_inlay_hints(
     mut commands: Commands,
     hint_query: Query<(Entity, &InlayHintData), Added<InlayHintData>>,
-    editor_query: Query<
-        (&TextViewViewport, &FontConfig, &ScrollState, Option<&DisplayLayout>),
-        With<CodeEditor>,
-    >,
+    editors: Query<(Entity, &FontConfig), With<CodeEditor>>,
+    metrics: bevy_text_engine::RowMetricsParam,
     theme: Res<InlineDecorationsTheme>,
 ) {
-    let Ok((viewport, font, scroll, layout)) = editor_query.single() else {
+    let Ok((editor_entity, font)) = editors.single() else {
         return;
     };
-    let baseline = layout
-        .map(|l| l.baseline_offset)
-        .unwrap_or(font.font_size * bevy_text_engine::DEFAULT_BASELINE_OFFSET_RATIO);
-    let metrics = bevy_text_engine::row_metrics_with_baseline(viewport, scroll, font, baseline);
+    let m = metrics.get_or_panic(editor_entity);
 
     for (entity, hint) in hint_query.iter() {
         let color = match hint.kind {
@@ -215,8 +210,8 @@ fn render_inlay_hints(
         // Anchor on the row's glyph band middle so the hint sits where
         // the surrounding text reads — `Anchor::CENTER_LEFT` then makes
         // the hint extend rightward from this point.
-        let band = metrics.row_glyph_band(hint.line);
-        let cell_left = metrics
+        let band = m.row_glyph_band(hint.line);
+        let cell_left = m
             .cell_world_pos_at_x(hint.line, hint.character as f32 * font.char_width)
             .x;
         let pos = Vec3::new(
@@ -260,19 +255,14 @@ fn render_inlay_hints(
 fn render_document_highlights(
     mut commands: Commands,
     highlight_query: Query<(Entity, &DocumentHighlightData), Added<DocumentHighlightData>>,
-    editor_query: Query<
-        (&TextViewViewport, &FontConfig, &ScrollState, Option<&DisplayLayout>),
-        With<CodeEditor>,
-    >,
+    editors: Query<(Entity, &TextViewViewport), With<CodeEditor>>,
+    metrics: bevy_text_engine::RowMetricsParam,
     theme: Res<InlineDecorationsTheme>,
 ) {
-    let Ok((viewport, font, scroll, layout)) = editor_query.single() else {
+    let Ok((editor_entity, viewport)) = editors.single() else {
         return;
     };
-    let baseline = layout
-        .map(|l| l.baseline_offset)
-        .unwrap_or(font.font_size * bevy_text_engine::DEFAULT_BASELINE_OFFSET_RATIO);
-    let metrics = bevy_text_engine::row_metrics_with_baseline(viewport, scroll, font, baseline);
+    let m = metrics.get_or_panic(editor_entity);
 
     for (entity, highlight) in highlight_query.iter() {
         let color = if highlight.is_write {
@@ -281,7 +271,7 @@ fn render_document_highlights(
             theme.document_highlights.read_color
         };
 
-        let band = metrics.row_glyph_band(highlight.line);
+        let band = m.row_glyph_band(highlight.line);
         // `highlight.width` covers `(end_char - start_char) * char_width`;
         // we anchor at the row's left + the highlight's screen-x then
         // place the sprite center accordingly. `position.x` from sync

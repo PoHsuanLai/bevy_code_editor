@@ -288,6 +288,85 @@ impl RowMetrics {
     }
 }
 
+/// `SystemParam` shorthand for the most common consumer pattern: take
+/// any number of editor entities and look up `RowMetrics` for one of
+/// them by entity. Saves the boilerplate of declaring a 4-tuple query
+/// (`viewport, scroll, font, layout`) and unwrapping it on every
+/// chrome-positioning system.
+///
+/// ```ignore
+/// fn render_my_chrome(metrics: RowMetricsParam, editors: Query<Entity, With<MyEditor>>) {
+///     let editor = editors.single().unwrap();
+///     let m = metrics.get(editor).expect("editor has TextView components");
+///     let band = m.row_glyph_band(7);
+///     // ...
+/// }
+/// ```
+///
+/// Reads `Option<&DisplayLayout>` so consumers that haven't laid out
+/// yet still get sensible metrics (using the canonical baseline ratio).
+/// When the layout is present, its `baseline_offset` is used so the
+/// helper output stays byte-identical with the renderer even if the
+/// layout customizes the baseline.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct RowMetricsParam<'w, 's> {
+    query: bevy::ecs::system::Query<
+        'w,
+        's,
+        (
+            bevy::ecs::entity::Entity,
+            &'static TextViewViewport,
+            &'static ScrollState,
+            &'static FontConfig,
+            Option<&'static super::layout::DisplayLayout>,
+        ),
+    >,
+}
+
+impl<'w, 's> RowMetricsParam<'w, 's> {
+    /// Build a `RowMetrics` snapshot for the given editor entity.
+    /// Returns `None` when the entity is missing a required component
+    /// (`TextViewViewport`, `ScrollState`, or `FontConfig`).
+    pub fn get(&self, entity: bevy::ecs::entity::Entity) -> Option<RowMetrics> {
+        let (_, viewport, scroll, font, layout) = self.query.get(entity).ok()?;
+        let baseline = layout
+            .map(|l| l.baseline_offset)
+            .unwrap_or(font.font_size * DEFAULT_BASELINE_OFFSET_RATIO);
+        Some(row_metrics_with_baseline(viewport, scroll, font, baseline))
+    }
+
+    /// As [`get`](Self::get) but `panic`s when the entity is missing
+    /// the required components. Useful for systems that have already
+    /// proven the entity is a valid editor (e.g. via a separate query
+    /// in the same system).
+    pub fn get_or_panic(&self, entity: bevy::ecs::entity::Entity) -> RowMetrics {
+        self.get(entity).unwrap_or_else(|| {
+            panic!(
+                "RowMetricsParam: entity {:?} is missing one of \
+                 (TextViewViewport, ScrollState, FontConfig)",
+                entity
+            )
+        })
+    }
+
+    /// Iterate over every text view in the world, yielding
+    /// `(entity, RowMetrics)` pairs. Useful for systems that operate
+    /// across multiple editors (e.g. a global indent-guide pass).
+    pub fn iter(
+        &self,
+    ) -> impl Iterator<Item = (bevy::ecs::entity::Entity, RowMetrics)> + '_ {
+        self.query.iter().map(|(entity, viewport, scroll, font, layout)| {
+            let baseline = layout
+                .map(|l| l.baseline_offset)
+                .unwrap_or(font.font_size * DEFAULT_BASELINE_OFFSET_RATIO);
+            (
+                entity,
+                row_metrics_with_baseline(viewport, scroll, font, baseline),
+            )
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,5 +487,68 @@ mod tests {
             corners: CornerRadii::ZERO,
             vertical: RowVertical::Full,
         };
+    }
+
+    /// `RowMetricsParam` produces output identical to calling
+    /// `row_metrics_with_baseline` directly on the same component
+    /// values. The system param is a convenience wrapper, not a
+    /// separate code path; this test ensures it stays that way.
+    #[test]
+    fn system_param_matches_direct_call() {
+        use crate::view::layout::DisplayLayout;
+        use bevy::ecs::system::RunSystemOnce;
+        use bevy::prelude::*;
+
+        let mut world = World::new();
+        let viewport = TextViewViewport {
+            width: 800,
+            height: 600,
+            hit_test_position: Vec2::ZERO,
+            text_area_left: 50.0,
+            text_area_top: 8.0,
+            gutter_width: 40.0,
+        };
+        let scroll = ScrollState {
+            scroll_offset: -100.0,
+            target_scroll_offset: -100.0,
+            horizontal_scroll_offset: 0.0,
+            target_horizontal_scroll_offset: 0.0,
+            ..Default::default()
+        };
+        let font = FontConfig {
+            font: Handle::default(),
+            font_size: 14.0,
+            line_height: 21.0,
+            char_width: 8.4,
+            font_bold: None,
+            font_italic: None,
+            font_bold_italic: None,
+            font_synthesis: Default::default(),
+            inline_bg_hpad_em: 0.25,
+        };
+        let mut layout = DisplayLayout::default();
+        layout.baseline_offset = 14.0 * 0.32;
+
+        // Compute the expected snapshot before moving the components
+        // into the entity (`ScrollState` isn't `Clone`).
+        let direct = row_metrics_with_baseline(&viewport, &scroll, &font, layout.baseline_offset);
+
+        let entity = world
+            .spawn((viewport, scroll, font.clone(), layout.clone()))
+            .id();
+
+        let result = world
+            .run_system_once(move |metrics: RowMetricsParam| metrics.get_or_panic(entity))
+            .unwrap();
+
+        // Sample a few rows; if any cell of the snapshot differs the
+        // SystemParam wrapper has drifted from the direct call.
+        for row in [0u32, 1, 7, 42] {
+            assert!((direct.row_y_top(row) - result.row_y_top(row)).abs() < 1e-6);
+            let a = direct.row_glyph_band(row);
+            let b = result.row_glyph_band(row);
+            assert!((a.min - b.min).length() < 1e-6);
+            assert!((a.max - b.max).length() < 1e-6);
+        }
     }
 }

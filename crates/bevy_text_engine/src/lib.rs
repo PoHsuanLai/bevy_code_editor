@@ -40,7 +40,8 @@ pub mod prelude {
     pub use crate::view::{
         row_metrics, row_metrics_with_baseline, Block, BlockDecorTheme, BlockLayoutConfig,
         BlockList, ContentMetrics, DisplayLayout, FontConfig, FontSynthesis, HiddenLines,
-        LayoutWrap, LineStyles, RenderTheme, RowMetrics, RunWithText, ScrollState, StyleRun,
-        TextBuffer, TextEnginePlugin, TextEnginePlugins, TextView, TextViewViewport,
+        LayoutWrap, LineStyles, RenderTheme, RowMetrics, RowMetricsParam, RunWithText,
+        ScrollState, StyleRun, TextBuffer, TextEnginePlugin, TextEnginePlugins, TextView,
+        TextViewViewport,
     };
 }
