@@ -8,6 +8,8 @@ use bevy_text_engine::{
     TextViewViewport,
 };
 use ropey::Rope;
+use wezterm_surface::SequenceNo;
+use wezterm_term::Line as VtLine;
 
 use crate::backend::{
     ColorAttribute, CursorVisibility, Intensity, Underline as VtUnderline,
@@ -15,6 +17,19 @@ use crate::backend::{
 use crate::types::{
     TerminalColorPalette, TerminalGridSnapshot, TerminalScrollFollow, TerminalSession,
 };
+
+/// Cached shape of one phys row from a previous rebuild. We carry these forward
+/// across frames so unchanged rows (the common case during cursor blink, or
+/// when only one line of the prompt redraws) don't have to walk cells +
+/// rebuild `RunWithText` runs again.
+#[derive(Clone)]
+struct CachedLine {
+    /// Padded line text (cols chars, no trailing newline). Concatenated into
+    /// the rope with `\n` separators on rebuild.
+    text: String,
+    /// Style runs covering `text`. Cloned out of the cache when reused.
+    runs: Vec<RunWithText>,
+}
 
 /// Per-entity rebuild-cache for `sync_grid_snapshot`. Kept in a `Local` because
 /// it's pure derived state — hosts never need to read it.
@@ -24,11 +39,21 @@ pub struct RebuildCache {
     /// Last `Term::current_seqno()` we rebuilt against. We still re-anchor the
     /// scroll on every frame (viewport resizes change `max_scroll`), but skip
     /// the (expensive) rope + style rebuild when nothing in the term changed.
-    last_seqno: Option<usize>,
+    last_seqno: Option<SequenceNo>,
     /// Last visible-row count we rebuilt against. A resize changes which rows
     /// are visible without bumping `current_seqno()`, so we force a rebuild
     /// whenever this changes.
     last_rows: usize,
+    /// Last column count. A horizontal resize re-pads every line; bypass the
+    /// per-row dirty test in that case.
+    last_cols: usize,
+    /// Last total scrollback row count. When scrollback shifts (a new line
+    /// scrolls in, or eviction drops the top), our phys-row index becomes
+    /// invalid — bypass the per-row gate and rebuild from scratch.
+    last_total_lines: usize,
+    /// Per-phys-row shape cache. Indexed by phys row; len == last_total_lines
+    /// after a successful rebuild. Cleared whenever total_lines/cols change.
+    lines: Vec<CachedLine>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -81,77 +106,39 @@ pub fn sync_grid_snapshot(
             continue;
         }
 
+        // Per-line dirty gate: skip cell→run reshaping for rows whose
+        // `Line::changed_since(prev_seqno)` is false. Only valid when the
+        // overall shape of the buffer (cols + total_lines) hasn't changed
+        // since the last rebuild — otherwise phys-row indices into our cache
+        // no longer mean the same thing.
+        let cache_valid = cache_entry.last_seqno.is_some()
+            && cache_entry.last_cols == cols
+            && cache_entry.last_total_lines == total_lines
+            && cache_entry.lines.len() == total_lines;
+        let prev_seqno = cache_entry.last_seqno.unwrap_or(0);
+
         let mut text = String::with_capacity(total_lines * (cols + 1));
         let mut by_line: HashMap<u32, Vec<RunWithText>> = HashMap::with_capacity(total_lines);
+        let mut next_lines: Vec<CachedLine> = Vec::with_capacity(total_lines);
 
         screen.for_each_phys_line(|phys_y, line| {
-            let mut line_text = String::with_capacity(cols);
-            let mut runs: Vec<RunWithText> = Vec::new();
-
-            let mut current: Option<(StyleRun, String)> = None;
-            for cell in line.visible_cells() {
-                let cell_str = cell.str();
-                let ch = cell_str.chars().next().unwrap_or(' ');
-                line_text.push(ch);
-
-                let attrs = cell.attrs();
-                let fg = resolve_color(attrs.foreground(), palette, render, true);
-                // Only emit a per-cell bg quad when the shell actually set a
-                // non-default background. Default-bg cells let the view's
-                // base `RenderTheme.background` show through.
-                let bg = match attrs.background() {
-                    ColorAttribute::Default => None,
-                    other => Some(resolve_color(other, palette, render, false)),
-                };
-
-                let run_proto = StyleRun {
-                    byte_range: 0..0,
-                    fg,
-                    bg,
-                    font_scale: 1.0,
-                    skew: 0.0,
-                    corner_radius: 0.0,
-                    font_weight: match attrs.intensity() {
-                        Intensity::Bold => Some(700),
-                        Intensity::Half => Some(300),
-                        Intensity::Normal => None,
-                    },
-                    italic: attrs.italic(),
-                    font_family: None,
-                    decoration: if !matches!(attrs.underline(), VtUnderline::None) {
-                        Some(bevy_text_engine::TextDecoration::Underline)
-                    } else if attrs.strikethrough() {
-                        Some(bevy_text_engine::TextDecoration::Strikethrough)
-                    } else {
-                        None
-                    },
-                    link: None,
-                };
-
-                match current.as_mut() {
-                    Some((prev, buf)) if style_run_matches(prev, &run_proto) => {
-                        buf.push(ch);
-                    }
-                    _ => {
-                        if let Some((run, buf)) = current.take() {
-                            runs.push(RunWithText { text: buf, run });
-                        }
-                        let mut buf = String::new();
-                        buf.push(ch);
-                        current = Some((run_proto, buf));
-                    }
-                }
-            }
-            while line_text.chars().count() < cols {
-                line_text.push(' ');
-            }
-            if let Some((run, buf)) = current.take() {
-                runs.push(RunWithText { text: buf, run });
+            if cache_valid && !line.changed_since(prev_seqno) {
+                let cached = &cache_entry.lines[phys_y];
+                text.push_str(&cached.text);
+                text.push('\n');
+                by_line.insert(phys_y as u32, cached.runs.clone());
+                next_lines.push(cached.clone());
+                return;
             }
 
+            let (line_text, runs) = shape_phys_line(line, cols, palette, render);
             text.push_str(&line_text);
             text.push('\n');
-            by_line.insert(phys_y as u32, runs);
+            by_line.insert(phys_y as u32, runs.clone());
+            next_lines.push(CachedLine {
+                text: line_text,
+                runs,
+            });
         });
 
         let new_rope = Rope::from_str(&text);
@@ -178,6 +165,9 @@ pub fn sync_grid_snapshot(
 
         cache_entry.last_seqno = Some(seqno);
         cache_entry.last_rows = rows;
+        cache_entry.last_cols = cols;
+        cache_entry.last_total_lines = total_lines;
+        cache_entry.lines = next_lines;
         anchor_scroll_to_bottom(&mut scroll, viewport, font, total_lines, &mut follow);
     }
 }
@@ -227,6 +217,76 @@ fn anchor_scroll_to_bottom(
     } else {
         follow.last_applied_target = scroll.target_scroll_offset;
     }
+}
+
+/// Walk a single phys row's cells and produce `(padded_text, style_runs)`.
+/// Lifted out of the main loop so the per-line dirty gate can reuse cached
+/// rows without duplicating the cell-walk logic.
+fn shape_phys_line(
+    line: &VtLine,
+    cols: usize,
+    palette: &TerminalColorPalette,
+    render: &RenderTheme,
+) -> (String, Vec<RunWithText>) {
+    let mut line_text = String::with_capacity(cols);
+    let mut runs: Vec<RunWithText> = Vec::new();
+    let mut current: Option<(StyleRun, String)> = None;
+
+    for cell in line.visible_cells() {
+        let cell_str = cell.str();
+        let ch = cell_str.chars().next().unwrap_or(' ');
+        line_text.push(ch);
+
+        let attrs = cell.attrs();
+        let fg = resolve_color(attrs.foreground(), palette, render, true);
+        let bg = match attrs.background() {
+            ColorAttribute::Default => None,
+            other => Some(resolve_color(other, palette, render, false)),
+        };
+
+        let run_proto = StyleRun {
+            byte_range: 0..0,
+            fg,
+            bg,
+            font_scale: 1.0,
+            skew: 0.0,
+            corner_radius: 0.0,
+            font_weight: match attrs.intensity() {
+                Intensity::Bold => Some(700),
+                Intensity::Half => Some(300),
+                Intensity::Normal => None,
+            },
+            italic: attrs.italic(),
+            font_family: None,
+            decoration: if !matches!(attrs.underline(), VtUnderline::None) {
+                Some(bevy_text_engine::TextDecoration::Underline)
+            } else if attrs.strikethrough() {
+                Some(bevy_text_engine::TextDecoration::Strikethrough)
+            } else {
+                None
+            },
+            link: None,
+        };
+
+        match current.as_mut() {
+            Some((prev, buf)) if style_run_matches(prev, &run_proto) => buf.push(ch),
+            _ => {
+                if let Some((run, buf)) = current.take() {
+                    runs.push(RunWithText { text: buf, run });
+                }
+                let mut buf = String::new();
+                buf.push(ch);
+                current = Some((run_proto, buf));
+            }
+        }
+    }
+    while line_text.chars().count() < cols {
+        line_text.push(' ');
+    }
+    if let Some((run, buf)) = current.take() {
+        runs.push(RunWithText { text: buf, run });
+    }
+    (line_text, runs)
 }
 
 fn style_run_matches(a: &StyleRun, b: &StyleRun) -> bool {
