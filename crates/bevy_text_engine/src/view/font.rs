@@ -22,16 +22,33 @@ pub struct FontConfig {
     pub font_italic: Option<Handle<Font>>,
     pub font_bold_italic: Option<Handle<Font>>,
     pub font_synthesis: FontSynthesis,
+    /// Horizontal padding for an inline background quad (e.g. markdown
+    /// `<code>` runs), as a fraction of `font_size`. `0.25` ≈ 0.25em
+    /// each side — matches typical CSS `<code>` padding and scales
+    /// automatically with size, weight, and DPI. Set to `0.0` to draw
+    /// the background flush with glyph extents.
+    pub inline_bg_hpad_em: f32,
 }
 
-/// Whether to synthesize a bold / italic face when the matching slot on
-/// [`FontConfig`] is empty. Both default `true`, matching CSS Fonts L4
-/// `font-synthesis: weight style`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Reflect)]
+/// Whether (and how) to synthesize a bold / italic face when the
+/// matching slot on [`FontConfig`] is empty. `weight` / `style` toggles
+/// match CSS Fonts L4 `font-synthesis: weight style`. The `*_amount`
+/// fields tune the synthesis intensity:
+///
+/// - `bold_stroke_px`: faux-bold draws each glyph twice with this
+///   x-offset. ~0.6 px gives a noticeable weight bump without smearing
+///   text — the value typical browsers use for faux-bold. Scale up for
+///   very large display sizes if results look thin.
+/// - `italic_skew`: faux-italic shears glyphs by this slope (rise/run).
+///   ~0.21 (~12°) is the angle FreeType's slant transform and most
+///   browsers apply.
+#[derive(Clone, Copy, Debug, PartialEq, Reflect)]
 #[reflect(Default, Debug)]
 pub struct FontSynthesis {
     pub weight: bool,
     pub style: bool,
+    pub bold_stroke_px: f32,
+    pub italic_skew: f32,
 }
 
 impl Default for FontSynthesis {
@@ -39,6 +56,8 @@ impl Default for FontSynthesis {
         Self {
             weight: true,
             style: true,
+            bold_stroke_px: 0.6,
+            italic_skew: 0.21,
         }
     }
 }
@@ -63,6 +82,7 @@ impl FontConfig {
             font_italic: None,
             font_bold_italic: None,
             font_synthesis: FontSynthesis::default(),
+            inline_bg_hpad_em: 0.25,
         }
     }
 

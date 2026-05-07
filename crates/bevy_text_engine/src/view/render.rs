@@ -27,13 +27,29 @@ use super::viewport::TextViewViewport;
 /// Built once per text-view per frame in [`super::plugin::update_text_views`]
 /// from the entity's `FontConfig` (each `Handle<Font>` is registered with
 /// the atlas's cosmic-text font system on first use).
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct FontFaces {
     pub regular: Option<cosmic_text::fontdb::ID>,
     pub bold: Option<cosmic_text::fontdb::ID>,
     pub italic: Option<cosmic_text::fontdb::ID>,
     pub bold_italic: Option<cosmic_text::fontdb::ID>,
     pub synthesis: FontSynthesis,
+    /// Inline-background horizontal padding as a fraction of font size
+    /// (mirrors [`crate::view::FontConfig::inline_bg_hpad_em`]).
+    pub inline_bg_hpad_em: f32,
+}
+
+impl Default for FontFaces {
+    fn default() -> Self {
+        Self {
+            regular: None,
+            bold: None,
+            italic: None,
+            bold_italic: None,
+            synthesis: FontSynthesis::default(),
+            inline_bg_hpad_em: 0.25,
+        }
+    }
 }
 
 impl FontFaces {
@@ -46,6 +62,7 @@ impl FontFaces {
             italic: None,
             bold_italic: None,
             synthesis: FontSynthesis::default(),
+            inline_bg_hpad_em: 0.25,
         }
     }
 
@@ -266,7 +283,7 @@ pub fn render_layout(
             let style = RunStyle {
                 color: linear_rgba(layout.default_fg),
                 skew: 0.0,
-                stroke_double: false,
+                stroke_offset_px: 0.0,
             };
             if let Some(shape) = shape_usable {
                 emit_shaped_run_glyphs(
@@ -310,14 +327,14 @@ pub fn render_layout(
                 // explicit skew or apply the synthetic-italic default.
                 // Bold synthesis is a glyph-level stroke double.
                 let effective_skew = if synth_italic && run.skew == 0.0 {
-                    SYNTHETIC_ITALIC_SKEW
+                    faces.synthesis.italic_skew
                 } else {
                     run.skew
                 };
                 let style = RunStyle {
                     color: linear_rgba(run.fg),
                     skew: effective_skew,
-                    stroke_double: synth_bold,
+                    stroke_offset_px: if synth_bold { faces.synthesis.bold_stroke_px } else { 0.0 },
                 };
                 let seg_font_size = if run.font_scale > 0.0 {
                     font_size * run.font_scale
@@ -346,6 +363,7 @@ pub fn render_layout(
                             atlas,
                             run_face,
                             shape_usable,
+                            faces.inline_bg_hpad_em,
                             &mut below_instances,
                             &mut text_instances,
                         );
@@ -426,32 +444,14 @@ struct RowAnchor {
     base_y: f32,
 }
 
-/// Default skew when a run wants italic but no italic face is loaded. ~12°
-/// is the synthetic-italic angle most browsers use; matches the value
-/// applied by FreeType's slant transform.
-const SYNTHETIC_ITALIC_SKEW: f32 = 0.21;
-
-/// Synthetic-bold stroke offset in pixels. The renderer emits each glyph
-/// twice — once at pen-x, once at pen-x + this — to thicken strokes when
-/// no bold face is loaded. ~0.6 px gives a noticeable weight bump without
-/// turning text into a smear; matches typical browser faux-bold.
-const SYNTHETIC_BOLD_STROKE_PX: f32 = 0.6;
-
-/// Horizontal padding for a per-run background quad, expressed as a
-/// fraction of the line's `font_size`. Equivalent to `0.25em` on each
-/// side — matches typical CSS `<code>` padding and scales with font
-/// size, font weight, and DPI without any hand-tuned constants.
-const INLINE_BG_HPAD_EM: f32 = 0.25;
-
 /// Per-run paint attributes. `color` is pre-linearized. `skew` carries
-/// italic simulation. `stroke_double` triggers synthetic bold (each glyph
-/// drawn twice with `SYNTHETIC_BOLD_STROKE_PX` x-offset).
-/// `corner_radius: 0.0` since glyphs themselves don't round.
+/// italic simulation. `stroke_offset_px > 0.0` triggers synthetic bold:
+/// each glyph is drawn twice with this x-offset.
 #[derive(Clone, Copy)]
 struct RunStyle {
     color: [f32; 4],
     skew: f32,
-    stroke_double: bool,
+    stroke_offset_px: f32,
 }
 
 /// Build a glyph quad from an atlas hit. Centralizes the legacy/shaped paint
@@ -489,8 +489,8 @@ fn push_glyph(
     out: &mut Vec<GlyphInstance>,
 ) {
     out.push(glyph_quad(info, pen_x, anchor, style));
-    if style.stroke_double {
-        out.push(glyph_quad(info, pen_x + SYNTHETIC_BOLD_STROKE_PX, anchor, style));
+    if style.stroke_offset_px > 0.0 {
+        out.push(glyph_quad(info, pen_x + style.stroke_offset_px, anchor, style));
     }
 }
 
@@ -578,6 +578,7 @@ fn emit_run_with_bg(
     atlas: &mut GlyphAtlas,
     run_face: Option<cosmic_text::fontdb::ID>,
     shape_usable: Option<&Arc<super::snapshot::LineShape>>,
+    inline_bg_hpad_em: f32,
     below: &mut Vec<GlyphInstance>,
     text: &mut Vec<GlyphInstance>,
 ) {
@@ -600,7 +601,7 @@ fn emit_run_with_bg(
     let text_band_above = cap_to_descender * 0.25;
     let band_top_y_off = baseline_y_off - text_band_above;
     // Equal padding on each side, scaled to the run's font size.
-    let hpad = INLINE_BG_HPAD_EM * seg_font_size;
+    let hpad = inline_bg_hpad_em * seg_font_size;
     let bg_x = ink_left - hpad;
     let bg_w = (ink_right - ink_left + hpad * 2.0).max(0.0);
     below.push(GlyphInstance {
