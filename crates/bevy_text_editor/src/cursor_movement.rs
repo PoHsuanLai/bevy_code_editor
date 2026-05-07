@@ -168,3 +168,24 @@ pub fn move_cursor_word_left(cursor: &mut CursorState, rope: &Rope) {
 pub fn move_cursor_word_right(cursor: &mut CursorState, rope: &Rope) {
     cursor.cursor_pos = find_word_boundary_right(rope, cursor.cursor_pos);
 }
+
+/// Move the cursor `lines` lines up (negative) or down (positive),
+/// preserving the column offset like single-line up/down do. Used by
+/// PageUp / PageDown.
+pub fn move_cursor_lines(cursor: &mut CursorState, rope: &Rope, lines: isize) {
+    if lines == 0 {
+        return;
+    }
+    let line_idx = rope.char_to_line(cursor.cursor_pos);
+    let line_start = rope.line_to_char(line_idx);
+    let col_offset = cursor.cursor_pos - line_start;
+    let last_line = rope.len_lines().saturating_sub(1);
+    let target = if lines < 0 {
+        line_idx.saturating_sub((-lines) as usize)
+    } else {
+        (line_idx + lines as usize).min(last_line)
+    };
+    let target_start = rope.line_to_char(target);
+    let target_len = rope.line(target).len_chars();
+    cursor.cursor_pos = target_start + col_offset.min(target_len.saturating_sub(1));
+}
