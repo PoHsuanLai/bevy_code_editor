@@ -14,7 +14,7 @@ use crate::types::{CodeEditor, CursorState};
 
 use super::state::{
     LspCodeActionsPopup, LspCompletionPopup, LspDocumentHighlights, LspHoverPopup, LspInlayHints,
-    LspRenamePopup, LspSignatureHelpPopup, LspSyncStateExtra,
+    LspDidChangeBatcher, LspRenamePopup, LspSignatureHelpPopup,
 };
 use bevy_lsp::{
     CodeActionOrCommand, LspClient, LspCodeActionsResponse, LspCompletionResponse,
@@ -508,61 +508,65 @@ fn apply_text_edits(
     }
 }
 
-/// System to sync document with LSP (debounced).
+/// Flush the [`LspDidChangeBatcher`] when its debounce timer expires.
 ///
-/// Drives `did_change` from `LspSyncStateExtra::dirty` (set by editor input
-/// when text changes); the LSP-side version counter lives on `LspDocument`.
+/// `listen_text_edit_events` queues incremental change events and arms
+/// the timer; this system ticks the timer and, on expiry, sends one
+/// `textDocument/didChange` carrying the whole batch (or a full-document
+/// sync if any queued edit lacked a pre-edit rope snapshot or
+/// `LspSettings::full_document_sync` is on).
 pub fn sync_lsp_document(
     time: Res<Time>,
-    settings: Res<crate::settings::LspSettings>,
     mut query: Query<
         (
             &TextBuffer,
             &LspClient,
             Option<&mut LspDocument>,
-            &mut LspSyncStateExtra,
+            &mut LspDidChangeBatcher,
         ),
         With<CodeEditor>,
     >,
 ) {
-    let Ok((buffer, lsp_client, lsp_document, mut sync_state)) = query.single_mut() else {
+    let Ok((buffer, lsp_client, lsp_document, mut batcher)) = query.single_mut() else {
         return;
     };
-    if !sync_state.dirty {
+    if batcher.pending.is_empty() && !batcher.force_full_doc {
         return;
     }
     let Some(mut lsp_document) = lsp_document else {
+        // Drop queued edits — without a document URI there is no server
+        // to flush to. The next edit after `LspDocument` is attached
+        // re-arms the batcher cleanly.
+        batcher.pending.clear();
+        batcher.force_full_doc = false;
         return;
     };
 
-    let duration = std::time::Duration::from_millis(settings.did_change_delay_ms);
-    if sync_state.timer.duration() != duration {
-        sync_state.timer.set_duration(duration);
+    batcher.timer.tick(time.delta());
+    if !batcher.timer.is_finished() {
+        return;
     }
-    sync_state.timer.tick(time.delta());
 
-    if sync_state.timer.is_finished() {
-        let version = lsp_document.bump_version();
-
-        // OPTIMIZATION: Use rope chunks instead of full to_string() conversion
-        let change = TextDocumentContentChangeEvent {
+    let version = lsp_document.bump_version();
+    let changes = if batcher.force_full_doc {
+        batcher.pending.clear();
+        vec![TextDocumentContentChangeEvent {
             range: None,
             range_length: None,
             text: buffer.rope.chunks().collect(),
-        };
+        }]
+    } else {
+        std::mem::take(&mut batcher.pending)
+    };
 
-        lsp_client.send(LspMessage::DidChange {
-            uri: lsp_document.uri.clone(),
-            version,
-            changes: vec![change],
-        });
+    lsp_client.send(LspMessage::DidChange {
+        uri: lsp_document.uri.clone(),
+        version,
+        changes,
+    });
 
-        #[cfg(debug_assertions)]
-        debug!("[LSP] Debounced sync sent, version={}", version);
-
-        sync_state.dirty = false;
-        sync_state.timer.reset();
-    }
+    batcher.force_full_doc = false;
+    batcher.timer.reset();
 }
 
 /// System to request inlay hints for visible range
@@ -654,7 +658,12 @@ pub fn request_signature_help(
     }
 }
 
-/// Helper to send code action request. Bumps `action_state.request_id`.
+/// Send `textDocument/codeAction` and bump `action_state.request_id`.
+///
+/// Helper, not a system — no producer wires this up yet. A future
+/// "lightbulb / quick-fix" trigger system (cursor-on-diagnostic or
+/// explicit `Ctrl+.`) will call this directly with the relevant range
+/// and the diagnostics intersecting it.
 pub fn request_code_actions(
     lsp_client: &LspClient,
     capabilities: &ServerCapabilities,
@@ -701,9 +710,14 @@ pub fn execute_code_action(lsp_client: &LspClient, action: &CodeActionOrCommand)
     }
 }
 
-/// System to request document highlights when cursor moves
+/// Fire `textDocument/documentHighlight` when the cursor settles on a
+/// new position. Highlights all occurrences of the symbol under cursor
+/// (the IDE feature where clicking on a name highlights every other use
+/// in the same file). Debounce delay comes from
+/// `LspSettings::highlight_delay_ms`.
 pub fn request_document_highlights(
     time: Res<Time>,
+    settings: Res<crate::settings::LspSettings>,
     mut query: Query<
         (
             &LspClient,
@@ -740,9 +754,10 @@ pub fn request_document_highlights(
 
     if highlight_state.cursor_position != cursor_pos || highlight_state.debounce_timer.is_none() {
         highlight_state.cursor_position = cursor_pos;
-        highlight_state.debounce_timer = Some(Timer::from_seconds(0.15, TimerMode::Once));
-        // Cursor moved: hide stale highlights immediately so they don't sit on
-        // the old symbol while we wait for the new response.
+        highlight_state.debounce_timer = Some(Timer::new(
+            std::time::Duration::from_millis(settings.highlight_delay_ms),
+            TimerMode::Once,
+        ));
         if highlight_state.visible {
             highlight_state.highlights.clear();
             highlight_state.visible = false;
@@ -758,11 +773,8 @@ pub fn request_document_highlights(
     highlight_state.debounce_timer = None;
     highlight_state.in_flight_position = Some(cursor_pos);
 
-    let position = bevy_lsp::rope_char_to_lsp_position(
-        &buffer.rope,
-        cursor_pos,
-        bevy_lsp::PositionEncoding::Utf16,
-    );
+    let position =
+        bevy_lsp::rope_char_to_lsp_position(&buffer.rope, cursor_pos, capabilities.position_encoding());
     lsp_client.send(LspMessage::DocumentHighlight {
         uri: lsp_document.uri.clone(),
         position,

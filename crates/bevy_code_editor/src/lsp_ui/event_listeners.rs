@@ -11,7 +11,7 @@
 
 use super::snippet;
 use super::state::{
-    LspCodeActionsPopup, LspCompletionPopup, LspDebounceTimers, LspRenamePopup,
+    LspCompletionPopup, LspDebounceTimers, LspDidChangeBatcher, LspRenamePopup,
     LspSignatureHelpPopup, PendingLspRequest, SessionTabstop, TabstopSession,
     UnifiedCompletionItem,
 };
@@ -28,86 +28,64 @@ use bevy_lsp::{
 };
 use lsp_types::{Range, TextDocumentContentChangeEvent};
 
-/// Listen for text edits and send `textDocument/didChange` to the server.
+/// Queue text edits into the [`LspDidChangeBatcher`] and arm its debounce
+/// timer. The batched flush happens in
+/// [`super::systems::sync_lsp_document`] when the timer expires.
 ///
-/// Sends incremental change events when each edit carries a pre-edit rope
-/// snapshot (the editor entity has [`bevy_text_editor::SnapshotPreEdit`]).
-/// Falls back to full-document sync when the snapshot is missing or when
-/// `LspSettings::full_document_sync` is set — the spec guarantees full-doc
-/// is always valid.
+/// Builds incremental [`TextDocumentContentChangeEvent`]s when each edit
+/// carries a pre-edit rope snapshot (the editor entity has
+/// [`bevy_text_editor::SnapshotPreEdit`]); otherwise the next flush
+/// promotes to a full-document sync. The spec guarantees full-doc is
+/// always valid, and `LspSettings::full_document_sync` forces this path
+/// for recovery.
 pub fn listen_text_edit_events(
     mut events: MessageReader<TextEditEvent>,
     mut query: Query<
         (
             &TextBuffer,
-            &LspClient,
-            Option<&mut LspDocument>,
             &bevy_lsp::ServerCapabilities,
+            &mut LspDidChangeBatcher,
         ),
         With<CodeEditor>,
     >,
     settings: Res<LspSettings>,
 ) {
-    let Ok((buffer, lsp_client, lsp_document, caps)) = query.single_mut() else {
-        return;
-    };
-    let Some(mut lsp_document) = lsp_document else {
+    let Ok((buffer, caps, mut batcher)) = query.single_mut() else {
         return;
     };
 
     let enc = caps.position_encoding();
-    let collected: Vec<TextEditEvent> = events.read().cloned().collect();
-    if collected.is_empty() {
-        return;
+    let mut queued_any = false;
+    for event in events.read() {
+        queued_any = true;
+        if settings.full_document_sync || event.pre_edit_rope.is_none() {
+            batcher.force_full_doc = true;
+            continue;
+        }
+        let pre = event.pre_edit_rope.as_ref().expect("checked above");
+        let delta = &event.delta;
+        let start = rope_byte_to_lsp_position(pre, delta.start_byte, enc);
+        let end = rope_byte_to_lsp_position(pre, delta.old_end_byte, enc);
+        let new_text = if delta.start_byte == delta.new_end_byte {
+            String::new()
+        } else {
+            let new_start_char = buffer.rope.byte_to_char(delta.start_byte);
+            let new_end_char = buffer.rope.byte_to_char(delta.new_end_byte);
+            buffer.rope.slice(new_start_char..new_end_char).chars().collect()
+        };
+        batcher.pending.push(TextDocumentContentChangeEvent {
+            range: Some(Range { start, end }),
+            range_length: None,
+            text: new_text,
+        });
     }
 
-    // Build incremental change events when every event has a pre-edit rope
-    // and full-doc-sync override is off. Otherwise fall back to a single
-    // full-document sync.
-    let can_incremental = !settings.full_document_sync
-        && collected.iter().all(|e| e.pre_edit_rope.is_some());
-
-    let uri = lsp_document.uri.clone();
-    let version = lsp_document.bump_version();
-
-    if can_incremental {
-        let mut changes: Vec<TextDocumentContentChangeEvent> = Vec::with_capacity(collected.len());
-        for event in &collected {
-            let pre = event.pre_edit_rope.as_ref().expect("checked above");
-            let delta = &event.delta;
-            let start = rope_byte_to_lsp_position(pre, delta.start_byte, enc);
-            let end = rope_byte_to_lsp_position(pre, delta.old_end_byte, enc);
-            // The new text is the slice of the *post-edit* rope from
-            // `start_byte` to `new_end_byte`. We use the current rope here
-            // — for a single edit per frame this is correct; for batched
-            // edits in one frame, callers should be aware that only the
-            // last event's `buffer.rope` matches `new_end_byte`. Today the
-            // editor produces one edit per frame, so this is fine.
-            let new_text = if delta.start_byte == delta.new_end_byte {
-                String::new()
-            } else {
-                let new_start_char = buffer.rope.byte_to_char(delta.start_byte);
-                let new_end_char = buffer.rope.byte_to_char(delta.new_end_byte);
-                buffer.rope.slice(new_start_char..new_end_char).chars().collect()
-            };
-            changes.push(TextDocumentContentChangeEvent {
-                range: Some(Range { start, end }),
-                range_length: None,
-                text: new_text,
-            });
+    if queued_any {
+        let duration = std::time::Duration::from_millis(settings.did_change_delay_ms);
+        if batcher.timer.duration() != duration {
+            batcher.timer.set_duration(duration);
         }
-        lsp_client.send(LspMessage::DidChange { uri, version, changes });
-    } else {
-        let text: String = buffer.rope.chunks().collect();
-        lsp_client.send(LspMessage::DidChange {
-            uri,
-            version,
-            changes: vec![TextDocumentContentChangeEvent {
-                range: None,
-                range_length: None,
-                text,
-            }],
-        });
+        batcher.timer.reset();
     }
 }
 
@@ -332,11 +310,11 @@ pub fn dismiss_completion_on_cursor_move(
     }
 }
 
-/// Tick debounce timers and fire LSP requests when they expire.
-///
-/// Kept as a free function (not in this file's `pub use` set) and named
-/// `tick_lsp_debounce_timers` so callers in `plugin/lsp_plugin.rs` find it
-/// at the same path as before the refactor.
+/// Tick the [`LspDebounceTimers`] (completion + hover) and fire the
+/// pending LSP requests when they expire. Document highlights and code
+/// actions tick their own component-local timers — see
+/// [`super::systems::request_document_highlights`] and the popup-side
+/// arming in `LspCodeActionsPopup`.
 pub fn tick_lsp_debounce_timers(
     time: Res<Time>,
     mut query: Query<
@@ -344,14 +322,11 @@ pub fn tick_lsp_debounce_timers(
             &LspClient,
             &mut LspDebounceTimers,
             &mut LspCompletionPopup,
-            &mut LspCodeActionsPopup,
         ),
         With<CodeEditor>,
     >,
 ) {
-    let Ok((lsp_client, mut debounce, mut completion_state, mut code_actions_state)) =
-        query.single_mut()
-    else {
+    let Ok((lsp_client, mut debounce, mut completion_state)) = query.single_mut() else {
         return;
     };
 
@@ -376,34 +351,6 @@ pub fn tick_lsp_debounce_timers(
                 lsp_client.send(LspMessage::Hover {
                     uri: req.uri,
                     position: req.position,
-                });
-            }
-        }
-    }
-
-    if debounce.pending_highlight.is_some() {
-        debounce.highlight_timer.tick(time.delta());
-        if debounce.highlight_timer.just_finished() {
-            if let Some(req) = debounce.pending_highlight.take() {
-                lsp_client.send(LspMessage::DocumentHighlight {
-                    uri: req.uri,
-                    position: req.position,
-                });
-            }
-        }
-    }
-
-    if debounce.pending_code_action.is_some() {
-        debounce.code_action_timer.tick(time.delta());
-        if debounce.code_action_timer.just_finished() {
-            if let Some(req) = debounce.pending_code_action.take() {
-                code_actions_state.request_id =
-                    code_actions_state.request_id.wrapping_add(1);
-                lsp_client.send(LspMessage::CodeAction {
-                    uri: req.uri,
-                    range: req.range,
-                    diagnostics: Vec::new(),
-                    id: code_actions_state.request_id,
                 });
             }
         }

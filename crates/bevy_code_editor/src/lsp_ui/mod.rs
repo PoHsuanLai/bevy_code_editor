@@ -44,8 +44,8 @@ pub mod prelude {
     // Per-editor LSP UI state Components.
     pub use super::state::{
         LspCodeActionsPopup, LspCompletionPopup, LspDebounceTimers, LspDocumentHighlights,
-        LspHoverPopup, LspInlayHints, LspRenamePopup, LspSignatureHelpPopup, LspSyncStateExtra,
-        PendingCodeActionRequest, PendingLspRequest, UnifiedCompletionItem, WordCompletionItem,
+        LspHoverPopup, LspInlayHints, LspRenamePopup, LspSignatureHelpPopup, LspDidChangeBatcher,
+        PendingLspRequest, UnifiedCompletionItem, WordCompletionItem,
         COMPLETION_MAX_VISIBLE_DEFAULT,
     };
 
@@ -79,8 +79,8 @@ pub use bevy_lsp::{
 };
 pub use state::{
     LspCodeActionsPopup, LspCompletionPopup, LspDebounceTimers, LspDocumentHighlights,
-    LspHoverPopup, LspInlayHints, LspRenamePopup, LspSignatureHelpPopup, LspSyncStateExtra,
-    PendingCodeActionRequest, PendingLspRequest, UnifiedCompletionItem, WordCompletionItem,
+    LspHoverPopup, LspInlayHints, LspRenamePopup, LspSignatureHelpPopup, LspDidChangeBatcher,
+    PendingLspRequest, UnifiedCompletionItem, WordCompletionItem,
     COMPLETION_MAX_VISIBLE_DEFAULT,
 };
 pub use systems::{

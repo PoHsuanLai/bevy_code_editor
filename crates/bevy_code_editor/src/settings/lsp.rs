@@ -13,13 +13,8 @@ pub struct LspSettings {
     /// Hover information settings
     pub hover: HoverSettings,
 
-    /// Debounce before requesting `textDocument/codeAction` after the
-    /// cursor stops moving. Keeps the editor from spamming the server on
-    /// every keystroke.
-    pub code_action_delay_ms: u64,
-
     /// Debounce before requesting `textDocument/documentHighlight` after
-    /// the cursor stops moving.
+    /// the cursor stops moving. Wired into `request_document_highlights`.
     pub highlight_delay_ms: u64,
 
     /// Debounce before flushing `textDocument/didChange` after the buffer
@@ -38,9 +33,8 @@ impl Default for LspSettings {
         Self {
             completion: CompletionSettings::default(),
             hover: HoverSettings::default(),
-            code_action_delay_ms: 250,
             highlight_delay_ms: 100,
-            did_change_delay_ms: 200,
+            did_change_delay_ms: 150,
             full_document_sync: false,
         }
     }

@@ -31,9 +31,9 @@ impl Default for ViewportConfig {
 /// `#[require]` cascades [`bevy_text_editor::TextEditor`] (which transitively
 /// brings the engine `TextView`, cursor / selection / edit-history state,
 /// and pointer-interaction state) plus the IDE-specific Components — fold
-/// state, bracket matching, syntax cache, scrollbar drag, goto-line dialog,
-/// LSP UI state. Spawning a `CodeEditor` is sufficient for a fully
-/// functional editor entity.
+/// state, bracket matching, syntax cache, goto-line dialog, LSP UI state.
+/// Spawning a `CodeEditor` is sufficient for a fully functional editor
+/// entity.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 #[cfg_attr(
@@ -43,7 +43,6 @@ impl Default for ViewportConfig {
         BracketMatchState,
         crate::types::fold::GotoLineState,
         crate::types::fold::FoldState,
-        crate::plugin::scrollbar::ScrollbarDragState,
         crate::settings::ThemeConfig,
         crate::settings::SyntaxTheme,
     )
@@ -55,7 +54,6 @@ impl Default for ViewportConfig {
         BracketMatchState,
         crate::types::fold::GotoLineState,
         crate::types::fold::FoldState,
-        crate::plugin::scrollbar::ScrollbarDragState,
         crate::settings::ThemeConfig,
         crate::settings::SyntaxTheme,
         crate::settings::DiagnosticTheme,
@@ -71,7 +69,7 @@ impl Default for ViewportConfig {
         crate::lsp_ui::state::LspDocumentHighlights,
         crate::lsp_ui::state::LspRenamePopup,
         crate::lsp_ui::state::LspDebounceTimers,
-        crate::lsp_ui::state::LspSyncStateExtra,
+        crate::lsp_ui::state::LspDidChangeBatcher,
         crate::lsp_ui::state::TabstopSession,
     )
 )]

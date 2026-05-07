@@ -478,9 +478,15 @@ impl LspSignatureHelpPopup {
     }
 }
 
-/// Per-editor code actions popup state.
+/// Per-editor code actions popup state. Holds the response from
+/// `textDocument/codeAction` (quick-fix / refactor menu).
 ///
-/// Was `bevy_lsp::CodeActionState` (Resource).
+/// **Producer not yet wired.** The transport
+/// ([`super::super::systems::request_code_actions`] helper) and the
+/// response handler are in place; a system that watches for diagnostics
+/// under the cursor (or an explicit user trigger like `Ctrl+.`) and
+/// calls the helper still needs to be added before the lightbulb UI is
+/// fed.
 #[derive(Component, Default)]
 pub struct LspCodeActionsPopup {
     pub visible: bool,
@@ -551,33 +557,22 @@ pub struct PendingLspRequest {
     pub position: Position,
 }
 
-/// A pending code action request (range-based)
-#[derive(Clone, Debug)]
-pub struct PendingCodeActionRequest {
-    pub uri: Url,
-    pub range: Range,
-}
-
-/// Per-feature LSP debounce timers (Zed-style tiered debouncing).
-///
-/// Was `bevy_lsp::LspDebounceTimers` (Resource). Per-editor Component.
+/// Per-feature LSP debounce timers for popup-driving requests
+/// (cursor-stops-then-fire pattern). Completion + hover use this
+/// shared component; document highlights and code actions live on
+/// their own popup state Components ([`LspDocumentHighlights`],
+/// [`LspCodeActionsPopup`]) and run their own timers there.
 #[derive(Component)]
 pub struct LspDebounceTimers {
-    /// Completion: 50ms after last keystroke
+    /// Completion: armed by `listen_completion_requests` from
+    /// `LspSettings::completion::delay_ms`.
     pub completion_timer: Timer,
     pub pending_completion: Option<PendingLspRequest>,
 
-    /// Hover: 150ms after cursor stops
+    /// Hover: armed by `listen_hover_requests` from
+    /// `LspSettings::hover::delay_ms`.
     pub hover_timer: Timer,
     pub pending_hover: Option<PendingLspRequest>,
-
-    /// Code actions: 250ms after cursor stops
-    pub code_action_timer: Timer,
-    pub pending_code_action: Option<PendingCodeActionRequest>,
-
-    /// Document highlights: 100ms after cursor stops
-    pub highlight_timer: Timer,
-    pub pending_highlight: Option<PendingLspRequest>,
 }
 
 impl Default for LspDebounceTimers {
@@ -595,33 +590,41 @@ impl Default for LspDebounceTimers {
             pending_completion: None,
             hover_timer: t(0.3),
             pending_hover: None,
-            code_action_timer: t(0.25),
-            pending_code_action: None,
-            highlight_timer: t(0.1),
-            pending_highlight: None,
         }
     }
 }
 
-/// Per-editor "extra" LSP sync state — the bits of `LspSyncState` that didn't
-/// move into [`bevy_lsp::LspDocument`].
+/// Per-editor `textDocument/didChange` batcher.
 ///
-/// `LspDocument` already owns `uri` and `version`; this Component owns the
-/// debounced did_change driver state (dirty flag + timer).
+/// `listen_text_edit_events` pushes one [`TextDocumentContentChangeEvent`]
+/// per editor edit and resets `timer`; `sync_lsp_document` flushes the
+/// accumulated batch in a single notification when the timer expires.
+/// Mirrors the debounced approach used by Zed / VS Code / Helix: typing
+/// bursts collapse into one server reparse, but trailing edits still
+/// reach the server within `LspSettings::did_change_delay_ms`.
+///
+/// `LspDocument` owns `uri` and `version`; this Component owns the
+/// pending payload + cadence.
 #[derive(Component)]
-pub struct LspSyncStateExtra {
-    /// Whether the document has changed since last sync
-    pub dirty: bool,
-    /// Timer to debounce sync requests
+pub struct LspDidChangeBatcher {
+    /// Pending incremental change events, in edit order.
+    pub pending: Vec<TextDocumentContentChangeEvent>,
+    /// When set, the next flush sends a full-document sync instead of
+    /// the accumulated incremental batch. Set on first edit without a
+    /// pre-edit rope snapshot, or when `LspSettings::full_document_sync`
+    /// is on. Cleared after every flush.
+    pub force_full_doc: bool,
+    /// Debounce timer; reset on every queued edit, fires when typing pauses.
     pub timer: Timer,
 }
 
-impl Default for LspSyncStateExtra {
+impl Default for LspDidChangeBatcher {
     fn default() -> Self {
-        // Duration overwritten on first dirty-mark from `LspSettings::did_change_delay_ms`.
+        // Duration overwritten on first edit from `LspSettings::did_change_delay_ms`.
         Self {
-            dirty: false,
-            timer: Timer::from_seconds(0.2, TimerMode::Once),
+            pending: Vec::new(),
+            force_full_doc: false,
+            timer: Timer::from_seconds(0.15, TimerMode::Once),
         }
     }
 }
