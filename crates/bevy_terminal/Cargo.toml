@@ -55,7 +55,6 @@ leafwing-input-manager = "0.20"
 
 ropey = "1.6"
 serde = { version = "1.0", features = ["derive"] }
-arboard = "3.4"
 
 # Used by `handle_send_signal` to forward POSIX signals (SIGINT etc.) to
 # the PTY child's process group via `killpg(2)`. portable-pty exposes the

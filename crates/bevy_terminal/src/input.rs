@@ -13,11 +13,13 @@ use bevy::prelude::*;
 use crate::backend;
 use crate::messages::{TerminalCopySelection, TerminalKeyInput, TerminalPaste};
 use crate::types::TerminalSession;
+use bevy_text_editor::ClipboardResource;
 
 pub fn on_focused_terminal_keyboard(
     trigger: On<FocusedInput<KeyboardInput>>,
     sessions: Query<(), With<TerminalSession>>,
     keyboard: Res<ButtonInput<KeyCode>>,
+    clipboard: Res<ClipboardResource>,
     mut copy_w: MessageWriter<TerminalCopySelection>,
     mut paste_w: MessageWriter<TerminalPaste>,
     mut key_w: MessageWriter<TerminalKeyInput>,
@@ -45,10 +47,8 @@ pub fn on_focused_terminal_keyboard(
         return;
     }
     if paste_combo {
-        if let Ok(mut clipboard) = arboard::Clipboard::new() {
-            if let Ok(text) = clipboard.get_text() {
-                paste_w.write(TerminalPaste { entity, text });
-            }
+        if let Some(text) = clipboard.get_text() {
+            paste_w.write(TerminalPaste { entity, text });
         }
         return;
     }

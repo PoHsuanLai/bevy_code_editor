@@ -1,9 +1,9 @@
 //! Clipboard handlers — Copy / Cut / Paste.
 
+use crate::clipboard::ClipboardResource;
 use crate::editing_events::*;
 use crate::history::EditKind;
 use crate::state::{CursorState, EditHistoryState, SelectionState, TextEditor};
-use arboard::Clipboard;
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy_text_engine::TextBuffer;
@@ -11,6 +11,7 @@ use bevy_text_engine::TextBuffer;
 pub fn handle_copy(
     mut events: MessageReader<CopyRequested>,
     input_focus: Res<InputFocus>,
+    clipboard: Res<ClipboardResource>,
     q: Query<(&SelectionState, &TextBuffer), With<TextEditor>>,
 ) {
     if events.read().next().is_none() {
@@ -26,15 +27,14 @@ pub fn handle_copy(
         let start = start.min(buffer.rope.len_chars());
         let end = end.min(buffer.rope.len_chars());
         let text = buffer.rope.slice(start..end).to_string();
-        if let Ok(mut clipboard) = Clipboard::new() {
-            let _ = clipboard.set_text(text);
-        }
+        clipboard.set_text(&text);
     }
 }
 
 pub fn handle_cut(
     mut events: MessageReader<CutRequested>,
     input_focus: Res<InputFocus>,
+    clipboard: Res<ClipboardResource>,
     mut q: Query<
         (
             &mut SelectionState,
@@ -62,9 +62,7 @@ pub fn handle_cut(
         .slice(start.min(buffer.rope.len_chars())..end.min(buffer.rope.len_chars()))
         .to_string();
 
-    if let Ok(mut clipboard) = Clipboard::new() {
-        let _ = clipboard.set_text(selected_text);
-    }
+    clipboard.set_text(&selected_text);
 
     let outcome = hist.replace_range(&mut buffer, start, end, "", EditKind::Other, true);
     cursor.cursor_pos = outcome.new_cursor_pos;
@@ -74,6 +72,7 @@ pub fn handle_cut(
 pub fn handle_paste(
     mut events: MessageReader<PasteRequested>,
     input_focus: Res<InputFocus>,
+    clipboard: Res<ClipboardResource>,
     mut q: Query<
         (
             &mut SelectionState,
@@ -93,10 +92,7 @@ pub fn handle_paste(
     let Ok((mut sel, mut hist, mut cursor, mut buffer)) = q.get_mut(entity) else {
         return;
     };
-    let Ok(mut clipboard) = Clipboard::new() else {
-        return;
-    };
-    let Ok(text) = clipboard.get_text() else {
+    let Some(text) = clipboard.get_text() else {
         return;
     };
 

@@ -6,6 +6,7 @@
 //! events to the right entity; editing events flow as typed `*Requested` messages.
 
 pub mod anchor;
+pub mod clipboard;
 pub mod components;
 pub mod cursor_movement;
 pub mod cursor_settings;
@@ -24,6 +25,7 @@ pub mod theme;
 pub mod typing;
 
 pub use anchor::{Anchor, AnchorBias, AnchorSet, TextEdit};
+pub use clipboard::{ClipboardProvider, ClipboardResource, SystemClipboard};
 pub use edit::{point_at_byte, EditOutcome};
 pub use components::{ScrollConfig, TextViewDragState};
 pub use editing_events::*;

@@ -35,6 +35,10 @@ impl Plugin for TextInteractionPlugin {
             .register_type::<TextViewDragState>()
             .register_type::<crate::interaction::InteractionSettings>();
 
+        // Default clipboard backend; embedders override by inserting
+        // their own `ClipboardResource` before plugin setup.
+        app.init_resource::<crate::clipboard::ClipboardResource>();
+
         if !app.is_plugin_added::<bevy::picking::PickingPlugin>() {
             app.add_plugins(DefaultPickingPlugins);
         }

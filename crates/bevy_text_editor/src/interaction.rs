@@ -76,40 +76,54 @@ pub fn screen_to_char_pos(
     line_start_char + char_in_line
 }
 
-/// Copy the primary selection's text to the system clipboard.
-/// Returns true if text was copied, false if no selection.
+/// Extract the primary selection's text in its `SelectionMode`-honored
+/// shape, ready for the clipboard. Returns `None` when there's nothing
+/// to copy.
 ///
 /// Honors the primary selection's [`crate::selection::SelectionMode`]:
-/// - `Simple` / `Semantic` — char-range slice (current behavior).
+/// - `Simple` / `Semantic` — char-range slice.
 /// - `Block` — column-aligned rectangular slice across visited lines,
 ///   joined with `\n`. Useful for column edits and reading aligned
 ///   terminal output.
 /// - `Line` — full-line slice (already snapped to whole lines by
-///   `expand_to_lines`, so this is identical to the char-range path
-///   but kept distinct for clarity).
-pub fn copy_selection(sel: &SelectionState, buffer: &TextBuffer) -> bool {
-    let Some((start, end)) = sel.primary_range() else {
-        return false;
-    };
+///   `expand_to_lines`).
+///
+/// Callers feed the returned string to [`crate::ClipboardResource::set_text`].
+pub fn selection_text(sel: &SelectionState, buffer: &TextBuffer) -> Option<String> {
+    let (start, end) = sel.primary_range()?;
     let mode = sel.selections.primary().mode;
     let len = buffer.rope.len_chars();
     let start = start.min(len);
     let end = end.min(len);
     if start == end {
-        return false;
+        return None;
     }
     let text = match mode {
         crate::selection::SelectionMode::Block => block_slice(&buffer.rope, start, end),
         _ => buffer.rope.slice(start..end).to_string(),
     };
     if text.is_empty() {
-        return false;
+        None
+    } else {
+        Some(text)
     }
-    if let Ok(mut clipboard) = arboard::Clipboard::new() {
-        let _ = clipboard.set_text(text);
-        return true;
+}
+
+/// Copy the primary selection's text to the given clipboard backend.
+/// Returns `true` if anything was copied. Convenience wrapper around
+/// [`selection_text`] for callers that have a [`crate::ClipboardResource`]
+/// in hand.
+pub fn copy_selection(
+    sel: &SelectionState,
+    buffer: &TextBuffer,
+    clipboard: &crate::clipboard::ClipboardResource,
+) -> bool {
+    if let Some(text) = selection_text(sel, buffer) {
+        clipboard.set_text(&text);
+        true
+    } else {
+        false
     }
-    false
 }
 
 /// Return the rectangular slice between `start` and `end` (rope char
@@ -495,6 +509,7 @@ pub fn on_focused_keyboard(
         (With<TextView>, Without<crate::state::TextEditor>),
     >,
     keyboard: Res<ButtonInput<KeyCode>>,
+    clipboard: Res<crate::clipboard::ClipboardResource>,
 ) {
     let entity = trigger.event().focused_entity;
     let Ok((sel, buffer)) = views.get(entity) else {
@@ -516,5 +531,5 @@ pub fn on_focused_keyboard(
         return;
     }
 
-    copy_selection(sel, buffer);
+    copy_selection(sel, buffer, &clipboard);
 }

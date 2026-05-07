@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy_text_editor::{copy_selection, SelectionState};
+use bevy_text_editor::{copy_selection, ClipboardResource, SelectionState};
 use bevy_text_engine::{FontConfig, ScrollState, TextBuffer};
 use portable_pty::PtySize;
 
@@ -17,13 +17,14 @@ use crate::types::{TerminalGridSnapshot, TerminalScrollFollow, TerminalSession};
 
 pub fn handle_copy_selection(
     mut events: MessageReader<TerminalCopySelection>,
+    clipboard: Res<ClipboardResource>,
     q: Query<(&SelectionState, &TextBuffer)>,
 ) {
     for ev in events.read() {
         let Ok((sel, buffer)) = q.get(ev.entity) else {
             continue;
         };
-        let _ = copy_selection(sel, buffer);
+        let _ = copy_selection(sel, buffer, &clipboard);
     }
 }
 
