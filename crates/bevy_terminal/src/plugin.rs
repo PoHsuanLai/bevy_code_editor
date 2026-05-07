@@ -58,6 +58,7 @@ impl Plugin for BevyTerminalPlugin {
             .register_type::<TerminalCwdChanged>()
             .register_type::<TerminalBlockFinished>()
             .register_type::<TerminalBlockSelected>()
+            .register_type::<TerminalScrollFollowChanged>()
             .register_type::<TerminalWriteBytes>()
             .register_type::<TerminalRunCommand>()
             .register_type::<TerminalCopySelection>()
@@ -66,7 +67,11 @@ impl Plugin for BevyTerminalPlugin {
             .register_type::<TerminalScrollTo>()
             .register_type::<TerminalScrollToBottom>()
             .register_type::<TerminalScrollToTop>()
+            .register_type::<TerminalSendSignal>()
+            .register_type::<TerminalFocus>()
             .register_type::<TerminalClear>();
+        // `TerminalKeyInput` carries non-Reflect wezterm types and is intentionally
+        // not registered for Reflect — it only needs to flow on the bus.
 
         // Message buses.
         app.add_message::<TerminalExited>()
@@ -76,6 +81,7 @@ impl Plugin for BevyTerminalPlugin {
             .add_message::<TerminalCwdChanged>()
             .add_message::<TerminalBlockFinished>()
             .add_message::<TerminalBlockSelected>()
+            .add_message::<TerminalScrollFollowChanged>()
             .add_message::<TerminalWriteBytes>()
             .add_message::<TerminalRunCommand>()
             .add_message::<TerminalCopySelection>()
@@ -84,6 +90,9 @@ impl Plugin for BevyTerminalPlugin {
             .add_message::<TerminalScrollTo>()
             .add_message::<TerminalScrollToBottom>()
             .add_message::<TerminalScrollToTop>()
+            .add_message::<TerminalKeyInput>()
+            .add_message::<TerminalSendSignal>()
+            .add_message::<TerminalFocus>()
             .add_message::<TerminalClear>();
 
         app.init_resource::<TerminalEventLoopRegistry>();
@@ -120,9 +129,20 @@ impl Plugin for BevyTerminalPlugin {
                 crate::clipboard::handle_scroll_to,
                 crate::clipboard::handle_scroll_to_bottom,
                 crate::clipboard::handle_scroll_to_top,
+                crate::clipboard::handle_key_input,
+                crate::clipboard::handle_send_signal,
+                crate::clipboard::handle_focus,
                 crate::clipboard::handle_clear,
             )
                 .in_set(TerminalApplyStateSet),
+        );
+        // Runs after the snapshot tick so it sees the freshly-mutated follow
+        // state and emits at most one event per actual transition per frame.
+        app.add_systems(
+            Update,
+            crate::clipboard::emit_scroll_follow_changed
+                .in_set(TerminalSnapshotSet)
+                .after(crate::snapshot::sync_grid_snapshot),
         );
         app.add_systems(
             Update,

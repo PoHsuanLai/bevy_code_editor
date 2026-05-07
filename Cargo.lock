@@ -1741,6 +1741,7 @@ dependencies = [
  "bevy_text_engine",
  "crossbeam-channel",
  "leafwing-input-manager",
+ "libc",
  "parking_lot",
  "portable-pty",
  "ropey",

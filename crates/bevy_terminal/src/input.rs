@@ -1,4 +1,9 @@
 //! Keyboard → wezterm key encoding via `FocusedInput<KeyboardInput>` observer.
+//!
+//! The observer encodes Bevy keyboard events into `wezterm-term` key codes
+//! and forwards them onto the message bus as `TerminalKeyInput`; the actual
+//! `key_down` call happens in `handle_key_input` so synthetic and physical
+//! keystrokes share one code path.
 
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input::ButtonState;
@@ -6,20 +11,21 @@ use bevy::input_focus::FocusedInput;
 use bevy::prelude::*;
 
 use crate::backend;
-use crate::messages::{TerminalCopySelection, TerminalPaste};
+use crate::messages::{TerminalCopySelection, TerminalKeyInput, TerminalPaste};
 use crate::types::TerminalSession;
 
 pub fn on_focused_terminal_keyboard(
     trigger: On<FocusedInput<KeyboardInput>>,
-    sessions: Query<&TerminalSession>,
+    sessions: Query<(), With<TerminalSession>>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut copy_w: MessageWriter<TerminalCopySelection>,
     mut paste_w: MessageWriter<TerminalPaste>,
+    mut key_w: MessageWriter<TerminalKeyInput>,
 ) {
     let entity = trigger.event().focused_entity;
-    let Ok(session) = sessions.get(entity) else {
+    if sessions.get(entity).is_err() {
         return;
-    };
+    }
     let event = &trigger.event().input;
     if event.state != ButtonState::Pressed {
         return;
@@ -54,8 +60,11 @@ pub fn on_focused_terminal_keyboard(
         return;
     };
 
-    let mut term = session.terminal.lock();
-    let _ = term.key_down(wezterm_key, mods);
+    key_w.write(TerminalKeyInput {
+        entity,
+        key: wezterm_key,
+        mods,
+    });
 }
 
 fn bevy_to_wezterm(

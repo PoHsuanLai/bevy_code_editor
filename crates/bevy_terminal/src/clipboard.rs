@@ -1,13 +1,17 @@
 //! Inbound message handlers: clipboard ops + direct host commands.
 
+use std::collections::HashMap;
+
+use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy_text_editor::{copy_selection, SelectionState};
 use bevy_text_engine::{FontConfig, ScrollState, TextBuffer};
 use portable_pty::PtySize;
 
 use crate::messages::{
-    TerminalClear, TerminalCopySelection, TerminalPaste, TerminalResize, TerminalRunCommand,
-    TerminalScrollTo, TerminalScrollToBottom, TerminalScrollToTop, TerminalWriteBytes,
+    TerminalClear, TerminalCopySelection, TerminalFocus, TerminalKeyInput, TerminalPaste,
+    TerminalResize, TerminalRunCommand, TerminalScrollFollowChanged, TerminalScrollTo,
+    TerminalScrollToBottom, TerminalScrollToTop, TerminalSendSignal, TerminalWriteBytes,
 };
 use crate::types::{TerminalGridSnapshot, TerminalScrollFollow, TerminalSession};
 
@@ -158,4 +162,84 @@ pub fn handle_clear(
         session.terminal.lock().advance_bytes(CLEAR_SEQUENCE);
         snapshot.version = snapshot.version.wrapping_add(1);
     }
+}
+
+/// Synthesize a keypress. Wezterm encodes the key according to the term's
+/// current input mode (cursor-key application, kitty keyboard, etc.) and
+/// writes the resulting bytes to the PTY.
+pub fn handle_key_input(
+    mut events: MessageReader<TerminalKeyInput>,
+    q: Query<&TerminalSession>,
+) {
+    for ev in events.read() {
+        let Ok(session) = q.get(ev.entity) else {
+            continue;
+        };
+        let _ = session.terminal.lock().key_down(ev.key.clone(), ev.mods);
+    }
+}
+
+/// Forward a POSIX signal to the PTY child's process group. No-op on
+/// Windows (process-group signalling has no equivalent).
+#[cfg(unix)]
+pub fn handle_send_signal(
+    mut events: MessageReader<TerminalSendSignal>,
+    q: Query<&TerminalSession>,
+) {
+    for ev in events.read() {
+        let Ok(session) = q.get(ev.entity) else {
+            continue;
+        };
+        let pgid = session.pty_master.lock().process_group_leader();
+        if let Some(pgid) = pgid {
+            // SAFETY: killpg is signal-safe and takes a pid_t + int. We hold
+            // no locks here that the signal handler could deadlock against.
+            unsafe {
+                libc::killpg(pgid as libc::pid_t, ev.signal);
+            }
+        }
+    }
+}
+
+#[cfg(not(unix))]
+pub fn handle_send_signal(mut events: MessageReader<TerminalSendSignal>) {
+    // Drain so the message bus doesn't grow unbounded on Windows.
+    for _ in events.read() {}
+}
+
+/// Programmatically focus a terminal entity. Mirrors what `on_terminal_added`
+/// does on first spawn, but exposed so split-pane hosts can drive focus.
+pub fn handle_focus(
+    mut events: MessageReader<TerminalFocus>,
+    sessions: Query<(), With<TerminalSession>>,
+    mut input_focus: ResMut<InputFocus>,
+) {
+    for ev in events.read() {
+        if sessions.get(ev.entity).is_ok() {
+            input_focus.set(ev.entity);
+        }
+    }
+}
+
+/// Mirror `Changed<TerminalScrollFollow>` onto the message bus so hosts
+/// that prefer events over change-detection queries get notified when the
+/// auto-follow state flips.
+pub fn emit_scroll_follow_changed(
+    q: Query<(Entity, &TerminalScrollFollow), Changed<TerminalScrollFollow>>,
+    mut writer: MessageWriter<TerminalScrollFollowChanged>,
+    mut last: Local<HashMap<Entity, bool>>,
+) {
+    for (entity, follow) in q.iter() {
+        // `Changed` fires on any field write — including `last_applied_target`,
+        // which we update every frame. Filter to actual `stick_to_bottom`
+        // transitions so hosts only see meaningful events.
+        let prev = last.insert(entity, follow.stick_to_bottom);
+        if prev != Some(follow.stick_to_bottom) {
+            writer.write(TerminalScrollFollowChanged {
+                entity,
+                stick_to_bottom: follow.stick_to_bottom,
+            });
+        }
+    }
+    last.retain(|e, _| q.get(*e).is_ok());
 }

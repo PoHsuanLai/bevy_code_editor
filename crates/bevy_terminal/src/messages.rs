@@ -12,6 +12,8 @@
 use bevy::prelude::*;
 use std::process::ExitStatus;
 
+use crate::backend::{KeyCode as TerminalKeyCode, KeyModifiers as TerminalKeyModifiers};
+
 // ─── Outbound (terminal → app) ──────────────────────────────────────────
 
 /// Child process exited (for whatever reason).
@@ -72,6 +74,16 @@ pub struct TerminalBlockFinished {
 pub struct TerminalBlockSelected {
     pub entity: Entity,
     pub block_id: u64,
+}
+
+/// Bottom-follow state flipped (user wheeled away from the bottom or wheeled
+/// back into it). Hosts can wire this to a "Jump to bottom" UI affordance.
+/// Equivalent to a `Changed<TerminalScrollFollow>` query — provided as a
+/// message for hosts that prefer the bus.
+#[derive(Message, Clone, Debug, Reflect)]
+pub struct TerminalScrollFollowChanged {
+    pub entity: Entity,
+    pub stick_to_bottom: bool,
 }
 
 // ─── Inbound (app → terminal) ───────────────────────────────────────────
@@ -138,5 +150,35 @@ pub struct TerminalScrollToTop {
 /// Clear the screen + scrollback (equivalent to running `clear` in the shell).
 #[derive(Message, Clone, Debug, Reflect)]
 pub struct TerminalClear {
+    pub entity: Entity,
+}
+
+/// Synthesize a keypress on the terminal. Equivalent to the user typing it:
+/// the terminal encodes the key according to its current input mode (cursor
+/// keys, kitty keyboard, etc.) and writes the bytes to the PTY. Hosts use
+/// this for macros, command palettes that send `Esc`, or "send Ctrl-C"
+/// affordances.
+#[derive(Message, Clone, Debug)]
+pub struct TerminalKeyInput {
+    pub entity: Entity,
+    pub key: TerminalKeyCode,
+    pub mods: TerminalKeyModifiers,
+}
+
+/// POSIX signal to forward to the PTY's child process group. Use
+/// `libc::SIGINT` etc. on Unix; ignored on Windows. Useful for "stop this
+/// command" buttons that don't want to wait for the user to focus the pane
+/// and press Ctrl-C.
+#[derive(Message, Clone, Debug, Reflect)]
+pub struct TerminalSendSignal {
+    pub entity: Entity,
+    pub signal: i32,
+}
+
+/// Move keyboard focus to this terminal entity. Equivalent to setting
+/// Bevy's `InputFocus` directly, exposed on the bus so host UIs can
+/// programmatically focus a pane (split layouts, "next terminal" shortcuts).
+#[derive(Message, Clone, Debug, Reflect)]
+pub struct TerminalFocus {
     pub entity: Entity,
 }
