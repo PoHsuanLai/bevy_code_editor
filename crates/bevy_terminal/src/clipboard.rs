@@ -2,14 +2,14 @@
 
 use bevy::prelude::*;
 use bevy_text_editor::{copy_selection, SelectionState};
-use bevy_text_engine::TextBuffer;
+use bevy_text_engine::{FontConfig, ScrollState, TextBuffer};
 use portable_pty::PtySize;
 
 use crate::messages::{
     TerminalClear, TerminalCopySelection, TerminalPaste, TerminalResize, TerminalRunCommand,
-    TerminalScrollTo, TerminalWriteBytes,
+    TerminalScrollTo, TerminalScrollToBottom, TerminalScrollToTop, TerminalWriteBytes,
 };
-use crate::types::{TerminalGridSnapshot, TerminalSession};
+use crate::types::{TerminalGridSnapshot, TerminalScrollFollow, TerminalSession};
 
 pub fn handle_copy_selection(
     mut events: MessageReader<TerminalCopySelection>,
@@ -94,17 +94,55 @@ pub fn handle_resize(
     }
 }
 
-/// Stub: scroll position lives in the host overlay layer; bump the snapshot version.
+/// Jump the viewport so `line` (0 = top of scrollback, growing downward) sits
+/// at the top of the visible area. Disengages bottom-follow so the user stays
+/// where they jumped to as new output arrives.
 pub fn handle_scroll_to(
     mut events: MessageReader<TerminalScrollTo>,
-    mut q: Query<&mut TerminalGridSnapshot>,
+    mut q: Query<(&mut ScrollState, &mut TerminalScrollFollow, &FontConfig)>,
 ) {
     for ev in events.read() {
-        let Ok(mut snapshot) = q.get_mut(ev.entity) else {
+        let Ok((mut scroll, mut follow, font)) = q.get_mut(ev.entity) else {
             continue;
         };
-        let _ = ev.line;
-        snapshot.version = snapshot.version.wrapping_add(1);
+        let target = -(ev.line.max(0) as f32 * font.line_height);
+        scroll.scroll_offset = target;
+        scroll.target_scroll_offset = target;
+        follow.stick_to_bottom = false;
+        follow.last_applied_target = target;
+    }
+}
+
+/// Re-engage bottom-follow and snap to the latest output. The next
+/// `sync_grid_snapshot` tick will write the bottom-anchored offsets.
+pub fn handle_scroll_to_bottom(
+    mut events: MessageReader<TerminalScrollToBottom>,
+    mut q: Query<&mut TerminalScrollFollow>,
+) {
+    for ev in events.read() {
+        let Ok(mut follow) = q.get_mut(ev.entity) else {
+            continue;
+        };
+        follow.stick_to_bottom = true;
+        // Force `anchor_scroll_to_bottom`'s wheel-detector to skip — by leaving
+        // `last_applied_target` alone, `target_scroll_offset` will look "in
+        // sync" until the system rewrites both to the new bottom.
+    }
+}
+
+/// Jump to the top of the buffer and disengage bottom-follow.
+pub fn handle_scroll_to_top(
+    mut events: MessageReader<TerminalScrollToTop>,
+    mut q: Query<(&mut ScrollState, &mut TerminalScrollFollow)>,
+) {
+    for ev in events.read() {
+        let Ok((mut scroll, mut follow)) = q.get_mut(ev.entity) else {
+            continue;
+        };
+        scroll.scroll_offset = 0.0;
+        scroll.target_scroll_offset = 0.0;
+        follow.stick_to_bottom = false;
+        follow.last_applied_target = 0.0;
     }
 }
 

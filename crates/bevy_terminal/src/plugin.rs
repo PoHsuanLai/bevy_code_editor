@@ -18,8 +18,8 @@ use crate::drain::drain_pty_events;
 use crate::messages::*;
 use crate::session::{on_terminal_added, TerminalEventLoopRegistry};
 use crate::types::{
-    BevyTerminal, TerminalBlockState, TerminalGridSnapshot, TerminalInputMode,
-    TerminalScrollback, TerminalShellInfo, TerminalColorPalette,
+    BevyTerminal, TerminalBlockState, TerminalColorPalette, TerminalGridSnapshot,
+    TerminalInputMode, TerminalScrollFollow, TerminalScrollback, TerminalShellInfo,
 };
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -50,6 +50,7 @@ impl Plugin for BevyTerminalPlugin {
             .register_type::<TerminalBlockState>()
             .register_type::<TerminalColorPalette>()
             .register_type::<TerminalScrollback>()
+            .register_type::<TerminalScrollFollow>()
             .register_type::<TerminalExited>()
             .register_type::<TerminalTitleChanged>()
             .register_type::<TerminalBellRang>()
@@ -63,6 +64,8 @@ impl Plugin for BevyTerminalPlugin {
             .register_type::<TerminalPaste>()
             .register_type::<TerminalResize>()
             .register_type::<TerminalScrollTo>()
+            .register_type::<TerminalScrollToBottom>()
+            .register_type::<TerminalScrollToTop>()
             .register_type::<TerminalClear>();
 
         // Message buses.
@@ -79,6 +82,8 @@ impl Plugin for BevyTerminalPlugin {
             .add_message::<TerminalPaste>()
             .add_message::<TerminalResize>()
             .add_message::<TerminalScrollTo>()
+            .add_message::<TerminalScrollToBottom>()
+            .add_message::<TerminalScrollToTop>()
             .add_message::<TerminalClear>();
 
         app.init_resource::<TerminalEventLoopRegistry>();
@@ -113,6 +118,8 @@ impl Plugin for BevyTerminalPlugin {
                 crate::clipboard::handle_run_command,
                 crate::clipboard::handle_resize,
                 crate::clipboard::handle_scroll_to,
+                crate::clipboard::handle_scroll_to_bottom,
+                crate::clipboard::handle_scroll_to_top,
                 crate::clipboard::handle_clear,
             )
                 .in_set(TerminalApplyStateSet),

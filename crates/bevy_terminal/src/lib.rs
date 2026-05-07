@@ -40,8 +40,9 @@ pub mod prelude {
         BevyTerminalPlugin, TerminalApplyStateSet, TerminalPtyDrainSet, TerminalSnapshotSet,
     };
     pub use crate::types::{
-        BevyTerminal, BlockStatus, TerminalBlock, TerminalBlockState, TerminalGridSnapshot,
-        TerminalInputMode, TerminalScrollback, TerminalShellInfo, TerminalColorPalette,
+        BevyTerminal, BlockStatus, TerminalBlock, TerminalBlockState, TerminalColorPalette,
+        TerminalGridSnapshot, TerminalInputMode, TerminalScrollFollow, TerminalScrollback,
+        TerminalShellInfo,
     };
     // Re-export the bits hosts need to spawn a styled BevyTerminal.
     pub use bevy_text_engine::{FontConfig, TextViewViewport};

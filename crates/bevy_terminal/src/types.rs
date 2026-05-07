@@ -39,6 +39,7 @@ use crate::backend;
     TerminalBlockState,
     TerminalColorPalette,
     TerminalScrollback,
+    TerminalScrollFollow,
     crate::cursor::TerminalCursorBlink,
     Pickable,
 )]
@@ -179,5 +180,31 @@ pub struct TerminalScrollback {
 impl Default for TerminalScrollback {
     fn default() -> Self {
         Self { max_lines: 10_000 }
+    }
+}
+
+/// Bottom-follow state. When `stick_to_bottom` is `true`, `sync_grid_snapshot`
+/// pins `ScrollState` to the latest output so new lines stay visible. The wheel
+/// observer flips it `false` when the user scrolls away from the bottom; the
+/// same system flips it back `true` when they wheel within one row of the
+/// bottom. Hosts can drive it directly (toggle button) or via the
+/// [`crate::messages::TerminalScrollToBottom`] /
+/// [`crate::messages::TerminalScrollToTop`] /
+/// [`crate::messages::TerminalScrollTo`] messages.
+#[derive(Component, Clone, Copy, Debug, Reflect)]
+#[reflect(Component, Default, Debug)]
+pub struct TerminalScrollFollow {
+    pub stick_to_bottom: bool,
+    /// `target_scroll_offset` we last wrote — internal book-keeping the system
+    /// uses to detect wheel input. Hosts should leave this alone.
+    pub last_applied_target: f32,
+}
+
+impl Default for TerminalScrollFollow {
+    fn default() -> Self {
+        Self {
+            stick_to_bottom: true,
+            last_applied_target: 0.0,
+        }
     }
 }

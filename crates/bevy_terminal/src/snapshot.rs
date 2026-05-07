@@ -12,38 +12,23 @@ use ropey::Rope;
 use crate::backend::{
     ColorAttribute, CursorVisibility, Intensity, Underline as VtUnderline,
 };
-use crate::types::{TerminalColorPalette, TerminalGridSnapshot, TerminalSession};
+use crate::types::{
+    TerminalColorPalette, TerminalGridSnapshot, TerminalScrollFollow, TerminalSession,
+};
 
-/// Per-entity tracker for `sync_grid_snapshot`. Kept in a `Local` rather than
-/// a Component because nothing else in the system needs to read it; it would
-/// just add reflection noise to the public API.
-pub struct SyncState {
-    /// `true` when the view should stay pinned to the bottom on new output.
-    /// Flips to `false` the moment the user wheels away from the bottom; flips
-    /// back when their scroll position lands within a row of the bottom.
-    stick_to_bottom: bool,
-    /// `target_scroll_offset` we last wrote, so we can spot the user moving
-    /// the scroll out from under us.
-    last_applied_target: f32,
+/// Per-entity rebuild-cache for `sync_grid_snapshot`. Kept in a `Local` because
+/// it's pure derived state — hosts never need to read it.
+#[doc(hidden)]
+#[derive(Default)]
+pub struct RebuildCache {
     /// Last `Term::current_seqno()` we rebuilt against. We still re-anchor the
     /// scroll on every frame (viewport resizes change `max_scroll`), but skip
     /// the (expensive) rope + style rebuild when nothing in the term changed.
-    last_rebuild_seqno: Option<usize>,
+    last_seqno: Option<usize>,
     /// Last visible-row count we rebuilt against. A resize changes which rows
     /// are visible without bumping `current_seqno()`, so we force a rebuild
     /// whenever this changes.
     last_rows: usize,
-}
-
-impl Default for SyncState {
-    fn default() -> Self {
-        Self {
-            stick_to_bottom: true,
-            last_applied_target: 0.0,
-            last_rebuild_seqno: None,
-            last_rows: 0,
-        }
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -59,10 +44,11 @@ pub fn sync_grid_snapshot(
         &RenderTheme,
         &mut LineStyles,
         &mut TerminalGridSnapshot,
+        &mut TerminalScrollFollow,
     )>,
-    mut sync: Local<HashMap<Entity, SyncState>>,
+    mut cache: Local<HashMap<Entity, RebuildCache>>,
 ) {
-    sync.retain(|e, _| q.contains(*e));
+    cache.retain(|e, _| q.contains(*e));
     for (
         entity,
         session,
@@ -74,9 +60,10 @@ pub fn sync_grid_snapshot(
         render,
         mut line_styles,
         mut snapshot,
+        mut follow,
     ) in q.iter_mut()
     {
-        let state = sync.entry(entity).or_default();
+        let cache_entry = cache.entry(entity).or_default();
 
         let term = session.terminal.lock();
         let screen = term.screen();
@@ -85,11 +72,12 @@ pub fn sync_grid_snapshot(
         let total_lines = screen.scrollback_rows();
         let scrollback_offset = total_lines.saturating_sub(rows);
         let seqno = term.current_seqno();
-        let needs_rebuild = state.last_rebuild_seqno != Some(seqno) || state.last_rows != rows;
+        let needs_rebuild =
+            cache_entry.last_seqno != Some(seqno) || cache_entry.last_rows != rows;
 
         if !needs_rebuild {
             drop(term);
-            anchor_scroll_to_bottom(&mut scroll, viewport, font, total_lines, state);
+            anchor_scroll_to_bottom(&mut scroll, viewport, font, total_lines, &mut follow);
             continue;
         }
 
@@ -188,9 +176,9 @@ pub fn sync_grid_snapshot(
         snapshot.cursor_col = (cursor.x as u16).min(max_col);
         snapshot.cursor_hidden = matches!(cursor.visibility, CursorVisibility::Hidden);
 
-        state.last_rebuild_seqno = Some(seqno);
-        state.last_rows = rows;
-        anchor_scroll_to_bottom(&mut scroll, viewport, font, total_lines, state);
+        cache_entry.last_seqno = Some(seqno);
+        cache_entry.last_rows = rows;
+        anchor_scroll_to_bottom(&mut scroll, viewport, font, total_lines, &mut follow);
     }
 }
 
@@ -207,7 +195,7 @@ fn anchor_scroll_to_bottom(
     viewport: &TextViewViewport,
     font: &FontConfig,
     total_lines: usize,
-    state: &mut SyncState,
+    follow: &mut TerminalScrollFollow,
 ) {
     let line_height = font.line_height;
     if line_height <= 0.0 {
@@ -218,28 +206,26 @@ fn anchor_scroll_to_bottom(
     let max_scroll = (-(content_height - viewport_height + viewport.text_area_top)).min(0.0);
     let stick_threshold = line_height;
 
-    // If the target moved away from where we last anchored, the user wheeled.
-    // (`on_pointer_scroll` writes `target_scroll_offset` directly.) Clamp the
-    // detection window so floating-point jitter from the smooth-scroll
-    // animator doesn't trip us.
-    if (scroll.target_scroll_offset - state.last_applied_target).abs() > 0.5 {
-        state.stick_to_bottom = scroll.target_scroll_offset - max_scroll <= stick_threshold;
+    // If the target moved away from where we last anchored, the user wheeled
+    // (or a host write moved it). `on_pointer_scroll` writes
+    // `target_scroll_offset` directly. The 0.5 px window keeps smooth-scroll
+    // floating-point jitter from tripping us.
+    if (scroll.target_scroll_offset - follow.last_applied_target).abs() > 0.5 {
+        follow.stick_to_bottom = scroll.target_scroll_offset - max_scroll <= stick_threshold;
     }
 
-    if state.stick_to_bottom {
+    if follow.stick_to_bottom {
         scroll.scroll_offset = max_scroll;
         scroll.target_scroll_offset = max_scroll;
-        state.last_applied_target = max_scroll;
+        follow.last_applied_target = max_scroll;
+    } else if scroll.target_scroll_offset - max_scroll <= stick_threshold {
+        // Re-engage when the user wheeled back to within one row of the bottom.
+        follow.stick_to_bottom = true;
+        scroll.scroll_offset = max_scroll;
+        scroll.target_scroll_offset = max_scroll;
+        follow.last_applied_target = max_scroll;
     } else {
-        // Re-engage if the user wheeled back to within one row of the bottom.
-        if scroll.target_scroll_offset - max_scroll <= stick_threshold {
-            state.stick_to_bottom = true;
-            scroll.scroll_offset = max_scroll;
-            scroll.target_scroll_offset = max_scroll;
-            state.last_applied_target = max_scroll;
-        } else {
-            state.last_applied_target = scroll.target_scroll_offset;
-        }
+        follow.last_applied_target = scroll.target_scroll_offset;
     }
 }
 

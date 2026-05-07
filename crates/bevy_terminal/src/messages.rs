@@ -113,11 +113,26 @@ pub struct TerminalResize {
 }
 
 /// Scroll the terminal so `line` (a buffer row, 0 = top of scrollback) is
-/// at the top of the visible area.
+/// at the top of the visible area. Implicitly disengages bottom-follow.
 #[derive(Message, Clone, Debug, Reflect)]
 pub struct TerminalScrollTo {
     pub entity: Entity,
     pub line: i64,
+}
+
+/// Re-engage bottom-follow: snap to the latest output and keep the viewport
+/// pinned there as new bytes arrive. Hosts wire this to a "jump to bottom"
+/// affordance (button, shortcut, gesture).
+#[derive(Message, Clone, Debug, Reflect)]
+pub struct TerminalScrollToBottom {
+    pub entity: Entity,
+}
+
+/// Jump to the top of the buffer (oldest scrollback). Disengages
+/// bottom-follow.
+#[derive(Message, Clone, Debug, Reflect)]
+pub struct TerminalScrollToTop {
+    pub entity: Entity,
 }
 
 /// Clear the screen + scrollback (equivalent to running `clear` in the shell).
