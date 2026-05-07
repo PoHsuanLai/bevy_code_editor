@@ -183,15 +183,27 @@ impl Default for DocumentHighlightsTheme {
 
 /// Render inlay hints from marker component data (inlined from the
 /// library's old `lsp_ui::render::render_inlay_hints`).
+///
+/// Routes through `RowMetrics` so the hint sits on the same baseline
+/// the engine paints the surrounding code at; LSP-side `sync.rs`
+/// publishes `(line, character)` and we re-derive the world position
+/// here, ignoring the legacy `position` field.
 fn render_inlay_hints(
     mut commands: Commands,
     hint_query: Query<(Entity, &InlayHintData), Added<InlayHintData>>,
-    editor_query: Query<(&TextViewViewport, &FontConfig), With<CodeEditor>>,
+    editor_query: Query<
+        (&TextViewViewport, &FontConfig, &ScrollState, Option<&DisplayLayout>),
+        With<CodeEditor>,
+    >,
     theme: Res<InlineDecorationsTheme>,
 ) {
-    let Ok((viewport, font)) = editor_query.single() else {
+    let Ok((viewport, font, scroll, layout)) = editor_query.single() else {
         return;
     };
+    let baseline = layout
+        .map(|l| l.baseline_offset)
+        .unwrap_or(font.font_size * bevy_text_engine::DEFAULT_BASELINE_OFFSET_RATIO);
+    let metrics = bevy_text_engine::row_metrics_with_baseline(viewport, scroll, font, baseline);
 
     for (entity, hint) in hint_query.iter() {
         let color = match hint.kind {
@@ -200,9 +212,16 @@ fn render_inlay_hints(
             InlayHintKind::Other => theme.inlay_hints.default_color,
         };
 
+        // Anchor on the row's glyph band middle so the hint sits where
+        // the surrounding text reads — `Anchor::CENTER_LEFT` then makes
+        // the hint extend rightward from this point.
+        let band = metrics.row_glyph_band(hint.line);
+        let cell_left = metrics
+            .cell_world_pos_at_x(hint.line, hint.character as f32 * font.char_width)
+            .x;
         let pos = Vec3::new(
-            viewport.world_left() + hint.position.x,
-            viewport.world_top() - hint.position.y,
+            cell_left,
+            (band.min.y + band.max.y) * 0.5,
             theme.inlay_hints.z_index,
         );
 
@@ -233,15 +252,27 @@ fn render_inlay_hints(
 
 /// Render document highlights from marker component data (inlined from the
 /// library's old `lsp_ui::render::render_document_highlights`).
+///
+/// Anchors on the row's glyph band so the highlight sits with the text
+/// the same way selection backgrounds do — `DocumentHighlightData` was
+/// computed with the legacy "position is row center" convention which
+/// no longer matches the engine's render anchor; we re-derive here.
 fn render_document_highlights(
     mut commands: Commands,
     highlight_query: Query<(Entity, &DocumentHighlightData), Added<DocumentHighlightData>>,
-    viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
+    editor_query: Query<
+        (&TextViewViewport, &FontConfig, &ScrollState, Option<&DisplayLayout>),
+        With<CodeEditor>,
+    >,
     theme: Res<InlineDecorationsTheme>,
 ) {
-    let Ok(viewport) = viewport_query.single() else {
+    let Ok((viewport, font, scroll, layout)) = editor_query.single() else {
         return;
     };
+    let baseline = layout
+        .map(|l| l.baseline_offset)
+        .unwrap_or(font.font_size * bevy_text_engine::DEFAULT_BASELINE_OFFSET_RATIO);
+    let metrics = bevy_text_engine::row_metrics_with_baseline(viewport, scroll, font, baseline);
 
     for (entity, highlight) in highlight_query.iter() {
         let color = if highlight.is_write {
@@ -250,9 +281,15 @@ fn render_document_highlights(
             theme.document_highlights.read_color
         };
 
+        let band = metrics.row_glyph_band(highlight.line);
+        // `highlight.width` covers `(end_char - start_char) * char_width`;
+        // we anchor at the row's left + the highlight's screen-x then
+        // place the sprite center accordingly. `position.x` from sync
+        // is the *center* (start_x + width/2) — keep that semantic.
+        let row_y_center = (band.min.y + band.max.y) * 0.5;
         let pos = Vec3::new(
             viewport.world_left() + highlight.position.x,
-            viewport.world_top() - highlight.position.y,
+            row_y_center,
             5.0,
         );
 
@@ -263,7 +300,10 @@ fn render_document_highlights(
             (
                 Sprite {
                     color,
-                    custom_size: Some(Vec2::new(highlight.width, highlight.height)),
+                    // Use the band's height so the highlight matches
+                    // selections; `highlight.height` was the leaded-box
+                    // line height which was too tall.
+                    custom_size: Some(Vec2::new(highlight.width, band.height())),
                     ..default()
                 },
                 Transform::from_translation(pos),
@@ -288,6 +328,10 @@ struct LspEguiViewportOffset {
 }
 
 /// Cursor screen position (x, y at top of cursor line).
+///
+/// Goes through `bevy_text_engine::row_metrics` so the math stays
+/// locked to the engine's actual row anchor — if the engine ever
+/// shifts its convention, every popup tracks automatically.
 fn cursor_screen_pos(
     char_index: usize,
     buffer: &TextBuffer,
@@ -301,15 +345,19 @@ fn cursor_screen_pos(
     let line_start = buffer.rope.line_to_char(line_index);
     let col_index = char_index - line_start;
 
-    let x = viewport_offset.screen_offset.x
-        + viewport.text_area_left
-        + (col_index as f32 * font.char_width)
+    let metrics = bevy_text_engine::row_metrics(viewport, scroll, font);
+    // Screen-space top-left of the cell (the popups want to anchor at
+    // the row's top edge so they can flip above/below the line).
+    // `row_y_top` already composes scroll, text_area_top, and line
+    // height the engine way.
+    let screen_x = viewport.text_area_left + (col_index as f32 * font.char_width)
         - scroll.horizontal_scroll_offset;
-    let y = viewport_offset.screen_offset.y
-        + viewport.text_area_top
-        + ((line_index as f32 - scroll.scroll_offset / font.line_height) * font.line_height);
+    let screen_y = metrics.row_y_top(line_index as u32);
 
-    (x, y)
+    (
+        viewport_offset.screen_offset.x + screen_x,
+        viewport_offset.screen_offset.y + screen_y,
+    )
 }
 
 /// Position a popup below (preferred) or above the cursor line, clamped to viewport.
