@@ -20,7 +20,6 @@ use crate::parse::{Block, Inline};
 use crate::theme::MarkdownTheme;
 use crate::view::{LinkSpan, MarkdownLinks};
 
-const HEADING_BOLD_WEIGHT: u16 = 700;
 const STRONG_WEIGHT: u16 = 700;
 const INLINE_CODE_CORNER: f32 = 3.0;
 /// Z order for code-block / blockquote backgrounds. Below text (negative)
@@ -30,10 +29,6 @@ const DECORATION_Z: i8 = -2;
 /// Z for the blockquote left bar — sits above the body bg but still
 /// below text.
 const BLOCKQUOTE_BAR_Z: i8 = -1;
-/// Width of the blockquote left bar in pixels.
-const BLOCKQUOTE_BAR_WIDTH: f32 = 4.0;
-const RULE_THICKNESS: f32 = 1.0;
-const RULE_PAD: f32 = 8.0;
 
 /// Configuration for one markdown layout pass.
 #[derive(Clone, Debug)]
@@ -216,7 +211,7 @@ impl<'a> LayoutBuilder<'a> {
         for r in &mut runs {
             r.fg = fg;
             r.font_scale = scale;
-            r.font_weight = Some(HEADING_BOLD_WEIGHT);
+            r.font_weight = Some(self.cfg.theme.heading_weight);
         }
         // Plain headings come back with no runs — emit a single run so
         // the heading scale still applies to the whole row.
@@ -228,7 +223,7 @@ impl<'a> LayoutBuilder<'a> {
                 font_scale: scale,
                 skew: 0.0,
                 corner_radius: 0.0,
-                font_weight: Some(HEADING_BOLD_WEIGHT),
+                font_weight: Some(self.cfg.theme.heading_weight),
                 italic: false,
                 font_family: None,
                 decoration: None,
@@ -345,7 +340,7 @@ impl<'a> LayoutBuilder<'a> {
         self.blocks.push(
             EBlock::new(String::new())
                 .with_indent(self.indent_px(depth))
-                .with_padding(RULE_PAD, RULE_PAD),
+                .with_padding(self.cfg.theme.rule_padding, self.cfg.theme.rule_padding),
         );
         self.pending_rects.push(PendingRect {
             block_idx,
@@ -683,7 +678,7 @@ fn code_block_overlay(display_row: u32, pos: RowPosition, ctx: &OverlayContext) 
 fn blockquote_bar_overlay(display_row: u32, _pos: RowPosition, ctx: &OverlayContext) -> RectOverlay {
     RectOverlay {
         display_row,
-        x_range: 0.0..BLOCKQUOTE_BAR_WIDTH,
+        x_range: 0.0..ctx.theme.blockquote_bar_width,
         vertical: RowVertical::FullLeaded,
         color: ctx.theme.decor.blockquote_bar,
         z: BLOCKQUOTE_BAR_Z,
@@ -698,7 +693,7 @@ fn rule_overlay(display_row: u32, _pos: RowPosition, ctx: &OverlayContext) -> Re
         display_row,
         x_range: 0.0..ctx.content_right,
         vertical: RowVertical::TopBand {
-            thickness: RULE_THICKNESS,
+            thickness: ctx.theme.rule_thickness,
         },
         color: ctx.theme.decor.rule_color,
         z: DECORATION_Z,
