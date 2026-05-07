@@ -14,6 +14,7 @@ use bevy::prelude::*;
 
 pub use atlas::{
     GlyphAtlas, GlyphAtlasPlugin, GlyphInfo, PlacementInfo, ATLAS_SIZE, DEFAULT_RASTER_SCALE,
+    DEFAULT_SHAPE_CACHE_CAPACITY,
 };
 
 pub use instanced_render::{ExtractedTextGlobals, InstancedTextRenderPlugin};

@@ -18,6 +18,7 @@ use super::render::{render_layout, GlyphBatchComponent, TextViewBatch};
 use super::state::{ContentMetrics, ScrollState, TextBuffer};
 use super::styling::LayoutWrap;
 use super::theme::{BlockDecorTheme, RenderTheme};
+use super::tuning::TextEngineTuning;
 use super::viewport::TextViewViewport;
 use crate::gpu::{atlas_ready, GlyphAtlas, GlyphAtlasPlugin, InstancedTextRenderPlugin};
 
@@ -56,6 +57,9 @@ pub struct TextEnginePlugin;
 
 impl Plugin for TextEnginePlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<TextEngineTuning>()
+            .register_type::<TextEngineTuning>();
+
         app.register_type::<FontConfig>()
             .register_type::<super::overlay::RectOverlay>()
             .register_type::<super::overlay::RowVertical>()

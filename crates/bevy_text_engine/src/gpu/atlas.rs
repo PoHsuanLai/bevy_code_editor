@@ -74,17 +74,33 @@ pub struct GlyphAtlas {
     /// HiDPI displays get crisp text and 1x displays don't pay 4x atlas cost.
     /// Synced each frame by `sync_atlas_scale` via [`GlyphAtlas::set_raster_scale`].
     raster_scale: f32,
+    /// Per-instance cap on `shape_cache`. Set at construction from
+    /// `TextEngineTuning`; defaults to [`DEFAULT_SHAPE_CACHE_CAPACITY`].
+    shape_cache_capacity: usize,
 }
 
-const SHAPE_CACHE_CAPACITY: usize = 8192;
+/// Default FIFO cap on the shaped-line cache. Override via
+/// [`crate::TextEngineTuning::shape_cache_capacity`].
+pub const DEFAULT_SHAPE_CACHE_CAPACITY: usize = 8192;
 
 impl GlyphAtlas {
     pub fn new(images: &mut Assets<Image>) -> Self {
-        Self::new_with_font(images, None)
+        Self::new_with_font_and_capacity(images, None, DEFAULT_SHAPE_CACHE_CAPACITY)
     }
 
     /// `font_path` can be a file path ("fonts/FiraMono-Regular.ttf") or family name ("Fira Mono").
     pub fn new_with_font(images: &mut Assets<Image>, font_path: Option<&str>) -> Self {
+        Self::new_with_font_and_capacity(images, font_path, DEFAULT_SHAPE_CACHE_CAPACITY)
+    }
+
+    /// Construct with a custom shape-cache capacity. Hosts that work in huge
+    /// files (250k+ lines) benefit from a larger cap; embedded / chat
+    /// scenarios can shrink it.
+    pub fn new_with_font_and_capacity(
+        images: &mut Assets<Image>,
+        font_path: Option<&str>,
+        shape_cache_capacity: usize,
+    ) -> Self {
         let pixels = vec![0u8; (ATLAS_SIZE * ATLAS_SIZE * 4) as usize];
 
         let image = Image::new(
@@ -132,9 +148,10 @@ impl GlyphAtlas {
                 offset: Vec2::ZERO,
                 advance: 0.0,
             },
-            shape_cache: HashMap::with_capacity(SHAPE_CACHE_CAPACITY),
-            shape_cache_order: VecDeque::with_capacity(SHAPE_CACHE_CAPACITY),
+            shape_cache: HashMap::with_capacity(shape_cache_capacity),
+            shape_cache_order: VecDeque::with_capacity(shape_cache_capacity),
             raster_scale: DEFAULT_RASTER_SCALE,
+            shape_cache_capacity,
         };
 
         atlas.reserve_solid_pixel();
@@ -414,8 +431,13 @@ fn setup_glyph_atlas(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
     windows: Query<&bevy::window::Window, With<bevy::window::PrimaryWindow>>,
+    tuning: Option<Res<crate::view::tuning::TextEngineTuning>>,
 ) {
-    let mut atlas = GlyphAtlas::new(&mut images);
+    let cap = tuning
+        .as_deref()
+        .map(|t| t.shape_cache_capacity)
+        .unwrap_or(DEFAULT_SHAPE_CACHE_CAPACITY);
+    let mut atlas = GlyphAtlas::new_with_font_and_capacity(&mut images, None, cap);
     if let Ok(window) = windows.single() {
         atlas.set_raster_scale(window.scale_factor());
     }
@@ -582,7 +604,7 @@ mod instanced_extensions {
 
             // Insert + FIFO bound. Empty lines get cached too (pre-formatted
             // empty `LineShape` is cheap, lookup is still a win).
-            if self.shape_cache_order.len() >= SHAPE_CACHE_CAPACITY {
+            if self.shape_cache_order.len() >= self.shape_cache_capacity {
                 if let Some(victim) = self.shape_cache_order.pop_front() {
                     self.shape_cache.remove(&victim);
                 }

@@ -26,8 +26,8 @@ use super::styling::{BlockList, HiddenLines, LayoutWrap, LineStyles, RunWithText
 use super::viewport::TextViewViewport;
 use crate::gpu::GlyphAtlas;
 
-/// Extra rows kept above and below the visible window. Tunes the trade-off
-/// between off-screen shaping work and scroll-into-view smoothness.
+/// Default extra rows kept above and below the visible window. Override
+/// at runtime with [`crate::TextEngineTuning::viewport_buffer_lines`].
 pub const VIEWPORT_BUFFER_LINES: u32 = 4;
 
 /// System set for layout production. Editor-side producer systems that
@@ -148,8 +148,13 @@ pub(crate) fn produce_layouts(
     >,
     mut atlas: ResMut<GlyphAtlas>,
     fonts: Res<Assets<bevy::text::Font>>,
+    tuning: Option<Res<super::tuning::TextEngineTuning>>,
     mut last_fingerprints: Local<HashMap<Entity, LayoutFingerprint>>,
 ) {
+    let buffer_lines = tuning
+        .as_deref()
+        .map(|t| t.viewport_buffer_lines)
+        .unwrap_or(VIEWPORT_BUFFER_LINES);
     let mut alive: std::collections::HashSet<Entity> = std::collections::HashSet::new();
     for (entity, buffer, scroll, mut metrics, tv_viewport, font, mut layout, hidden, styles, wrap) in
         q.iter_mut()
@@ -202,6 +207,7 @@ pub(crate) fn produce_layouts(
                     styles,
                     Some(&mut atlas),
                     Some(&fonts),
+                    buffer_lines,
                 );
                 *layout = new_layout;
             }};
@@ -256,6 +262,7 @@ pub(crate) fn build_display_layout(
     styles: Option<&LineStyles>,
     atlas: Option<&mut GlyphAtlas>,
     fonts: Option<&Assets<bevy::text::Font>>,
+    buffer_lines: u32,
 ) -> DisplayLayout {
     let LayoutWrap {
         budget_px: wrap_budget_px,
@@ -278,7 +285,7 @@ pub(crate) fn build_display_layout(
 
     // Visible range — same math as the helper, inlined here to also feed
     // first/last_visible_display_row for the y_top calculation.
-    let buf_px = line_height * VIEWPORT_BUFFER_LINES as f32;
+    let buf_px = line_height * buffer_lines as f32;
     let scroll_dist = scroll.scroll_offset.abs();
     let start_pixels = scroll_dist - viewport.text_area_top - buf_px;
     let first_visible_display_row = (start_pixels / line_height).floor().max(0.0) as u32;

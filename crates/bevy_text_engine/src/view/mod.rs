@@ -10,6 +10,7 @@ pub mod snapshot;
 pub mod state;
 pub mod styling;
 pub mod theme;
+pub mod tuning;
 pub mod viewport;
 
 pub use font::{FontConfig, FontSynthesis};
@@ -31,4 +32,5 @@ pub use snapshot::{
 pub use state::{ContentMetrics, ScrollState, TextBuffer};
 pub use styling::{BlockList, HiddenLines, LayoutWrap, LineStyles, RunWithText};
 pub use theme::{BlockDecorTheme, RenderTheme};
+pub use tuning::TextEngineTuning;
 pub use viewport::{TextViewViewport, ViewportOrigin};
