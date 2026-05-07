@@ -43,6 +43,13 @@ impl<'a> Iterator for RopeChunks<'a> {
 /// Maximum bytes to query at once (matches Zed's heuristic).
 pub const MAX_BYTES_TO_QUERY: usize = 16 * 1024;
 
+/// Buffer-size threshold above which `apply_sync_edit` skips its synchronous
+/// `parse_with` call and only does the cheap `tree.edit()` byte-offset shift.
+/// Larger buffers let the async [`parse_dirty`] pipeline handle the reparse
+/// off the main thread. ~64 KB covers typical source files; sqlite3.c-scale
+/// (~7 MB) defers.
+pub const SYNC_REPARSE_BYTE_LIMIT: usize = 64 * 1024;
+
 /// Zero-copy rope reader for `parse_with`. Streams chunks forward; seeking
 /// backwards resets the chunk iterator.
 pub struct RopeReader<'a> {
@@ -131,21 +138,41 @@ impl TreeSitterProvider {
 
     /// Apply an edit synchronously ("tree interpolation"). `tree.edit()` shifts
     /// byte offsets in O(log n) so highlights stay valid while the async
-    /// re-parse runs; also re-parses synchronously for small documents.
+    /// re-parse runs; also re-parses synchronously for small edits.
+    ///
+    /// The synchronous reparse is skipped when *either* side of the edit
+    /// (old text removed OR new text inserted) exceeds
+    /// [`SYNC_REPARSE_BYTE_LIMIT`], or the old tree itself was large.
+    /// Without all three checks, a select-all+delete on a 7 MB file looks
+    /// like "tiny new buffer" but tree-sitter still does O(old size)
+    /// reconciliation work — checking just `rope.len_bytes()` post-edit
+    /// misses this case. The async [`parse_dirty`] pipeline picks up the
+    /// edit a frame later; cost of skipping is one frame of slightly stale
+    /// highlights, barely perceptible vs. dropping a frame on every edit.
     pub fn apply_sync_edit(&mut self, edit: tree_sitter::InputEdit, rope: &Rope) {
         if let Some(ref mut tree) = self.cached_tree {
+            let old_size = tree.root_node().end_byte();
             tree.edit(&edit);
 
-            if let Some(ref mut parser) = self.cached_parser {
-                let rope_clone = rope.clone();
-                if let Some(new_tree) = parser.parse_with(
-                    &mut |byte_offset, _| {
-                        let (chunk, start_byte, _, _) = rope_clone.chunk_at_byte(byte_offset);
-                        &chunk.as_bytes()[(byte_offset - start_byte)..]
-                    },
-                    Some(tree),
-                ) {
-                    *tree = new_tree;
+            let removed = edit.old_end_byte.saturating_sub(edit.start_byte);
+            let inserted = edit.new_end_byte.saturating_sub(edit.start_byte);
+            let small_edit = removed <= SYNC_REPARSE_BYTE_LIMIT
+                && inserted <= SYNC_REPARSE_BYTE_LIMIT
+                && old_size <= SYNC_REPARSE_BYTE_LIMIT
+                && rope.len_bytes() <= SYNC_REPARSE_BYTE_LIMIT;
+
+            if small_edit {
+                if let Some(ref mut parser) = self.cached_parser {
+                    let rope_clone = rope.clone();
+                    if let Some(new_tree) = parser.parse_with(
+                        &mut |byte_offset, _| {
+                            let (chunk, start_byte, _, _) = rope_clone.chunk_at_byte(byte_offset);
+                            &chunk.as_bytes()[(byte_offset - start_byte)..]
+                        },
+                        Some(tree),
+                    ) {
+                        *tree = new_tree;
+                    }
                 }
             }
         }

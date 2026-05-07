@@ -7,95 +7,162 @@ use crate::text_view::{
 };
 use crate::types::*;
 use bevy::prelude::*;
-use bevy_text_engine::FontConfig;
+use bevy_text_engine::{visible_buffer_range, FontConfig, HiddenLines, LayoutWrap};
 
 /// Push selection rectangles into `TextViewOverlays` for all cursors.
 ///
 /// Selections render as paint-time overlay rects with `z = -1` (below text),
 /// not as separate `Sprite` entities, so the engine's renderer paints them
 /// in the same draw call as the glyphs.
+///
+/// Visible-window clipped: a selection covering the entire 150k-line buffer
+/// only emits rects for the ~50 lines actually on screen. The selection
+/// itself still spans the whole buffer (kept by `SelectionState`); we just
+/// don't paint rects we can't see. Without this clip, Cmd+A on a big file
+/// allocates 150k `RectOverlay`s every frame and hangs the editor for
+/// seconds.
+///
+/// Change-detection gated: idle frames do nothing.
+#[allow(clippy::type_complexity)]
 pub(crate) fn update_selection_highlight(
     mut editor_query: Query<
         (
+            Entity,
             &TextBuffer,
             &TextViewViewport,
+            &ScrollState,
             &SelectionState,
             &mut TextViewOverlays,
             &FoldState,
             &FontConfig,
             Option<&DisplayLayout>,
+            Option<&HiddenLines>,
+            Option<&LayoutWrap>,
             &ThemeConfig,
         ),
         With<CodeEditor>,
     >,
+    dirty_editors: Query<
+        Entity,
+        (
+            With<CodeEditor>,
+            Or<(
+                Changed<SelectionState>,
+                Changed<ScrollState>,
+                Changed<TextViewViewport>,
+                Changed<TextBuffer>,
+                Changed<FoldState>,
+                Changed<FontConfig>,
+                Changed<ThemeConfig>,
+            )>,
+        ),
+    >,
 ) {
-    for (buffer, _vp, sel, mut overlays, fold_state, font, layout, theme) in
-        editor_query.iter_mut()
-    {
-    // Drain any selection rects from the previous frame (z = -1 marks selection;
-    // cursor caret uses z = +1; z = 0 is reserved for line-bg/highlight overlays).
-    overlays.rects.retain(|r| r.z != -1);
-
-    let char_width = font.char_width;
-    let _ = font.line_height;
-
-    // Collect (start_char, end_char) for every active selection range. The
-    // SelectionCollection is the single source of truth — emit one rect-set
-    // per non-empty selection.
-    let selections: Vec<(usize, usize)> = sel
-        .selections
-        .iter()
-        .filter(|s| s.has_selection())
-        .map(|s| s.range())
-        .collect();
-
-    for (start, end) in selections {
-        let start_line = buffer.rope.char_to_line(start);
-        let end_line = buffer.rope.char_to_line(end);
-
-        for line_idx in start_line..=end_line {
-            if fold_state.is_line_hidden(line_idx) {
-                continue;
-            }
-
-            let line_start_char = buffer.rope.line_to_char(line_idx);
-            let line = buffer.rope.line(line_idx);
-            let line_chars = line.len_chars();
-
-            let sel_start_col = if line_idx == start_line {
-                start - line_start_char
-            } else {
-                0
-            };
-            let sel_end_col = if line_idx == end_line {
-                end - line_start_char
-            } else {
-                line_chars
-            };
-            if sel_start_col >= sel_end_col {
-                continue;
-            }
-
-            let s_byte = line.slice(..sel_start_col.min(line_chars)).len_bytes();
-            let e_byte = line.slice(..sel_end_col.min(line_chars)).len_bytes();
-
-            push_selection_for_buffer_range(
-                SelSpan {
-                    s_byte,
-                    e_byte,
-                    sel_start_col,
-                    sel_end_col,
-                    is_last_buffer_line: line_idx == end_line,
-                },
-                &RowMap { layout, fold_state, line_idx },
-                char_width,
-                theme.selection_background,
-                &mut overlays.rects,
-            );
-        }
+    let dirty: std::collections::HashSet<Entity> = dirty_editors.iter().collect();
+    if dirty.is_empty() {
+        return;
     }
 
-    overlays.version = overlays.version.wrapping_add(1);
+    for (
+        editor_entity,
+        buffer,
+        viewport,
+        scroll,
+        sel,
+        mut overlays,
+        fold_state,
+        font,
+        layout,
+        hidden,
+        wrap,
+        theme,
+    ) in editor_query.iter_mut()
+    {
+        if !dirty.contains(&editor_entity) {
+            continue;
+        }
+        // Drain any selection rects from the previous frame (z = -1 marks selection;
+        // cursor caret uses z = +1; z = 0 is reserved for line-bg/highlight overlays).
+        overlays.rects.retain(|r| r.z != -1);
+
+        let char_width = font.char_width;
+
+        // Visible buffer-line window. Selections are clipped to this band so
+        // a multi-thousand-line selection doesn't allocate per-line rects for
+        // off-viewport rows.
+        let wrap_cfg = wrap.copied().unwrap_or_default();
+        let visible = visible_buffer_range(buffer, scroll, viewport, font, wrap_cfg, hidden);
+        if visible.start >= visible.end {
+            overlays.version = overlays.version.wrapping_add(1);
+            continue;
+        }
+
+        // Collect (start_char, end_char) for every active selection range. The
+        // SelectionCollection is the single source of truth — emit one rect-set
+        // per non-empty selection.
+        let selections: Vec<(usize, usize)> = sel
+            .selections
+            .iter()
+            .filter(|s| s.has_selection())
+            .map(|s| s.range())
+            .collect();
+
+        for (start, end) in selections {
+            let sel_start_line = buffer.rope.char_to_line(start);
+            let sel_end_line = buffer.rope.char_to_line(end);
+
+            // Iterate only the part of the selection that overlaps the
+            // visible window. Off-viewport portions still exist in
+            // `SelectionState` — we just don't emit rects for them.
+            let iter_start = sel_start_line.max(visible.start);
+            let iter_end = sel_end_line.min(visible.end.saturating_sub(1));
+            if iter_start > iter_end {
+                continue;
+            }
+
+            for line_idx in iter_start..=iter_end {
+                if fold_state.is_line_hidden(line_idx) {
+                    continue;
+                }
+
+                let line_start_char = buffer.rope.line_to_char(line_idx);
+                let line = buffer.rope.line(line_idx);
+                let line_chars = line.len_chars();
+
+                let sel_start_col = if line_idx == sel_start_line {
+                    start - line_start_char
+                } else {
+                    0
+                };
+                let sel_end_col = if line_idx == sel_end_line {
+                    end - line_start_char
+                } else {
+                    line_chars
+                };
+                if sel_start_col >= sel_end_col {
+                    continue;
+                }
+
+                let s_byte = line.slice(..sel_start_col.min(line_chars)).len_bytes();
+                let e_byte = line.slice(..sel_end_col.min(line_chars)).len_bytes();
+
+                push_selection_for_buffer_range(
+                    SelSpan {
+                        s_byte,
+                        e_byte,
+                        sel_start_col,
+                        sel_end_col,
+                        is_last_buffer_line: line_idx == sel_end_line,
+                    },
+                    &RowMap { layout, fold_state, line_idx },
+                    char_width,
+                    theme.selection_background,
+                    &mut overlays.rects,
+                );
+            }
+        }
+
+        overlays.version = overlays.version.wrapping_add(1);
     }
 }
 
@@ -141,23 +208,20 @@ impl<'a> RowMap<'a> {
                 )
             })
     }
-
-    /// Pixel x where the given display row's text ends (line-local).
-    fn row_text_end_x(&self, display_row: u32, char_width: f32) -> f32 {
-        self.layout
-            .and_then(|l| {
-                l.lines
-                    .iter()
-                    .find(|line| line.display_row == display_row)
-                    .and_then(|line| l.x_at_byte(display_row, line.text.len()))
-            })
-            .unwrap_or(char_width)
-    }
 }
 
 /// Push selection rects for one buffer line's slice. With wrap on, the slice
 /// may span multiple display rows; emit one rect per row, extending non-final
 /// rows to the row's right edge so the selection band looks continuous.
+///
+/// Width-fallback note: when a row isn't in `layout.lines` (i.e. shaped) we
+/// fall back to `sel_end_col * char_width`. For lines that *are* in the
+/// visible buffer-line range but *outside* the layout's narrower shaped
+/// slice — which happens at the visible-window edges and during scroll —
+/// the caller has the actual selection extent in chars and that's a much
+/// better width than a single `char_width`. Without this, boundary lines
+/// get a single-char-wide selection rect while shaped lines get the full
+/// line rect.
 fn push_selection_for_buffer_range(
     span: SelSpan,
     rows: &RowMap<'_>,
@@ -176,12 +240,24 @@ fn push_selection_for_buffer_range(
         .layout
         .and_then(|l| l.x_at_byte(end_row, end_byte_in_row))
         .unwrap_or(span.sel_end_col as f32 * char_width);
+    // Width fallback for unshaped rows: use the selection extent in chars.
+    let end_chars_fallback = span.sel_end_col as f32 * char_width;
+    let row_end_or_chars = |row: u32| -> f32 {
+        rows.layout
+            .and_then(|l| {
+                l.lines
+                    .iter()
+                    .find(|line| line.display_row == row)
+                    .and_then(|line| l.x_at_byte(row, line.text.len()))
+            })
+            .unwrap_or(end_chars_fallback)
+    };
     // Non-final-line rows extend to the row's text-end so the selection
     // hugs the actual text instead of filling the row to the viewport edge.
     let trailing_x = if span.is_last_buffer_line {
         end_x_resolved
     } else {
-        rows.row_text_end_x(end_row, char_width)
+        row_end_or_chars(end_row)
     };
 
     if start_row == end_row {
@@ -190,10 +266,10 @@ fn push_selection_for_buffer_range(
     }
 
     // Multi-row span (selection crossed a soft-wrap break).
-    let start_row_end = rows.row_text_end_x(start_row, char_width).max(start_x + char_width);
+    let start_row_end = row_end_or_chars(start_row).max(start_x + char_width);
     out.push(selection_rect(start_row, start_x..start_row_end, color));
     for r in (start_row + 1)..end_row {
-        let r_end = rows.row_text_end_x(r, char_width).max(char_width);
+        let r_end = row_end_or_chars(r).max(char_width);
         out.push(selection_rect(r, 0.0..r_end, color));
     }
     out.push(selection_rect(end_row, 0.0..trailing_x, color));

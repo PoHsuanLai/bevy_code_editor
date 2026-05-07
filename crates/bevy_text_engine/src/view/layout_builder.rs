@@ -182,25 +182,59 @@ pub(crate) fn produce_layouts(
             wrap_indent_bits: wrap.indent_px.to_bits(),
         };
 
-        if last_fingerprints.get(&entity) == Some(&fingerprint) {
-            continue;
+        // Tracy diagnostic: which fingerprint field changed since last frame?
+        // Each cache-miss reason gets its own zone name so Tracy's per-zone
+        // counts directly tell us how often each invalidation source fires.
+        // Helps catch spurious invalidations (e.g. an upstream producer
+        // writing a fresh `Arc` every frame).
+        macro_rules! rebuild {
+            ($miss_name:literal) => {{
+                let _miss = bevy::prelude::info_span!($miss_name).entered();
+                let new_layout = build_display_layout(
+                    buffer,
+                    scroll,
+                    &mut metrics,
+                    tv_viewport,
+                    font,
+                    wrap,
+                    layout.default_fg,
+                    hidden,
+                    styles,
+                    Some(&mut atlas),
+                    Some(&fonts),
+                );
+                *layout = new_layout;
+            }};
         }
 
-        let new_layout = build_display_layout(
-            buffer,
-            scroll,
-            &mut metrics,
-            tv_viewport,
-            font,
-            wrap,
-            layout.default_fg,
-            hidden,
-            styles,
-            Some(&mut atlas),
-            Some(&fonts),
-        );
-
-        *layout = new_layout;
+        match last_fingerprints.get(&entity) {
+            None => rebuild!("layout_miss_first"),
+            Some(prev) if prev == &fingerprint => continue,
+            Some(prev) => {
+                if prev.content_version != fingerprint.content_version {
+                    rebuild!("layout_miss_content");
+                } else if prev.scroll_bits != fingerprint.scroll_bits
+                    || prev.h_scroll_bits != fingerprint.h_scroll_bits
+                {
+                    rebuild!("layout_miss_scroll");
+                } else if prev.viewport_w != fingerprint.viewport_w
+                    || prev.viewport_h != fingerprint.viewport_h
+                    || prev.viewport_top_bits != fingerprint.viewport_top_bits
+                {
+                    rebuild!("layout_miss_viewport");
+                } else if prev.font_size_tenths != fingerprint.font_size_tenths
+                    || prev.line_height_tenths != fingerprint.line_height_tenths
+                {
+                    rebuild!("layout_miss_font");
+                } else if prev.style_arc_addr != fingerprint.style_arc_addr {
+                    rebuild!("layout_miss_styles");
+                } else if prev.hidden_arc_addr != fingerprint.hidden_arc_addr {
+                    rebuild!("layout_miss_hidden");
+                } else {
+                    rebuild!("layout_miss_wrap");
+                }
+            }
+        }
         last_fingerprints.insert(entity, fingerprint);
     }
     last_fingerprints.retain(|e, _| alive.contains(e));
@@ -323,6 +357,7 @@ pub(crate) fn build_display_layout(
         // newline first — the rope line includes it, but cosmic-text would
         // just emit a zero-advance glyph for it.
         let shape = atlas_opt.as_deref_mut().map(|atlas| {
+            let _shape_span = bevy::prelude::info_span!("shape_line").entered();
             let shape_text = render_text.strip_suffix('\n').unwrap_or(&render_text);
             let font_id = fonts.and_then(|fs| atlas.ensure_font(&font.font, fs));
             Arc::new(atlas.shape_line(shape_text, font.font_size, font_id))

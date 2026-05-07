@@ -404,6 +404,11 @@ pub struct LspHoverPopup {
     pub range: Option<Range>,
     /// Whether we've already sent a hover request for this position
     pub request_sent: bool,
+    /// Last viewport-local pointer position seen by the hover-move observer.
+    /// Used to skip the rope/layout hit-test when the pointer has barely
+    /// moved since the previous event (a per-pixel `Pointer<Move>` would
+    /// otherwise re-run `screen_to_char_pos` on every sub-pixel jitter).
+    pub last_pointer_pos: Option<bevy::math::Vec2>,
 }
 
 impl Default for LspHoverPopup {
@@ -421,6 +426,7 @@ impl Default for LspHoverPopup {
             timer: None,
             range: None,
             request_sent: false,
+            last_pointer_pos: None,
         }
     }
 }

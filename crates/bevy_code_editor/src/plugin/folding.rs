@@ -9,47 +9,124 @@ use bevy::prelude::*;
 use bevy_text_engine::FontConfig;
 
 #[cfg(feature = "tree-sitter")]
-pub(crate) fn detect_foldable_regions(
-    mut editor_query: Query<
-        (&TextBuffer, &mut FoldState, &bevy_tree_sitter::SyntaxTree),
+use bevy::tasks::{block_on, futures_lite, AsyncComputeTaskPool, Task};
+
+/// In-flight fold-detection task. Lives on a child entity so the parent's
+/// `Changed<FoldState>` doesn't fire on each task spawn/despawn. Mirrors
+/// the `bevy_tree_sitter::ParseTask` pattern.
+#[cfg(feature = "tree-sitter")]
+#[derive(Component)]
+pub(crate) struct FoldDetectTask {
+    task: Task<Vec<FoldRegion>>,
+    /// `SyntaxTree::tree_version` at kick-off; written into
+    /// `FoldState::content_version` on completion to single-flight.
+    tree_version: usize,
+    /// The editor entity whose `FoldState` this task targets.
+    target: Entity,
+}
+
+/// Spawn an async fold-detection task whenever an editor's `SyntaxTree`
+/// produces a fresher version than the one already reflected in
+/// `FoldState`. The walk happens on `AsyncComputeTaskPool`; the apply
+/// step ([`apply_fold_detect_tasks`]) writes the result back on the
+/// main thread, preserving prior `is_folded` flags.
+///
+/// Single-flight per editor: while a task is in flight for `entity`,
+/// `Changed<SyntaxTree>` cycles on that entity are ignored until the
+/// in-flight task lands. The check we then run in `apply` (`tree_version`
+/// equality) catches the case where another tree version arrived during
+/// the walk and re-spawns naturally on the next tick.
+#[cfg(feature = "tree-sitter")]
+pub(crate) fn spawn_fold_detect_tasks(
+    mut commands: Commands,
+    editor_query: Query<
+        (Entity, &FoldState, &TextBuffer, &bevy_tree_sitter::SyntaxTree),
         (With<CodeEditor>, Changed<bevy_tree_sitter::SyntaxTree>),
     >,
+    in_flight: Query<&FoldDetectTask>,
 ) {
-    for (buffer, mut fold_state, syntax_tree) in editor_query.iter_mut() {
+    let busy: std::collections::HashSet<Entity> =
+        in_flight.iter().map(|t| t.target).collect();
+
+    for (entity, fold_state, buffer, syntax_tree) in editor_query.iter() {
+        if busy.contains(&entity) {
+            continue;
+        }
         let Some(tree) = syntax_tree.tree.as_ref() else {
             continue;
         };
-        if fold_state.content_version == syntax_tree.tree_version as usize {
+        let tree_version = syntax_tree.tree_version as usize;
+        if fold_state.content_version == tree_version {
             continue;
         }
-        fold_state.content_version = syntax_tree.tree_version as usize;
 
-        let mut regions: Vec<FoldRegion> = Vec::new();
-        let chunk_text: String = buffer.rope.chunks().collect();
-        let text_bytes = chunk_text.as_bytes();
+        // Cheap clones: `Tree` is ref-counted FFI-side, `Rope` shares
+        // chunks via Arc. Both are `Send + 'static`, suitable for the
+        // worker.
+        let tree_clone = tree.clone();
+        let rope_clone = buffer.rope.clone();
+        let task = AsyncComputeTaskPool::get().spawn(async move {
+            let mut regions: Vec<FoldRegion> = Vec::new();
+            let root = tree_clone.root_node();
+            collect_foldable_regions(&root, &rope_clone, &mut regions, false);
+            regions
+        });
 
-        let root = tree.root_node();
-        collect_foldable_regions(&root, text_bytes, &buffer.rope, &mut regions, false);
+        commands.spawn((
+            FoldDetectTask {
+                task,
+                tree_version,
+                target: entity,
+            },
+            ChildOf(entity),
+        ));
+    }
+}
 
-        let old_regions = std::mem::take(&mut fold_state.regions);
-        for mut region in regions {
-            if let Some(old) = old_regions
-                .iter()
-                .find(|r| r.start_line == region.start_line && r.end_line == region.end_line)
-            {
-                region.is_folded = old.is_folded;
+/// Poll in-flight `FoldDetectTask`s; merge completed results into the
+/// target editor's `FoldState` (preserving prior `is_folded` flags) and
+/// despawn the task entity.
+#[cfg(feature = "tree-sitter")]
+pub(crate) fn apply_fold_detect_tasks(
+    mut commands: Commands,
+    mut tasks: Query<(Entity, &mut FoldDetectTask)>,
+    mut editors: Query<&mut FoldState, With<CodeEditor>>,
+) {
+    for (task_entity, mut task) in tasks.iter_mut() {
+        let Some(regions) =
+            block_on(futures_lite::future::poll_once(&mut task.task))
+        else {
+            continue;
+        };
+
+        if let Ok(mut fold_state) = editors.get_mut(task.target) {
+            // If a fresher tree version arrived after we kicked off, our
+            // result is stale — skip the write and let the next
+            // `spawn_fold_detect_tasks` tick respawn.
+            if fold_state.content_version != task.tree_version {
+                let old_regions = std::mem::take(&mut fold_state.regions);
+                fold_state.regions.reserve(regions.len());
+                for mut region in regions {
+                    if let Some(old) = old_regions.iter().find(|r| {
+                        r.start_line == region.start_line
+                            && r.end_line == region.end_line
+                    }) {
+                        region.is_folded = old.is_folded;
+                    }
+                    fold_state.regions.push(region);
+                }
+                fold_state.content_version = task.tree_version;
+                fold_state.enabled = true;
             }
-            fold_state.regions.push(region);
         }
 
-        fold_state.enabled = true;
+        commands.entity(task_entity).despawn();
     }
 }
 
 #[cfg(feature = "tree-sitter")]
 pub(crate) fn collect_foldable_regions(
     node: &bevy_tree_sitter::ts::Node,
-    text: &[u8],
     rope: &ropey::Rope,
     regions: &mut Vec<FoldRegion>,
     parent_is_foldable_construct: bool,
@@ -84,7 +161,7 @@ pub(crate) fn collect_foldable_regions(
 
     if !skip_this_node {
         // Check if this node is foldable
-        if let Some(region) = node_to_fold_region(node, text, rope) {
+        if let Some(region) = node_to_fold_region(node, rope) {
             // Only add regions that span multiple lines
             if region.end_line > region.start_line {
                 regions.push(region);
@@ -95,14 +172,13 @@ pub(crate) fn collect_foldable_regions(
     // Recursively process children
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_foldable_regions(&child, text, rope, regions, is_foldable_construct);
+        collect_foldable_regions(&child, rope, regions, is_foldable_construct);
     }
 }
 
 #[cfg(feature = "tree-sitter")]
 pub(crate) fn node_to_fold_region(
     node: &bevy_tree_sitter::ts::Node,
-    _text: &[u8],
     rope: &ropey::Rope,
 ) -> Option<FoldRegion> {
     let kind = node.kind();
@@ -274,23 +350,72 @@ impl Plugin for FoldingPlugin {
             .register_type::<crate::types::fold::FoldState>()
             .register_type::<crate::types::fold::GotoLineState>();
 
+        // With tree-sitter: walk the parse tree off the main thread and
+        // apply the result on completion. The walk is genuinely O(tree
+        // nodes) — for sqlite3.c (~7 MB) it's ~90 ms, which would otherwise
+        // hitch the frame after every parse-completion (e.g. delete-all).
+        //
+        // Without tree-sitter: brace-matching fallback is fast enough to
+        // run synchronously each tick.
+        #[cfg(feature = "tree-sitter")]
         _app.add_systems(
             Update,
             (
-                detect_foldable_regions.in_set(super::ApplyStateSet),
-                update_fold_indicators
-                    .after(super::gpu_line_numbers::update_gpu_line_numbers)
-                    .in_set(super::RenderingSet),
+                spawn_fold_detect_tasks.in_set(super::ApplyStateSet),
+                apply_fold_detect_tasks
+                    .after(spawn_fold_detect_tasks)
+                    .in_set(super::ApplyStateSet),
             ),
+        );
+        #[cfg(not(feature = "tree-sitter"))]
+        _app.add_systems(
+            Update,
+            detect_foldable_regions.in_set(super::ApplyStateSet),
+        );
+
+        _app.add_systems(
+            Update,
+            update_fold_indicators
+                .after(super::gpu_line_numbers::update_gpu_line_numbers)
+                .in_set(super::RenderingSet),
         );
     }
 }
 
+/// Sync per-editor fold-gutter indicator entities (▶/▼ glyphs) with the
+/// current `FoldState` and viewport.
+///
+/// Runs only when something an indicator depends on actually changed. Idle
+/// frames (typing-paused, no scroll) are a complete no-op. Each indicator
+/// write is also gated on a real value change so we don't trip Bevy's
+/// `Changed<>` markers — those would cascade into `Text2d` layout, sprite
+/// extraction, and a render-graph re-walk every frame.
+#[allow(clippy::type_complexity)]
 pub(crate) fn update_fold_indicators(
     mut commands: Commands,
     editor_query: Query<
-        (&TextBuffer, &ScrollState, &TextViewViewport, &FoldState, &FontConfig, &ThemeConfig),
+        (
+            Entity,
+            &TextBuffer,
+            &ScrollState,
+            &TextViewViewport,
+            &FoldState,
+            &FontConfig,
+            &ThemeConfig,
+        ),
         With<CodeEditor>,
+    >,
+    dirty_editors: Query<
+        Entity,
+        (
+            With<CodeEditor>,
+            Or<(
+                Changed<FoldState>,
+                Changed<ScrollState>,
+                Changed<TextViewViewport>,
+                Changed<FontConfig>,
+            )>,
+        ),
     >,
     ui: Res<UiSettings>,
     mut indicator_query: Query<(
@@ -301,100 +426,114 @@ pub(crate) fn update_fold_indicators(
         &mut Visibility,
     )>,
 ) {
-    // Collect existing indicators once (shared across all editors)
+    let dirty: std::collections::HashSet<Entity> = dirty_editors.iter().collect();
+    if dirty.is_empty() && !ui.is_changed() {
+        return;
+    }
+
     let mut existing_indicators: std::collections::HashMap<usize, Entity> =
-        std::collections::HashMap::new();
+        std::collections::HashMap::with_capacity(indicator_query.iter().len());
     for (entity, indicator, _, _, _) in indicator_query.iter() {
         existing_indicators.insert(indicator.line_index, entity);
     }
     let mut used_indices: std::collections::HashSet<usize> = std::collections::HashSet::new();
-    let mut any_disabled_only = true;
+    let mut any_enabled = false;
 
-    for (buffer, scroll, viewport, fold_state, font, theme) in editor_query.iter() {
+    for (editor_entity, buffer, scroll, viewport, fold_state, font, theme) in editor_query.iter() {
         if !fold_state.enabled || !ui.show_line_numbers {
             continue;
         }
-        any_disabled_only = false;
+        // If nothing on this editor changed and UiSettings didn't flip,
+        // its indicators are already in the right state — skip.
+        if !ui.is_changed() && !dirty.contains(&editor_entity) {
+            // Still mark its visible folds as "used" so we don't hide them
+            // when running for a *different* editor that did change.
+            let line_height = font.line_height;
+            let visible_start_line = ((-scroll.scroll_offset) / line_height).floor() as usize;
+            let visible_lines = ((viewport.height as f32 / line_height).ceil() as usize) + 2;
+            let visible_end_line =
+                (visible_start_line + visible_lines).min(buffer.rope.len_lines());
+            for region in &fold_state.regions {
+                if region.start_line >= visible_start_line
+                    && region.start_line < visible_end_line
+                {
+                    used_indices.insert(region.start_line);
+                }
+            }
+            any_enabled = true;
+            continue;
+        }
+        any_enabled = true;
 
         let line_height = font.line_height;
         let font_size = font.font_size;
         let viewport_width = viewport.width as f32;
         let viewport_height = viewport.height as f32;
 
-        // Calculate visible line range
         let visible_start_line = ((-scroll.scroll_offset) / line_height).floor() as usize;
         let visible_lines = ((viewport_height / line_height).ceil() as usize) + 2;
         let visible_end_line = (visible_start_line + visible_lines).min(buffer.rope.len_lines());
 
-        // Collect fold regions that start within visible range
-        let visible_regions: Vec<_> = fold_state
-            .regions
-            .iter()
-            .filter(|r| r.start_line >= visible_start_line && r.start_line < visible_end_line)
-            .collect();
-
-        // Calculate hidden lines for proper display positioning
-        // We need to count how many lines are hidden before each fold region
-        let count_hidden_lines_before = |line: usize| -> usize {
-            fold_state
-                .regions
-                .iter()
-                .filter(|r| r.is_folded && r.start_line < line)
-                .map(|r| r.end_line.saturating_sub(r.start_line))
-                .sum()
-        };
-
-        for region in visible_regions {
+        for region in &fold_state.regions {
+            if region.start_line < visible_start_line || region.start_line >= visible_end_line {
+                continue;
+            }
             let line_idx = region.start_line;
 
-            // Skip if this region's start line is hidden by another fold
-            if fold_state.is_line_hidden(line_idx) {
+            // O(n_folded_regions) — was O(n_regions) probe per indicator.
+            let display_line = fold_state.actual_to_display_line(line_idx);
+            // Skip if folded under an enclosing region (display row collapsed
+            // into the parent's placeholder).
+            if display_line < line_idx
+                && fold_state
+                    .regions
+                    .iter()
+                    .any(|r| r.is_folded && r.start_line < line_idx && r.end_line >= line_idx)
+            {
                 continue;
             }
 
             used_indices.insert(line_idx);
 
-            // Calculate display line by subtracting hidden lines above
-            let hidden_above = count_hidden_lines_before(line_idx);
-            let display_line = line_idx.saturating_sub(hidden_above);
-
-            // Fold indicator sits just before the right edge of the gutter
-            // (VSCode style — between the line numbers and the separator).
             let x_offset = viewport.gutter_width - 12.0;
-            let y_offset =
-                viewport.text_area_top + scroll.scroll_offset + (display_line as f32 * line_height);
-
-            let translation =
-                to_bevy_coords_left_aligned(x_offset, y_offset, viewport_width, viewport_height, 0.0);
-
-            // Choose indicator character based on fold state
+            let y_offset = viewport.text_area_top
+                + scroll.scroll_offset
+                + (display_line as f32 * line_height);
+            let translation = to_bevy_coords_left_aligned(
+                x_offset,
+                y_offset,
+                viewport_width,
+                viewport_height,
+                0.0,
+            );
             let indicator_char = if region.is_folded { "▶" } else { "▼" };
 
             if let Some(entity) = existing_indicators.get(&line_idx) {
-                // Update existing indicator
                 if let Ok((_, _, mut transform, mut text, mut visibility)) =
                     indicator_query.get_mut(*entity)
                 {
-                    transform.translation = translation;
-                    text.0 = indicator_char.to_string();
-                    *visibility = Visibility::Visible;
+                    if transform.translation != translation {
+                        transform.translation = translation;
+                    }
+                    if text.0 != indicator_char {
+                        text.0 = indicator_char.to_string();
+                    }
+                    if *visibility != Visibility::Visible {
+                        *visibility = Visibility::Visible;
+                    }
                 }
             } else {
-                // Spawn new indicator
                 let text_font = TextFont {
                     font: font.font.clone(),
                     font_size: font_size * 0.7,
                     ..default()
                 };
-
                 commands.spawn((
                     Text2d::new(indicator_char.to_string()),
                     text_font,
                     TextColor(theme.line_numbers.with_alpha(0.8)),
                     Transform::from_translation(translation),
-                    FoldIndicator {
-                        line_index: line_idx,
-                    },
+                    FoldIndicator { line_index: line_idx },
                     Name::new(format!("FoldIndicator_{}", line_idx)),
                     Visibility::Visible,
                 ));
@@ -402,15 +541,18 @@ pub(crate) fn update_fold_indicators(
         }
     }
 
-    if any_disabled_only {
-        // No editor enabled folding; hide everything
+    if !any_enabled {
+        // No editor has folding on; hide everything (only if not already hidden).
         for (_, _, _, _, mut visibility) in indicator_query.iter_mut() {
-            *visibility = Visibility::Hidden;
+            if *visibility != Visibility::Hidden {
+                *visibility = Visibility::Hidden;
+            }
         }
     } else {
-        // Hide unused indicators
         for (_entity, indicator, _, _, mut visibility) in indicator_query.iter_mut() {
-            if !used_indices.contains(&indicator.line_index) {
+            if !used_indices.contains(&indicator.line_index)
+                && *visibility != Visibility::Hidden
+            {
                 *visibility = Visibility::Hidden;
             }
         }

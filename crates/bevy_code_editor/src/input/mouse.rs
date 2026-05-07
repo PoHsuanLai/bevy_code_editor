@@ -307,6 +307,16 @@ pub fn on_pointer_move_for_hover(
         return;
     };
 
+    // Bail out before the rope/layout hit-test if the pointer has barely moved
+    // in screen space since the last trigger — saves the per-event work on
+    // sub-pixel jitter and at-rest cursors. Threshold is one char width.
+    if let Some(last) = hover_state.last_pointer_pos {
+        if (last - local_pos).length_squared() < (font.char_width * font.char_width) {
+            return;
+        }
+    }
+    hover_state.last_pointer_pos = Some(local_pos);
+
     let char_pos = screen_to_char_pos(
         local_pos,
         &HitTestCtx {

@@ -5,7 +5,9 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::text::Font;
 use cosmic_text::{FontSystem, SwashCache};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 /// Power of 2 for GPU efficiency.
 pub const ATLAS_SIZE: u32 = 2048;
@@ -56,7 +58,20 @@ pub struct GlyphAtlas {
     dirty_max_y: u32,
     /// UV info for a solid white pixel — used for background rectangles
     pub solid_uv: GlyphInfo,
+    /// Cache of shaped lines keyed by `(content_hash, font_size_bits, font_id)`.
+    /// Cosmic-text's `ShapeLine::new` is ~1 ms per line on a typical line of
+    /// code, so for big files (150k+ lines) re-shaping the visible window on
+    /// every scroll-driven layout rebuild dominates frame time. Identical
+    /// (text, font_size, font_id) tuples produce identical shapes, so a
+    /// content-hash cache turns scrolling into a series of hash hits.
+    shape_cache: HashMap<u64, Arc<crate::view::snapshot::LineShape>>,
+    /// FIFO insertion order so we can cap `shape_cache` at `SHAPE_CACHE_CAPACITY`
+    /// without an LRU. Workload is "scroll past lines once" — recency vs.
+    /// frequency doesn't matter much at this size.
+    shape_cache_order: VecDeque<u64>,
 }
+
+const SHAPE_CACHE_CAPACITY: usize = 8192;
 
 impl GlyphAtlas {
     pub fn new(images: &mut Assets<Image>) -> Self {
@@ -112,6 +127,8 @@ impl GlyphAtlas {
                 offset: Vec2::ZERO,
                 advance: 0.0,
             },
+            shape_cache: HashMap::with_capacity(SHAPE_CACHE_CAPACITY),
+            shape_cache_order: VecDeque::with_capacity(SHAPE_CACHE_CAPACITY),
         };
 
         atlas.reserve_solid_pixel();
@@ -422,6 +439,12 @@ mod instanced_extensions {
         /// `fontdb::ID` to pin shaping to a specific face (e.g. one
         /// returned by [`GlyphAtlas::ensure_font`]); pass `None` to use
         /// the constructor's `font_path` font, falling back to system fonts.
+        ///
+        /// Cached: identical `(text, font_size, font_id)` triples reuse the
+        /// previously shaped result. Cosmic-text's `ShapeLine::new` runs full
+        /// BiDi/script analysis (~1 ms per line of code) so re-shaping the
+        /// same line every scroll-driven layout rebuild dominates frame time
+        /// on big files. The cache turns scroll into a series of hash hits.
         pub fn shape_line(
             &mut self,
             text: &str,
@@ -431,6 +454,25 @@ mod instanced_extensions {
             use crate::view::snapshot::{LineShape, ShapedGlyph};
 
             let pinned = font_id.or(self.configured_font_id);
+
+            // Cache key: text + font_size + pinned font id.
+            // `font_size: f32` → bits to keep `Eq + Hash` honest (NaNs aren't
+            // produced here but bit-equality is what we want for "same size".)
+            let key = {
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                text.hash(&mut hasher);
+                font_size.to_bits().hash(&mut hasher);
+                // `cosmic_text::fontdb::ID` impls Hash; hash `Option<ID>` directly.
+                pinned.hash(&mut hasher);
+                hasher.finish()
+            };
+
+            if let Some(cached) = self.shape_cache.get(&key) {
+                let _hit = bevy::prelude::info_span!("shape_line_hit").entered();
+                return (**cached).clone();
+            }
+            let _miss = bevy::prelude::info_span!("shape_line_miss").entered();
+
             let mut attrs = Attrs::new();
             let pinned_family = pinned.and_then(|id| {
                 self.font_system
@@ -464,30 +506,41 @@ mod instanced_extensions {
                 None,
             );
 
-            if layout_lines.is_empty() {
-                return LineShape {
+            let shape = if layout_lines.is_empty() {
+                LineShape {
                     glyphs: Vec::new(),
                     width: 0.0,
                     font_size,
-                };
-            }
+                }
+            } else {
+                let layout = &layout_lines[0];
+                let mut glyphs = Vec::with_capacity(layout.glyphs.len());
+                for g in &layout.glyphs {
+                    let physical = g.physical((0.0, 0.0), DPI_SCALE);
+                    glyphs.push(ShapedGlyph {
+                        x: g.x,
+                        byte_index: g.start,
+                        cache_key: physical.cache_key,
+                    });
+                }
+                LineShape {
+                    glyphs,
+                    width: layout.w,
+                    font_size,
+                }
+            };
 
-            let layout = &layout_lines[0];
-            let mut glyphs = Vec::with_capacity(layout.glyphs.len());
-            for g in &layout.glyphs {
-                let physical = g.physical((0.0, 0.0), DPI_SCALE);
-                glyphs.push(ShapedGlyph {
-                    x: g.x,
-                    byte_index: g.start,
-                    cache_key: physical.cache_key,
-                });
+            // Insert + FIFO bound. Empty lines get cached too (pre-formatted
+            // empty `LineShape` is cheap, lookup is still a win).
+            if self.shape_cache_order.len() >= SHAPE_CACHE_CAPACITY {
+                if let Some(victim) = self.shape_cache_order.pop_front() {
+                    self.shape_cache.remove(&victim);
+                }
             }
-
-            LineShape {
-                glyphs,
-                width: layout.w,
-                font_size,
-            }
+            let arc = Arc::new(shape);
+            self.shape_cache.insert(key, arc.clone());
+            self.shape_cache_order.push_back(key);
+            (*arc).clone()
         }
 
         pub fn get_or_rasterize_glyph(

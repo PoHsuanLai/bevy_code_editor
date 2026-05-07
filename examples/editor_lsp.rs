@@ -1126,7 +1126,7 @@ fn setup_editor(
     };
 
     let example_file_path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/lsp.rs");
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("editor_lsp.rs");
     let rust_code =
         std::fs::read_to_string(&example_file_path).expect("Failed to read example file");
 

@@ -261,11 +261,22 @@ fn ranges_to_segments(
         // Walk the line in document bytes, slicing out segments where each
         // range starts/ends. Gaps between ranges become default-colored
         // segments. Ranges land sorted from the provider.
+        //
+        // Provider ranges are document-absolute (`start_byte + ...`); we
+        // subtract `start_byte` to get the slice-relative byte offset before
+        // clamping into [line_start, line_end]. Without this, every line
+        // past the first one clamps every range to line_end and emits no
+        // styled segments — the "only line 0 colored" bug.
         let mut segments: Vec<LineSegment> = Vec::with_capacity(ranges.len() + 1);
         let mut cursor = line_start;
         for range in ranges {
-            let range_start = range.byte_range.start.max(line_start).min(line_end);
-            let range_end = range.byte_range.end.max(line_start).min(line_end);
+            let abs_to_slice = |b: usize| b.saturating_sub(start_byte);
+            let range_start = abs_to_slice(range.byte_range.start)
+                .max(line_start)
+                .min(line_end);
+            let range_end = abs_to_slice(range.byte_range.end)
+                .max(line_start)
+                .min(line_end);
 
             if range_start > cursor {
                 let local_lo = cursor - line_start;
@@ -333,8 +344,6 @@ fn ranges_to_segments(
 
         byte_pos = line_end + 1;
     }
-
-    let _ = start_byte; // currently unused after switching to absolute ranges
 
     // Pad with empty rows if the provider returned fewer than expected.
     while out.len() < per_line.len() {
@@ -589,11 +598,37 @@ fn record_edits_for_incremental_parsing(
                     d.new_end_position.column_byte as usize,
                 ),
             };
-            let st = syntax_tree.bypass_change_detection();
-            if let Some(tree) = st.tree.as_mut() {
-                tree.edit(&edit);
+
+            // Skip "tree interpolation" for huge edits. `tree.edit()` is
+            // O(log n) per leaf, but a select-all-delete touches every leaf
+            // in a 7 MB tree (~60 ms). The async `parse_dirty` will replace
+            // both trees with a fresh parse a frame later anyway, so a frame
+            // of stale highlights costs nothing and skipping the dual
+            // `tree.edit()` calls saves the freeze.
+            let removed = edit.old_end_byte.saturating_sub(edit.start_byte);
+            let inserted = edit.new_end_byte.saturating_sub(edit.start_byte);
+            let huge_edit = removed > bevy_tree_sitter::SYNC_REPARSE_BYTE_LIMIT
+                || inserted > bevy_tree_sitter::SYNC_REPARSE_BYTE_LIMIT;
+
+            if !huge_edit {
+                let st = syntax_tree.bypass_change_detection();
+                if let Some(tree) = st.tree.as_mut() {
+                    tree.edit(&edit);
+                }
+                parse_source.0.apply_edit(edit);
+            } else {
+                // For huge edits, drop the cached trees entirely so any
+                // in-flight highlight query sees "no tree" and falls back
+                // to plain text instead of querying byte-shifted-but-stale
+                // structure. The async reparse will repopulate.
+                let st = syntax_tree.bypass_change_detection();
+                st.tree = None;
+                if let Some(provider) =
+                    &mut syntax_state.inner.write().unwrap().provider
+                {
+                    provider.invalidate_tree();
+                }
             }
-            parse_source.0.apply_edit(edit);
             syntax_state.inner.write().unwrap().applied_content_version = event.content_version;
         }
     }

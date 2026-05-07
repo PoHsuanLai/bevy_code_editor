@@ -10,21 +10,30 @@ use bevy_code_editor::prelude::*;
 #[cfg(feature = "tree-sitter")]
 use bevy_tree_sitter::Language;
 
+#[cfg(feature = "profile")]
+use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
+
 fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Bevy Code Editor - Performance Test (sqlite3.c - 150k lines)".to_string(),
-                resolution: (1400, 900).into(),
-                ..default()
-            }),
+    let mut app = App::new();
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
+            title: "Bevy Code Editor - Performance Test (sqlite3.c - 150k lines)".to_string(),
+            resolution: (1400, 900).into(),
             ..default()
-        }))
-        .add_plugins(CodeEditorPlugins)
-        .add_systems(Startup, setup_camera)
-        .add_systems(PostStartup, setup_editor)
-        .add_systems(Update, update_cursor_icon)
-        .run();
+        }),
+        ..default()
+    }))
+    .add_plugins(CodeEditorPlugins)
+    .add_systems(Startup, setup_camera)
+    .add_systems(PostStartup, setup_editor)
+    .add_systems(Update, update_cursor_icon);
+
+    #[cfg(feature = "profile")]
+    app.add_plugins(FrameTimeDiagnosticsPlugin::default())
+        .add_systems(Startup, spawn_perf_overlay)
+        .add_systems(Update, update_perf_overlay);
+
+    app.run();
 }
 
 fn setup_camera(mut commands: Commands) {
@@ -101,4 +110,48 @@ fn update_cursor_icon(
         };
         commands.entity(window_entity).insert(icon);
     }
+}
+
+#[cfg(feature = "profile")]
+#[derive(Component)]
+struct PerfOverlay;
+
+#[cfg(feature = "profile")]
+fn spawn_perf_overlay(mut commands: Commands, windows: Query<&Window>) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let x = window.width() / 2.0 - 12.0;
+    let y = window.height() / 2.0 - 12.0;
+
+    commands.spawn((
+        PerfOverlay,
+        Text2d::new("fps: -"),
+        TextFont {
+            font_size: 14.0,
+            ..default()
+        },
+        TextColor(Color::srgb(0.9, 0.9, 0.2)),
+        bevy::sprite::Anchor::TOP_RIGHT,
+        Transform::from_xyz(x, y, 1000.0),
+    ));
+}
+
+#[cfg(feature = "profile")]
+fn update_perf_overlay(
+    diagnostics: Res<DiagnosticsStore>,
+    mut overlay: Query<&mut Text2d, With<PerfOverlay>>,
+) {
+    let Ok(mut text) = overlay.single_mut() else {
+        return;
+    };
+    let fps = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FPS)
+        .and_then(|d| d.smoothed())
+        .unwrap_or(0.0);
+    let frame_ms = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FRAME_TIME)
+        .and_then(|d| d.smoothed())
+        .unwrap_or(0.0);
+    text.0 = format!("fps {fps:>5.1}   frame {frame_ms:>5.2} ms");
 }

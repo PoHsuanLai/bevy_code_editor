@@ -185,11 +185,16 @@ pub fn handle_select_all(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
+    let Ok((mut sel, _cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
+    // Cover the entire document with the selection but leave the cursor
+    // (visual caret) at its current position so the viewport doesn't jump
+    // to the end of the buffer. `auto_scroll_to_cursor` reads
+    // `cursor.cursor_pos`; if we don't move it, the scroll offset stays
+    // put. The selection rect renderer is clipped to the visible window
+    // already, so the off-screen extent is free.
     let end = buffer.rope.len_chars();
-    cursor.cursor_pos = end;
     sel.selections.set_selection(end, 0);
 }
 

@@ -594,10 +594,9 @@ pub fn request_code_actions(
 pub fn execute_code_action(lsp_client: &LspClient, action: &CodeActionOrCommand) {
     match action {
         CodeActionOrCommand::Action(action) => {
-            // If action has edit, apply it directly
+            // TODO: Apply workspace edit when present.
+            #[cfg(debug_assertions)]
             if let Some(edit) = &action.edit {
-                // TODO: Apply workspace edit
-                #[cfg(debug_assertions)]
                 debug!("[LSP] Code action has workspace edit: {:?}", edit);
             }
 

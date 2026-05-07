@@ -106,19 +106,14 @@ pub(crate) fn update_gpu_line_numbers(
         ((viewport_bottom - viewport.text_area_top) / line_height).ceil() as usize;
 
     let total_buffer_lines = buffer.line_count();
-    let has_folding = !fold_state.regions.is_empty();
+    let has_folding = fold_state.regions.iter().any(|r| r.is_folded);
 
     // Calculate starting buffer line and display row
     let (start_buffer_line, mut current_display_row) = if has_folding {
-        let mut display_row = 0;
-        let mut buffer_line = 0;
-        while buffer_line < total_buffer_lines && display_row < first_visible_display_row {
-            if !fold_state.is_line_hidden(buffer_line) {
-                display_row += 1;
-            }
-            buffer_line += 1;
-        }
-        (buffer_line, display_row)
+        let actual = fold_state
+            .display_to_actual_line(first_visible_display_row)
+            .min(total_buffer_lines);
+        (actual, first_visible_display_row)
     } else {
         let start = first_visible_display_row.min(total_buffer_lines);
         (start, start)
@@ -132,10 +127,35 @@ pub(crate) fn update_gpu_line_numbers(
     let estimated_capacity = (last_visible_display_row - first_visible_display_row + 2) * 4;
     let mut instances: Vec<GlyphInstance> = Vec::with_capacity(estimated_capacity);
 
+    // Pre-collect folded regions that intersect the visible buffer window,
+    // sorted by start_line. We advance a cursor through them as we walk
+    // visible lines, jumping over hidden tails in O(1) per fold rather than
+    // probing `is_line_hidden` (O(n_regions)) for every visible line.
+    let mut folded_iter = fold_state
+        .regions
+        .iter()
+        .filter(|r| r.is_folded && r.end_line >= start_buffer_line)
+        .peekable();
+
     // Iterate over visible buffer lines
-    for buffer_line in start_buffer_line..total_buffer_lines {
-        if fold_state.is_line_hidden(buffer_line) {
-            continue;
+    let mut buffer_line = start_buffer_line;
+    while buffer_line < total_buffer_lines {
+        // Skip past any fold whose hidden tail covers this line.
+        while let Some(fold) = folded_iter.peek() {
+            if fold.end_line < buffer_line {
+                folded_iter.next();
+                continue;
+            }
+            // Fold's placeholder row is `start_line` (visible); rows
+            // `start_line+1..=end_line` are hidden.
+            if buffer_line > fold.start_line && buffer_line <= fold.end_line {
+                buffer_line = fold.end_line + 1;
+                continue;
+            }
+            break;
+        }
+        if buffer_line >= total_buffer_lines {
+            break;
         }
 
         if current_display_row > last_visible_display_row {
@@ -207,6 +227,7 @@ pub(crate) fn update_gpu_line_numbers(
         }
 
         current_display_row += 1;
+        buffer_line += 1;
     }
 
     // Update atlas texture

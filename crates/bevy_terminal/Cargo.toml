@@ -60,3 +60,13 @@ arboard = "3.4"
 [dev-dependencies]
 bevy = { version = "0.18", features = ["bevy_window", "bevy_winit"] }
 bevy_code_editor = { path = "../bevy_code_editor" }
+
+[features]
+default = []
+
+# Performance profiling. Enables Bevy's tracing spans on every system and
+# routes them to a Tracy client (https://github.com/wolfpld/tracy). Run the
+# desktop `tracy-profiler` viewer while the example is running to see
+# per-system frame times. Also activates the on-screen FPS / frame-time
+# overlay in `examples/basic_terminal.rs`.
+profile = ["bevy/trace", "bevy/trace_tracy"]

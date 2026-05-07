@@ -82,18 +82,6 @@ fuzzy-matcher = { version = "0.3", optional = true }
 
 [dev-dependencies]
 bevy = { version = "0.18", features = ["bevy_window", "bevy_winit"] }
-tree-sitter-rust = "0.23"
-tree-sitter-c = "0.23"
-
-# egui+armas dev-deps used by `examples/lsp.rs`. The library proper does not
-# depend on these — the LSP egui renderer lives entirely inside the example.
-bevy_egui = "0.39"
-armas = { git = "https://github.com/PoHsuanLai/Armas.git", default-features = false, features = ["basic"] }
-
-# `examples/lsp.rs` uses `bevy_markdown` to render LSP hover content as
-# styled text when the server returns Markdown. Library code does not
-# depend on this — the renderer lives entirely inside the example.
-bevy_markdown = { path = "../bevy_markdown" }
 
 [features]
 default = ["tree-sitter"]
@@ -109,7 +97,10 @@ lsp = ["dep:bevy_lsp", "lsp-types", "serde_json", "fuzzy-matcher"]
 # Dynamic linking for fast iteration (dev only, not for release builds)
 dynamic_linking = ["bevy/dynamic_linking"]
 
-[[example]]
-name = "lsp"
-required-features = ["lsp"]
+# Performance profiling. Enables Bevy's tracing spans on every system and
+# routes them to a Tracy client (https://github.com/wolfpld/tracy). Run the
+# desktop `tracy-profiler` viewer while the example is running to see
+# per-system frame times. Also activates the on-screen FPS / frame-time
+# overlay in `examples/long_code.rs`.
+profile = ["bevy/trace", "bevy/trace_tracy"]
 

@@ -1,0 +1,132 @@
+[package]
+name = "examples"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Workspace examples for the bevy_code_editor family of crates."
+
+[dependencies]
+bevy = { version = "0.18", default-features = false, features = [
+    "bevy_render",
+    "bevy_core_pipeline",
+    "bevy_asset",
+    "bevy_text",
+    "default_font",
+    "bevy_sprite",
+    "bevy_sprite_render",
+    "bevy_color",
+    "bevy_mesh",
+    "bevy_camera",
+    "bevy_input_focus",
+    "bevy_picking",
+    "bevy_window",
+    "bevy_winit",
+    "bevy_log",
+    # Enable threaded task pools so `AsyncComputeTaskPool::spawn` actually runs
+    # on a worker thread. Without this, Bevy falls back to its single-threaded
+    # task pool which executes tasks inline on the main thread — defeating the
+    # whole point of the async tree-sitter parse pipeline.
+    "multi_threaded",
+] }
+bevy_camera = "0.18"
+
+bevy_text_engine = { path = "../crates/bevy_text_engine" }
+bevy_text_editor = { path = "../crates/bevy_text_editor" }
+bevy_code_editor = { path = "../crates/bevy_code_editor" }
+bevy_terminal = { path = "../crates/bevy_terminal" }
+bevy_markdown = { path = "../crates/bevy_markdown" }
+bevy_tree_sitter = { path = "../crates/bevy_tree_sitter", optional = true }
+bevy_lsp = { path = "../crates/bevy_lsp", optional = true }
+
+# Used by editor_long_code / editor_tree_sitter for syntax highlighting.
+tree-sitter-rust = "0.23"
+tree-sitter-c = "0.23"
+
+# Used by editor_lsp.
+bevy_egui = { version = "0.39", optional = true }
+armas = { git = "https://github.com/PoHsuanLai/Armas.git", default-features = false, features = ["basic"], optional = true }
+lsp-types = { version = "0.95", optional = true }
+
+[features]
+default = ["tree-sitter"]
+
+# Tree-sitter syntax highlighting for the editor examples.
+tree-sitter = [
+    "dep:bevy_tree_sitter",
+    "bevy_code_editor/tree-sitter",
+]
+
+# LSP example. Requires `rust-analyzer` on PATH at run time.
+lsp = [
+    "dep:bevy_lsp",
+    "dep:bevy_egui",
+    "dep:armas",
+    "dep:lsp-types",
+    "bevy_code_editor/lsp",
+    "tree-sitter",
+]
+
+# Performance profiling for both editor + terminal examples. Enables Bevy's
+# tracing spans (route to a Tracy client) and the on-screen FPS / frame-time
+# overlay in `editor_long_code` and `terminal_basic`. The `debug` feature
+# unblocks system / component names in traces — without it, every Bevy
+# system zone reports as "<Enable the debug feature to see the name>",
+# making it impossible to identify which built-in system is the spike
+# source. Tiny build-time cost; same release optimization level.
+profile = [
+    "bevy_code_editor/profile",
+    "bevy_terminal/profile",
+    "bevy/trace",
+    "bevy/trace_tracy",
+    "bevy/debug",
+]
+
+[[example]]
+name = "editor_basic"
+path = "editor_basic.rs"
+
+[[example]]
+name = "editor_gpu_text"
+path = "editor_gpu_text.rs"
+
+[[example]]
+name = "editor_long_code"
+path = "editor_long_code.rs"
+
+[[example]]
+name = "editor_resizable"
+path = "editor_resizable.rs"
+
+[[example]]
+name = "editor_multi"
+path = "editor_multi.rs"
+
+[[example]]
+name = "editor_text_view_demo"
+path = "editor_text_view_demo.rs"
+
+[[example]]
+name = "editor_tree_sitter"
+path = "editor_tree_sitter.rs"
+required-features = ["tree-sitter"]
+
+[[example]]
+name = "editor_lsp"
+path = "editor_lsp.rs"
+required-features = ["lsp"]
+
+[[example]]
+name = "terminal_basic"
+path = "terminal_basic.rs"
+
+[[example]]
+name = "terminal_with_editor"
+path = "terminal_with_editor.rs"
+
+[[example]]
+name = "text_editor_simple_input"
+path = "text_editor_simple_input.rs"
+
+[[example]]
+name = "markdown_basic"
+path = "markdown_basic.rs"
