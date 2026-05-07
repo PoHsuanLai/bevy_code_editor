@@ -1,5 +1,16 @@
 //! LSP message types for communication with language servers.
+//!
+//! Two layers:
+//! - [`LspMessage`] / [`LspResponse`] are the protocol DTOs that flow over the
+//!   async transport channel inside `LspClient`. Internal to the crate's
+//!   transport.
+//! - The `LspResponse*` `Message` types below mirror each [`LspResponse`]
+//!   variant onto Bevy's message bus, tagged with the originating
+//!   [`Entity`]. `LspPlugin` runs `drain_lsp_responses` each frame to fan the
+//!   transport channel out into typed Bevy messages so any host system can
+//!   subscribe without owning the [`LspClient`].
 
+use bevy::prelude::*;
 use lsp_types::*;
 use serde::{Deserialize, Serialize};
 
@@ -179,5 +190,140 @@ pub enum LspResponse {
 #[serde(untagged)]
 pub enum CodeActionOrCommand {
     Action(CodeAction),
-    Command(Command),
+    Command(lsp_types::Command),
+}
+
+// ─── Bevy messages ─────────────────────────────────────────────────────
+//
+// One-to-one with [`LspResponse`] variants so hosts can subscribe to just the
+// shape they care about. The drain system in [`crate::plugin`] writes each
+// of these in response to messages arriving on the transport channel. None
+// of them are `Reflect` — the lsp_types payloads aren't.
+
+/// Server completed `initialize` and reported its capabilities. Hosts can
+/// subscribe to enable UI affordances that depend on capability bits
+/// (`hover_provider`, `completion_provider`, etc.). Mirrored onto
+/// `LspClient.initialized = true` by the drain system.
+#[derive(Message, Clone, Debug)]
+pub struct LspServerInitialized {
+    pub entity: Entity,
+    pub capabilities: ServerCapabilities,
+}
+
+/// `textDocument/publishDiagnostics` notification arrived. Hosts that render
+/// diagnostics (gutter markers, hover squiggles, problem panels) subscribe.
+#[derive(Message, Clone, Debug)]
+pub struct LspDiagnosticsUpdated {
+    pub entity: Entity,
+    pub uri: Url,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+/// `textDocument/completion` response. `id` echoes the request so consumers
+/// can drop stale responses after the user kept typing.
+#[derive(Message, Clone, Debug)]
+pub struct LspCompletionResponse {
+    pub entity: Entity,
+    pub id: u64,
+    pub items: Vec<CompletionItem>,
+    pub is_incomplete: bool,
+}
+
+/// `completionItem/resolve` filled in detail/documentation/additionalTextEdits.
+#[derive(Message, Clone, Debug)]
+pub struct LspResolvedCompletionItem {
+    pub entity: Entity,
+    pub id: u64,
+    pub item: CompletionItem,
+}
+
+/// `textDocument/hover` response.
+#[derive(Message, Clone, Debug)]
+pub struct LspHoverResponse {
+    pub entity: Entity,
+    pub content: String,
+    pub kind: MarkupKind,
+    pub range: Option<Range>,
+}
+
+/// `textDocument/definition` response.
+#[derive(Message, Clone, Debug)]
+pub struct LspDefinitionResponse {
+    pub entity: Entity,
+    pub locations: Vec<Location>,
+}
+
+/// `textDocument/references` response.
+#[derive(Message, Clone, Debug)]
+pub struct LspReferencesResponse {
+    pub entity: Entity,
+    pub locations: Vec<Location>,
+}
+
+/// `textDocument/formatting` response.
+#[derive(Message, Clone, Debug)]
+pub struct LspFormatResponse {
+    pub entity: Entity,
+    pub edits: Vec<TextEdit>,
+}
+
+/// `textDocument/signatureHelp` response.
+#[derive(Message, Clone, Debug)]
+pub struct LspSignatureHelpResponse {
+    pub entity: Entity,
+    pub id: u64,
+    pub signatures: Vec<SignatureInformation>,
+    pub active_signature: Option<u32>,
+    pub active_parameter: Option<u32>,
+}
+
+/// `textDocument/codeAction` response.
+#[derive(Message, Clone, Debug)]
+pub struct LspCodeActionsResponse {
+    pub entity: Entity,
+    pub id: u64,
+    pub actions: Vec<CodeActionOrCommand>,
+}
+
+/// `textDocument/inlayHint` response.
+#[derive(Message, Clone, Debug)]
+pub struct LspInlayHintsResponse {
+    pub entity: Entity,
+    pub hints: Vec<InlayHint>,
+}
+
+/// `textDocument/documentHighlight` response.
+#[derive(Message, Clone, Debug)]
+pub struct LspDocumentHighlightsResponse {
+    pub entity: Entity,
+    pub highlights: Vec<DocumentHighlight>,
+}
+
+/// `textDocument/prepareRename` response.
+#[derive(Message, Clone, Debug)]
+pub struct LspPrepareRenameResponse {
+    pub entity: Entity,
+    pub range: Range,
+    pub placeholder: Option<String>,
+}
+
+/// `textDocument/rename` response (workspace edit).
+#[derive(Message, Clone, Debug)]
+pub struct LspRenameResponse {
+    pub entity: Entity,
+    pub edit: WorkspaceEdit,
+}
+
+/// Server acknowledged `shutdown`. Caller follows up with `Exit`.
+#[derive(Message, Clone, Debug)]
+pub struct LspShutdownAck {
+    pub entity: Entity,
+    pub id: u64,
+}
+
+/// Server crashed or its read channel closed without a graceful shutdown.
+/// Hosts should clear popup state and either drop or restart the client.
+#[derive(Message, Clone, Debug)]
+pub struct LspServerCrashed {
+    pub entity: Entity,
 }

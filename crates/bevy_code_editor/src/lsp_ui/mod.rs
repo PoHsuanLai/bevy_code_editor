@@ -65,9 +65,9 @@ pub mod prelude {
         sync_inlay_hints, sync_rename_input, sync_signature_help_popup,
     };
     pub use super::systems::{
-        cleanup_lsp_timeouts, execute_code_action, process_lsp_messages, request_code_actions,
-        request_inlay_hints, request_signature_help, sync_lsp_document, DiagnosticMarker,
-        LocationType, MultipleLocationsEvent, NavigateToFileEvent,
+        cleanup_lsp_timeouts, execute_code_action, request_code_actions, request_inlay_hints,
+        request_signature_help, sync_lsp_document, DiagnosticMarker, LocationType,
+        MultipleLocationsEvent, NavigateToFileEvent,
     };
 }
 
@@ -84,8 +84,7 @@ pub use state::{
     COMPLETION_MAX_VISIBLE_DEFAULT,
 };
 pub use systems::{
-    process_lsp_messages, sync_lsp_document, DiagnosticMarker, LocationType,
-    MultipleLocationsEvent, NavigateToFileEvent,
+    sync_lsp_document, DiagnosticMarker, LocationType, MultipleLocationsEvent, NavigateToFileEvent,
 };
 
 /// Reset hover state helper (operates on the per-entity Component).

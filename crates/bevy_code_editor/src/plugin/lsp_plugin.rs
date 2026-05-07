@@ -34,8 +34,12 @@ use crate::lsp_ui::sync::{
     sync_inlay_hints, sync_rename_input, sync_signature_help_popup,
 };
 use crate::lsp_ui::systems::{
-    cleanup_lsp_timeouts, process_lsp_messages, request_document_highlights, request_inlay_hints,
-    sync_lsp_document, MultipleLocationsEvent, NavigateToFileEvent, WorkspaceEditEvent,
+    cleanup_lsp_timeouts, on_lsp_code_actions, on_lsp_completion, on_lsp_definition,
+    on_lsp_diagnostics, on_lsp_document_highlights, on_lsp_format, on_lsp_hover,
+    on_lsp_initialized, on_lsp_inlay_hints, on_lsp_prepare_rename, on_lsp_references,
+    on_lsp_rename, on_lsp_resolved_completion, on_lsp_server_crashed, on_lsp_shutdown_ack,
+    on_lsp_signature_help, request_document_highlights, request_inlay_hints, sync_lsp_document,
+    MultipleLocationsEvent, NavigateToFileEvent, WorkspaceEditEvent,
 };
 use crate::settings::LspSettings;
 use crate::types::CodeEditor;
@@ -105,10 +109,33 @@ impl Plugin for LspPlugin {
         // Core LSP-driven systems. These query each editor entity for both
         // editor state (CursorState, TextBuffer) and per-editor LSP
         // Components (LspClient, LspDocument, popup state, debounce timers).
+        // The `on_lsp_*` systems each consume one outbound message from
+        // `bevy_lsp` and apply it to per-editor Components. They run
+        // in parallel where Bevy's scheduler can prove disjoint mutability.
         app.add_systems(
             Update,
             (
-                process_lsp_messages,
+                on_lsp_initialized,
+                on_lsp_diagnostics,
+                on_lsp_completion,
+                on_lsp_resolved_completion,
+                on_lsp_hover,
+                on_lsp_definition,
+                on_lsp_references,
+                on_lsp_format,
+                on_lsp_signature_help,
+                on_lsp_code_actions,
+                on_lsp_inlay_hints,
+            ),
+        );
+        app.add_systems(
+            Update,
+            (
+                on_lsp_document_highlights,
+                on_lsp_prepare_rename,
+                on_lsp_rename,
+                on_lsp_shutdown_ack,
+                on_lsp_server_crashed,
                 sync_lsp_document,
                 request_inlay_hints,
                 request_document_highlights,

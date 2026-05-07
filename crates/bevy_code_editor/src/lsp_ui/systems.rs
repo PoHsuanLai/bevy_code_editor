@@ -17,7 +17,12 @@ use super::state::{
     LspRenamePopup, LspSignatureHelpPopup, LspSyncStateExtra,
 };
 use bevy_lsp::{
-    CodeActionOrCommand, LspClient, LspDocument, LspMessage, LspResponse, ServerCapabilities,
+    CodeActionOrCommand, LspClient, LspCodeActionsResponse, LspCompletionResponse,
+    LspDefinitionResponse, LspDiagnosticsUpdated, LspDocument, LspDocumentHighlightsResponse,
+    LspFormatResponse, LspHoverResponse, LspInlayHintsResponse, LspMessage,
+    LspPrepareRenameResponse, LspReferencesResponse, LspRenameResponse,
+    LspResolvedCompletionItem, LspServerCrashed, LspServerInitialized, LspShutdownAck,
+    LspSignatureHelpResponse, ServerCapabilities,
 };
 
 /// Diagnostic marker for rendering in editor
@@ -67,321 +72,395 @@ pub struct WorkspaceEditEvent {
     pub edit: WorkspaceEdit,
 }
 
-/// System to process LSP messages and update per-editor Components.
-#[allow(clippy::too_many_arguments)]
-pub fn process_lsp_messages(
+/// Records server capabilities on the editor when the server finishes
+/// `initialize`. `LspClient.initialized` is already flipped by `bevy_lsp`'s
+/// drain.
+pub fn on_lsp_initialized(
+    mut events: MessageReader<LspServerInitialized>,
+    mut q: Query<&mut ServerCapabilities, With<CodeEditor>>,
+) {
+    for ev in events.read() {
+        let Ok(mut capabilities) = q.get_mut(ev.entity) else {
+            continue;
+        };
+        capabilities.set(ev.capabilities.clone());
+        #[cfg(debug_assertions)]
+        debug!("[LSP] Server initialized");
+    }
+}
+
+/// Replace `DiagnosticMarker` entities for the editor whenever the server
+/// publishes a fresh diagnostic batch.
+pub fn on_lsp_diagnostics(
     mut commands: Commands,
-    diagnostics_query: Query<Entity, With<DiagnosticMarker>>,
-    mut editor_query: Query<
+    mut events: MessageReader<LspDiagnosticsUpdated>,
+    diagnostics_q: Query<Entity, With<DiagnosticMarker>>,
+    editors: Query<Entity, With<CodeEditor>>,
+) {
+    for ev in events.read() {
+        if editors.get(ev.entity).is_err() {
+            continue;
+        }
+        // Clear old diagnostics. Silenced because another sync system or
+        // hierarchy cleanup may have already despawned these markers in the
+        // same tick.
+        for entity in diagnostics_q.iter() {
+            commands
+                .entity(entity)
+                .queue_silenced(bevy::ecs::system::entity_command::despawn());
+        }
+        for diagnostic in &ev.diagnostics {
+            commands.spawn(DiagnosticMarker {
+                line: diagnostic.range.start.line as usize,
+                severity: diagnostic.severity.unwrap_or(DiagnosticSeverity::HINT),
+                message: diagnostic.message.clone(),
+                range: diagnostic.range,
+            });
+        }
+    }
+}
+
+/// Drop stale completion responses, reset resolve cache, decide visibility
+/// based on whether the cursor is still in the prefix word.
+pub fn on_lsp_completion(
+    mut events: MessageReader<LspCompletionResponse>,
+    mut q: Query<(&CursorState, &TextBuffer, &mut LspCompletionPopup), With<CodeEditor>>,
+) {
+    for ev in events.read() {
+        let Ok((cursor_state, buffer, mut completion_state)) = q.get_mut(ev.entity) else {
+            continue;
+        };
+        trace!(
+            "[LSP] Completion(id={}): {} items, incomplete={}",
+            ev.id,
+            ev.items.len(),
+            ev.is_incomplete
+        );
+        if ev.id != completion_state.request_id {
+            continue;
+        }
+        let cursor_in_prefix = {
+            let pos = cursor_state.cursor_pos;
+            let start = completion_state.start_char_index;
+            let max_prefix_len = buffer.rope.len_chars().saturating_sub(start);
+            let end_max = start + max_prefix_len;
+            if pos < start || pos > end_max {
+                false
+            } else {
+                let slice: String = buffer.rope.slice(start..pos).chars().collect();
+                slice.chars().all(|c| c.is_alphanumeric() || c == '_')
+            }
+        };
+        completion_state.items = ev.items.clone();
+        completion_state.is_incomplete = ev.is_incomplete;
+        completion_state.visible = cursor_in_prefix && !completion_state.items.is_empty();
+        completion_state.selected_index = 0;
+        // New item list invalidates any cached resolves keyed by labels that
+        // may no longer be present.
+        completion_state.resolved.clear();
+        completion_state.pending_resolve = None;
+        completion_state.resolve_request_id =
+            completion_state.resolve_request_id.wrapping_add(1);
+    }
+}
+
+pub fn on_lsp_resolved_completion(
+    mut events: MessageReader<LspResolvedCompletionItem>,
+    mut q: Query<&mut LspCompletionPopup, With<CodeEditor>>,
+) {
+    for ev in events.read() {
+        let Ok(mut completion_state) = q.get_mut(ev.entity) else {
+            continue;
+        };
+        trace!(
+            "[LSP] ResolvedCompletionItem(id={}, label={})",
+            ev.id,
+            ev.item.label
+        );
+        if ev.id != completion_state.resolve_request_id {
+            continue;
+        }
+        if let Some((label, pending_id)) = &completion_state.pending_resolve {
+            if *pending_id == ev.id && label == &ev.item.label {
+                completion_state
+                    .resolved
+                    .insert(ev.item.label.clone(), ev.item.clone());
+                completion_state.pending_resolve = None;
+            }
+        }
+    }
+}
+
+pub fn on_lsp_hover(
+    mut events: MessageReader<LspHoverResponse>,
+    mut q: Query<&mut LspHoverPopup, With<CodeEditor>>,
+) {
+    for ev in events.read() {
+        let Ok(mut hover_state) = q.get_mut(ev.entity) else {
+            continue;
+        };
+        #[cfg(debug_assertions)]
+        debug!("[LSP] Hover: {} chars ({:?})", ev.content.len(), ev.kind);
+
+        if !ev.content.is_empty() {
+            if let Some(pending_pos) = hover_state.pending_char_index {
+                if pending_pos == hover_state.trigger_char_index {
+                    hover_state.content = ev.content.clone();
+                    hover_state.kind = ev.kind;
+                    hover_state.range = ev.range;
+                    hover_state.visible = true;
+                }
+            }
+        }
+        hover_state.pending_char_index = None;
+    }
+}
+
+pub fn on_lsp_definition(
+    mut events: MessageReader<LspDefinitionResponse>,
+    mut q: Query<(&mut CursorState, &TextBuffer, Option<&LspDocument>), With<CodeEditor>>,
+    mut navigate_events: MessageWriter<NavigateToFileEvent>,
+    mut multi_location_events: MessageWriter<MultipleLocationsEvent>,
+) {
+    for ev in events.read() {
+        let Ok((mut cursor_state, buffer, lsp_document)) = q.get_mut(ev.entity) else {
+            continue;
+        };
+        if ev.locations.is_empty() {
+            continue;
+        }
+
+        #[cfg(debug_assertions)]
+        debug!("[LSP] Definition: {} location(s)", ev.locations.len());
+
+        if ev.locations.len() > 1 {
+            multi_location_events.write(MultipleLocationsEvent {
+                locations: ev.locations.clone(),
+                location_type: LocationType::Definition,
+            });
+        }
+
+        let location = &ev.locations[0];
+        let current_uri = lsp_document.map(|d| &d.uri);
+        let is_same_file = current_uri.is_some_and(|uri| uri == &location.uri);
+
+        if is_same_file {
+            let line_num = location.range.start.line as usize;
+            let char_in_line = location.range.start.character as usize;
+            if line_num < buffer.rope.len_lines() {
+                let line_start_char = buffer.rope.line_to_char(line_num);
+                let target_char_pos = line_start_char + char_in_line;
+                cursor_state.cursor_pos = target_char_pos.min(buffer.rope.len_chars());
+            }
+        } else {
+            navigate_events.write(NavigateToFileEvent {
+                uri: location.uri.clone(),
+                line: location.range.start.line as usize,
+                character: location.range.start.character as usize,
+            });
+        }
+    }
+}
+
+pub fn on_lsp_references(
+    mut events: MessageReader<LspReferencesResponse>,
+    editors: Query<Entity, With<CodeEditor>>,
+    mut multi_location_events: MessageWriter<MultipleLocationsEvent>,
+) {
+    for ev in events.read() {
+        if editors.get(ev.entity).is_err() {
+            continue;
+        }
+        #[cfg(debug_assertions)]
+        debug!("[LSP] References: {} location(s)", ev.locations.len());
+        if !ev.locations.is_empty() {
+            multi_location_events.write(MultipleLocationsEvent {
+                locations: ev.locations.clone(),
+                location_type: LocationType::References,
+            });
+        }
+    }
+}
+
+pub fn on_lsp_format(
+    mut events: MessageReader<LspFormatResponse>,
+    q: Query<&TextBuffer, With<CodeEditor>>,
+    mut replace_writer: MessageWriter<bevy_text_editor::ReplaceRangeRequested>,
+) {
+    for ev in events.read() {
+        let Ok(buffer) = q.get(ev.entity) else {
+            continue;
+        };
+        trace!("[LSP] Format: {} edit(s)", ev.edits.len());
+        apply_text_edits(ev.entity, buffer, ev.edits.clone(), &mut replace_writer);
+    }
+}
+
+pub fn on_lsp_signature_help(
+    mut events: MessageReader<LspSignatureHelpResponse>,
+    mut q: Query<&mut LspSignatureHelpPopup, With<CodeEditor>>,
+) {
+    for ev in events.read() {
+        let Ok(mut sig_state) = q.get_mut(ev.entity) else {
+            continue;
+        };
+        #[cfg(debug_assertions)]
+        debug!(
+            "[LSP] SignatureHelp(id={}): {} signature(s)",
+            ev.id,
+            ev.signatures.len()
+        );
+        if ev.id != sig_state.request_id {
+            continue;
+        }
+        sig_state.signatures = ev.signatures.clone();
+        sig_state.active_signature = ev.active_signature.unwrap_or(0) as usize;
+        sig_state.active_parameter = ev.active_parameter.unwrap_or(0) as usize;
+        sig_state.visible = !sig_state.signatures.is_empty();
+    }
+}
+
+pub fn on_lsp_code_actions(
+    mut events: MessageReader<LspCodeActionsResponse>,
+    mut q: Query<&mut LspCodeActionsPopup, With<CodeEditor>>,
+) {
+    for ev in events.read() {
+        let Ok(mut action_state) = q.get_mut(ev.entity) else {
+            continue;
+        };
+        #[cfg(debug_assertions)]
+        debug!(
+            "[LSP] CodeActions(id={}): {} action(s)",
+            ev.id,
+            ev.actions.len()
+        );
+        if ev.id != action_state.request_id {
+            continue;
+        }
+        action_state.actions = ev.actions.clone();
+        action_state.visible = !action_state.actions.is_empty();
+        action_state.selected_index = 0;
+    }
+}
+
+pub fn on_lsp_inlay_hints(
+    mut events: MessageReader<LspInlayHintsResponse>,
+    mut q: Query<&mut LspInlayHints, With<CodeEditor>>,
+) {
+    for ev in events.read() {
+        let Ok(mut hint_state) = q.get_mut(ev.entity) else {
+            continue;
+        };
+        #[cfg(debug_assertions)]
+        debug!("[LSP] InlayHints: {} hint(s)", ev.hints.len());
+        hint_state.hints = ev.hints.clone();
+        hint_state.needs_refresh = false;
+    }
+}
+
+pub fn on_lsp_document_highlights(
+    mut events: MessageReader<LspDocumentHighlightsResponse>,
+    mut q: Query<&mut LspDocumentHighlights, With<CodeEditor>>,
+) {
+    for ev in events.read() {
+        let Ok(mut highlight_state) = q.get_mut(ev.entity) else {
+            continue;
+        };
+        trace!(
+            "[LSP] DocumentHighlights: {} highlight(s)",
+            ev.highlights.len()
+        );
+        highlight_state.highlights = ev.highlights.clone();
+        highlight_state.visible = !highlight_state.highlights.is_empty();
+        highlight_state.in_flight_position = None;
+    }
+}
+
+pub fn on_lsp_prepare_rename(
+    mut events: MessageReader<LspPrepareRenameResponse>,
+    mut q: Query<&mut LspRenamePopup, With<CodeEditor>>,
+) {
+    for ev in events.read() {
+        let Ok(mut rename_state) = q.get_mut(ev.entity) else {
+            continue;
+        };
+        trace!(
+            "[LSP] PrepareRename: range={:?}, placeholder={:?}",
+            ev.range,
+            ev.placeholder
+        );
+        rename_state.on_prepare_response(ev.range, ev.placeholder.clone());
+    }
+}
+
+pub fn on_lsp_rename(
+    mut events: MessageReader<LspRenameResponse>,
+    mut q: Query<(&TextBuffer, Option<&LspDocument>, &mut LspRenamePopup), With<CodeEditor>>,
+    mut workspace_edit_events: MessageWriter<WorkspaceEditEvent>,
+    mut replace_writer: MessageWriter<bevy_text_editor::ReplaceRangeRequested>,
+) {
+    for ev in events.read() {
+        let Ok((buffer, lsp_document, mut rename_state)) = q.get_mut(ev.entity) else {
+            continue;
+        };
+        #[cfg(debug_assertions)]
+        debug!("[LSP] Rename: workspace edit received");
+
+        if let Some(changes) = &ev.edit.changes {
+            if let Some(doc) = lsp_document {
+                if let Some(edits) = changes.get(&doc.uri) {
+                    apply_text_edits(ev.entity, buffer, edits.clone(), &mut replace_writer);
+                }
+            }
+        }
+
+        workspace_edit_events.write(WorkspaceEditEvent {
+            edit: ev.edit.clone(),
+        });
+        rename_state.reset();
+    }
+}
+
+pub fn on_lsp_shutdown_ack(mut events: MessageReader<LspShutdownAck>) {
+    for _ev in events.read() {
+        // Caller follows up with `Exit`; nothing else to do here.
+        debug!("[LSP] ShutdownAck received");
+    }
+}
+
+pub fn on_lsp_server_crashed(
+    mut events: MessageReader<LspServerCrashed>,
+    mut q: Query<
         (
-            Entity,
-            &mut LspClient,
-            &mut ServerCapabilities,
-            &mut CursorState,
-            &mut TextBuffer,
-            Option<&LspDocument>,
             &mut LspCompletionPopup,
             &mut LspHoverPopup,
             &mut LspSignatureHelpPopup,
             &mut LspCodeActionsPopup,
-            &mut LspInlayHints,
             &mut LspDocumentHighlights,
             &mut LspRenamePopup,
         ),
         With<CodeEditor>,
     >,
-    mut navigate_events: MessageWriter<NavigateToFileEvent>,
-    mut multi_location_events: MessageWriter<MultipleLocationsEvent>,
-    mut workspace_edit_events: MessageWriter<WorkspaceEditEvent>,
-    mut replace_writer: MessageWriter<bevy_text_editor::ReplaceRangeRequested>,
 ) {
-    let Ok((
-        editor_entity,
-        mut lsp_client,
-        mut capabilities,
-        mut cursor_state,
-        buffer,
-        lsp_document,
-        mut completion_state,
-        mut hover_state,
-        mut sig_state,
-        mut action_state,
-        mut hint_state,
-        mut highlight_state,
-        mut rename_state,
-    )) = editor_query.single_mut()
-    else {
-        return;
-    };
-    // Clean up timed out requests periodically
-    lsp_client.cleanup_timeouts();
-
-    while let Some(response) = lsp_client.try_recv() {
-        match response {
-            LspResponse::Initialized {
-                capabilities: caps,
-            } => {
-                lsp_client.initialized = true;
-                capabilities.set(caps);
-                #[cfg(debug_assertions)]
-                debug!("[LSP] Server initialized");
-            }
-
-            LspResponse::Diagnostics {
-                uri: _,
-                diagnostics,
-            } => {
-                // Clear old diagnostics. Silenced because another sync
-                // system or hierarchy cleanup may have already despawned
-                // these markers in the same tick.
-                for entity in diagnostics_query.iter() {
-                    commands.entity(entity).queue_silenced(
-                        bevy::ecs::system::entity_command::despawn(),
-                    );
-                }
-
-                for diagnostic in diagnostics {
-                    commands.spawn(DiagnosticMarker {
-                        line: diagnostic.range.start.line as usize,
-                        severity: diagnostic.severity.unwrap_or(DiagnosticSeverity::HINT),
-                        message: diagnostic.message.clone(),
-                        range: diagnostic.range,
-                    });
-                }
-            }
-
-            LspResponse::Completion {
-                id,
-                items,
-                is_incomplete,
-            } => {
-                trace!(
-                    "[LSP] Completion(id={}): {} items, incomplete={}",
-                    id,
-                    items.len(),
-                    is_incomplete
-                );
-                // Drop stale: a newer request was issued (or the popup was
-                // dismissed, which also bumps `request_id`) while this
-                // response was in flight.
-                if id != completion_state.request_id {
-                    continue;
-                }
-                // Drop if cursor is no longer in a position where
-                // completions make sense. Mirrors Zed's `continue_showing`:
-                // keep when (a) cursor at-or-after the menu's anchor and
-                // (b) prefix is all word chars.
-                let cursor_in_prefix = {
-                    let pos = cursor_state.cursor_pos;
-                    let start = completion_state.start_char_index;
-                    let max_prefix_len =
-                        buffer.rope.len_chars().saturating_sub(start);
-                    let end_max = start + max_prefix_len;
-                    if pos < start || pos > end_max {
-                        false
-                    } else {
-                        let slice: String =
-                            buffer.rope.slice(start..pos).chars().collect();
-                        slice.chars().all(|c| c.is_alphanumeric() || c == '_')
-                    }
-                };
-                completion_state.items = items;
-                completion_state.is_incomplete = is_incomplete;
-                completion_state.visible =
-                    cursor_in_prefix && !completion_state.items.is_empty();
-                completion_state.selected_index = 0;
-                // New item list invalidates any cached resolves keyed by
-                // labels that may no longer be present.
-                completion_state.resolved.clear();
-                completion_state.pending_resolve = None;
-                completion_state.resolve_request_id =
-                    completion_state.resolve_request_id.wrapping_add(1);
-            }
-
-            LspResponse::ResolvedCompletionItem { id, item } => {
-                trace!(
-                    "[LSP] ResolvedCompletionItem(id={}, label={})",
-                    id,
-                    item.label
-                );
-                // Drop stale: a newer resolve was requested or the popup
-                // was dismissed.
-                if id != completion_state.resolve_request_id {
-                    continue;
-                }
-                if let Some((label, pending_id)) = &completion_state.pending_resolve {
-                    if *pending_id == id && label == &item.label {
-                        completion_state
-                            .resolved
-                            .insert(item.label.clone(), item);
-                        completion_state.pending_resolve = None;
-                    }
-                }
-            }
-
-            LspResponse::Hover { content, kind, range } => {
-                #[cfg(debug_assertions)]
-                debug!("[LSP] Hover: {} chars ({kind:?})", content.len());
-
-                if !content.is_empty() {
-                    if let Some(pending_pos) = hover_state.pending_char_index {
-                        if pending_pos == hover_state.trigger_char_index {
-                            hover_state.content = content;
-                            hover_state.kind = kind;
-                            hover_state.range = range;
-                            hover_state.visible = true;
-                        }
-                    }
-                }
-                hover_state.pending_char_index = None;
-            }
-
-            LspResponse::Definition { locations } => {
-                if locations.is_empty() {
-                    continue;
-                }
-
-                #[cfg(debug_assertions)]
-                debug!("[LSP] Definition: {} location(s)", locations.len());
-
-                if locations.len() > 1 {
-                    multi_location_events.write(MultipleLocationsEvent {
-                        locations: locations.clone(),
-                        location_type: LocationType::Definition,
-                    });
-                }
-
-                let location = &locations[0];
-                let current_uri = lsp_document.map(|d| &d.uri);
-                let is_same_file = current_uri.is_some_and(|uri| uri == &location.uri);
-
-                if is_same_file {
-                    let line_num = location.range.start.line as usize;
-                    let char_in_line = location.range.start.character as usize;
-
-                    if line_num < buffer.rope.len_lines() {
-                        let line_start_char = buffer.rope.line_to_char(line_num);
-                        let target_char_pos = line_start_char + char_in_line;
-                        cursor_state.cursor_pos = target_char_pos.min(buffer.rope.len_chars());
-                    }
-                } else {
-                    navigate_events.write(NavigateToFileEvent {
-                        uri: location.uri.clone(),
-                        line: location.range.start.line as usize,
-                        character: location.range.start.character as usize,
-                    });
-                }
-            }
-
-            LspResponse::References { locations } => {
-                #[cfg(debug_assertions)]
-                debug!("[LSP] References: {} location(s)", locations.len());
-
-                if !locations.is_empty() {
-                    multi_location_events.write(MultipleLocationsEvent {
-                        locations,
-                        location_type: LocationType::References,
-                    });
-                }
-            }
-
-            LspResponse::Format { edits } => {
-                trace!("[LSP] Format: {} edit(s)", edits.len());
-                apply_text_edits(editor_entity, &buffer, edits, &mut replace_writer);
-            }
-
-            LspResponse::SignatureHelp {
-                id,
-                signatures,
-                active_signature,
-                active_parameter,
-            } => {
-                #[cfg(debug_assertions)]
-                debug!("[LSP] SignatureHelp(id={}): {} signature(s)", id, signatures.len());
-                if id != sig_state.request_id {
-                    continue;
-                }
-                sig_state.signatures = signatures;
-                sig_state.active_signature = active_signature.unwrap_or(0) as usize;
-                sig_state.active_parameter = active_parameter.unwrap_or(0) as usize;
-                sig_state.visible = !sig_state.signatures.is_empty();
-            }
-
-            LspResponse::CodeActions { id, actions } => {
-                #[cfg(debug_assertions)]
-                debug!("[LSP] CodeActions(id={}): {} action(s)", id, actions.len());
-                if id != action_state.request_id {
-                    continue;
-                }
-                action_state.actions = actions;
-                action_state.visible = !action_state.actions.is_empty();
-                action_state.selected_index = 0;
-            }
-
-            LspResponse::InlayHints { hints } => {
-                #[cfg(debug_assertions)]
-                debug!("[LSP] InlayHints: {} hint(s)", hints.len());
-
-                hint_state.hints = hints;
-                hint_state.needs_refresh = false;
-            }
-
-            LspResponse::DocumentHighlights { highlights } => {
-                trace!(
-                    "[LSP] DocumentHighlights: {} highlight(s)",
-                    highlights.len()
-                );
-
-                highlight_state.highlights = highlights;
-                highlight_state.visible = !highlight_state.highlights.is_empty();
-                highlight_state.in_flight_position = None;
-            }
-
-            LspResponse::PrepareRename { range, placeholder } => {
-                trace!(
-                    "[LSP] PrepareRename: range={:?}, placeholder={:?}",
-                    range,
-                    placeholder
-                );
-
-                rename_state.on_prepare_response(range, placeholder);
-            }
-
-            LspResponse::Rename { edit } => {
-                #[cfg(debug_assertions)]
-                debug!("[LSP] Rename: workspace edit received");
-
-                // Apply edits to current document if present
-                if let Some(changes) = &edit.changes {
-                    if let Some(doc) = lsp_document {
-                        if let Some(edits) = changes.get(&doc.uri) {
-                            apply_text_edits(editor_entity, &buffer, edits.clone(), &mut replace_writer);
-                        }
-                    }
-                }
-
-                // Emit event for external handling (other files)
-                workspace_edit_events.write(WorkspaceEditEvent { edit });
-
-                // Close rename dialog
-                rename_state.reset();
-            }
-
-            LspResponse::ShutdownAck { .. } => {
-                // Caller follows up with `Exit`; nothing else to do here.
-                debug!("[LSP] ShutdownAck received");
-            }
-
-            LspResponse::Crashed => {
-                warn!("[LSP] server reported crashed / channel closed");
-                completion_state.dismiss();
-                hover_state.reset();
-                sig_state.dismiss();
-                action_state.dismiss();
-                highlight_state.reset();
-                rename_state.reset();
-            }
-        }
+    for ev in events.read() {
+        let Ok((
+            mut completion_state,
+            mut hover_state,
+            mut sig_state,
+            mut action_state,
+            mut highlight_state,
+            mut rename_state,
+        )) = q.get_mut(ev.entity)
+        else {
+            continue;
+        };
+        warn!("[LSP] server reported crashed / channel closed");
+        completion_state.dismiss();
+        hover_state.reset();
+        sig_state.dismiss();
+        action_state.dismiss();
+        highlight_state.reset();
+        rename_state.reset();
     }
 }
 
