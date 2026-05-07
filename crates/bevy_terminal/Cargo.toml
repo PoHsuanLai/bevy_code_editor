@@ -11,7 +11,7 @@ categories = ["game-development", "command-line-interface"]
 
 [dependencies]
 bevy_text_engine = { path = "../bevy_text_engine" }
-bevy_text_editor = { path = "../bevy_text_editor" }
+bevy_text_editor = { path = "../bevy_text_editor", default-features = false }
 
 bevy = { version = "0.18", default-features = false, features = [
     "bevy_render",
@@ -67,7 +67,11 @@ bevy = { version = "0.18", features = ["bevy_window", "bevy_winit"] }
 bevy_code_editor = { path = "../bevy_code_editor" }
 
 [features]
-default = []
+default = ["arboard"]
+# Pull in `bevy_text_editor`'s `arboard`-backed `SystemClipboard`. Disable
+# in headless / web / sandboxed builds and provide your own
+# `ClipboardProvider` via `insert_resource(ClipboardResource::new(...))`.
+arboard = ["bevy_text_editor/arboard"]
 
 # Performance profiling. Enables Bevy's tracing spans on every system and
 # routes them to a Tracy client (https://github.com/wolfpld/tracy). Run the

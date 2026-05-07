@@ -9,6 +9,16 @@ repository = "https://github.com/PoHsuanLai/bevy_code_editor"
 keywords = ["bevy", "text", "editor", "input", "selection"]
 categories = ["game-development"]
 
+[features]
+default = ["arboard"]
+# `arboard`-backed `SystemClipboard` (the default `ClipboardResource`
+# implementation). The `ClipboardProvider` trait + `ClipboardResource`
+# are always available; this flag only gates whether `arboard` is the
+# default backend. Disable for headless / web / sandboxed builds and
+# substitute your own provider via
+# `insert_resource(ClipboardResource::new(...))`.
+arboard = ["dep:arboard"]
+
 [dependencies]
 # Text rendering primitives (TextView, TextBuffer, ScrollState, TextViewViewport, FontConfig).
 bevy_text_engine = { path = "../bevy_text_engine" }
@@ -30,7 +40,7 @@ bevy = { version = "0.18", default-features = false, features = [
 ] }
 
 ropey = "1.6"
-arboard = "3.4"
+arboard = { version = "3.4", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]

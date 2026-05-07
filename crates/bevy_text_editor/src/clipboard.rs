@@ -5,10 +5,10 @@
 //! a custom protocol (Wayland-only paste, sandboxed multi-window IPC) can
 //! plug in their own implementation.
 //!
-//! The default implementation, [`SystemClipboard`], wraps `arboard` and
-//! matches the historical behavior: each operation constructs a fresh
-//! `arboard::Clipboard`, succeeds-or-silently-no-ops on failure. Hosts
-//! that want different semantics insert their own resource:
+//! With the default `arboard` feature, [`SystemClipboard`] wraps
+//! `arboard` and is used as the default `ClipboardResource`. Disable the
+//! feature to drop the `arboard` dependency entirely; the resource then
+//! defaults to a no-op [`NullClipboard`] until you insert your own:
 //!
 //! ```rust,no_run
 //! use bevy::prelude::*;
@@ -49,8 +49,9 @@ pub trait ClipboardProvider: Send + Sync + 'static {
 }
 
 /// Resource holding the active clipboard backend. Inserted by
-/// `TextInteractionPlugin` with [`SystemClipboard`] as the default;
-/// override by inserting a custom one before plugin setup.
+/// `TextInteractionPlugin` with [`SystemClipboard`] as the default
+/// (or [`NullClipboard`] when the `arboard` feature is off).
+/// Override by inserting a custom one before plugin setup.
 #[derive(Resource)]
 pub struct ClipboardResource(Box<dyn ClipboardProvider>);
 
@@ -70,16 +71,37 @@ impl ClipboardResource {
 
 impl Default for ClipboardResource {
     fn default() -> Self {
-        Self::new(SystemClipboard)
+        #[cfg(feature = "arboard")]
+        {
+            Self::new(SystemClipboard)
+        }
+        #[cfg(not(feature = "arboard"))]
+        {
+            Self::new(NullClipboard)
+        }
     }
 }
 
-/// Default `arboard`-backed clipboard. A fresh `arboard::Clipboard` is
-/// created per call: matches the original behavior and avoids holding a
-/// platform handle across frames (which `arboard` documents as fragile
-/// on X11 / Wayland).
+/// No-op clipboard. Returns `None` from `get_text` and discards
+/// `set_text`. Used as the default when the `arboard` feature is
+/// disabled, or as an explicit choice for tests / sandboxed hosts.
+pub struct NullClipboard;
+
+impl ClipboardProvider for NullClipboard {
+    fn get_text(&self) -> Option<String> {
+        None
+    }
+    fn set_text(&self, _text: &str) {}
+}
+
+/// `arboard`-backed clipboard. A fresh `arboard::Clipboard` is created
+/// per call: matches the original behavior and avoids holding a platform
+/// handle across frames (which `arboard` documents as fragile on X11 /
+/// Wayland). Available with the `arboard` feature.
+#[cfg(feature = "arboard")]
 pub struct SystemClipboard;
 
+#[cfg(feature = "arboard")]
 impl ClipboardProvider for SystemClipboard {
     fn get_text(&self) -> Option<String> {
         arboard::Clipboard::new().ok()?.get_text().ok()
