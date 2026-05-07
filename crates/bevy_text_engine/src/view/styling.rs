@@ -4,11 +4,6 @@
 //! The engine's layout systems query each `TextView` entity for these
 //! components. They're optional: an entity without [`HiddenLines`] shows every
 //! line; one without [`LineStyles`] renders with `DisplayLayout::default_fg`.
-//!
-//! These replace the earlier `Arc<dyn Trait>` Component shape. Editor-side
-//! producer systems write the components; the engine's layout systems read
-//! them. `Changed<T>` is the invalidation signal — no manual `version()`
-//! counters, no `RwLock`s.
 
 use bevy::prelude::*;
 use std::collections::{HashMap, HashSet};
