@@ -44,6 +44,10 @@ pub struct MarkdownTheme {
     /// in when no bold face is loaded). 700 = bold; raise for an
     /// extra-bold display, drop to 600 for a softer look.
     pub heading_weight: u16,
+    /// CSS-style font weight for `**strong**` inline runs. 700 = bold,
+    /// matching CSS user-agent defaults; can be set independently of
+    /// `heading_weight` (e.g. heavier headings + standard inline bold).
+    pub strong_weight: u16,
     /// Width (px) of the left bar drawn beside `> blockquote` blocks.
     pub blockquote_bar_width: f32,
     /// Stroke thickness (px) for `---` thematic-break rules.
@@ -73,6 +77,7 @@ impl Default for MarkdownTheme {
             heading_padding_bottom: 6.0,
             paragraph_padding_bottom: 6.0,
             heading_weight: 700,
+            strong_weight: 700,
             blockquote_bar_width: 4.0,
             rule_thickness: 1.0,
             rule_padding: 8.0,

@@ -20,8 +20,6 @@ use crate::parse::{Block, Inline};
 use crate::theme::MarkdownTheme;
 use crate::view::{LinkSpan, MarkdownLinks};
 
-const STRONG_WEIGHT: u16 = 700;
-const INLINE_CODE_CORNER: f32 = 3.0;
 /// Z order for code-block / blockquote backgrounds. Below text (negative)
 /// and below selection too — selection should highlight on top of the
 /// code-block bg, not be hidden by it.
@@ -391,7 +389,7 @@ impl<'a> LayoutBuilder<'a> {
         } else {
             self.cfg.theme.body_fg
         };
-        buf.push_run(s, fg, None, 0.0, state);
+        buf.push_run(s, fg, None, 0.0, state, self.cfg.theme.strong_weight);
     }
 
     fn inline_code(&self, s: &str, buf: &mut InlineBuffer, state: &InlineState) {
@@ -406,8 +404,9 @@ impl<'a> LayoutBuilder<'a> {
             s.trim(),
             decor.inline_code_fg,
             Some(decor.inline_code_bg),
-            INLINE_CODE_CORNER,
+            decor.inline_code_corner_radius,
             state,
+            self.cfg.theme.strong_weight,
         );
     }
 
@@ -486,6 +485,7 @@ impl InlineBuffer {
         bg: Option<bevy::prelude::Color>,
         corner_radius: f32,
         state: &InlineState,
+        strong_weight: u16,
     ) {
         let start = self.text.len();
         self.text.push_str(s);
@@ -500,7 +500,7 @@ impl InlineBuffer {
             font_scale: 0.0,
             skew: 0.0,
             corner_radius,
-            font_weight: state.weight(),
+            font_weight: state.weight(strong_weight),
             italic: state.italic,
             font_family: None,
             decoration: state.decoration(),
@@ -554,9 +554,9 @@ impl InlineState {
         self.link = s.link;
     }
 
-    fn weight(&self) -> Option<u16> {
+    fn weight(&self, strong_weight: u16) -> Option<u16> {
         if self.bold {
-            Some(STRONG_WEIGHT)
+            Some(strong_weight)
         } else {
             None
         }

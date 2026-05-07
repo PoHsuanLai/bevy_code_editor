@@ -38,7 +38,12 @@ pub struct BlockDecorTheme {
     pub blockquote_fg: Color,
     pub blockquote_bar: Color,
     pub rule_color: Color,
+    /// Corner radius (px) for fenced code-block backgrounds.
     pub code_corner_radius: f32,
+    /// Corner radius (px) for inline `code` chips. Typically smaller
+    /// than [`Self::code_corner_radius`] — the chip is short, so a
+    /// large radius reads as bubbly rather than crisp.
+    pub inline_code_corner_radius: f32,
 }
 
 impl Default for BlockDecorTheme {
@@ -52,6 +57,7 @@ impl Default for BlockDecorTheme {
             blockquote_bar: Color::srgba(0.55, 0.65, 0.85, 0.55),
             rule_color: Color::srgba(1.0, 1.0, 1.0, 0.15),
             code_corner_radius: 4.0,
+            inline_code_corner_radius: 3.0,
         }
     }
 }
