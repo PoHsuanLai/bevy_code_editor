@@ -139,7 +139,7 @@ pub fn request_completion(
         );
 
         if !completion_state.visible {
-            completion_state.start_char_index = cursor_pos;
+            completion_state.start_char_index = find_word_start(rope, cursor_pos);
             completion_state.items.clear();
             completion_state.selected_index = 0;
             completion_state.filter.clear();
@@ -177,7 +177,7 @@ pub fn request_completion(
             || !completion_state.items.is_empty();
     } else {
         if !completion_state.visible {
-            completion_state.start_char_index = cursor_pos;
+            completion_state.start_char_index = find_word_start(rope, cursor_pos);
             completion_state.items.clear();
             completion_state.selected_index = 0;
             completion_state.filter.clear();
