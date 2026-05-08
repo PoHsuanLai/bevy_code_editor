@@ -190,7 +190,10 @@ impl Default for DocumentHighlightsTheme {
 /// position here, ignoring the legacy `position` field.
 fn render_inlay_hints(
     mut commands: Commands,
-    hint_query: Query<(Entity, &InlayHintData), Added<InlayHintData>>,
+    // No `Added` filter: scrolling/resize must reposition the hint
+    // even when the data is unchanged. See `render_document_highlights`
+    // for the same pattern.
+    hint_query: Query<(Entity, &InlayHintData)>,
     editors: Query<(Entity, &FontConfig), With<CodeEditor>>,
     metrics: bevy_text_engine::RowMetricsParam,
     theme: Res<InlineDecorationsTheme>,
@@ -245,21 +248,26 @@ fn render_inlay_hints(
     }
 }
 
-/// Render document highlights from marker component data (inlined from the
-/// library's old `lsp_ui::render::render_document_highlights`).
+/// Render document highlights from marker component data.
 ///
-/// Anchors on the row's glyph band so the highlight sits with the text
-/// the same way selection backgrounds do — `DocumentHighlightData` was
-/// computed with the legacy "position is row center" convention which
-/// no longer matches the engine's render anchor; we re-derive here.
+/// `DocumentHighlightData` carries semantic data only `(line,
+/// start_character, end_character, is_write)`; this renderer composes
+/// the world rectangle from those + `RowMetrics`. Re-runs every frame
+/// the highlight set changes — but unlike the old "bake position into
+/// the data" approach, scrolling, viewport resize, and font changes
+/// don't need to invalidate the data. The renderer reads live state.
 fn render_document_highlights(
     mut commands: Commands,
-    highlight_query: Query<(Entity, &DocumentHighlightData), Added<DocumentHighlightData>>,
-    editors: Query<(Entity, &TextViewViewport), With<CodeEditor>>,
+    // No `Added`/`Changed` filter: scrolling and viewport resize need
+    // to reposition the sprite even when the highlight data hasn't
+    // changed. The set is small (one entity per highlighted reference),
+    // so a per-frame `Transform` write is cheap.
+    highlight_query: Query<(Entity, &DocumentHighlightData)>,
+    editors: Query<(Entity, &FontConfig), With<CodeEditor>>,
     metrics: bevy_text_engine::RowMetricsParam,
     theme: Res<InlineDecorationsTheme>,
 ) {
-    let Ok((editor_entity, viewport)) = editors.single() else {
+    let Ok((editor_entity, font)) = editors.single() else {
         return;
     };
     let m = metrics.get_or_panic(editor_entity);
@@ -271,15 +279,25 @@ fn render_document_highlights(
             theme.document_highlights.read_color
         };
 
+        // Cap width at one buffer line. `u32::MAX` means "to end of
+        // line" — clamp to a sensible visual cap so the sprite doesn't
+        // overflow the viewport when a multi-line range hits a middle
+        // row.
+        let cells = highlight
+            .end_character
+            .saturating_sub(highlight.start_character)
+            .min(200);
+        let width = cells as f32 * font.char_width;
+
         let band = m.row_glyph_band(highlight.line);
-        // `highlight.width` covers `(end_char - start_char) * char_width`;
-        // we anchor at the row's left + the highlight's screen-x then
-        // place the sprite center accordingly. `position.x` from sync
-        // is the *center* (start_x + width/2) — keep that semantic.
-        let row_y_center = (band.min.y + band.max.y) * 0.5;
+        let cell_left = m.cell_world_pos_at_x(
+            highlight.line,
+            highlight.start_character as f32 * font.char_width,
+        );
+        // Sprite anchor is center, so place at the rect's mid-point.
         let pos = Vec3::new(
-            viewport.world_left() + highlight.position.x,
-            row_y_center,
+            cell_left.x + width * 0.5,
+            (band.min.y + band.max.y) * 0.5,
             5.0,
         );
 
@@ -290,10 +308,7 @@ fn render_document_highlights(
             (
                 Sprite {
                     color,
-                    // Use the band's height so the highlight matches
-                    // selections; `highlight.height` was the leaded-box
-                    // line height which was too tall.
-                    custom_size: Some(Vec2::new(highlight.width, band.height())),
+                    custom_size: Some(Vec2::new(width, band.height())),
                     ..default()
                 },
                 Transform::from_translation(pos),

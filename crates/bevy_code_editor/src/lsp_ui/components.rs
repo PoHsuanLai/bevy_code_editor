@@ -116,19 +116,20 @@ pub struct RenameInputData {
     pub height: f32,
 }
 
-/// Marker component for a single inlay hint.
-/// Contains all data needed to render one inlay hint.
+/// Semantic data for a single inlay hint.
+///
+/// Carries *what* to render (line + character + label + kind), not
+/// *where*. Renderers compose the world position from these fields
+/// plus the editor's `RowMetrics`.
 #[derive(Component, Clone, Debug)]
 pub struct InlayHintData {
-    /// Position in screen space
-    pub position: Vec2,
-    /// Hint label text
+    /// Hint label text.
     pub label: String,
-    /// Hint kind for coloring
+    /// Hint kind for coloring.
     pub kind: InlayHintKind,
-    /// Line number (for tracking)
+    /// 0-indexed buffer line.
     pub line: u32,
-    /// Character position (for tracking)
+    /// 0-indexed character column (UTF-16 code units, per LSP).
     pub character: u32,
 }
 
@@ -143,20 +144,28 @@ pub enum InlayHintKind {
     Other,
 }
 
-/// Marker component for a single document highlight.
-/// Contains all data needed to render one highlight rectangle.
+/// Semantic data for a single document highlight.
+///
+/// Carries *what* to highlight (line + character range + read/write
+/// kind), not *where* to draw it on the screen. Renderers compose the
+/// world position from these fields plus the editor's
+/// `RowMetrics` — that way the highlight stays anchored correctly as
+/// the user scrolls, resizes, or zooms, without `sync_document_highlights`
+/// re-running on every viewport change.
 #[derive(Component, Clone, Debug)]
 pub struct DocumentHighlightData {
-    /// Position in screen space (center of highlight)
-    pub position: Vec2,
-    /// Width of the highlight
-    pub width: f32,
-    /// Height of the highlight
-    pub height: f32,
-    /// Whether this is a write reference
-    pub is_write: bool,
-    /// Line number (for tracking)
+    /// 0-indexed buffer line.
     pub line: u32,
+    /// 0-indexed start column in characters (UTF-16 code units, per
+    /// LSP).
+    pub start_character: u32,
+    /// 0-indexed end column in characters (exclusive). May span past
+    /// the end of the line; renderers should clamp.
+    pub end_character: u32,
+    /// `true` for write references (assignment / definition site),
+    /// `false` for read references. Renderers typically distinguish
+    /// these with different background colors.
+    pub is_write: bool,
 }
 
 /// Marker for entities that are part of the LSP UI.

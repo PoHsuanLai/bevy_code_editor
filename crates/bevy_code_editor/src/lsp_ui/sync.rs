@@ -464,54 +464,37 @@ pub fn sync_rename_input(
     }
 }
 
-/// Sync inlay hints to marker entities
+/// Sync inlay hints to marker entities.
+///
+/// Each entity carries a `InlayHintData` with semantic data only
+/// `(line, character, label, kind)`. Renderers compose the world
+/// position from those fields + the editor's `RowMetrics`, so this
+/// system doesn't need to invalidate on viewport / scroll / font
+/// changes — the renderer reads live state.
 pub fn sync_inlay_hints(
     mut commands: Commands,
-    query: Query<
-        (
-            Ref<LspInlayHints>,
-            Ref<ScrollState>,
-            Ref<TextViewViewport>,
-            Ref<FontConfig>,
-        ),
-        With<CodeEditor>,
-    >,
-    ui: Res<UiSettings>,
+    query: Query<Ref<LspInlayHints>, With<CodeEditor>>,
     existing: Query<Entity, With<InlayHintData>>,
 ) {
-    let Ok((hint_state, scroll, vp, font)) = query.single() else {
+    let Ok(hint_state) = query.single() else {
         return;
     };
 
-    // Only update if something changed
-    if !hint_state.is_changed() && !scroll.is_changed() && !vp.is_changed() && !font.is_changed() {
+    if !hint_state.is_changed() {
         return;
     }
 
-    // Clear existing hints
     for entity in existing.iter() {
-        commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
+        commands
+            .entity(entity)
+            .queue_silenced(bevy::ecs::system::entity_command::despawn());
     }
 
     if hint_state.hints.is_empty() {
         return;
     }
 
-    let visible_start_line = (scroll.scroll_offset / font.line_height) as u32;
-    let visible_lines = (vp.height as f32 / font.line_height) as u32 + 2;
-    let visible_end_line = visible_start_line + visible_lines;
-
-    let char_width = font.char_width;
-    let line_height = font.line_height;
-
     for hint in &hint_state.hints {
-        let line = hint.position.line;
-        let character = hint.position.character;
-
-        if line < visible_start_line || line > visible_end_line {
-            continue;
-        }
-
         let label_text = match &hint.label {
             lsp_types::InlayHintLabel::String(s) => s.clone(),
             lsp_types::InlayHintLabel::LabelParts(parts) => parts
@@ -521,10 +504,6 @@ pub fn sync_inlay_hints(
                 .join(""),
         };
 
-        let x_offset = ui.code_margin_left + (character as f32 * char_width);
-        let y_offset =
-            ui.margin_top + scroll.scroll_offset + (line as f32 * line_height) + (line_height / 2.0);
-
         let kind = match hint.kind {
             Some(lsp_types::InlayHintKind::TYPE) => InlayHintKind::Type,
             Some(lsp_types::InlayHintKind::PARAMETER) => InlayHintKind::Parameter,
@@ -533,11 +512,10 @@ pub fn sync_inlay_hints(
 
         commands.spawn((
             InlayHintData {
-                position: Vec2::new(x_offset, y_offset),
                 label: label_text,
                 kind,
-                line,
-                character,
+                line: hint.position.line,
+                character: hint.position.character,
             },
             LspUiElement,
             Name::new("InlayHint"),
@@ -545,118 +523,72 @@ pub fn sync_inlay_hints(
     }
 }
 
-/// Sync document highlights to marker entities
+/// Sync document highlights to marker entities.
+///
+/// Each entity carries a `DocumentHighlightData` describing *what* to
+/// highlight (line + character range + read/write kind). The renderer
+/// (in the host crate) composes the world rectangle from these fields
+/// + the editor's `RowMetrics`, so this system doesn't need to re-run
+/// on viewport or scroll changes — the renderer reads live state.
 pub fn sync_document_highlights(
     mut commands: Commands,
-    query: Query<
-        (
-            Ref<LspDocumentHighlights>,
-            &ScrollState,
-            Ref<TextViewViewport>,
-            Ref<FontConfig>,
-        ),
-        With<CodeEditor>,
-    >,
+    query: Query<Ref<LspDocumentHighlights>, With<CodeEditor>>,
     existing: Query<Entity, With<DocumentHighlightData>>,
-    mut last_scroll: Local<f32>,
 ) {
-    let Ok((highlight_state, scroll, vp, font)) = query.single() else {
+    let Ok(highlight_state) = query.single() else {
         return;
     };
 
-    let scroll_changed = (scroll.scroll_offset - *last_scroll).abs() > 0.01;
-    if !highlight_state.is_changed()
-        && !vp.is_changed()
-        && !font.is_changed()
-        && !scroll_changed
-    {
+    if !highlight_state.is_changed() {
         return;
     }
-    *last_scroll = scroll.scroll_offset;
 
     for entity in existing.iter() {
-        commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
+        commands
+            .entity(entity)
+            .queue_silenced(bevy::ecs::system::entity_command::despawn());
     }
 
     if !highlight_state.visible || highlight_state.highlights.is_empty() {
         return;
     }
 
-    let viewport_height = vp.height as f32;
-    let char_width = font.char_width;
-    let line_height = font.line_height;
-
-    let visible_start_line = (scroll.scroll_offset / line_height) as u32;
-    let visible_lines = (viewport_height / line_height) as u32 + 2;
-    let visible_end_line = visible_start_line + visible_lines;
-
     for highlight in &highlight_state.highlights {
+        let is_write = matches!(
+            highlight.kind,
+            Some(lsp_types::DocumentHighlightKind::WRITE),
+        );
+
         let start_line = highlight.range.start.line;
         let end_line = highlight.range.end.line;
 
-        if end_line < visible_start_line || start_line > visible_end_line {
-            continue;
-        }
-
-        let is_write = matches!(
-            highlight.kind,
-            Some(lsp_types::DocumentHighlightKind::WRITE)
-        );
-
-        // Engine row geometry (matches `bevy_text_engine::view::layout_builder::y_top_for`):
-        //   row_top    = viewport.text_area_top + scroll_offset + line * line_height - line_height/2
-        //   row_center = row_top + line_height/2 = viewport.text_area_top + scroll_offset + line * line_height
-        // The sprite renderer treats `position.y` as a viewport-local offset
-        // below world_top, so we feed in the row center.
-        let row_center = |line_idx: u32| -> f32 {
-            vp.text_area_top + scroll.scroll_offset + (line_idx as f32 * line_height)
-        };
-        let col_x = |col: u32| -> f32 {
-            vp.text_area_left + (col as f32 * char_width)
-        };
-
         if start_line == end_line {
-            let line = start_line;
-            let start_char = highlight.range.start.character;
-            let end_char = highlight.range.end.character;
-            let width = (end_char - start_char) as f32 * char_width;
-            let x_left = col_x(start_char);
-
             commands.spawn((
                 DocumentHighlightData {
-                    position: Vec2::new(x_left + width / 2.0, row_center(line)),
-                    width,
-                    height: line_height,
+                    line: start_line,
+                    start_character: highlight.range.start.character,
+                    end_character: highlight.range.end.character,
                     is_write,
-                    line,
                 },
                 LspUiElement,
                 Name::new("DocumentHighlight"),
             ));
         } else {
             for line in start_line..=end_line {
-                if line < visible_start_line || line > visible_end_line {
-                    continue;
-                }
-
                 let (start_char, end_char) = if line == start_line {
-                    (highlight.range.start.character, 1000)
+                    (highlight.range.start.character, u32::MAX)
                 } else if line == end_line {
                     (0, highlight.range.end.character)
                 } else {
-                    (0, 1000)
+                    (0, u32::MAX)
                 };
-
-                let width = (end_char - start_char).min(200) as f32 * char_width;
-                let x_left = col_x(start_char);
 
                 commands.spawn((
                     DocumentHighlightData {
-                        position: Vec2::new(x_left + width / 2.0, row_center(line)),
-                        width,
-                        height: line_height,
-                        is_write,
                         line,
+                        start_character: start_char,
+                        end_character: end_char,
+                        is_write,
                     },
                     LspUiElement,
                     Name::new("DocumentHighlight"),
