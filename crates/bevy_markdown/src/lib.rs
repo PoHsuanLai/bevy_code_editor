@@ -35,7 +35,7 @@
 //! ```rust,no_run
 //! use bevy::prelude::*;
 //! use bevy_instanced_text::TextEnginePlugins;
-//! use bevy_markdown::{MarkdownViewerPlugin, MarkdownDoc};
+//! use bevy_markdown::prelude::*;
 //!
 //! App::new()
 //!     .add_plugins(DefaultPlugins)
@@ -58,3 +58,10 @@ pub use parse::{parse_markdown, Block as MdBlock, Inline as MdInline};
 pub use plugin::MarkdownViewerPlugin;
 pub use theme::MarkdownTheme;
 pub use view::{MarkdownDoc, MarkdownLinks};
+
+pub mod prelude {
+    //! Common types for embedding a markdown viewer.
+    pub use crate::plugin::MarkdownViewerPlugin;
+    pub use crate::theme::MarkdownTheme;
+    pub use crate::view::{MarkdownDoc, MarkdownLinks};
+}
