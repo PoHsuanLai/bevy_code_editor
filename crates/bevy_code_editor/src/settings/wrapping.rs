@@ -3,10 +3,10 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// Soft-wrap settings. Disabled by default; enable and set `wrap_column`
-/// to a fixed column count, or leave it `None` to wrap at the viewport edge.
-#[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
-#[reflect(Resource, Default, Debug)]
+/// Per-editor soft-wrap settings. Disabled by default; enable and set
+/// `wrap_column` to a fixed column count, or leave it `None` to wrap at the viewport edge.
+#[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
+#[reflect(Component, Default, Debug)]
 pub struct WrappingSettings {
     pub enabled: bool,
     /// `None` = wrap at viewport width.

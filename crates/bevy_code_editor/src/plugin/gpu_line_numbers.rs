@@ -38,25 +38,26 @@ pub(crate) fn update_gpu_line_numbers(
             Ref<FoldState>,
             &FontConfig,
             &ThemeConfig,
+            &UiSettings,
+            &PerformanceSettings,
         ),
         With<CodeEditor>,
     >,
-    ui: Res<UiSettings>,
-    performance: Res<PerformanceSettings>,
     mut atlas: ResMut<GlyphAtlas>,
     mut images: ResMut<Assets<Image>>,
     fonts: Res<Assets<bevy::text::Font>>,
     batch_query: Query<(Entity, &GpuLineNumbersBatch)>,
 ) {
-    // Hide if line numbers are disabled
+    for (editor_entity, sel, buffer, scroll, viewport, fold_state, font, theme, ui, performance) in editor_query.iter() {
+    // Hide if line numbers are disabled for this editor
     if !ui.show_line_numbers {
-        for (entity, _) in batch_query.iter() {
-            commands.entity(entity).insert(Visibility::Hidden);
+        for (entity, batch) in batch_query.iter() {
+            if batch.editor == editor_entity {
+                commands.entity(entity).insert(Visibility::Hidden);
+            }
         }
-        return;
+        continue;
     }
-
-    for (editor_entity, sel, buffer, scroll, viewport, fold_state, font, theme) in editor_query.iter() {
     // Check if we need to update
     let fold_changed = fold_state.is_changed();
 

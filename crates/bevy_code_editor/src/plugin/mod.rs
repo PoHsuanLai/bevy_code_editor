@@ -115,15 +115,6 @@ impl Plugin for CodeEditorPlugin {
         // `ScrollConfig` components on the editor entity (cascaded via
         // `#[require]`); what remains here is genuinely-global config like
         // UI toggles, indentation rules, etc.
-        app.init_resource::<UiSettings>();
-        app.init_resource::<IndentationSettings>();
-        app.init_resource::<BracketSettings>();
-        app.init_resource::<CursorLineSettings>();
-        app.init_resource::<PerformanceSettings>();
-        app.init_resource::<WrappingSettings>();
-        #[cfg(feature = "lsp")]
-        app.init_resource::<LspSettings>();
-
         app.init_resource::<ViewportConfig>();
 
         // BracketMatchState, GotoLineState, FoldState, and KeyRepeatState are

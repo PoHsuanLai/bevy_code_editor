@@ -3,10 +3,10 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// Rendering performance tuning. Controls viewport culling buffer size,
-/// whether the GPU text pipeline is active, and per-frame glyph build budget.
-#[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
-#[reflect(Resource, Default, Debug)]
+/// Per-editor rendering performance tuning. Controls viewport culling buffer
+/// size, whether the GPU text pipeline is active, and per-frame glyph build budget.
+#[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
+#[reflect(Component, Default, Debug)]
 pub struct PerformanceSettings {
     pub viewport_buffer_lines: usize,
     pub gpu_text: bool,

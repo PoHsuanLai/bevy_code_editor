@@ -45,6 +45,12 @@ impl Default for ViewportConfig {
         crate::types::fold::FoldState,
         crate::settings::ThemeConfig,
         crate::settings::SyntaxTheme,
+        crate::settings::UiSettings,
+        crate::settings::IndentationSettings,
+        crate::settings::BracketSettings,
+        crate::settings::CursorLineSettings,
+        crate::settings::PerformanceSettings,
+        crate::settings::WrappingSettings,
     )
 )]
 #[cfg_attr(
@@ -57,6 +63,13 @@ impl Default for ViewportConfig {
         crate::settings::ThemeConfig,
         crate::settings::SyntaxTheme,
         crate::settings::DiagnosticTheme,
+        crate::settings::UiSettings,
+        crate::settings::IndentationSettings,
+        crate::settings::BracketSettings,
+        crate::settings::CursorLineSettings,
+        crate::settings::PerformanceSettings,
+        crate::settings::WrappingSettings,
+        crate::settings::LspSettings,
         // LSP-side state. `LspDocument` is NOT in this cascade because it
         // requires a URI which the host must supply.
         bevy_lsp::LspClient,

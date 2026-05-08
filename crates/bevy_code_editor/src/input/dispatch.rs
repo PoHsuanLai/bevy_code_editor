@@ -363,10 +363,10 @@ pub fn dispatch_action_events(
             Option<&mut bevy_lsp::LspDocument>,
             &mut crate::lsp_ui::state::LspCompletionPopup,
             &crate::lsp_ui::state::LspRenamePopup,
+            &crate::settings::LspSettings,
         ),
         With<CodeEditor>,
     >,
-    #[cfg(feature = "lsp")] lsp_settings: Res<crate::settings::LspSettings>,
     mut writers: ActionEventWriters,
 ) {
     let Some(focused) = input_focus.get() else {
@@ -380,7 +380,7 @@ pub fn dispatch_action_events(
     // Rename modal eats all action input until dismissed (input flows
     // through `crate::input::keyboard` instead).
     #[cfg(feature = "lsp")]
-    if let Ok((_, _, _, rename_state)) = lsp_q.get(focused) {
+    if let Ok((_, _, _, rename_state, _)) = lsp_q.get(focused) {
         if rename_state.visible {
             return;
         }
@@ -429,7 +429,7 @@ pub fn dispatch_action_events(
     // `true` if it consumed the action; the dispatcher early-returns and the
     // bevy_text_editor / IDE handlers never see the event.
     #[cfg(feature = "lsp")]
-    if let Ok((lsp_client, mut lsp_document, mut completion_state, _)) =
+    if let Ok((lsp_client, mut lsp_document, mut completion_state, _, lsp_settings)) =
         lsp_q.get_mut(focused)
     {
         if crate::lsp_ui::interceptors::completion_popup_intercept(
@@ -439,7 +439,7 @@ pub fn dispatch_action_events(
             lsp_client,
             lsp_document.as_deref_mut(),
             &mut editor_q,
-            &lsp_settings,
+            lsp_settings,
             &mut writers.replace_range,
         ) {
             return;

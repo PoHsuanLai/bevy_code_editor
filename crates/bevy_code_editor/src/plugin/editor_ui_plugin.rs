@@ -194,10 +194,9 @@ fn update_camera_viewport(
 
 /// Compute ViewportDimensions layout fields based on UI settings
 fn compute_viewport_layout(
-    mut viewport_query: Query<(&mut TextViewViewport, &FontConfig), With<CodeEditor>>,
-    ui: Res<UiSettings>,
+    mut viewport_query: Query<(&mut TextViewViewport, &FontConfig, &UiSettings), With<CodeEditor>>,
 ) {
-    for (mut viewport, font) in viewport_query.iter_mut() {
+    for (mut viewport, font, ui) in viewport_query.iter_mut() {
         // Compute gutter width based on line number display
         viewport.gutter_width = if ui.show_line_numbers {
             ui.gutter_padding_left + ui.gutter_padding_right
@@ -262,10 +261,9 @@ fn detect_viewport_resize(
 /// Setup UI entities (line numbers, cursor, separator) for each `CodeEditor`.
 fn setup_editor_ui(
     mut commands: Commands,
-    ui: Res<UiSettings>,
-    editor_query: Query<(&TextViewViewport, &ThemeConfig), With<CodeEditor>>,
+    editor_query: Query<(&TextViewViewport, &ThemeConfig, &UiSettings), With<CodeEditor>>,
 ) {
-    for (viewport, theme) in editor_query.iter() {
+    for (viewport, theme, ui) in editor_query.iter() {
         let viewport_width = viewport.width as f32;
         let viewport_height = viewport.height as f32;
 

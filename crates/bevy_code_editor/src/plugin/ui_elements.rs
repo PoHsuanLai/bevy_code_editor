@@ -298,28 +298,23 @@ pub(crate) fn update_indent_guides(
             &FontConfig,
             &ThemeConfig,
             Option<&DisplayLayout>,
+            &UiSettings,
+            &IndentationSettings,
         ),
         With<CodeEditor>,
     >,
-    ui: Res<UiSettings>,
-    indentation: Res<IndentationSettings>,
     mut guide_query: Query<(Entity, &mut Transform, &mut Visibility, &mut IndentGuide)>,
 ) {
-    // Hide all guides if disabled
-    if !ui.show_indent_guides {
-        for (_, _, mut visibility, _) in guide_query.iter_mut() {
-            *visibility = Visibility::Hidden;
-        }
-        return;
-    }
-
-    let indent_size = indentation.indent_size;
-
     // Collect existing guide entities once (shared pool across editors)
     let mut existing_guides: Vec<_> = guide_query.iter_mut().collect();
     let mut entity_index = 0;
 
-    for (buffer, scroll, vp, fold_state, font, theme, layout) in editor_query.iter() {
+    for (buffer, scroll, vp, fold_state, font, theme, layout, ui, indentation) in editor_query.iter() {
+        if !ui.show_indent_guides {
+            continue;
+        }
+
+        let indent_size = indentation.indent_size;
         let line_height = font.line_height;
         let char_width = font.char_width;
         let viewport_height = vp.height as f32;

@@ -188,15 +188,13 @@ impl Plugin for LspPlugin {
     }
 }
 
-/// Mirror `LspSettings::completion::words_mode` onto each editor's
-/// `LspCompletionPopup` so the popup can gate its filtering / scanning
-/// without taking a `Res<LspSettings>` dependency on every internal call.
+/// Mirror each editor's `LspSettings::completion::words_mode` onto its
+/// `LspCompletionPopup` so the popup can gate filtering without re-reading settings.
 fn sync_completion_settings(
-    settings: Res<LspSettings>,
-    mut popups: Query<&mut LspCompletionPopup, With<CodeEditor>>,
+    mut query: Query<(&LspSettings, &mut LspCompletionPopup), With<CodeEditor>>,
 ) {
-    let target = settings.completion.words_mode;
-    for mut popup in &mut popups {
+    for (settings, mut popup) in &mut query {
+        let target = settings.completion.words_mode;
         if popup.words_mode != target {
             popup.words_mode = target;
         }

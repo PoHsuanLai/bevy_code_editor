@@ -194,12 +194,12 @@ pub(crate) fn update_cursor_line_highlight(
             &FontConfig,
             Option<&DisplayLayout>,
             &ThemeConfig,
+            &CursorLineSettings,
         ),
         With<CodeEditor>,
     >,
-    cursor_line: Res<CursorLineSettings>,
 ) {
-    for (sel, cursor, buffer, vp, mut overlays, fold_state, font, layout, theme) in
+    for (sel, cursor, buffer, vp, mut overlays, fold_state, font, layout, theme, cursor_line) in
         editor_query.iter_mut()
     {
         // Drain previous-frame line-border / word rects (z = 0 reserved for cursor-line decoration).

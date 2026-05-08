@@ -45,12 +45,12 @@ pub fn listen_text_edit_events(
             &TextBuffer,
             &bevy_lsp::ServerCapabilities,
             &mut LspDidChangeBatcher,
+            &LspSettings,
         ),
         With<CodeEditor>,
     >,
-    settings: Res<LspSettings>,
 ) {
-    let Ok((buffer, caps, mut batcher)) = query.single_mut() else {
+    let Ok((buffer, caps, mut batcher, settings)) = query.single_mut() else {
         return;
     };
 
@@ -91,18 +91,18 @@ pub fn listen_text_edit_events(
 
 pub fn listen_completion_requests(
     mut events: MessageReader<RequestCompletionEvent>,
-    settings: Res<LspSettings>,
     mut query: Query<
         (
             &TextBuffer,
             Option<&LspDocument>,
             &bevy_lsp::ServerCapabilities,
             &mut LspDebounceTimers,
+            &LspSettings,
         ),
         With<CodeEditor>,
     >,
 ) {
-    let Ok((buffer, lsp_document, caps, mut debounce)) = query.single_mut() else {
+    let Ok((buffer, lsp_document, caps, mut debounce, settings)) = query.single_mut() else {
         return;
     };
     let Some(lsp_document) = lsp_document else {
@@ -123,18 +123,18 @@ pub fn listen_completion_requests(
 
 pub fn listen_hover_requests(
     mut events: MessageReader<RequestHoverEvent>,
-    settings: Res<LspSettings>,
     mut query: Query<
         (
             &TextBuffer,
             Option<&LspDocument>,
             &bevy_lsp::ServerCapabilities,
             &mut LspDebounceTimers,
+            &LspSettings,
         ),
         With<CodeEditor>,
     >,
 ) {
-    let Ok((buffer, lsp_document, caps, mut debounce)) = query.single_mut() else {
+    let Ok((buffer, lsp_document, caps, mut debounce, settings)) = query.single_mut() else {
         return;
     };
     let Some(lsp_document) = lsp_document else {

@@ -53,6 +53,7 @@ pub fn on_focused_keyboard(
             &mut EditHistoryState,
             &mut CursorState,
             &mut crate::text_view::TextBuffer,
+            &BracketSettings,
         ),
         With<CodeEditor>,
     >,
@@ -64,16 +65,15 @@ pub fn on_focused_keyboard(
             &mut crate::lsp_ui::state::LspCompletionPopup,
             &mut crate::lsp_ui::state::LspRenamePopup,
             Option<&crate::plugin::syntax_highlighting::EditorSyntaxState>,
+            &LspSettings,
         ),
         With<CodeEditor>,
     >,
     keyboard: Res<ButtonInput<KeyCode>>,
-    brackets: Res<BracketSettings>,
-    #[cfg(feature = "lsp")] lsp: Res<LspSettings>,
 ) {
     let entity = trigger.event().focused_entity;
 
-    let Ok((mut sel, mut hist, mut cursor, mut buffer)) = editor_query.get_mut(entity) else {
+    let Ok((mut sel, mut hist, mut cursor, mut buffer, brackets)) = editor_query.get_mut(entity) else {
         return;
     };
 
@@ -85,6 +85,7 @@ pub fn on_focused_keyboard(
         mut completion_state,
         mut rename_state,
         syntax_state,
+        lsp,
     )) = lsp_query.get_mut(entity)
     else {
         return;

@@ -38,11 +38,10 @@ fn buffer_position(buffer: &TextBuffer, char_index: usize) -> (u32, u32) {
 /// Sync completion state to marker entity
 pub fn sync_completion_popup(
     mut commands: Commands,
-    query: Query<(&LspCompletionPopup, &CursorState, &TextBuffer, &FontConfig), With<CodeEditor>>,
-    lsp: Res<LspSettings>,
+    query: Query<(&LspCompletionPopup, &CursorState, &TextBuffer, &FontConfig, &LspSettings), With<CodeEditor>>,
     existing: Query<Entity, With<CompletionPopupData>>,
 ) {
-    let Ok((completion_state, cursor_state, buffer, font)) = query.single() else {
+    let Ok((completion_state, cursor_state, buffer, font, lsp)) = query.single() else {
         return;
     };
     let filtered_items = completion_state.filtered_items();

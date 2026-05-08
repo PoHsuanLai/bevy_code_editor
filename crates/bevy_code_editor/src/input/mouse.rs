@@ -288,19 +288,19 @@ pub fn on_pointer_move_for_hover(
             &FoldState,
             &FontConfig,
             Option<&DisplayLayout>,
+            &crate::settings::LspSettings,
         ),
         With<CodeEditor>,
     >,
     mut hover_query: Query<&mut crate::lsp_ui::state::LspHoverPopup, With<CodeEditor>>,
-    hover_settings: Res<crate::settings::LspSettings>,
 ) {
+    let entity = trigger.event().entity;
+    let Ok((buffer, scroll, viewport, fold_state, font, layout, hover_settings)) = editor_query.get(entity) else {
+        return;
+    };
     if !hover_settings.hover.enabled {
         return;
     }
-    let entity = trigger.event().entity;
-    let Ok((buffer, scroll, viewport, fold_state, font, layout)) = editor_query.get(entity) else {
-        return;
-    };
     let Ok(mut hover_state) = hover_query.get_mut(entity) else {
         return;
     };

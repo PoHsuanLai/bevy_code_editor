@@ -3,9 +3,9 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// LSP settings
-#[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
-#[reflect(Resource, Default, Debug)]
+/// Per-editor LSP settings: debounce timers, completion/hover UI behavior.
+#[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
+#[reflect(Component, Default, Debug)]
 pub struct LspSettings {
     /// Auto-completion settings
     pub completion: CompletionSettings,

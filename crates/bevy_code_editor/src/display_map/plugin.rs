@@ -241,13 +241,11 @@ pub(crate) fn produce_line_styles(
 /// Refresh `LayoutWrap` from `WrappingSettings` + `IndentationSettings`.
 pub(crate) fn sync_layout_wrap(
     mut editors: Query<
-        (&TextViewViewport, &FontConfig, &mut LayoutWrap),
+        (&TextViewViewport, &FontConfig, &mut LayoutWrap, &WrappingSettings, &IndentationSettings),
         With<CodeEditor>,
     >,
-    wrapping: Res<WrappingSettings>,
-    indentation: Res<IndentationSettings>,
 ) {
-    for (viewport, font, mut wrap) in editors.iter_mut() {
+    for (viewport, font, mut wrap, wrapping, indentation) in editors.iter_mut() {
         let char_width = font.char_width;
         let budget_px: Option<f32> = if wrapping.enabled {
             let viewport_text_w =

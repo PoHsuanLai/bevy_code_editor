@@ -718,7 +718,6 @@ pub fn execute_code_action(lsp_client: &LspClient, action: &CodeActionOrCommand)
 /// `LspSettings::highlight_delay_ms`.
 pub fn request_document_highlights(
     time: Res<Time>,
-    settings: Res<crate::settings::LspSettings>,
     mut query: Query<
         (
             &LspClient,
@@ -727,11 +726,12 @@ pub fn request_document_highlights(
             &TextBuffer,
             Option<&LspDocument>,
             &mut LspDocumentHighlights,
+            &crate::settings::LspSettings,
         ),
         With<CodeEditor>,
     >,
 ) {
-    let Ok((lsp_client, capabilities, cursor_state, buffer, lsp_document, mut highlight_state)) =
+    let Ok((lsp_client, capabilities, cursor_state, buffer, lsp_document, mut highlight_state, settings)) =
         query.single_mut()
     else {
         return;

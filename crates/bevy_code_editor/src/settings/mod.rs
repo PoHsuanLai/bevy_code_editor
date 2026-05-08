@@ -1,15 +1,21 @@
-//! Settings groups for the code editor.
+//! Per-editor settings components for the code editor.
 //!
-//! Most groups are global `Resource`s (theme, UI, performance) — values
-//! the user expects to be the same across every editor in the app.
-//! Per-entity values that vary across editors (font size, scroll
-//! behaviour) live on the `FontConfig` and `ScrollConfig` components, not
-//! here.
+//! All settings are `Component`s cascaded onto every `CodeEditor` entity
+//! via `#[require]`, so each editor in a multi-editor app carries its own
+//! independent copy. Override any subset at spawn time:
 //!
-//! `CodeEditorPlugin` registers each group at startup. To customize, the
-//! host can either insert its own resource value before adding the plugin
-//! (Bevy's `init_resource` is a no-op when the resource already exists),
-//! or mutate the resource at runtime.
+//! ```rust,ignore
+//! commands.spawn((
+//!     CodeEditor,
+//!     UiSettings { show_line_numbers: false, ..default() },
+//!     IndentationSettings { use_spaces: false, tab_width: 2, ..default() },
+//! ));
+//! ```
+//!
+//! Or mutate at runtime via `Query<&mut UiSettings, With<CodeEditor>>`.
+//!
+//! `ThemeConfig` and `SyntaxTheme` follow the same pattern and are defined
+//! in `core` and `syntax` respectively.
 
 mod core;
 mod cursor;

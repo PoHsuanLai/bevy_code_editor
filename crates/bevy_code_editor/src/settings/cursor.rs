@@ -12,9 +12,9 @@ use serde::{Deserialize, Serialize};
 
 pub use bevy_text_editor::{CursorSettings, CursorStyle};
 
-/// VSCode-style cursor-line highlighting.
-#[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
-#[reflect(Resource, Default, Debug)]
+/// Per-editor VSCode-style cursor-line highlighting.
+#[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
+#[reflect(Component, Default, Debug)]
 pub struct CursorLineSettings {
     pub enabled: bool,
     pub style: CursorLineStyle,
