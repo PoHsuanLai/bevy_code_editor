@@ -1,9 +1,30 @@
-//! Read-only markdown viewer for Bevy.
+//! Read-only CommonMark viewer for Bevy.
 //!
-//! Parses CommonMark via [pulldown-cmark](https://docs.rs/pulldown-cmark) and renders the result through
-//! `bevy_text_engine`'s `TextView` machinery. The viewer is read-only:
-//! scroll, selection, and copy are inherited from the engine; editing,
-//! click handlers, and image fetching are out of scope.
+//! Parses a Markdown string via [pulldown-cmark](https://docs.rs/pulldown-cmark),
+//! converts it to a styled `bevy_text_engine` [`bevy_text_engine::LineStyles`]
+//! layout, and renders it through a [`bevy_text_engine::TextView`] entity.
+//!
+//! ## What this crate provides
+//!
+//! Spawn a [`MarkdownDoc`] with a CommonMark string and the plugin takes care
+//! of the rest. Supported elements: headings, bold, italic, inline code, fenced
+//! code blocks, blockquotes, unordered and ordered lists, horizontal rules,
+//! and links (rendered as styled text; navigation is a host concern).
+//!
+//! Scroll and text selection are inherited from the underlying
+//! `bevy_text_engine` + `bevy_text_editor` stack. The viewer is read-only —
+//! there is no cursor, no edit history, and no keyboard input.
+//!
+//! Appearance is controlled via [`MarkdownTheme`], which lives as a component
+//! on the `MarkdownDoc` entity and can be overridden at spawn time or mutated
+//! at runtime.
+//!
+//! ## What this crate does NOT provide
+//!
+//! - Link navigation or click handlers — hosts observe [`MarkdownLinks`]
+//! - Image rendering
+//! - HTML passthrough
+//! - Editing
 //!
 //! ## Quick start
 //!

@@ -1,10 +1,36 @@
-//! # Bevy Terminal
+//! Embeddable PTY-backed terminal widget for Bevy.
 //!
-//! Embeddable terminal widget. Spawn a single [`crate::BevyTerminal`] component
-//! and `#[require]` cascades the rest — PTY session, grid snapshot, theme,
-//! input mode, scrollback. VT state from `wezterm-term`; PTY allocation
-//! from `portable-pty`; rendering from `bevy_text_engine`; selection /
-//! clipboard from `bevy_text_editor`.
+//! Spawn [`crate::BevyTerminal`] and the `#[require]` cascade brings in
+//! everything: the PTY session, VT parser state, grid snapshot, color palette,
+//! input mode flags, and scrollback config. The shell opens lazily once a
+//! non-zero viewport size is available, so you never get a stale 80×24 frame.
+//!
+//! ## Concepts
+//!
+//! - **[`crate::BevyTerminal`]** — the only component you spawn. Configure the
+//!   shell, args, env, and cwd via [`crate::TerminalConfig`] (optional).
+//! - **[`crate::TerminalGridSnapshot`]** — the VT grid dimensions and cursor
+//!   position, updated each frame from the PTY output.
+//! - **[`crate::TerminalColorPalette`]** — the 16 ANSI colors. Override at
+//!   spawn time or mutate at runtime for per-terminal theming.
+//! - **[`crate::TerminalScrollback`]** — max scrollback line count.
+//! - **[`crate::TerminalScrollFollow`]** — whether the view pins to the bottom
+//!   as new output arrives.
+//!
+//! ## Shell integration (OSC 133)
+//!
+//! When the shell emits OSC 133 sequences, [`crate::TerminalBlockState`] tracks
+//! semantic command blocks (prompt → command → output). Subscribe to
+//! [`crate::messages::TerminalBlockFinished`] to react to completed commands
+//! (e.g. to extract exit codes or capture output).
+//!
+//! ## What this crate does NOT provide
+//!
+//! - A title bar or tab UI — hosts build that from [`crate::TerminalShellInfo`]
+//! - Find-in-terminal — hosts query the grid snapshot
+//! - Terminal multiplexing — spawn one `BevyTerminal` entity per pane
+//!
+//! ## Quick start
 //!
 //! ```rust,no_run
 //! use bevy::prelude::*;

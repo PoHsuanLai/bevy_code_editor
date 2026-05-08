@@ -1,9 +1,64 @@
-//! Editable text widget for Bevy. [`TextInteractionPlugin`] adds scroll /
-//! drag-select / copy on any `TextView`; [`TextEditorPlugin`] adds typed-char
-//! input, edit history, undo/redo, clipboard, and keyboard shortcuts on top.
+//! Editable text widget for Bevy, built on top of `bevy_text_engine`.
 //!
-//! Dispatch is observer-driven: a custom `bevy_picking` backend routes pointer
-//! events to the right entity; editing events flow as typed `*Requested` messages.
+//! This crate adds interactivity to any [`bevy_text_engine::TextView`] entity.
+//! It does not know what the text *means* — no syntax, no LSP, no file I/O.
+//! It owns the mechanics of text editing: where the cursor goes, what happens
+//! when you type, how history is recorded.
+//!
+//! ## Concepts
+//!
+//! Two plugins, composable independently:
+//!
+//! - **[`TextInteractionPlugin`]** — pointer interaction only: click-to-place
+//!   cursor, drag-select, scroll wheel, double/triple-click word/line select,
+//!   and copy. No keyboard input. Suitable for read-only views that need
+//!   text selection (log viewers, output panels).
+//!
+//! - **[`TextEditorPlugin`]** — everything in `TextInteractionPlugin` plus
+//!   typed-character input, full edit history, undo/redo, clipboard cut/paste,
+//!   and keyboard shortcuts dispatched as [`editing_events`] messages.
+//!
+//! ## Dispatch model
+//!
+//! All editing operations are expressed as `*Requested` messages (e.g.
+//! [`DeleteBackwardRequested`], [`MoveCursorLeftRequested`]). Systems send a
+//! message; handler systems in this crate apply it to the focused
+//! [`TextEditor`] entity. Hosts can send the same messages programmatically to
+//! drive the editor without simulating keystrokes.
+//!
+//! ## Key components
+//!
+//! - **[`TextEditor`]** — marker that opts an entity into editable-text
+//!   handling. Cascades [`CursorState`], [`SelectionState`],
+//!   [`EditHistoryState`], and [`EditTheme`].
+//! - **[`CursorState`]** — cursor position as a rope char offset.
+//! - **[`SelectionState`]** — multi-cursor selection ranges.
+//! - **[`EditHistoryState`]** — undo/redo stack.
+//! - **[`CursorSettings`]** — caret shape, blink rate, key-repeat timing.
+//! - **[`ClipboardResource`]** — swappable clipboard backend
+//!   ([`SystemClipboard`] by default when the `arboard` feature is on).
+//!
+//! ## Quick start
+//!
+//! ```rust,no_run
+//! use bevy::prelude::*;
+//! use bevy_text_engine::prelude::*;
+//! use bevy_text_editor::TextEditorPlugin;
+//!
+//! App::new()
+//!     .add_plugins(DefaultPlugins)
+//!     .add_plugins(TextEnginePlugins)
+//!     .add_plugins(TextEditorPlugin::default())
+//!     .add_systems(Startup, |mut commands: Commands| {
+//!         commands.spawn((
+//!             bevy_text_editor::TextEditor,
+//!             TextBuffer::from_str("edit me"),
+//!             TextViewViewport::default(),
+//!             FontConfig::default(),
+//!         ));
+//!     })
+//!     .run();
+//! ```
 
 pub mod anchor;
 pub mod clipboard;

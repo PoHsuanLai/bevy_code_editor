@@ -1,20 +1,32 @@
 //! GPU-accelerated text rendering engine for Bevy.
 //!
-//! Provides primitives for building text-heavy UIs (editors, terminals,
-//! chat panels, log viewers): a glyph atlas, instanced GPU rendering, a
-//! `DisplayLayout` snapshot type, and an overlay system. Knows nothing
-//! about editing, cursors, syntax, or input — those belong to consumer
-//! crates.
+//! Rasterizes glyphs via [cosmic-text](https://docs.rs/cosmic-text), shapes
+//! lines, and issues one instanced GPU draw call per text view. The crate is
+//! pure rendering infrastructure — it owns no cursor, no selection, no input
+//! handling, and no application-level concepts. Feed it styled text; it draws it.
 //!
-//! - [`gpu`]: glyph atlas, instanced rendering pipeline, WGSL shaders.
-//! - [`view`]: `TextView`, `TextBuffer`, `ScrollState`, `ContentMetrics`,
-//!   `DisplayLayout`, `ShapedLine`, `StyleRun`, `RectOverlay`,
-//!   `render_layout`, `TextEnginePlugin`, `TextEnginePlugins`.
+//! ## Concepts
 //!
-//! Scroll *state* (offset, content size, viewport size) is exposed via
-//! `ScrollState` and `ContentMetrics` on each `TextView` entity. The engine
-//! does not render its own scrollbar — hosts wire up `bevy_ui` scrollbars,
-//! custom overlays, or no scrollbar at all.
+//! A **[`TextView`]** is the entity marker. Pair it with:
+//!
+//! - **[`TextBuffer`]** — the rope-backed text content and a version counter.
+//! - **[`TextViewViewport`]** — size, scroll offsets, and gutter geometry.
+//! - **[`FontConfig`]** — font path, size, and line height.
+//! - **[`RenderTheme`]** — background and foreground colors.
+//! - **[`LineStyles`]** — per-line [`StyleRun`] lists (colors, bold, italic,
+//!   inline backgrounds). Producers write this; the engine reads it.
+//! - **[`HiddenLines`]** — which buffer lines to skip (e.g. folded regions).
+//! - **[`LayoutWrap`]** — optional soft-wrap budget in pixels.
+//! - **[`TextViewOverlays`]** — decoration rectangles (cursors, selections,
+//!   highlights) written by the host each frame.
+//!
+//! The engine produces a **[`DisplayLayout`]** — an immutable per-frame snapshot
+//! of shaped lines — and renders it. Hosts that need pixel-accurate hit-testing
+//! or overlay placement read `DisplayLayout` and the [`RowMetrics`] /
+//! [`BufferAnchorParam`] helpers.
+//!
+//! **Scroll state** ([`ScrollState`], [`ContentMetrics`]) is data only; the
+//! engine does not render a scrollbar — attach your own or skip it.
 //!
 //! ## Quick start
 //!
@@ -25,6 +37,14 @@
 //! App::new()
 //!     .add_plugins(DefaultPlugins)
 //!     .add_plugins(TextEnginePlugins)
+//!     .add_systems(Startup, |mut commands: Commands| {
+//!         commands.spawn((
+//!             TextView,
+//!             TextBuffer::from_str("hello world"),
+//!             TextViewViewport::default(),
+//!             FontConfig::default(),
+//!         ));
+//!     })
 //!     .run();
 //! ```
 

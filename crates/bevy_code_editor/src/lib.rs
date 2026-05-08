@@ -1,8 +1,14 @@
-//! # Bevy Code Editor
+//! Full-featured code editor plugin for Bevy.
 //!
-//! Code editor plugin for Bevy. The editor is one consumer of the
-//! [`bevy_text_engine`] text rendering primitives — see also
-//! [`crate::text_view`] for the lower-level `TextView` API.
+//! Composes the rendering, editing, syntax, and LSP layers into a
+//! ready-to-use IDE widget. Spawn [`CodeEditor`] and the `#[require]`
+//! cascade brings in everything — cursor, selection, edit history, syntax
+//! highlighting, bracket matching, code folding, and (with the `lsp` feature)
+//! completion, hover, diagnostics, and rename.
+//!
+//! All configuration is per-entity: two editors in the same app can have
+//! different fonts, themes, indentation rules, or keymaps. See [`settings`]
+//! for the full list of configurable components.
 //!
 //! ## Quick start
 //!
@@ -13,24 +19,11 @@
 //! App::new()
 //!     .add_plugins(DefaultPlugins)
 //!     .add_plugins(CodeEditorPlugins)
-//!     .add_systems(Startup, |mut commands: Commands| {
-//!         commands.spawn(Camera2d);
-//!     })
 //!     .run();
 //! ```
 //!
-//! [`crate::plugin::CodeEditorPlugins`] is the full bundle: GPU rendering, interaction,
-//! editor sub-plugins (cursor / syntax / folding / brackets / UI), and
-//! the editor's own [`crate::plugin::CodeEditorPlugin`] core. The bare
-//! `CodeEditorPlugin` is the editor logic on its own — for hosts that
-//! compose with their own [`bevy_text_engine::TextEnginePlugins`],
-//! `EditorUiPlugin`, etc., and need to avoid double-adds. Disable
-//! individual plugins in the group with
-//! `CodeEditorPlugins.build().disable::<EditorUiPlugin>()`.
-//!
-//! Per-entity configuration lives on components — to start with a
-//! different font size, override
-//! [`bevy_text_engine::FontConfig`] when spawning:
+//! The default spawn (from `CodeEditorPlugin::build`) creates one `CodeEditor`
+//! entity that auto-sizes to the window. Override at spawn time to customize:
 //!
 //! ```rust,no_run
 //! # use bevy::prelude::*;
@@ -42,14 +35,25 @@
 //!         commands.spawn((
 //!             CodeEditor,
 //!             FontConfig::from_size(18.0).with_line_height_multiplier(1.4),
+//!             ThemeConfig { background: bevy::color::palettes::css::DARK_SLATE_GRAY.into(), ..default() },
 //!         ));
 //!     })
 //!     .run();
 //! ```
 //!
-//! Customizing keybindings: spawn an `EditorInputManager` with your own
-//! `InputMap<EditorAction>` *before* `PostStartup`; the plugin's default
-//! input manager is gated on no existing one being present.
+//! ## Plugin composition
+//!
+//! [`crate::plugin::CodeEditorPlugins`] is the full bundle. For hosts that
+//! already add parts of the stack (e.g. a custom [`bevy_text_engine::TextEnginePlugins`]),
+//! use [`crate::plugin::CodeEditorPlugin`] alone and add only the sub-plugins
+//! you need, or disable specific ones:
+//! `CodeEditorPlugins.build().disable::<EditorUiPlugin>()`.
+//!
+//! ## Keybindings
+//!
+//! Spawn an `EditorInputManager` with your own `InputMap<EditorAction>` before
+//! `PostStartup`; the plugin's default input manager is gated on no existing
+//! one being present.
 
 pub mod display_map;
 pub mod input;

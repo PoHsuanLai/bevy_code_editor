@@ -1,9 +1,46 @@
 //! Component-driven tree-sitter integration for Bevy.
 //!
-//! Spawn [`Language`] + [`ParseSourceComp`] + [`SyntaxTree`] on an entity;
-//! [`TreeSitterPlugin`] drives async parsing and writes results back via
-//! `Changed<SyntaxTree>`. Consumers map [`HighlightRange::capture_name`]
-//! (e.g. `"keyword"`, `"function.method"`) to colors, outline entries, etc.
+//! Parses text into syntax trees on a background thread and exposes the
+//! results as ECS components. This crate is rendering-agnostic — it produces
+//! structured data ([`SyntaxTree`], [`HighlightRange`]); what you do with
+//! that data (color tokens, build an outline panel, feed an AI agent) is up
+//! to the host.
+//!
+//! ## Concepts
+//!
+//! Attach these components to an entity to opt into async parsing:
+//!
+//! - **[`Language`]** — which grammar to use. Construct from a
+//!   `tree_sitter::Language` (e.g. `tree_sitter_rust::LANGUAGE`).
+//! - **[`ParseSourceComp`]** — wraps a [`ParseSource`] implementor that
+//!   provides the text content and a version counter. The plugin polls
+//!   `content_version()` each frame; a bump triggers a re-parse.
+//! - **[`SyntaxTree`]** — written back by the plugin when parsing completes.
+//!   Subscribe with `Changed<SyntaxTree>` to react to new trees.
+//!
+//! To get highlight ranges from a tree, attach a [`SyntaxProvider`] (built
+//! via [`TreeSitterProvider`]) to the same entity and query
+//! [`HighlightRange`] items. Each range carries a
+//! [`HighlightRange::capture_name`] (e.g. `"keyword"`, `"function.method"`,
+//! `"comment"`) — map these to colors, decorations, or whatever the host needs.
+//!
+//! ## What this crate does NOT provide
+//!
+//! - Color mapping or theming — hosts decide what `"keyword"` looks like
+//! - Rendering — feed the ranges to `bevy_text_engine` `LineStyles` or any other renderer
+//! - Folding or code navigation — those are host concerns
+//!
+//! ## Quick start
+//!
+//! ```rust,no_run
+//! use bevy::prelude::*;
+//! use bevy_tree_sitter::{Language, TreeSitterPlugin};
+//!
+//! App::new()
+//!     .add_plugins(DefaultPlugins)
+//!     .add_plugins(TreeSitterPlugin)
+//!     .run();
+//! ```
 
 pub mod highlight;
 pub mod language;

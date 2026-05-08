@@ -1,14 +1,56 @@
-//! LSP protocol layer for Bevy: JSON-RPC over stdio with per-entity Components
-//! ([`LspClient`], [`LspDocument`], [`ServerCapabilities`]) so a host can run
-//! many editors/servers at once. No popup state, fuzzy matching, or rendering —
-//! UI lives in the host.
+//! Language Server Protocol transport for Bevy.
 //!
-//! Coverage: every typed request and notification in the LSP 3.17 spec is
-//! relayed through here, regardless of whether the in-tree editor consumes
-//! it. Hosts that want to build (say) an outline panel from
-//! `documentSymbol`, a workspace-wide quick-open from `workspace/symbol`,
-//! or a code-intel inspector from the call/type hierarchy responses just
-//! need to send the request and subscribe to the matching message.
+//! Manages a JSON-RPC stdio connection to a language server as ECS components.
+//! This crate is UI-agnostic — it speaks the wire protocol and delivers
+//! typed responses as Bevy messages. What you do with those responses
+//! (completion popups, hover tooltips, inline diagnostics, outline panels)
+//! is entirely up to the host.
+//!
+//! ## Concepts
+//!
+//! Attach these components to an entity (one per language server session):
+//!
+//! - **[`LspClient`]** — the live connection to the server. Call
+//!   [`LspClient::send`] with an [`LspMessage`] to issue a request or
+//!   notification; responses arrive as Bevy messages on the same entity.
+//! - **[`LspDocument`]** — tracks the URI and version for one open file.
+//!   Required on entities that need per-document requests (completion, hover,
+//!   diagnostics). Not cascaded automatically — the host supplies the URI.
+//! - **[`ServerCapabilities`]** — server feature flags negotiated during
+//!   `initialize`. Query this before sending optional requests.
+//!
+//! ## Dispatch model
+//!
+//! [`LspPlugin`] drains the async transport each frame and fans server
+//! responses out as typed `Lsp*Response` Bevy messages tagged with the
+//! originating entity. Subscribe with `MessageReader<LspCompletionResponse>`,
+//! `MessageReader<LspDiagnosticsResponse>`, etc. to react without owning the
+//! client directly. Coverage is the full LSP 3.17 spec.
+//!
+//! ## Rope ↔ LSP position helpers
+//!
+//! The [`pos`] module converts between `ropey` rope offsets and LSP
+//! `Position` / byte offsets in UTF-8, UTF-16, or UTF-32 encodings, matching
+//! whatever `positionEncoding` the server negotiated.
+//!
+//! ## What this crate does NOT provide
+//!
+//! - Completion popup state or fuzzy matching
+//! - Hover tooltip rendering
+//! - Inline diagnostic squiggles
+//! - Any UI whatsoever — all of that lives in the host
+//!
+//! ## Quick start
+//!
+//! ```rust,no_run
+//! use bevy::prelude::*;
+//! use bevy_lsp::{LspPlugin, LspClient, LspMessage};
+//!
+//! App::new()
+//!     .add_plugins(DefaultPlugins)
+//!     .add_plugins(LspPlugin)
+//!     .run();
+//! ```
 
 pub mod capabilities;
 pub mod client;
