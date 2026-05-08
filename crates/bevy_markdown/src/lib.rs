@@ -34,7 +34,7 @@
 //!
 //! ```rust,no_run
 //! use bevy::prelude::*;
-//! use bevy_text_engine::TextEnginePlugins;
+//! use bevy_instanced_text::TextEnginePlugins;
 //! use bevy_markdown::{MarkdownViewerPlugin, MarkdownDoc};
 //!
 //! App::new()

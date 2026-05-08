@@ -5,7 +5,7 @@ use crate::settings::*;
 use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
 use crate::types::*;
 use bevy::prelude::*;
-use bevy_text_engine::FontConfig;
+use bevy_instanced_text::FontConfig;
 
 pub struct BracketPlugin;
 
@@ -185,8 +185,8 @@ pub(crate) fn update_bracket_highlight(
             // moves in lockstep.
             let baseline = layout
                 .map(|l| l.baseline_offset)
-                .unwrap_or(font.font_size * bevy_text_engine::DEFAULT_BASELINE_OFFSET_RATIO);
-            let metrics = bevy_text_engine::row_metrics_with_baseline(
+                .unwrap_or(font.font_size * bevy_instanced_text::DEFAULT_BASELINE_OFFSET_RATIO);
+            let metrics = bevy_instanced_text::row_metrics_with_baseline(
                 viewport, scroll, font, baseline,
             );
             let use_box_style = matches!(brackets.style, BracketHighlightStyle::Background)

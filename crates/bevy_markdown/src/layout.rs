@@ -1,6 +1,6 @@
 //! Markdown Block IR → engine `Block` stream.
 //!
-//! Walks `Vec<parse::Block>` and emits a flat `Vec<bevy_text_engine::Block>`
+//! Walks `Vec<parse::Block>` and emits a flat `Vec<bevy_instanced_text::Block>`
 //! that the engine's `Block::layout` stacks into a `DisplayLayout`. Each
 //! engine block carries its own `StyleRun`s for per-character styling
 //! (bold/italic/inline code/links) and may bring `block_bg` /
@@ -11,7 +11,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use bevy_text_engine::{
+use bevy_instanced_text::{
     for_each_row_in_buffer_span, Block as EBlock, BlockLayoutConfig, DisplayLayout, RectOverlay,
     RowPosition, RowVertical, StyleRun, TextDecoration,
 };
@@ -682,7 +682,7 @@ fn blockquote_bar_overlay(display_row: u32, _pos: RowPosition, ctx: &OverlayCont
         vertical: RowVertical::FullLeaded,
         color: ctx.theme.decor.blockquote_bar,
         z: BLOCKQUOTE_BAR_Z,
-        corners: bevy_text_engine::CornerRadii::ZERO,
+        corners: bevy_instanced_text::CornerRadii::ZERO,
     }
 }
 
@@ -697,7 +697,7 @@ fn rule_overlay(display_row: u32, _pos: RowPosition, ctx: &OverlayContext) -> Re
         },
         color: ctx.theme.decor.rule_color,
         z: DECORATION_Z,
-        corners: bevy_text_engine::CornerRadii::ZERO,
+        corners: bevy_instanced_text::CornerRadii::ZERO,
     }
 }
 

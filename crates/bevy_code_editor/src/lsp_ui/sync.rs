@@ -17,7 +17,7 @@ use bevy::prelude::*;
 use crate::settings::*;
 use crate::text_view::TextBuffer;
 use crate::types::{CodeEditor, CursorState};
-use bevy_text_engine::FontConfig;
+use bevy_instanced_text::FontConfig;
 
 use super::components::*;
 use super::state::{

@@ -10,8 +10,8 @@ keywords = ["bevy", "editor", "code-editor", "syntax-highlighting"]
 categories = ["game-development", "text-editors"]
 
 [dependencies]
-bevy_text_engine = { path = "../bevy_text_engine" }
-bevy_text_editor = { path = "../bevy_text_editor" }
+bevy_instanced_text = { path = "../bevy_instanced_text" }
+bevy_instanced_text_edit = { path = "../bevy_instanced_text_edit" }
 bevy_tree_sitter = { path = "../bevy_tree_sitter", optional = true }
 bevy_lsp = { path = "../bevy_lsp", optional = true }
 

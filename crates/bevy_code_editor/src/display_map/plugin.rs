@@ -1,7 +1,7 @@
 //! `DisplayMapPlugin` — plumbs the editor's fold / syntax / wrap state into
 //! the engine's per-frame layout system via plain-data Components.
 //!
-//! The engine's `produce_layouts` (in `bevy_text_engine::view::layout_builder`)
+//! The engine's `produce_layouts` (in `bevy_instanced_text::view::layout_builder`)
 //! reads `HiddenLines` / `LineStyles` / `LayoutWrap` Components off each
 //! `TextView` entity and drives layout production itself. This plugin owns:
 //!
@@ -13,7 +13,7 @@
 //!   `.before(LayoutProduceSet)`.
 
 use bevy::prelude::*;
-use bevy_text_engine::{
+use bevy_instanced_text::{
     visible_buffer_range, FontConfig, HiddenLines, LayoutProduceSet, LayoutWrap, LineStyles,
     RunWithText, ScrollState, TextBuffer, TextViewViewport,
 };

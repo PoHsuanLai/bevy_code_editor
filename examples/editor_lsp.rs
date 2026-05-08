@@ -23,13 +23,13 @@ use bevy_code_editor::lsp_ui::state::{
     LspCodeActionsPopup, LspCompletionPopup, LspHoverPopup, LspRenamePopup, LspSignatureHelpPopup,
 };
 use bevy_code_editor::prelude::*;
-use bevy_text_engine::FontConfig;
+use bevy_instanced_text::FontConfig;
 use bevy_code_editor::text_view::TextViewViewport;
 use bevy_code_editor::types::{CodeEditor, CursorState};
 use bevy_egui::{egui, EguiContexts};
 use bevy_lsp::{LspClient, LspDocument, LspMessage};
 use bevy_markdown::{MarkdownDoc, MarkdownLinks, MarkdownViewerPlugin};
-use bevy_text_engine::{ContentMetrics, DisplayLayout, ScrollState, TextBuffer, TextView};
+use bevy_instanced_text::{ContentMetrics, DisplayLayout, ScrollState, TextBuffer, TextView};
 #[cfg(feature = "tree-sitter")]
 use bevy_tree_sitter::Language;
 
@@ -104,7 +104,7 @@ impl Plugin for LspEguiUiPlugin {
                 // same draw call as glyphs. Must run before
                 // `TextViewRenderSet` (which consumes overlays) — same
                 // ordering requirement as selection / cursor.
-                render_document_highlights.before(bevy_text_engine::TextViewRenderSet),
+                render_document_highlights.before(bevy_instanced_text::TextViewRenderSet),
             )
                 .in_set(LspUiRenderSet),
         );
@@ -193,7 +193,7 @@ fn render_inlay_hints(
     // for the same pattern.
     hint_query: Query<(Entity, &InlayHintData)>,
     editors: Query<(Entity, &FontConfig), With<CodeEditor>>,
-    metrics: bevy_text_engine::RowMetricsParam,
+    metrics: bevy_instanced_text::RowMetricsParam,
     theme: Res<InlineDecorationsTheme>,
 ) {
     let Ok((editor_entity, font)) = editors.single() else {
@@ -268,7 +268,7 @@ fn render_inlay_hints(
 fn render_document_highlights(
     highlight_query: Query<&DocumentHighlightData>,
     mut editors: Query<
-        (&FontConfig, &DisplayLayout, &mut bevy_text_engine::TextViewOverlays),
+        (&FontConfig, &DisplayLayout, &mut bevy_instanced_text::TextViewOverlays),
         With<CodeEditor>,
     >,
     theme: Res<InlineDecorationsTheme>,
@@ -340,13 +340,13 @@ fn render_document_highlights(
             continue;
         }
 
-        overlays.rects.push(bevy_text_engine::RectOverlay {
+        overlays.rects.push(bevy_instanced_text::RectOverlay {
             display_row,
             x_range: start_x..end_x,
-            vertical: bevy_text_engine::RowVertical::Full,
+            vertical: bevy_instanced_text::RowVertical::Full,
             color,
             z: -2,
-            corners: bevy_text_engine::CornerRadii::ZERO,
+            corners: bevy_instanced_text::CornerRadii::ZERO,
         });
         pushed += 1;
     }
@@ -371,7 +371,7 @@ struct LspEguiViewportOffset {
 /// Cursor screen position (x, y at top of cursor line) for an egui
 /// popup anchor.
 ///
-/// Thin wrapper over [`bevy_text_engine::BufferAnchorParam`] that adds
+/// Thin wrapper over [`bevy_instanced_text::BufferAnchorParam`] that adds
 /// the host's panel-screen offset on top of the editor-relative anchor
 /// the engine returns. The engine knows where things are inside the
 /// editor; the host knows where the editor is on screen — they
@@ -379,7 +379,7 @@ struct LspEguiViewportOffset {
 fn cursor_screen_pos(
     char_index: usize,
     editor: Entity,
-    anchors: &bevy_text_engine::BufferAnchorParam,
+    anchors: &bevy_instanced_text::BufferAnchorParam,
     viewport_offset: &LspEguiViewportOffset,
 ) -> (f32, f32) {
     let Some(anchor) = anchors.at_rope_char_index(editor, char_index) else {
@@ -443,7 +443,7 @@ fn render_completion_egui(
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&TextViewViewport, With<CodeEditor>>,
-    anchors: bevy_text_engine::BufferAnchorParam,
+    anchors: bevy_instanced_text::BufferAnchorParam,
 ) {
     let Ok((editor, completion_state, cursor_state, font)) = query.single() else {
         return;
@@ -626,7 +626,7 @@ fn render_hover_egui(
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&TextViewViewport, With<CodeEditor>>,
-    anchors: bevy_text_engine::BufferAnchorParam,
+    anchors: bevy_instanced_text::BufferAnchorParam,
 ) {
     let Ok((editor, hover_state, completion_state, font)) = query.single() else {
         return;
@@ -713,7 +713,7 @@ fn render_hover_markdown(
     editors: Query<(Entity, &LspHoverPopup, &FontConfig), With<CodeEditor>>,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&TextViewViewport, With<CodeEditor>>,
-    anchors: bevy_text_engine::BufferAnchorParam,
+    anchors: bevy_instanced_text::BufferAnchorParam,
     existing: Query<Entity, With<MarkdownHoverPopup>>,
 ) {
     let Ok((editor, hover_state, font)) = editors.single() else {
@@ -852,7 +852,7 @@ fn render_signature_help_egui(
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&TextViewViewport, With<CodeEditor>>,
-    anchors: bevy_text_engine::BufferAnchorParam,
+    anchors: bevy_instanced_text::BufferAnchorParam,
 ) {
     let Ok((editor, sig_state, cursor_state, font)) = query.single() else {
         return;
@@ -979,7 +979,7 @@ fn render_code_actions_egui(
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&TextViewViewport, With<CodeEditor>>,
-    anchors: bevy_text_engine::BufferAnchorParam,
+    anchors: bevy_instanced_text::BufferAnchorParam,
 ) {
     let Ok((editor, action_state, cursor_state, font)) = query.single() else {
         return;
@@ -1092,7 +1092,7 @@ fn render_rename_egui(
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&TextViewViewport, With<CodeEditor>>,
-    anchors: bevy_text_engine::BufferAnchorParam,
+    anchors: bevy_instanced_text::BufferAnchorParam,
 ) {
     let Ok((editor, mut rename_state, lsp_client, lsp_document, font)) = query.single_mut() else {
         return;
@@ -1179,7 +1179,7 @@ fn setup_editor(
     mut commands: Commands,
     mut editor_query: Query<(Entity, &mut LspClient), With<CodeEditor>>,
     runtime: Res<bevy_lsp::bevy_tokio_tasks::TokioTasksRuntime>,
-    mut set_text_writer: MessageWriter<bevy_text_editor::SetTextRequested>,
+    mut set_text_writer: MessageWriter<bevy_instanced_text_edit::SetTextRequested>,
 ) {
     let Ok((editor_entity, mut lsp_client)) = editor_query.single_mut() else {
         return;
@@ -1190,7 +1190,7 @@ fn setup_editor(
     let rust_code =
         std::fs::read_to_string(&example_file_path).expect("Failed to read example file");
 
-    set_text_writer.write(bevy_text_editor::SetTextRequested {
+    set_text_writer.write(bevy_instanced_text_edit::SetTextRequested {
         entity: editor_entity,
         text: rust_code.clone(),
     });

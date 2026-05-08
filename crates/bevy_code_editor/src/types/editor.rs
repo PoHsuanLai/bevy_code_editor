@@ -1,7 +1,7 @@
 //! Editor component types — pure data definitions, no logic.
 //!
 //! The editable-text Components (`CursorState`, `SelectionState`,
-//! `EditHistoryState`) are defined in [`bevy_text_editor`] and re-exported
+//! `EditHistoryState`) are defined in [`bevy_instanced_text_edit`] and re-exported
 //! through `crate::types`. Operational helpers live in `input/`:
 //! - `input/editor_ops.rs` — free fns for search and editor cursor movement
 //! - `input/multi_cursor.rs` — multi-cursor add/remove
@@ -28,7 +28,7 @@ impl Default for ViewportConfig {
 
 /// Marker component for a code editor entity.
 ///
-/// `#[require]` cascades [`bevy_text_editor::TextEditor`] (which transitively
+/// `#[require]` cascades [`bevy_instanced_text_edit::TextEditor`] (which transitively
 /// brings the engine `TextView`, cursor / selection / edit-history state,
 /// and pointer-interaction state) plus the IDE-specific Components — fold
 /// state, bracket matching, syntax cache, goto-line dialog, LSP UI state.
@@ -39,7 +39,7 @@ impl Default for ViewportConfig {
 #[cfg_attr(
     not(feature = "lsp"),
     require(
-        bevy_text_editor::TextEditor,
+        bevy_instanced_text_edit::TextEditor,
         BracketMatchState,
         crate::types::fold::GotoLineState,
         crate::types::fold::FoldState,
@@ -56,7 +56,7 @@ impl Default for ViewportConfig {
 #[cfg_attr(
     feature = "lsp",
     require(
-        bevy_text_editor::TextEditor,
+        bevy_instanced_text_edit::TextEditor,
         BracketMatchState,
         crate::types::fold::GotoLineState,
         crate::types::fold::FoldState,
@@ -133,10 +133,10 @@ pub struct IndentGuide {
 
 /// Per-input-manager key-repeat state for editor actions.
 ///
-/// Re-export of the generic [`bevy_text_editor::KeyRepeatState`] specialized
+/// Re-export of the generic [`bevy_instanced_text_edit::KeyRepeatState`] specialized
 /// to [`crate::input::EditorAction`]. Attached to the same entity as
 /// `EditorInputManager`.
-pub type KeyRepeatState = bevy_text_editor::KeyRepeatState<crate::input::EditorAction>;
+pub type KeyRepeatState = bevy_instanced_text_edit::KeyRepeatState<crate::input::EditorAction>;
 
 /// Represents a matched bracket pair
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Reflect)]

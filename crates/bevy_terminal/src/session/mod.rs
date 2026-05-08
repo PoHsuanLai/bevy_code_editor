@@ -8,7 +8,7 @@ use std::thread::JoinHandle;
 use bevy::input_focus::InputFocus;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
-use bevy_text_engine::{FontConfig, TextViewViewport};
+use bevy_instanced_text::{FontConfig, TextViewViewport};
 use parking_lot::Mutex;
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, PtySize};
 

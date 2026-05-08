@@ -14,7 +14,7 @@
 //! ```rust,no_run
 //! # use bevy::prelude::*;
 //! # use bevy_code_editor::prelude::*;
-//! # use bevy_text_engine::FontConfig;
+//! # use bevy_instanced_text::FontConfig;
 //! // Minimal — auto-sizes to window, default theme and keybindings.
 //! commands.spawn(CodeEditor);
 //!
@@ -43,10 +43,10 @@
 //!   context extraction, or custom overlays.
 //! - [`crate::types::editor::BracketMatchState`] — the matched bracket pair
 //!   under the cursor, if any.
-//! - [`bevy_text_editor::CursorState`], [`bevy_text_editor::SelectionState`],
-//!   [`bevy_text_editor::EditHistoryState`] — cursor position, selections, and
+//! - [`bevy_instanced_text_edit::CursorState`], [`bevy_instanced_text_edit::SelectionState`],
+//!   [`bevy_instanced_text_edit::EditHistoryState`] — cursor position, selections, and
 //!   undo stack from the editing layer.
-//! - [`bevy_text_engine::DisplayLayout`] — the shaped-line snapshot used for
+//! - [`bevy_instanced_text::DisplayLayout`] — the shaped-line snapshot used for
 //!   rendering; also useful for hit-testing and overlay placement.
 //!
 //! ## Quick start
@@ -90,7 +90,7 @@ pub mod prelude {
     //! Engine-side primitives (`TextView`, `FontConfig`, `DisplayLayout`,
     //! `TextBuffer`, `ScrollState`, `ContentMetrics`, `TextViewViewport`,
     //! `TextEnginePlugin`, `TextEnginePlugins`) come in via
-    //! `bevy_text_engine::prelude::*`. The
+    //! `bevy_instanced_text::prelude::*`. The
     //! editor adds: the editor plugin (+ `standalone()`'s plugin group), the
     //! UI plugin, the interaction plugin, the `CodeEditor` marker, and the
     //! handful of file/save events + scroll config that hosts touch
@@ -102,7 +102,7 @@ pub mod prelude {
     // Engine surface — TextEnginePlugins, TextEnginePlugin, TextView,
     // FontConfig, DisplayLayout, TextBuffer, ScrollState, ContentMetrics,
     // TextViewViewport.
-    pub use bevy_text_engine::prelude::*;
+    pub use bevy_instanced_text::prelude::*;
 
     // Editor plugin + its standalone PluginGroup, and the interaction +
     // UI plugins that hosts compose with.
@@ -114,9 +114,9 @@ pub mod prelude {
     #[cfg(feature = "tree-sitter")]
     pub use crate::types::events::SetLanguageRequested;
 
-    // Editable-text widget types from `bevy_text_editor`. Re-exported so
+    // Editable-text widget types from `bevy_instanced_text_edit`. Re-exported so
     // prelude users get them without a separate import.
-    pub use bevy_text_editor::{
+    pub use bevy_instanced_text_edit::{
         ScrollConfig, TextEditor, TextEditorPlugin, TextInteractionPlugin,
     };
 

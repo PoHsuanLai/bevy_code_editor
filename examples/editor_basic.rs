@@ -46,7 +46,7 @@ fn debug_toggles(
     mut text_batches: Query<
         &mut Visibility,
         (
-            With<bevy_text_engine::view::render::GlyphBatchComponent>,
+            With<bevy_instanced_text::view::render::GlyphBatchComponent>,
             Without<bevy_code_editor::plugin::gpu_line_numbers::GpuLineNumbersBatch>,
         ),
     >,
@@ -57,7 +57,7 @@ fn debug_toggles(
     all_batches: Query<(
         Entity,
         Option<&Name>,
-        &bevy_text_engine::view::render::GlyphBatchComponent,
+        &bevy_instanced_text::view::render::GlyphBatchComponent,
     )>,
 ) {
     if mouse.just_pressed(MouseButton::Back) {
@@ -118,7 +118,7 @@ fn setup_camera(mut commands: Commands) {
 fn setup_editor(
     editor_query: Query<Entity, With<CodeEditor>>,
     mut input_focus: ResMut<bevy::input_focus::InputFocus>,
-    mut set_text_writer: MessageWriter<bevy_text_editor::SetTextRequested>,
+    mut set_text_writer: MessageWriter<bevy_instanced_text_edit::SetTextRequested>,
 ) {
     let Ok(entity) = editor_query.single() else {
         return;
@@ -176,7 +176,7 @@ if __name__ == "__main__":
     main()
 "#;
 
-    set_text_writer.write(bevy_text_editor::SetTextRequested {
+    set_text_writer.write(bevy_instanced_text_edit::SetTextRequested {
         entity,
         text: initial_text.to_string(),
     });

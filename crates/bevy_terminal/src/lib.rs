@@ -90,5 +90,5 @@ pub mod prelude {
         TerminalScrollback, TerminalShellInfo,
     };
     // Re-export the bits hosts need to spawn a styled BevyTerminal.
-    pub use bevy_text_engine::{FontConfig, TextViewViewport};
+    pub use bevy_instanced_text::{FontConfig, TextViewViewport};
 }

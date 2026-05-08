@@ -4,14 +4,14 @@ version = "0.1.0"
 edition = "2021"
 authors = ["PoHsuanLai"]
 license = "MIT OR Apache-2.0"
-description = "Embeddable terminal widget for Bevy. PTY + VT parser via wezterm-term; rendering via bevy_text_engine; selection and clipboard via bevy_text_editor."
+description = "Embeddable terminal widget for Bevy. PTY + VT parser via wezterm-term; rendering via bevy_instanced_text; selection and clipboard via bevy_instanced_text_edit."
 repository = "https://github.com/PoHsuanLai/bevy_code_editor"
 keywords = ["bevy", "terminal", "pty", "vt100", "wezterm"]
 categories = ["game-development", "command-line-interface"]
 
 [dependencies]
-bevy_text_engine = { path = "../bevy_text_engine" }
-bevy_text_editor = { path = "../bevy_text_editor", default-features = false }
+bevy_instanced_text = { path = "../bevy_instanced_text" }
+bevy_instanced_text_edit = { path = "../bevy_instanced_text_edit", default-features = false }
 
 bevy = { version = "0.18", default-features = false, features = [
     "bevy_render",
@@ -55,6 +55,6 @@ bevy_code_editor = { path = "../bevy_code_editor" }
 default = ["arboard"]
 # `arboard`-backed clipboard. Disable for headless/web builds and inject your
 # own `ClipboardProvider` via `insert_resource(ClipboardResource::new(...))`.
-arboard = ["bevy_text_editor/arboard"]
+arboard = ["bevy_instanced_text_edit/arboard"]
 # Tracy-based performance profiling
 profile = ["bevy/trace", "bevy/trace_tracy"]

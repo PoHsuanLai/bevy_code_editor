@@ -9,7 +9,7 @@
 use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
 use bevy_markdown::{MarkdownDoc, MarkdownViewerPlugin};
-use bevy_text_engine::{
+use bevy_instanced_text::{
     ContentMetrics, DisplayLayout, FontConfig, FontSynthesis, ScrollState, TextBuffer,
     TextEnginePlugins, TextView, TextViewViewport,
 };
@@ -19,7 +19,7 @@ const SCROLL_SPEED: f32 = 40.0;
 const SAMPLE: &str = "\
 # Markdown Viewer
 
-A *markdown* viewer for Bevy. Built on **`bevy_text_engine`**, it renders \
+A *markdown* viewer for Bevy. Built on **`bevy_instanced_text`**, it renders \
 rich text with real bold and italic faces (or synthesizes them when no \
 matching face is loaded).
 

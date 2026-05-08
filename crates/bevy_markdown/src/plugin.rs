@@ -17,7 +17,7 @@
 use std::sync::Arc;
 
 use bevy::prelude::*;
-use bevy_text_engine::{
+use bevy_instanced_text::{
     ContentMetrics, DisplayLayout, FontConfig, RectOverlay, ScrollState, ShapedLine, TextBuffer,
     TextView, TextViewOverlays, TextViewViewport,
 };

@@ -12,7 +12,7 @@
 //! querying the editor state directly.
 
 use bevy::prelude::*;
-use bevy_text_engine::FontConfig;
+use bevy_instanced_text::FontConfig;
 
 use crate::settings::*;
 use crate::text_view::TextViewViewport;
@@ -28,7 +28,7 @@ use super::{
     update_gpu_line_numbers, update_indent_guides,
     update_selection_highlight, EditorSetupSet,
 };
-use bevy_text_engine::gpu::GlyphAtlas;
+use bevy_instanced_text::gpu::GlyphAtlas;
 
 use super::{update_bracket_highlight, update_bracket_match};
 
@@ -59,16 +59,13 @@ impl Plugin for EditorUiPlugin {
         app.add_systems(Update, update_separator_on_resize.run_if(viewport_changed));
 
         // Update layout when UI settings change
-        app.add_systems(
-            Update,
-            compute_viewport_layout.run_if(resource_changed::<UiSettings>),
-        );
+        app.add_systems(Update, compute_viewport_layout);
 
         // Update font metrics when font loads
         app.add_systems(
             Update,
             update_font_metrics
-                .run_if(bevy_text_engine::gpu::atlas_ready)
+                .run_if(bevy_instanced_text::gpu::atlas_ready)
                 .in_set(super::RenderingSet),
         );
 
@@ -77,8 +74,8 @@ impl Plugin for EditorUiPlugin {
         app.add_systems(
             Update,
             update_gpu_line_numbers
-                .after(bevy_text_engine::TextViewRenderSet)
-                .run_if(bevy_text_engine::gpu::atlas_ready)
+                .after(bevy_instanced_text::TextViewRenderSet)
+                .run_if(bevy_instanced_text::gpu::atlas_ready)
                 .in_set(super::RenderingSet),
         );
 
@@ -194,7 +191,7 @@ fn update_camera_viewport(
 
 /// Compute ViewportDimensions layout fields based on UI settings
 fn compute_viewport_layout(
-    mut viewport_query: Query<(&mut TextViewViewport, &FontConfig, &UiSettings), With<CodeEditor>>,
+    mut viewport_query: Query<(&mut TextViewViewport, &FontConfig, &UiSettings), (With<CodeEditor>, Changed<UiSettings>)>,
 ) {
     for (mut viewport, font, ui) in viewport_query.iter_mut() {
         // Compute gutter width based on line number display

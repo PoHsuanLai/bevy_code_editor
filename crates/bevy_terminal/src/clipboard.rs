@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy_text_editor::{copy_selection, ClipboardResource, SelectionState};
-use bevy_text_engine::{FontConfig, ScrollState, TextBuffer};
+use bevy_instanced_text_edit::{copy_selection, ClipboardResource, SelectionState};
+use bevy_instanced_text::{FontConfig, ScrollState, TextBuffer};
 use portable_pty::PtySize;
 
 use crate::messages::{

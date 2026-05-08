@@ -1,9 +1,9 @@
 //! Markdown-specific styling. Decorative chrome (code chips, blockquote
-//! bars, rules) is delegated to [`bevy_text_engine::BlockDecorTheme`] so
+//! bars, rules) is delegated to [`bevy_instanced_text::BlockDecorTheme`] so
 //! terminals, log viewers, and other consumers can share it.
 
 use bevy::prelude::*;
-use bevy_text_engine::BlockDecorTheme;
+use bevy_instanced_text::BlockDecorTheme;
 
 /// Markdown-specific palette: text colors, heading scales, indentation,
 /// and per-element padding. Generic block chrome (inline-code chip,

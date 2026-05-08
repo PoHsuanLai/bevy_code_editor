@@ -1,14 +1,14 @@
 //! Editor-specific mouse interactions, observer-driven via `bevy_picking`.
 //!
 //! The plain-click cursor placement, drag-extend selection, and scroll wheel
-//! handling are owned by `bevy_text_editor`'s picking observers (which apply
+//! handling are owned by `bevy_instanced_text_edit`'s picking observers (which apply
 //! to any `TextView` entity). The editor adds **modifier-click** behavior on
 //! top: alt-click adds a secondary cursor, ctrl-click triggers LSP
 //! goto-definition, and the fold-gutter strip toggles fold regions.
 //!
 //! Each behavior lives in its own observer; there's no monolithic mouse
 //! handler. Selection state is the unified `SelectionState.selections` —
-//! `bevy_text_editor::TextViewDragState` is the unified drag-tracking
+//! `bevy_instanced_text_edit::TextViewDragState` is the unified drag-tracking
 //! Component.
 //!
 //! LSP hover is similarly an observer on `Pointer<Move>`: when the cursor
@@ -26,7 +26,7 @@ use bevy::picking::events::{Pointer, Press};
 use bevy::picking::events::Move;
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
-use bevy_text_engine::{DisplayLayout, FontConfig};
+use bevy_instanced_text::{DisplayLayout, FontConfig};
 use ropey::Rope;
 
 #[cfg(feature = "lsp")]
@@ -90,7 +90,7 @@ fn screen_to_char_pos(screen_pos: Vec2, ctx: &HitTestCtx<'_>) -> usize {
 /// Fold-gutter click observer: toggle fold regions when the click lands in
 /// the narrow strip just before the gutter separator.
 ///
-/// Fires before the plain-click observer in `bevy_text_editor::interaction`
+/// Fires before the plain-click observer in `bevy_instanced_text_edit::interaction`
 /// would write selection (registered with no explicit ordering — bevy
 /// observers run in unspecified order, but the plain-click skips writing
 /// when this observer's hit consumed the click via the fold being toggled).
@@ -139,7 +139,7 @@ pub fn on_fold_gutter_press(
 
 /// Alt+click observer: add a secondary cursor at the clicked character.
 ///
-/// `bevy_text_editor::interaction::on_pointer_press` already skips writing
+/// `bevy_instanced_text_edit::interaction::on_pointer_press` already skips writing
 /// selection when Alt is held, so this observer owns the alt-click semantic
 /// exclusively — no fight with the plain-click path.
 #[allow(clippy::too_many_arguments)]

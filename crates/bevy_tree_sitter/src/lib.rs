@@ -27,7 +27,7 @@
 //! ## What this crate does NOT provide
 //!
 //! - Color mapping or theming — hosts decide what `"keyword"` looks like
-//! - Rendering — feed the ranges to `bevy_text_engine` `LineStyles` or any other renderer
+//! - Rendering — feed the ranges to `bevy_instanced_text` `LineStyles` or any other renderer
 //! - Folding or code navigation — those are host concerns
 //!
 //! ## Quick start

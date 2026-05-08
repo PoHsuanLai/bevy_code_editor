@@ -6,7 +6,7 @@
 
 use bevy::prelude::*;
 use bevy_terminal::prelude::*;
-use bevy_text_engine::TextEnginePlugins;
+use bevy_instanced_text::TextEnginePlugins;
 
 #[cfg(feature = "profile")]
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};

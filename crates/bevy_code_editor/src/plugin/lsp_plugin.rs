@@ -178,12 +178,12 @@ impl Plugin for LspPlugin {
             ),
         );
 
-        // Tabstop interception runs before the bevy_text_editor handler
+        // Tabstop interception runs before the bevy_instanced_text_edit handler
         // for `InsertTabRequested` so the session consumes the event
         // when active. Schedule explicitly via system ordering.
         app.add_systems(
             Update,
-            advance_tabstop_session.before(bevy_text_editor::handlers::edit::handle_insert_tab),
+            advance_tabstop_session.before(bevy_instanced_text_edit::handlers::edit::handle_insert_tab),
         );
     }
 }
@@ -201,7 +201,7 @@ fn sync_completion_settings(
     }
 }
 
-/// Attach [`bevy_text_editor::SnapshotPreEdit`] to any editor that has an
+/// Attach [`bevy_instanced_text_edit::SnapshotPreEdit`] to any editor that has an
 /// `LspDocument`. The marker tells `EditHistoryState::replace_range` to
 /// snapshot the rope before mutating, so `listen_text_edit_events` can
 /// build incremental `did_change` payloads with positions in the
@@ -213,13 +213,13 @@ fn attach_snapshot_pre_edit_marker(
         (
             With<CodeEditor>,
             With<bevy_lsp::LspDocument>,
-            Without<bevy_text_editor::SnapshotPreEdit>,
+            Without<bevy_instanced_text_edit::SnapshotPreEdit>,
         ),
     >,
 ) {
     for entity in q.iter() {
         commands
             .entity(entity)
-            .insert(bevy_text_editor::SnapshotPreEdit);
+            .insert(bevy_instanced_text_edit::SnapshotPreEdit);
     }
 }

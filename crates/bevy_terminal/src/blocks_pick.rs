@@ -2,7 +2,7 @@
 //! against `TerminalBlockState` and emit `TerminalBlockSelected`.
 
 use bevy::prelude::*;
-use bevy_text_engine::{DisplayLayout, ScrollState, TextViewViewport};
+use bevy_instanced_text::{DisplayLayout, ScrollState, TextViewViewport};
 
 use crate::messages::TerminalBlockSelected;
 use crate::types::TerminalBlockState;

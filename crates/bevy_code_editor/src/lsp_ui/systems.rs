@@ -8,7 +8,7 @@
 use bevy::prelude::*;
 use lsp_types::*;
 
-use bevy_text_engine::FontConfig;
+use bevy_instanced_text::FontConfig;
 use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
 use crate::types::{CodeEditor, CursorState};
 
@@ -285,7 +285,7 @@ pub fn on_lsp_references(
 pub fn on_lsp_format(
     mut events: MessageReader<LspFormatResponse>,
     q: Query<&TextBuffer, With<CodeEditor>>,
-    mut replace_writer: MessageWriter<bevy_text_editor::ReplaceRangeRequested>,
+    mut replace_writer: MessageWriter<bevy_instanced_text_edit::ReplaceRangeRequested>,
 ) {
     for ev in events.read() {
         let Ok(buffer) = q.get(ev.entity) else {
@@ -397,7 +397,7 @@ pub fn on_lsp_rename(
     mut events: MessageReader<LspRenameResponse>,
     mut q: Query<(&TextBuffer, Option<&LspDocument>, &mut LspRenamePopup), With<CodeEditor>>,
     mut workspace_edit_events: MessageWriter<WorkspaceEditEvent>,
-    mut replace_writer: MessageWriter<bevy_text_editor::ReplaceRangeRequested>,
+    mut replace_writer: MessageWriter<bevy_instanced_text_edit::ReplaceRangeRequested>,
 ) {
     for ev in events.read() {
         let Ok((buffer, lsp_document, mut rename_state)) = q.get_mut(ev.entity) else {
@@ -471,7 +471,7 @@ fn apply_text_edits(
     entity: Entity,
     buffer: &TextBuffer,
     edits: Vec<TextEdit>,
-    writer: &mut MessageWriter<bevy_text_editor::ReplaceRangeRequested>,
+    writer: &mut MessageWriter<bevy_instanced_text_edit::ReplaceRangeRequested>,
 ) {
     let mut edits_sorted = edits;
     edits_sorted.sort_by(|a, b| {
@@ -497,12 +497,12 @@ fn apply_text_edits(
             buffer.rope.len_chars()
         };
 
-        writer.write(bevy_text_editor::ReplaceRangeRequested {
+        writer.write(bevy_instanced_text_edit::ReplaceRangeRequested {
             entity,
             start_char: start_pos,
             end_char: end_pos,
             text: edit.new_text,
-            kind: bevy_text_editor::EditKind::Other,
+            kind: bevy_instanced_text_edit::EditKind::Other,
             record_history: true,
         });
     }

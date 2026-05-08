@@ -13,7 +13,7 @@
 
 use bevy::app::PluginGroupBuilder;
 use bevy::prelude::*;
-use bevy_text_engine::view::layout_builder::LayoutProduceSet;
+use bevy_instanced_text::view::layout_builder::LayoutProduceSet;
 
 use crate::drain::drain_pty_events;
 use crate::messages::*;
@@ -40,8 +40,8 @@ impl Plugin for BevyTerminalPlugin {
         if !app.is_plugin_added::<bevy::input_focus::InputDispatchPlugin>() {
             app.add_plugins(bevy::input_focus::InputDispatchPlugin);
         }
-        if !app.is_plugin_added::<bevy_text_editor::TextInteractionPlugin>() {
-            app.add_plugins(bevy_text_editor::TextInteractionPlugin);
+        if !app.is_plugin_added::<bevy_instanced_text_edit::TextInteractionPlugin>() {
+            app.add_plugins(bevy_instanced_text_edit::TextInteractionPlugin);
         }
 
         app.register_type::<BevyTerminal>()
@@ -100,10 +100,10 @@ impl Plugin for BevyTerminalPlugin {
             .add_message::<TerminalClear>();
 
         app.init_resource::<TerminalEventLoopRegistry>();
-        app.register_type::<bevy_text_editor::CursorSettings>();
-        app.register_type::<bevy_text_editor::CursorStyle>();
-        app.register_type::<bevy_text_engine::RenderTheme>();
-        app.register_type::<bevy_text_editor::EditTheme>();
+        app.register_type::<bevy_instanced_text_edit::CursorSettings>();
+        app.register_type::<bevy_instanced_text_edit::CursorStyle>();
+        app.register_type::<bevy_instanced_text::RenderTheme>();
+        app.register_type::<bevy_instanced_text_edit::EditTheme>();
 
         app.configure_sets(
             Update,
@@ -164,7 +164,7 @@ impl Plugin for BevyTerminalPlugin {
         );
 
         app.register_type::<crate::cursor::TerminalCursorCell>();
-        app.register_type::<bevy_text_editor::BlinkPhase>();
+        app.register_type::<bevy_instanced_text_edit::BlinkPhase>();
         app.add_systems(
             Update,
             (
@@ -193,11 +193,11 @@ pub struct BevyTerminalPlugins;
 impl PluginGroup for BevyTerminalPlugins {
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
-            .add(bevy_text_engine::gpu::GlyphAtlasPlugin)
-            .add(bevy_text_engine::gpu::InstancedTextRenderPlugin)
-            .add(bevy_text_engine::view::plugin::TextEnginePlugin)
+            .add(bevy_instanced_text::gpu::GlyphAtlasPlugin)
+            .add(bevy_instanced_text::gpu::InstancedTextRenderPlugin)
+            .add(bevy_instanced_text::view::plugin::TextEnginePlugin)
             .add(bevy::input_focus::InputDispatchPlugin)
-            .add(bevy_text_editor::TextInteractionPlugin)
+            .add(bevy_instanced_text_edit::TextInteractionPlugin)
             .add(BevyTerminalPlugin)
     }
 }

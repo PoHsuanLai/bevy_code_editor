@@ -22,22 +22,22 @@ use crate::backend;
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 #[require(
-    bevy_text_engine::TextView,
-    bevy_text_engine::TextBuffer,
-    bevy_text_engine::ScrollState,
-    bevy_text_engine::ContentMetrics,
-    bevy_text_engine::TextViewViewport,
-    bevy_text_engine::FontConfig,
-    bevy_text_engine::LineStyles,
-    bevy_text_engine::HiddenLines,
-    bevy_text_engine::RenderTheme,
-    bevy_text_engine::BlockDecorTheme,
-    bevy_text_editor::SelectionState,
-    bevy_text_editor::EditTheme,
-    bevy_text_editor::CursorSettings,
-    bevy_text_editor::BlinkPhase,
-    bevy_text_editor::InteractionSettings,
-    bevy_text_editor::ScrollConfig,
+    bevy_instanced_text::TextView,
+    bevy_instanced_text::TextBuffer,
+    bevy_instanced_text::ScrollState,
+    bevy_instanced_text::ContentMetrics,
+    bevy_instanced_text::TextViewViewport,
+    bevy_instanced_text::FontConfig,
+    bevy_instanced_text::LineStyles,
+    bevy_instanced_text::HiddenLines,
+    bevy_instanced_text::RenderTheme,
+    bevy_instanced_text::BlockDecorTheme,
+    bevy_instanced_text_edit::SelectionState,
+    bevy_instanced_text_edit::EditTheme,
+    bevy_instanced_text_edit::CursorSettings,
+    bevy_instanced_text_edit::BlinkPhase,
+    bevy_instanced_text_edit::InteractionSettings,
+    bevy_instanced_text_edit::ScrollConfig,
     TerminalGridSnapshot,
     TerminalShellInfo,
     TerminalInputMode,
@@ -184,9 +184,9 @@ pub enum BlockStatus {
 
 /// Per-terminal theme: ANSI 16-color palette.
 ///
-/// Pure rendering colors come from `bevy_text_engine::RenderTheme`
+/// Pure rendering colors come from `bevy_instanced_text::RenderTheme`
 /// (background, foreground); cursor + selection colors from
-/// `bevy_text_editor::EditTheme`. This component carries the
+/// `bevy_instanced_text_edit::EditTheme`. This component carries the
 /// terminal-specific 16 ANSI colors used by the grid snapshot.
 #[derive(Component, Clone, Debug, Reflect)]
 #[reflect(Component, Default, Debug)]

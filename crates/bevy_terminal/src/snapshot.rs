@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use bevy::prelude::*;
-use bevy_text_engine::{
+use bevy_instanced_text::{
     FontConfig, LineStyles, RenderTheme, RunWithText, ScrollState, StyleRun, TextBuffer,
     TextViewViewport,
 };
@@ -259,9 +259,9 @@ fn shape_phys_line(
             italic: attrs.italic(),
             font_family: None,
             decoration: if !matches!(attrs.underline(), VtUnderline::None) {
-                Some(bevy_text_engine::TextDecoration::Underline)
+                Some(bevy_instanced_text::TextDecoration::Underline)
             } else if attrs.strikethrough() {
-                Some(bevy_text_engine::TextDecoration::Strikethrough)
+                Some(bevy_instanced_text::TextDecoration::Strikethrough)
             } else {
                 None
             },

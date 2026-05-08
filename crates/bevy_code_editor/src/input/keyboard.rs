@@ -168,7 +168,7 @@ pub fn on_focused_keyboard(
             }
         }
         Key::Space => {
-            bevy_text_editor::handlers::edit::insert_char(
+            bevy_instanced_text_edit::handlers::edit::insert_char(
                 &mut sel, &mut hist, &mut cursor, &mut buffer, ' ',
             );
             #[cfg(feature = "lsp")]
@@ -216,7 +216,7 @@ fn insert_typed_char(
         }
     }
 
-    bevy_text_editor::handlers::edit::insert_char(sel, hist, cursor, buffer, c);
+    bevy_instanced_text_edit::handlers::edit::insert_char(sel, hist, cursor, buffer, c);
 
     if brackets.auto_close {
         if let Some(closing) = get_closing_bracket(c, &brackets.pairs) {

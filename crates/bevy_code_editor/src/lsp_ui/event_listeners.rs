@@ -34,7 +34,7 @@ use lsp_types::{Range, TextDocumentContentChangeEvent};
 ///
 /// Builds incremental [`TextDocumentContentChangeEvent`]s when each edit
 /// carries a pre-edit rope snapshot (the editor entity has
-/// [`bevy_text_editor::SnapshotPreEdit`]); otherwise the next flush
+/// [`bevy_instanced_text_edit::SnapshotPreEdit`]); otherwise the next flush
 /// promotes to a full-document sync. The spec guarantees full-doc is
 /// always valid, and `LspSettings::full_document_sync` forces this path
 /// for recovery.
@@ -360,19 +360,19 @@ pub fn tick_lsp_debounce_timers(
 }
 
 /// Advance the tabstop session on `Tab` / `Shift+Tab`, and end it on
-/// `Escape`. Runs **before** `bevy_text_editor::handlers::edit::handle_insert_tab`
+/// `Escape`. Runs **before** `bevy_instanced_text_edit::handlers::edit::handle_insert_tab`
 /// so we drain `InsertTabRequested` events when a session is active —
 /// the underlying handler then sees no events and inserts no tabs.
 ///
 /// `Escape` is intercepted via `ClearSelectionRequested` since that's
 /// the action the dispatcher emits for Esc.
 pub fn advance_tabstop_session(
-    mut tab_events: MessageReader<bevy_text_editor::InsertTabRequested>,
-    mut clear_events: MessageReader<bevy_text_editor::ClearSelectionRequested>,
+    mut tab_events: MessageReader<bevy_instanced_text_edit::InsertTabRequested>,
+    mut clear_events: MessageReader<bevy_instanced_text_edit::ClearSelectionRequested>,
     mut query: Query<
         (
-            &mut bevy_text_editor::SelectionState,
-            &mut bevy_text_editor::EditHistoryState,
+            &mut bevy_instanced_text_edit::SelectionState,
+            &mut bevy_instanced_text_edit::EditHistoryState,
             &mut CursorState,
             &TextBuffer,
             &mut TabstopSession,
@@ -426,9 +426,9 @@ pub fn advance_tabstop_session(
     let e = hist.resolve_anchor(&buffer.rope, &stop.end);
     cursor.cursor_pos = e;
     if s != e {
-        sel.selections = bevy_text_editor::SelectionCollection::with_selection(e, s);
+        sel.selections = bevy_instanced_text_edit::SelectionCollection::with_selection(e, s);
     } else {
-        sel.selections = bevy_text_editor::SelectionCollection::with_cursor(e);
+        sel.selections = bevy_instanced_text_edit::SelectionCollection::with_cursor(e);
     }
 }
 
@@ -440,7 +440,7 @@ pub fn end_tabstop_session_on_cursor_leave(
         (
             Ref<CursorState>,
             &TextBuffer,
-            &mut bevy_text_editor::EditHistoryState,
+            &mut bevy_instanced_text_edit::EditHistoryState,
             &mut TabstopSession,
         ),
         With<CodeEditor>,
@@ -477,8 +477,8 @@ pub fn listen_apply_completion(
     mut events: MessageReader<ApplyCompletionEvent>,
     mut query: Query<
         (
-            &mut bevy_text_editor::SelectionState,
-            &mut bevy_text_editor::EditHistoryState,
+            &mut bevy_instanced_text_edit::SelectionState,
+            &mut bevy_instanced_text_edit::EditHistoryState,
             &mut CursorState,
             &mut TextBuffer,
             &mut LspCompletionPopup,
@@ -533,7 +533,7 @@ pub fn listen_apply_completion(
             start_pos,
             cursor_pos,
             &plain_text,
-            bevy_text_editor::EditKind::Other,
+            bevy_instanced_text_edit::EditKind::Other,
             true,
         );
 
@@ -553,12 +553,12 @@ pub fn listen_apply_completion(
                     let start_anchor = hist.create_anchor(
                         &buffer.rope,
                         abs_start,
-                        bevy_text_editor::AnchorBias::Left,
+                        bevy_instanced_text_edit::AnchorBias::Left,
                     );
                     let end_anchor = hist.create_anchor(
                         &buffer.rope,
                         abs_end,
-                        bevy_text_editor::AnchorBias::Right,
+                        bevy_instanced_text_edit::AnchorBias::Right,
                     );
                     session_stops.push(SessionTabstop {
                         id: stop.id,
@@ -576,10 +576,10 @@ pub fn listen_apply_completion(
                     cursor_state.cursor_pos = e;
                     if s != e {
                         sel.selections =
-                            bevy_text_editor::SelectionCollection::with_selection(e, s);
+                            bevy_instanced_text_edit::SelectionCollection::with_selection(e, s);
                     } else {
                         sel.selections =
-                            bevy_text_editor::SelectionCollection::with_cursor(e);
+                            bevy_instanced_text_edit::SelectionCollection::with_cursor(e);
                     }
                 }
             } else {

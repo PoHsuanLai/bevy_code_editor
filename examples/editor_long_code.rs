@@ -50,7 +50,7 @@ fn setup_editor(
     #[cfg(feature = "tree-sitter")] mut commands: Commands,
     editor_query: Query<Entity, With<CodeEditor>>,
     mut input_focus: ResMut<bevy::input_focus::InputFocus>,
-    mut set_text_writer: MessageWriter<bevy_text_editor::SetTextRequested>,
+    mut set_text_writer: MessageWriter<bevy_instanced_text_edit::SetTextRequested>,
 ) {
     let Ok(entity) = editor_query.single() else {
         return;
@@ -69,7 +69,7 @@ fn setup_editor(
         }
     };
 
-    set_text_writer.write(bevy_text_editor::SetTextRequested {
+    set_text_writer.write(bevy_instanced_text_edit::SetTextRequested {
         entity,
         text: content,
     });

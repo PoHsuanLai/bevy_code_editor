@@ -91,7 +91,7 @@ pub struct EditorSetupSet;
 /// Most hosts should use [`CodeEditorPlugins`] instead — the full bundle.
 /// `CodeEditorPlugin` is for hosts that compose their own version of those
 /// dependencies (e.g. a render-to-texture wrapper that owns
-/// [`bevy_text_engine::TextEnginePlugins`] and [`EditorUiPlugin`] directly)
+/// [`bevy_instanced_text::TextEnginePlugins`] and [`EditorUiPlugin`] directly)
 /// and need to avoid double-adds.
 ///
 /// ```rust,no_run
@@ -107,29 +107,21 @@ pub struct CodeEditorPlugin;
 
 impl Plugin for CodeEditorPlugin {
     fn build(&self, app: &mut App) {
-        use crate::settings::*;
-
-        // Initialize each editor-side settings resource with its Default.
-        // Per-entity values (font, theme, syntax theme, scroll behaviour)
-        // live as `FontConfig` / `ThemeConfig` / `SyntaxTheme` /
-        // `ScrollConfig` components on the editor entity (cascaded via
-        // `#[require]`); what remains here is genuinely-global config like
-        // UI toggles, indentation rules, etc.
         app.init_resource::<ViewportConfig>();
 
         // BracketMatchState, GotoLineState, FoldState, and KeyRepeatState are
         // per-editor / per-input-manager components (cascaded via #[require]);
         // no global resource init. Mouse drag tracking lives on
-        // `bevy_text_editor::TextViewDragState`, written by the picking-driven
-        // press/drag observers in `bevy_text_editor::interaction`.
+        // `bevy_instanced_text_edit::TextViewDragState`, written by the picking-driven
+        // press/drag observers in `bevy_instanced_text_edit::interaction`.
 
         // Configure system set ordering
         app.configure_sets(
             Update,
             (
                 InputSet,
-                bevy_text_editor::EditEmitSet.after(InputSet),
-                ApplyStateSet.after(bevy_text_editor::EditEmitSet),
+                bevy_instanced_text_edit::EditEmitSet.after(InputSet),
+                ApplyStateSet.after(bevy_instanced_text_edit::EditEmitSet),
                 RenderingSet.after(ApplyStateSet),
             )
                 .chain(),
@@ -172,7 +164,7 @@ impl Plugin for CodeEditorPlugin {
         // Editor-specific mouse interactions are observer-driven via
         // `bevy_picking`. Plain-click cursor placement, drag-extend
         // selection, and scroll wheel are handled by
-        // `bevy_text_editor::interaction`'s observers (registered by
+        // `bevy_instanced_text_edit::interaction`'s observers (registered by
         // `TextInteractionPlugin`); the editor adds modifier-click
         // behaviors and the LSP hover trigger on top.
         app.add_observer(crate::input::on_fold_gutter_press);
@@ -194,15 +186,15 @@ impl Plugin for CodeEditorPlugin {
         // All handlers run in `InputSet` after the dispatcher.
         register_handler_systems(app);
 
-        // `bevy_text_editor` fires `OnEdit` triggers per editor entity after
+        // `bevy_instanced_text_edit` fires `OnEdit` triggers per editor entity after
         // every edit op. The editor crate observes those triggers to drive
         // incremental tree-sitter reparse and LSP `did_change` via the
         // `TextEditEvent` bus.
         app.add_observer(crate::input::on_edit_invalidate_caches);
 
         // Auto-scroll-to-cursor sets target_scroll_offset; the actual
-        // animation toward target lives in `bevy_text_engine` (smooth) and
-        // `bevy_text_editor::apply_instant_scroll` (instant when
+        // animation toward target lives in `bevy_instanced_text` (smooth) and
+        // `bevy_instanced_text_edit::apply_instant_scroll` (instant when
         // `ScrollConfig.smooth = false`). Both already run for any TextView,
         // so the editor only needs the cursor-target setter.
         app.add_systems(
@@ -213,13 +205,13 @@ impl Plugin for CodeEditorPlugin {
         );
 
         // The renderer (`update_text_views`) is registered by `TextEnginePlugin`
-        // — see `bevy_text_engine::view::plugin`. It already runs in
+        // — see `bevy_instanced_text::view::plugin`. It already runs in
         // `TextViewRenderSet` with `.run_if(atlas_ready)`. We just configure
         // the editor-side ordering: rendering must observe this frame's
         // cursor / selection overlays.
         app.configure_sets(
             Update,
-            bevy_text_engine::TextViewRenderSet
+            bevy_instanced_text::TextViewRenderSet
                 .in_set(RenderingSet)
                 .after(crate::plugin::cursor::push_cursor_overlays)
                 .after(crate::plugin::cursor::update_cursor_line_highlight)
@@ -240,11 +232,11 @@ pub struct CodeEditorPlugins;
 impl PluginGroup for CodeEditorPlugins {
     fn build(self) -> PluginGroupBuilder {
         let group = PluginGroupBuilder::start::<Self>()
-            .add(bevy_text_engine::gpu::GlyphAtlasPlugin)
-            .add(bevy_text_engine::gpu::InstancedTextRenderPlugin)
-            .add(bevy_text_engine::view::plugin::TextEnginePlugin)
+            .add(bevy_instanced_text::gpu::GlyphAtlasPlugin)
+            .add(bevy_instanced_text::gpu::InstancedTextRenderPlugin)
+            .add(bevy_instanced_text::view::plugin::TextEnginePlugin)
             .add(bevy::input_focus::InputDispatchPlugin)
-            .add(bevy_text_editor::TextEditorPlugin::without_typing_observer())
+            .add(bevy_instanced_text_edit::TextEditorPlugin::without_typing_observer())
             .add(leafwing_input_manager::plugin::InputManagerPlugin::<
                 crate::input::EditorAction,
             >::default())
@@ -262,7 +254,7 @@ impl PluginGroup for CodeEditorPlugins {
 }
 
 /// Register the IDE-only `*Requested` events. The 33 editing events are
-/// registered by `bevy_text_editor::TextEditorPlugin`.
+/// registered by `bevy_instanced_text_edit::TextEditorPlugin`.
 fn register_ide_action_events(app: &mut App) {
     use crate::input::action_events::*;
 
@@ -295,7 +287,7 @@ fn register_ide_action_events(app: &mut App) {
 
 /// Register IDE-only per-action handler systems. The basic editing handlers
 /// (cursor / selection / delete / clipboard / undo) are registered by
-/// `bevy_text_editor::TextEditorPlugin`. Handlers here cover multi-cursor,
+/// `bevy_instanced_text_edit::TextEditorPlugin`. Handlers here cover multi-cursor,
 /// folding, goto-line, LSP requests, and the LSP follow-up.
 fn register_handler_systems(app: &mut App) {
     use crate::input::handlers::*;

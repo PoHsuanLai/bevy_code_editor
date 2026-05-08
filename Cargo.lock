@@ -749,9 +749,9 @@ dependencies = [
  "arboard",
  "bevy",
  "bevy_camera",
+ "bevy_instanced_text",
+ "bevy_instanced_text_edit",
  "bevy_lsp",
- "bevy_text_editor",
- "bevy_text_engine",
  "bevy_tree_sitter",
  "bytemuck",
  "cosmic-text 0.12.1",
@@ -1178,6 +1178,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_instanced_text"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_camera",
+ "bytemuck",
+ "cosmic-text 0.12.1",
+ "ropey",
+ "swash 0.1.19",
+]
+
+[[package]]
+name = "bevy_instanced_text_edit"
+version = "0.1.0"
+dependencies = [
+ "arboard",
+ "bevy",
+ "bevy_instanced_text",
+ "ropey",
+ "serde",
+]
+
+[[package]]
 name = "bevy_internal"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1307,7 +1330,7 @@ name = "bevy_markdown"
 version = "0.1.0"
 dependencies = [
  "bevy",
- "bevy_text_engine",
+ "bevy_instanced_text",
  "pulldown-cmark",
  "ropey",
 ]
@@ -1736,8 +1759,8 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_code_editor",
- "bevy_text_editor",
- "bevy_text_engine",
+ "bevy_instanced_text",
+ "bevy_instanced_text_edit",
  "crossbeam-channel",
  "leafwing-input-manager",
  "libc",
@@ -1774,29 +1797,6 @@ dependencies = [
  "thiserror 2.0.17",
  "tracing",
  "wgpu-types",
-]
-
-[[package]]
-name = "bevy_text_editor"
-version = "0.1.0"
-dependencies = [
- "arboard",
- "bevy",
- "bevy_text_engine",
- "ropey",
- "serde",
-]
-
-[[package]]
-name = "bevy_text_engine"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_camera",
- "bytemuck",
- "cosmic-text 0.12.1",
- "ropey",
- "swash 0.1.19",
 ]
 
 [[package]]
@@ -2972,11 +2972,11 @@ dependencies = [
  "bevy_camera",
  "bevy_code_editor",
  "bevy_egui",
+ "bevy_instanced_text",
+ "bevy_instanced_text_edit",
  "bevy_lsp",
  "bevy_markdown",
  "bevy_terminal",
- "bevy_text_editor",
- "bevy_text_engine",
  "bevy_tree_sitter",
  "lsp-types",
  "tree-sitter-c",

@@ -4,9 +4,9 @@
 //! `RunWithText` payload. The producer system `produce_line_styles` calls
 //! `EditorSyntaxState::highlight_range` to get segments, then runs each
 //! per-line slice through `segs_to_runs` before stuffing it into a
-//! [`bevy_text_engine::LineStyles`] map.
+//! [`bevy_instanced_text::LineStyles`] map.
 
-use bevy_text_engine::{RunWithText, StyleRun};
+use bevy_instanced_text::{RunWithText, StyleRun};
 
 use crate::types::LineSegment;
 

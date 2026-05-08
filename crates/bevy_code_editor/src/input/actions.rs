@@ -47,26 +47,26 @@ pub fn should_skip_auto_close(cursor: &CursorState, rope: &Rope, closing: char) 
 /// Apply selected completion item.
 ///
 /// Emits a `ReplaceRangeRequested` event for the editor entity to apply the
-/// completion through `bevy_text_editor`'s handler. Pure ECS — no mutable
+/// completion through `bevy_instanced_text_edit`'s handler. Pure ECS — no mutable
 /// editor state in the caller.
 #[cfg(feature = "lsp")]
 pub fn apply_completion(
     entity: Entity,
     cursor_pos: usize,
     completion_state: &mut LspCompletionPopup,
-    writer: &mut MessageWriter<bevy_text_editor::ReplaceRangeRequested>,
+    writer: &mut MessageWriter<bevy_instanced_text_edit::ReplaceRangeRequested>,
 ) {
     let filtered = completion_state.filtered_items();
     if let Some(item) = filtered.get(completion_state.selected_index) {
         let start = completion_state.start_char_index;
         let end = cursor_pos;
         if start <= end {
-            writer.write(bevy_text_editor::ReplaceRangeRequested {
+            writer.write(bevy_instanced_text_edit::ReplaceRangeRequested {
                 entity,
                 start_char: start,
                 end_char: end,
                 text: item.insert_text().to_string(),
-                kind: bevy_text_editor::EditKind::Other,
+                kind: bevy_instanced_text_edit::EditKind::Other,
                 record_history: true,
             });
         }

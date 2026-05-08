@@ -2,8 +2,8 @@
 //!
 //! Uses the same instanced rendering pipeline as the main code text for visual consistency.
 
-use bevy_text_engine::gpu::GlyphAtlas;
-use bevy_text_engine::FontConfig;
+use bevy_instanced_text::gpu::GlyphAtlas;
+use bevy_instanced_text::FontConfig;
 use crate::settings::*;
 use crate::text_view::render::{GlyphBatchComponent, GlyphInstance};
 use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
@@ -125,7 +125,7 @@ pub(crate) fn update_gpu_line_numbers(
     // but its baseline must match what the engine paints for the main
     // text on the same row — `glyph_baseline_screen_y` is the engine's
     // own formula exposed as a public helper.
-    let metrics = bevy_text_engine::row_metrics(viewport, scroll, font);
+    let metrics = bevy_instanced_text::row_metrics(viewport, scroll, font);
 
     // Calculate gutter center X position (camera-relative, not world coords)
     // Camera is at viewport center, so gutter is at -viewport_width/2 + gutter_width/2

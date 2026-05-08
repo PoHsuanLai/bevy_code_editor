@@ -3,7 +3,7 @@
 //! same conversion.
 
 use bevy::prelude::*;
-use bevy_text_engine::{FontConfig, TextViewViewport};
+use bevy_instanced_text::{FontConfig, TextViewViewport};
 use portable_pty::PtySize;
 
 use crate::backend;

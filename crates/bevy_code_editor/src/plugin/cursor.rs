@@ -11,7 +11,7 @@ use crate::text_view::{
 };
 use crate::types::*;
 use bevy::prelude::*;
-use bevy_text_engine::FontConfig;
+use bevy_instanced_text::FontConfig;
 
 pub struct CursorPlugin;
 
@@ -78,7 +78,7 @@ impl Plugin for CursorPlugin {
 /// Uses last_cursor_pos_for_blink (separate from last_cursor_pos) to avoid
 /// race conditions with auto_scroll_to_cursor.
 pub(crate) fn track_cursor_movement(
-    mut editor_query: Query<(&mut CursorState, &mut bevy_text_editor::BlinkPhase), With<CodeEditor>>,
+    mut editor_query: Query<(&mut CursorState, &mut bevy_instanced_text_edit::BlinkPhase), With<CodeEditor>>,
     time: Res<Time>,
 ) {
     for (mut cursor, mut blink) in editor_query.iter_mut() {
@@ -104,7 +104,7 @@ pub(crate) fn push_cursor_overlays(
         (
             &SelectionState,
             &CursorState,
-            &bevy_text_editor::BlinkPhase,
+            &bevy_instanced_text_edit::BlinkPhase,
             &TextBuffer,
             &TextViewViewport,
             &mut TextViewOverlays,
@@ -137,7 +137,7 @@ pub(crate) fn push_cursor_overlays(
         // line-highlight uses `z = 0`.
         overlays.rects.retain(|r| r.z != 1);
 
-        if !bevy_text_editor::cursor_blink_visible(
+        if !bevy_instanced_text_edit::cursor_blink_visible(
             cursor_settings.blink_rate,
             cursor_settings.blink_pause_secs,
             time.elapsed_secs_f64(),
@@ -171,7 +171,7 @@ pub(crate) fn push_cursor_overlays(
             let glyph_x = layout.and_then(|l| l.x_at_byte(display_row as u32, byte_in_row));
             let x_left = glyph_x.unwrap_or(col_index as f32 * char_width);
 
-            overlays.rects.push(bevy_text_editor::caret_overlay(
+            overlays.rects.push(bevy_instanced_text_edit::caret_overlay(
                 display_row as u32,
                 x_left,
                 cursor_settings,
@@ -250,7 +250,7 @@ pub(crate) fn update_cursor_line_highlight(
                     },
                     color: border_color,
                     z: 0,
-                    corners: bevy_text_engine::CornerRadii::ZERO,
+                    corners: bevy_instanced_text::CornerRadii::ZERO,
                 });
                 overlays.rects.push(RectOverlay {
                     display_row: display_row as u32,
@@ -260,7 +260,7 @@ pub(crate) fn update_cursor_line_highlight(
                     },
                     color: border_color,
                     z: 0,
-                    corners: bevy_text_engine::CornerRadii::ZERO,
+                    corners: bevy_instanced_text::CornerRadii::ZERO,
                 });
             }
 
@@ -324,7 +324,7 @@ pub(crate) fn update_cursor_line_highlight(
                         vertical: RowVertical::Full,
                         color: word_highlight_color,
                         z: 0,
-                        corners: bevy_text_engine::CornerRadii::ZERO,
+                        corners: bevy_instanced_text::CornerRadii::ZERO,
                     });
                 } else {
                     // Multi-row word (rare in practice — only happens if a wrap
@@ -339,7 +339,7 @@ pub(crate) fn update_cursor_line_highlight(
                         vertical: RowVertical::Full,
                         color: word_highlight_color,
                         z: 0,
-                        corners: bevy_text_engine::CornerRadii::ZERO,
+                        corners: bevy_instanced_text::CornerRadii::ZERO,
                     });
                 }
             }

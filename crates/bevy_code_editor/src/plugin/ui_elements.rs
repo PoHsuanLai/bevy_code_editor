@@ -7,7 +7,7 @@ use crate::text_view::{
 };
 use crate::types::*;
 use bevy::prelude::*;
-use bevy_text_engine::{visible_buffer_range, FontConfig, HiddenLines, LayoutWrap};
+use bevy_instanced_text::{visible_buffer_range, FontConfig, HiddenLines, LayoutWrap};
 
 /// Push selection rectangles into `TextViewOverlays` for all cursors.
 ///
@@ -282,7 +282,7 @@ fn selection_rect(display_row: u32, x_range: std::ops::Range<f32>, color: Color)
         vertical: RowVertical::Full,
         color,
         z: -1,
-        corners: bevy_text_engine::CornerRadii::ZERO,
+        corners: bevy_instanced_text::CornerRadii::ZERO,
     }
 }
 
@@ -406,8 +406,8 @@ pub(crate) fn update_indent_guides(
         // engine changes its convention every guide tracks automatically.
         let baseline = layout
             .map(|l| l.baseline_offset)
-            .unwrap_or(font.font_size * bevy_text_engine::DEFAULT_BASELINE_OFFSET_RATIO);
-        let metrics = bevy_text_engine::row_metrics_with_baseline(vp, scroll, font, baseline);
+            .unwrap_or(font.font_size * bevy_instanced_text::DEFAULT_BASELINE_OFFSET_RATIO);
+        let metrics = bevy_instanced_text::row_metrics_with_baseline(vp, scroll, font, baseline);
 
         for (display_row, level) in needed_guides.iter() {
             // Sprite anchor is the row's vertical center within the
@@ -465,7 +465,7 @@ pub(crate) fn should_auto_scroll(
         (
             &TextBuffer,
             &CursorState,
-            &bevy_text_editor::TextViewDragState,
+            &bevy_instanced_text_edit::TextViewDragState,
         ),
         With<CodeEditor>,
     >,

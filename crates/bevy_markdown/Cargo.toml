@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["PoHsuanLai"]
 license = "MIT OR Apache-2.0"
-description = "Read-only markdown viewer plugin for Bevy. Parses CommonMark with pulldown-cmark and renders rich text (headings, bold, italic, code blocks, lists, links) via bevy_text_engine."
+description = "Read-only markdown viewer plugin for Bevy. Parses CommonMark with pulldown-cmark and renders rich text (headings, bold, italic, code blocks, lists, links) via bevy_instanced_text."
 repository = "https://github.com/PoHsuanLai/bevy_code_editor"
 keywords = ["bevy", "markdown", "text", "rendering", "viewer"]
 categories = ["game-development", "rendering", "text-processing"]
@@ -22,7 +22,7 @@ bevy = { version = "0.18", default-features = false, features = [
     "bevy_log",
     "bevy_text",
 ] }
-bevy_text_engine = { path = "../bevy_text_engine" }
+bevy_instanced_text = { path = "../bevy_instanced_text" }
 pulldown-cmark = { version = "0.12", default-features = false }
 ropey = "1.6"
 

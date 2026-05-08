@@ -12,7 +12,7 @@
 
 use crate::settings::WordsCompletionMode;
 use bevy::prelude::*;
-use bevy_text_editor::Anchor;
+use bevy_instanced_text_edit::Anchor;
 use lsp_types::*;
 
 /// One tabstop in an active snippet session, anchored so it survives
