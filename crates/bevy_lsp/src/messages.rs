@@ -8,7 +8,7 @@
 //!   variant onto Bevy's message bus, tagged with the originating
 //!   [`Entity`]. `LspPlugin` runs `drain_lsp_responses` each frame to fan the
 //!   transport channel out into typed Bevy messages so any host system can
-//!   subscribe without owning the [`LspClient`].
+//!   subscribe without owning the [`crate::LspClient`].
 //!
 //! Coverage goal: every request/notification in the LSP 3.17 spec that has a
 //! typed shape in [`lsp_types`] is represented here. Some of them are not

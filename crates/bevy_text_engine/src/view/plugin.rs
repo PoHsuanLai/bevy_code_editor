@@ -48,7 +48,7 @@ pub struct TextViewRenderSet;
 )]
 pub struct TextView;
 
-/// Links a text view to its batch rendering entity. Managed by [`update_text_views`].
+/// Links a text view to its batch rendering entity. Managed by `update_text_views`.
 #[derive(Component, Reflect)]
 #[reflect(Component)]
 pub struct TextViewBatchEntity(pub Entity);

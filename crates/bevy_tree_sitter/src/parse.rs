@@ -1,6 +1,6 @@
 //! Component-driven async tree-sitter parsing.
 //!
-//! [`parse_dirty`] detects when `ParseSource::content_version()` outruns the
+//! `parse_dirty` detects when `ParseSource::content_version()` outruns the
 //! stored tree version, spawns a [`ParseTask`] on a child entity (so
 //! `Changed<SyntaxTree>` doesn't fire while in-flight), and writes the result
 //! back when complete. Single-flight per entity; never blocks the main thread.
@@ -52,7 +52,7 @@ impl ParseSourceComp {
     }
 }
 
-/// Per-entity parsed-tree state. Written by [`parse_dirty`] on completion;
+/// Per-entity parsed-tree state. Written by `parse_dirty` on completion;
 /// filter `Changed<SyntaxTree>` to react when a new tree lands.
 ///
 /// Not Reflect: `tree_sitter::Tree` owns FFI-side state.

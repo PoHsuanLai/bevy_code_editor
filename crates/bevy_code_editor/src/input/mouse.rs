@@ -16,7 +16,7 @@
 //! resets the timer.
 //!
 //! All screen-to-char hit-testing flows through the fold-aware
-//! [`screen_to_char_pos`] helper so editors with active fold regions see the
+//! `screen_to_char_pos` helper so editors with active fold regions see the
 //! click land on the right buffer line.
 
 use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};

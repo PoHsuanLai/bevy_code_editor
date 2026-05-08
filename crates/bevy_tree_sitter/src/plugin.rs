@@ -4,12 +4,12 @@ use bevy::prelude::*;
 
 use crate::parse::parse_dirty;
 
-/// Contains [`parse_dirty`]. Schedule before to sync a `ParseSource`'s buffer;
+/// Contains `parse_dirty`. Schedule before to sync a `ParseSource`'s buffer;
 /// after to react to `Changed<SyntaxTree>`.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ParseSet;
 
-/// Registers [`parse_dirty`], which drives the per-entity async parse pipeline.
+/// Registers `parse_dirty`, which drives the per-entity async parse pipeline.
 #[derive(Default)]
 pub struct TreeSitterPlugin;
 

@@ -1,6 +1,6 @@
 //! Read-only markdown viewer for Bevy.
 //!
-//! Parses CommonMark via [`pulldown-cmark`] and renders the result through
+//! Parses CommonMark via [pulldown-cmark](https://docs.rs/pulldown-cmark) and renders the result through
 //! `bevy_text_engine`'s `TextView` machinery. The viewer is read-only:
 //! scroll, selection, and copy are inherited from the engine; editing,
 //! click handlers, and image fetching are out of scope.

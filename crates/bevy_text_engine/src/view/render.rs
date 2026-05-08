@@ -24,7 +24,7 @@ use super::viewport::TextViewViewport;
 /// falling back to `regular` and synthesizing the missing axis when
 /// `synthesis` permits.
 ///
-/// Built once per text-view per frame in [`super::plugin::update_text_views`]
+/// Built once per text-view per frame in `update_text_views`
 /// from the entity's `FontConfig` (each `Handle<Font>` is registered with
 /// the atlas's cosmic-text font system on first use).
 #[derive(Clone, Copy, Debug)]

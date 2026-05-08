@@ -7,12 +7,12 @@
 //!   plus a `tree_version` counter. Stored behind an `Arc<RwLock<_>>` so the
 //!   parse pipeline (writers) and the editor's `produce_line_styles`
 //!   producer (reader) can share access without each owning their own copy.
-//! - [`EditorParseSource`] / [`EditorBufferSnapshot`]: bridge between the
+//! - `EditorParseSource` / `EditorBufferSnapshot`: bridge between the
 //!   editor's `TextBuffer` (per-entity rope + version) and
 //!   `bevy_tree_sitter`'s [`bevy_tree_sitter::ParseSource`] trait. The
 //!   `parse_dirty` system in bevy_tree_sitter reads from this Component
 //!   to drive async parses.
-//! - [`mirror_syntax_tree_to_provider`]: editor system that filters on
+//! - `mirror_syntax_tree_to_provider`: editor system that filters on
 //!   `Changed<bevy_tree_sitter::SyntaxTree>` and mirrors the freshly-parsed
 //!   tree (plus its rope snapshot) into the per-entity provider so the
 //!   styling layer's highlight queries find it. Also bumps

@@ -79,12 +79,12 @@ pub struct GlyphAtlas {
     /// Synced each frame by `sync_atlas_scale` via [`GlyphAtlas::set_raster_scale`].
     raster_scale: f32,
     /// Per-instance cap on `shape_cache`. Set at construction from
-    /// `TextEngineTuning`; defaults to [`DEFAULT_SHAPE_CACHE_CAPACITY`].
+    /// Defaults to [`DEFAULT_SHAPE_CACHE_CAPACITY`].
     shape_cache_capacity: usize,
 }
 
 /// Default FIFO cap on the shaped-line cache. Override via
-/// [`crate::TextEngineTuning::shape_cache_capacity`].
+/// Override via `PerformanceSettings::viewport_buffer_lines` on the editor entity.
 pub const DEFAULT_SHAPE_CACHE_CAPACITY: usize = 8192;
 
 impl GlyphAtlas {

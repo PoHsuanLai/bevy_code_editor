@@ -1,7 +1,7 @@
 //! Buffer-position → screen / world anchoring.
 //!
 //! [`BufferAnchorParam`] is the higher-level companion to
-//! [`RowMetricsParam`]: where `RowMetrics` answers
+//! [`crate::RowMetricsParam`]: where `RowMetrics` answers
 //! *"given a display row + pixel x, where on screen is that?"*,
 //! `BufferAnchor` answers *"given a buffer line + character (or rope
 //! char-offset), where on screen is that?"* It folds in the editor's

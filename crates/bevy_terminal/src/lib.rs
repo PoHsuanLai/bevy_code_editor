@@ -1,6 +1,6 @@
 //! # Bevy Terminal
 //!
-//! Embeddable terminal widget. Spawn a single [`BevyTerminal`] component
+//! Embeddable terminal widget. Spawn a single [`crate::BevyTerminal`] component
 //! and `#[require]` cascades the rest — PTY session, grid snapshot, theme,
 //! input mode, scrollback. VT state from `wezterm-term`; PTY allocation
 //! from `portable-pty`; rendering from `bevy_text_engine`; selection /

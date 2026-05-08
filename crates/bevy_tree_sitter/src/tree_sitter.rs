@@ -45,7 +45,7 @@ pub const MAX_BYTES_TO_QUERY: usize = 16 * 1024;
 
 /// Buffer-size threshold above which `apply_sync_edit` skips its synchronous
 /// `parse_with` call and only does the cheap `tree.edit()` byte-offset shift.
-/// Larger buffers let the async [`parse_dirty`] pipeline handle the reparse
+/// Larger buffers let the async `parse_dirty` pipeline handle the reparse
 /// off the main thread. ~64 KB covers typical source files; sqlite3.c-scale
 /// (~7 MB) defers.
 pub const SYNC_REPARSE_BYTE_LIMIT: usize = 64 * 1024;
@@ -146,7 +146,7 @@ impl TreeSitterProvider {
     /// Without all three checks, a select-all+delete on a 7 MB file looks
     /// like "tiny new buffer" but tree-sitter still does O(old size)
     /// reconciliation work — checking just `rope.len_bytes()` post-edit
-    /// misses this case. The async [`parse_dirty`] pipeline picks up the
+    /// misses this case. The async `parse_dirty` pipeline picks up the
     /// edit a frame later; cost of skipping is one frame of slightly stale
     /// highlights, barely perceptible vs. dropping a frame on every edit.
     pub fn apply_sync_edit(&mut self, edit: tree_sitter::InputEdit, rope: &Rope) {

@@ -1,6 +1,6 @@
 //! Wrap-aware layout producer.
 //!
-//! [`produce_layouts`] is the engine's per-frame layout system. It walks
+//! `produce_layouts` is the engine's per-frame layout system. It walks
 //! every `TextView` entity, reads its (optional) [`HiddenLines`] /
 //! [`LineStyles`] / [`LayoutWrap`] data Components, shapes the visible
 //! window through cosmic-text, and (when soft wrap is enabled) splits long
@@ -26,8 +26,7 @@ use super::styling::{BlockList, HiddenLines, LayoutWrap, LineStyles, RunWithText
 use super::viewport::TextViewViewport;
 use crate::gpu::GlyphAtlas;
 
-/// Default extra rows kept above and below the visible window. Override
-/// at runtime with [`crate::TextEngineTuning::viewport_buffer_lines`].
+/// Default extra rows kept above and below the visible window.
 pub const VIEWPORT_BUFFER_LINES: u32 = 4;
 
 /// System set for layout production. Editor-side producer systems that
@@ -55,7 +54,7 @@ pub(crate) struct LayoutFingerprint {
 }
 
 /// The buffer-line range a layout pass will touch. Shared between the
-/// engine's [`produce_layouts`] and editor-side producer systems (e.g. the
+/// engine's `produce_layouts` and editor-side producer systems (e.g. the
 /// syntax-styling system) so both agree on which lines are about to render.
 ///
 /// Walks `buffer.rope` skipping hidden lines, returning `[start, end)` —
@@ -257,7 +256,7 @@ pub(crate) fn produce_layouts(
 }
 
 /// Build a `DisplayLayout` for the visible viewport. Internal — called by
-/// [`produce_layouts`]. Kept as a separate function so consumers wanting a
+/// `produce_layouts`. Kept as a separate function so consumers wanting a
 /// one-shot non-system build (e.g. tests) can call it directly.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_display_layout(

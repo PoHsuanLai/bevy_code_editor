@@ -1,5 +1,5 @@
-//! Plain-data Components that plug into [`super::layout_builder::produce_layouts`]
-//! and [`super::layout_builder::produce_block_layout`].
+//! Plain-data Components that plug into `produce_layouts`
+//! and `produce_block_layout`.
 //!
 //! The engine's layout systems query each `TextView` entity for these
 //! components. They're optional: an entity without [`HiddenLines`] shows every
@@ -64,7 +64,7 @@ impl LineStyles {
 }
 
 /// Optional Component on a `TextView` entity that drives the static-content
-/// path. When present, [`super::layout_builder::produce_block_layout`] reads
+/// path. When present, `produce_block_layout` reads
 /// the blocks each frame (gated by `Changed<BlockList>`) and writes the
 /// entity's `DisplayLayout`. Mutually exclusive with the rope-driven
 /// [`LineStyles`] flow — an entity uses one or the other.

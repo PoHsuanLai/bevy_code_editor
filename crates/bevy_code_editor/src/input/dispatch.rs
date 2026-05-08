@@ -15,8 +15,8 @@
 //!    key-repeat).
 //! 3. **Per-feature interceptors** get first crack at consuming the action.
 //!    Each lives in its feature module, returns `true` when consumed:
-//!    - [`crate::lsp_ui::interceptors::completion_popup_intercept`]: arrow
-//!      keys / Enter / Tab / Escape on a visible completion popup.
+//!    - `completion_popup_intercept`: arrow keys / Enter / Tab / Escape on a
+//!      visible completion popup.
 //!    - [`crate::types::fold::goto_line_intercept`]: Escape on an active
 //!      goto-line dialog.
 //!    Adding a new popup feature means adding its interceptor module and

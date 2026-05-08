@@ -19,12 +19,12 @@
 //!     .run();
 //! ```
 //!
-//! [`CodeEditorPlugins`] is the full bundle: GPU rendering, interaction,
+//! [`crate::plugin::CodeEditorPlugins`] is the full bundle: GPU rendering, interaction,
 //! editor sub-plugins (cursor / syntax / folding / brackets / UI), and
-//! the editor's own [`CodeEditorPlugin`] core. The bare
-//! [`CodeEditorPlugin`] is the editor logic on its own — for hosts that
+//! the editor's own [`crate::plugin::CodeEditorPlugin`] core. The bare
+//! `CodeEditorPlugin` is the editor logic on its own — for hosts that
 //! compose with their own [`bevy_text_engine::TextEnginePlugins`],
-//! [`EditorUiPlugin`], etc., and need to avoid double-adds. Disable
+//! `EditorUiPlugin`, etc., and need to avoid double-adds. Disable
 //! individual plugins in the group with
 //! `CodeEditorPlugins.build().disable::<EditorUiPlugin>()`.
 //!
