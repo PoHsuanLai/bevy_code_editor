@@ -1,34 +1,44 @@
 //! Embeddable PTY-backed terminal widget for Bevy.
 //!
 //! Spawn [`crate::BevyTerminal`] and the `#[require]` cascade brings in
-//! everything: the PTY session, VT parser state, grid snapshot, color palette,
-//! input mode flags, and scrollback config. The shell opens lazily once a
-//! non-zero viewport size is available, so you never get a stale 80×24 frame.
+//! everything: the PTY session, VT parser, grid snapshot, color palette, and
+//! scrollback config. The shell opens lazily once a non-zero viewport size is
+//! available. The plugin handles all VT parsing and PTY I/O internally; the
+//! host only needs to position and size the entity.
 //!
-//! ## Concepts
+//! ## Spawning a terminal
 //!
-//! - **[`crate::BevyTerminal`]** — the only component you spawn. Configure the
-//!   shell, args, env, and cwd via [`crate::TerminalConfig`] (optional).
-//! - **[`crate::TerminalGridSnapshot`]** — the VT grid dimensions and cursor
-//!   position, updated each frame from the PTY output.
-//! - **[`crate::TerminalColorPalette`]** — the 16 ANSI colors. Override at
-//!   spawn time or mutate at runtime for per-terminal theming.
-//! - **[`crate::TerminalScrollback`]** — max scrollback line count.
-//! - **[`crate::TerminalScrollFollow`]** — whether the view pins to the bottom
-//!   as new output arrives.
+//! ```rust,no_run
+//! # use bevy::prelude::*;
+//! # use bevy_terminal::prelude::*;
+//! // Default shell ($SHELL / powershell.exe), default size, default theme.
+//! commands.spawn(BevyTerminal);
 //!
-//! ## Shell integration (OSC 133)
+//! // Custom shell and working directory.
+//! commands.spawn((BevyTerminal, TerminalConfig {
+//!     shell: Some("fish".into()),
+//!     cwd: Some("/work".into()),
+//!     ..default()
+//! }));
+//! ```
 //!
-//! When the shell emits OSC 133 sequences, [`crate::TerminalBlockState`] tracks
-//! semantic command blocks (prompt → command → output). Subscribe to
-//! [`crate::messages::TerminalBlockFinished`] to react to completed commands
-//! (e.g. to extract exit codes or capture output).
+//! ## State the host can read
 //!
-//! ## What this crate does NOT provide
+//! The plugin writes these components every frame — hosts can query them
+//! without coupling to plugin internals:
 //!
-//! - A title bar or tab UI — hosts build that from [`crate::TerminalShellInfo`]
-//! - Find-in-terminal — hosts query the grid snapshot
-//! - Terminal multiplexing — spawn one `BevyTerminal` entity per pane
+//! - **[`crate::TerminalGridSnapshot`]** — current grid dimensions and cursor
+//!   position. Useful for building a status bar or custom cursor overlay.
+//! - **[`crate::TerminalShellInfo`]** — title and CWD reported by the shell
+//!   via OSC 0/1/2/7. Use this to populate a tab label or breadcrumb.
+//! - **[`crate::TerminalBlockState`]** — semantic command blocks from OSC 133
+//!   shell integration: each block has a command string, output row range, and
+//!   exit code once completed. Subscribe to [`crate::messages::TerminalBlockFinished`]
+//!   for completion events.
+//! - **[`crate::TerminalScrollFollow`]** — whether the view is pinned to the
+//!   bottom. Hosts can toggle this directly or via scroll messages.
+//! - **[`crate::TerminalColorPalette`]** — the 16 ANSI colors. Mutate at
+//!   runtime to retheme a specific terminal entity.
 //!
 //! ## Quick start
 //!
@@ -59,6 +69,14 @@ pub mod shell_integration;
 pub mod snapshot;
 pub mod types;
 pub mod viewport;
+
+pub use crate::messages::*;
+pub use crate::plugin::{BevyTerminalPlugin, BevyTerminalPlugins};
+pub use crate::types::{
+    BevyTerminal, BlockStatus, TerminalBlock, TerminalBlockState, TerminalColorPalette,
+    TerminalConfig, TerminalGridSnapshot, TerminalInputMode, TerminalScrollFollow,
+    TerminalScrollback, TerminalShellInfo, TerminalSession,
+};
 
 pub mod prelude {
     pub use crate::messages::*;
