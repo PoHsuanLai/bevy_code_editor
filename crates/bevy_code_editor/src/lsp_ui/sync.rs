@@ -1,15 +1,21 @@
 //! Systems that sync per-editor LSP state Components into render-data Components.
 //!
 //! Each system queries the editor entity for one popup-state Component
-//! (e.g. [`LspCompletionPopup`]) plus the editor's text view, and produces /
-//! updates an entity with the matching `*PopupData` Component (e.g.
-//! [`CompletionPopupData`]). Hosts query the `*Data` Components and render
-//! however they want.
+//! (e.g. [`LspCompletionPopup`]) and produces / updates an entity with
+//! the matching `*PopupData` Component (e.g. [`CompletionPopupData`]).
+//!
+//! All popup data is **semantic** — it carries `(line, character)`
+//! anchors and content/sizing, not pre-baked screen positions. Hosts
+//! query the `*Data` Components and render however they want, composing
+//! the world position from `(line, character)` + the editor's
+//! `RowMetrics` at render time. That way a scroll, viewport resize, or
+//! font change doesn't need to invalidate the popup data — the renderer
+//! reads live engine state.
 
 use bevy::prelude::*;
 
 use crate::settings::*;
-use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
+use crate::text_view::TextBuffer;
 use crate::types::{CodeEditor, CursorState};
 use bevy_text_engine::FontConfig;
 
@@ -20,50 +26,38 @@ use super::state::{
 };
 use bevy_lsp::CodeActionOrCommand;
 
+/// Resolve a char index into `(line, character)`.
+fn buffer_position(buffer: &TextBuffer, char_index: usize) -> (u32, u32) {
+    let char_index = char_index.min(buffer.rope.len_chars());
+    let line = buffer.rope.char_to_line(char_index);
+    let line_start = buffer.rope.line_to_char(line);
+    let col = char_index - line_start;
+    (line as u32, col as u32)
+}
+
 /// Sync completion state to marker entity
 pub fn sync_completion_popup(
     mut commands: Commands,
-    query: Query<
-        (
-            &LspCompletionPopup,
-            &CursorState,
-            &TextBuffer,
-            &ScrollState,
-            &TextViewViewport,
-            &FontConfig,
-        ),
-        With<CodeEditor>,
-    >,
-    ui: Res<UiSettings>,
+    query: Query<(&LspCompletionPopup, &CursorState, &TextBuffer, &FontConfig), With<CodeEditor>>,
     lsp: Res<LspSettings>,
     existing: Query<Entity, With<CompletionPopupData>>,
 ) {
-    let Ok((completion_state, cursor_state, buffer, scroll, _vp, font)) = query.single() else {
+    let Ok((completion_state, cursor_state, buffer, font)) = query.single() else {
         return;
     };
     let filtered_items = completion_state.filtered_items();
 
-    // If not visible or no items, despawn existing
     if !completion_state.visible || filtered_items.is_empty() {
         for entity in existing.iter() {
-            commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
+            commands
+                .entity(entity)
+                .queue_silenced(bevy::ecs::system::entity_command::despawn());
         }
         return;
     }
 
-    // Calculate position
-    let cursor_pos = cursor_state.cursor_pos.min(buffer.rope.len_chars());
-    let line_index = buffer.rope.char_to_line(cursor_pos);
-    let line_start = buffer.rope.line_to_char(line_index);
-    let col_index = cursor_pos - line_start;
+    let (line, character) = buffer_position(buffer, cursor_state.cursor_pos);
 
-    let char_width = font.char_width;
-    let line_height = font.line_height;
-
-    let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
-    let y_offset = ui.margin_top + scroll.scroll_offset + ((line_index + 1) as f32 * line_height);
-
-    // Calculate dynamic width
     let max_char_count = filtered_items
         .iter()
         .take(10)
@@ -75,21 +69,16 @@ pub fn sync_completion_popup(
         .max()
         .unwrap_or(20);
 
-    let calculated_width = (max_char_count as f32 * char_width) + 20.0;
+    let calculated_width = (max_char_count as f32 * font.char_width) + 20.0;
     let box_width = calculated_width.clamp(200.0, 600.0);
 
     let max_visible = lsp.completion.max_items;
     let total_items = filtered_items.len();
     let visible_count = total_items.min(max_visible);
-    let box_height = (visible_count as f32 * line_height) + 10.0;
+    let box_height = (visible_count as f32 * font.line_height) + 10.0;
 
-    // Convert items to data
-    let items: Vec<CompletionItemData> = filtered_items
-        .iter()
-        .map(CompletionItemData::from)
-        .collect();
+    let items: Vec<CompletionItemData> = filtered_items.iter().map(CompletionItemData::from).collect();
 
-    // Surface resolved documentation for the currently selected item.
     let selected_documentation = filtered_items
         .get(completion_state.selected_index)
         .and_then(|item| {
@@ -107,7 +96,8 @@ pub fn sync_completion_popup(
         });
 
     let popup_data = CompletionPopupData {
-        position: Vec2::new(x_offset, y_offset),
+        line,
+        character,
         items,
         selected_index: completion_state.selected_index,
         scroll_offset: completion_state.scroll_offset,
@@ -117,50 +107,39 @@ pub fn sync_completion_popup(
         selected_documentation,
     };
 
-    // Update or spawn entity
     if let Some(entity) = existing.iter().next() {
         commands.entity(entity).insert(popup_data);
     } else {
         commands.spawn((popup_data, LspUiElement, Name::new("CompletionPopup")));
     }
 
-    // Despawn extra entities if any
     for entity in existing.iter().skip(1) {
-        commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
+        commands
+            .entity(entity)
+            .queue_silenced(bevy::ecs::system::entity_command::despawn());
     }
 }
 
 /// Sync hover state to marker entity
 pub fn sync_hover_popup(
     mut commands: Commands,
-    query: Query<
-        (&LspHoverPopup, &TextBuffer, &ScrollState, &TextViewViewport, &FontConfig),
-        With<CodeEditor>,
-    >,
-    ui: Res<UiSettings>,
+    query: Query<(&LspHoverPopup, &TextBuffer, &FontConfig), With<CodeEditor>>,
     existing: Query<Entity, With<HoverPopupData>>,
 ) {
-    let Ok((hover_state, buffer, scroll, _vp, font)) = query.single() else {
+    let Ok((hover_state, buffer, font)) = query.single() else {
         return;
     };
 
     if !hover_state.visible || hover_state.content.is_empty() {
         for entity in existing.iter() {
-            commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
+            commands
+                .entity(entity)
+                .queue_silenced(bevy::ecs::system::entity_command::despawn());
         }
         return;
     }
 
-    let trigger_char_index = hover_state.trigger_char_index.min(buffer.rope.len_chars());
-    let line_index = buffer.rope.char_to_line(trigger_char_index);
-    let line_start = buffer.rope.line_to_char(line_index);
-    let col_index = trigger_char_index - line_start;
-
-    let char_width = font.char_width;
-    let line_height = font.line_height;
-
-    let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
-    let y_offset = ui.margin_top + scroll.scroll_offset + ((line_index + 1) as f32 * line_height);
+    let (line, character) = buffer_position(buffer, hover_state.trigger_char_index);
 
     let font_size = font.font_size * 0.9;
     let padding = 10.0;
@@ -180,7 +159,8 @@ pub fn sync_hover_popup(
     let box_height = (line_count as f32 * font_size * 1.2) + padding * 2.0;
 
     let popup_data = HoverPopupData {
-        position: Vec2::new(x_offset, y_offset),
+        line,
+        character,
         content: hover_state.content.clone(),
         width: box_width,
         height: box_height,
@@ -193,7 +173,9 @@ pub fn sync_hover_popup(
     }
 
     for entity in existing.iter().skip(1) {
-        commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
+        commands
+            .entity(entity)
+            .queue_silenced(bevy::ecs::system::entity_command::despawn());
     }
 }
 
@@ -201,58 +183,43 @@ pub fn sync_hover_popup(
 pub fn sync_signature_help_popup(
     mut commands: Commands,
     query: Query<
-        (
-            &LspSignatureHelpPopup,
-            &CursorState,
-            &TextBuffer,
-            &ScrollState,
-            &TextViewViewport,
-            &FontConfig,
-        ),
+        (&LspSignatureHelpPopup, &CursorState, &TextBuffer, &FontConfig),
         With<CodeEditor>,
     >,
-    ui: Res<UiSettings>,
     existing: Query<Entity, With<SignatureHelpPopupData>>,
 ) {
-    let Ok((sig_state, cursor_state, buffer, scroll, _vp, font)) = query.single() else {
+    let Ok((sig_state, cursor_state, buffer, font)) = query.single() else {
         return;
     };
 
     if !sig_state.visible || sig_state.signatures.is_empty() {
         for entity in existing.iter() {
-            commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
+            commands
+                .entity(entity)
+                .queue_silenced(bevy::ecs::system::entity_command::despawn());
         }
         return;
     }
 
     let Some(signature) = sig_state.current_signature() else {
         for entity in existing.iter() {
-            commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
+            commands
+                .entity(entity)
+                .queue_silenced(bevy::ecs::system::entity_command::despawn());
         }
         return;
     };
 
-    let cursor_pos = cursor_state.cursor_pos.min(buffer.rope.len_chars());
-    let line_index = buffer.rope.char_to_line(cursor_pos);
-    let line_start = buffer.rope.line_to_char(line_index);
-    let col_index = cursor_pos - line_start;
-
-    let char_width = font.char_width;
-    let line_height = font.line_height;
-
-    let x_offset = ui.code_margin_left + (col_index as f32 * char_width);
-    let y_offset =
-        ui.margin_top + scroll.scroll_offset + (line_index as f32 * line_height) - line_height;
+    let (line, character) = buffer_position(buffer, cursor_state.cursor_pos);
 
     let font_size = font.font_size * 0.9;
     let padding = 8.0;
 
     let sig_label = &signature.label;
-    let box_width =
-        (sig_label.chars().count() as f32 * char_width * 0.9 + padding * 2.0).clamp(100.0, 600.0);
+    let box_width = (sig_label.chars().count() as f32 * font.char_width * 0.9 + padding * 2.0)
+        .clamp(100.0, 600.0);
     let box_height = font_size * 1.4 + padding * 2.0;
 
-    // Extract parameter ranges if available
     let parameter_ranges = signature
         .parameters
         .as_ref()
@@ -272,7 +239,8 @@ pub fn sync_signature_help_popup(
         .unwrap_or_default();
 
     let popup_data = SignatureHelpPopupData {
-        position: Vec2::new(x_offset, y_offset),
+        line,
+        character,
         label: sig_label.clone(),
         active_parameter: sig_state.active_parameter,
         parameter_ranges,
@@ -289,7 +257,9 @@ pub fn sync_signature_help_popup(
     }
 
     for entity in existing.iter().skip(1) {
-        commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
+        commands
+            .entity(entity)
+            .queue_silenced(bevy::ecs::system::entity_command::despawn());
     }
 }
 
@@ -297,38 +267,25 @@ pub fn sync_signature_help_popup(
 pub fn sync_code_actions_popup(
     mut commands: Commands,
     query: Query<
-        (
-            &LspCodeActionsPopup,
-            &CursorState,
-            &TextBuffer,
-            &ScrollState,
-            &TextViewViewport,
-            &FontConfig,
-        ),
+        (&LspCodeActionsPopup, &CursorState, &TextBuffer, &FontConfig),
         With<CodeEditor>,
     >,
-    ui: Res<UiSettings>,
     existing: Query<Entity, With<CodeActionsPopupData>>,
 ) {
-    let Ok((action_state, cursor_state, buffer, scroll, _vp, font)) = query.single() else {
+    let Ok((action_state, cursor_state, buffer, font)) = query.single() else {
         return;
     };
 
     if !action_state.visible || action_state.actions.is_empty() {
         for entity in existing.iter() {
-            commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
+            commands
+                .entity(entity)
+                .queue_silenced(bevy::ecs::system::entity_command::despawn());
         }
         return;
     }
 
-    let cursor_pos = cursor_state.cursor_pos.min(buffer.rope.len_chars());
-    let line_index = buffer.rope.char_to_line(cursor_pos);
-
-    let line_height = font.line_height;
-    let char_width = font.char_width;
-
-    let x_offset = ui.code_margin_left - 20.0;
-    let y_offset = ui.margin_top + scroll.scroll_offset + ((line_index + 1) as f32 * line_height);
+    let (line, character) = buffer_position(buffer, cursor_state.cursor_pos);
 
     let max_label_len = action_state
         .actions
@@ -340,9 +297,9 @@ pub fn sync_code_actions_popup(
         .max()
         .unwrap_or(20);
 
-    let box_width = (max_label_len as f32 * char_width + 20.0).clamp(200.0, 400.0);
+    let box_width = (max_label_len as f32 * font.char_width + 20.0).clamp(200.0, 400.0);
     let visible_count = action_state.actions.len().min(10);
-    let box_height = (visible_count as f32 * line_height) + 10.0;
+    let box_height = (visible_count as f32 * font.line_height) + 10.0;
 
     let actions: Vec<CodeActionItemData> = action_state
         .actions
@@ -374,7 +331,8 @@ pub fn sync_code_actions_popup(
         .collect();
 
     let popup_data = CodeActionsPopupData {
-        position: Vec2::new(x_offset, y_offset),
+        line,
+        character,
         actions,
         selected_index: action_state.selected_index,
         width: box_width,
@@ -388,47 +346,42 @@ pub fn sync_code_actions_popup(
     }
 
     for entity in existing.iter().skip(1) {
-        commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
+        commands
+            .entity(entity)
+            .queue_silenced(bevy::ecs::system::entity_command::despawn());
     }
 }
 
 /// Sync rename state to marker entity
 pub fn sync_rename_input(
     mut commands: Commands,
-    query: Query<
-        (&LspRenamePopup, &ScrollState, &TextViewViewport, &FontConfig),
-        With<CodeEditor>,
-    >,
-    ui: Res<UiSettings>,
+    query: Query<(&LspRenamePopup, &FontConfig), With<CodeEditor>>,
     existing: Query<Entity, With<RenameInputData>>,
 ) {
-    let Ok((rename_state, scroll, _vp, font)) = query.single() else {
+    let Ok((rename_state, font)) = query.single() else {
         return;
     };
 
     if !rename_state.visible {
         for entity in existing.iter() {
-            commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
+            commands
+                .entity(entity)
+                .queue_silenced(bevy::ecs::system::entity_command::despawn());
         }
         return;
     }
 
     let Some(range) = &rename_state.range else {
         for entity in existing.iter() {
-            commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
+            commands
+                .entity(entity)
+                .queue_silenced(bevy::ecs::system::entity_command::despawn());
         }
         return;
     };
 
-    let line = range.start.line as usize;
-    let character = range.start.character as usize;
-
-    let char_width = font.char_width;
-    let line_height = font.line_height;
-
-    let x_offset = ui.code_margin_left + (character as f32 * char_width);
-    let y_offset =
-        ui.margin_top + scroll.scroll_offset + (line as f32 * line_height) + (line_height / 2.0);
+    let line = range.start.line;
+    let character = range.start.character;
 
     let padding_x = 4.0;
     let padding_y = 2.0;
@@ -440,12 +393,13 @@ pub fn sync_rename_input(
     };
 
     let text_width =
-        (display_text.chars().count().max(8) as f32 * char_width) + padding_x * 2.0 + 4.0;
+        (display_text.chars().count().max(8) as f32 * font.char_width) + padding_x * 2.0 + 4.0;
     let box_width = text_width.clamp(100.0, 300.0);
-    let box_height = line_height + padding_y * 2.0;
+    let box_height = font.line_height + padding_y * 2.0;
 
     let popup_data = RenameInputData {
-        position: Vec2::new(x_offset, y_offset),
+        line,
+        character,
         text: display_text.to_string(),
         original_text: rename_state.original_text.clone(),
         cursor_position: display_text.chars().count(),
@@ -460,7 +414,9 @@ pub fn sync_rename_input(
     }
 
     for entity in existing.iter().skip(1) {
-        commands.entity(entity).queue_silenced(bevy::ecs::system::entity_command::despawn());
+        commands
+            .entity(entity)
+            .queue_silenced(bevy::ecs::system::entity_command::despawn());
     }
 }
 

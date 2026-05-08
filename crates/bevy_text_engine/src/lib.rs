@@ -38,10 +38,10 @@ pub mod prelude {
     //! Common types for spawning and rendering text views.
     pub use crate::gpu::{GlyphAtlasPlugin, InstancedTextRenderPlugin};
     pub use crate::view::{
-        row_metrics, row_metrics_with_baseline, Block, BlockDecorTheme, BlockLayoutConfig,
-        BlockList, ContentMetrics, DisplayLayout, FontConfig, FontSynthesis, HiddenLines,
-        LayoutWrap, LineStyles, RenderTheme, RowMetrics, RowMetricsParam, RunWithText,
-        ScrollState, StyleRun, TextBuffer, TextEnginePlugin, TextEnginePlugins, TextView,
-        TextViewViewport,
+        row_metrics, row_metrics_with_baseline, AnchorPoint, Block, BlockDecorTheme,
+        BlockLayoutConfig, BlockList, BufferAnchorParam, ContentMetrics, DisplayLayout, FontConfig,
+        FontSynthesis, HiddenLines, LayoutWrap, LineStyles, RenderTheme, RowMetrics,
+        RowMetricsParam, RunWithText, ScrollState, StyleRun, TextBuffer, TextEnginePlugin,
+        TextEnginePlugins, TextView, TextViewViewport,
     };
 }

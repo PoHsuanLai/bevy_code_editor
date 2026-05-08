@@ -99,7 +99,12 @@ impl Plugin for LspEguiUiPlugin {
                 render_code_actions_egui,
                 render_rename_egui,
                 render_inlay_hints,
-                render_document_highlights,
+                // Document highlights push `RectOverlay` into the editor's
+                // `TextViewOverlays`, which the engine then paints in the
+                // same draw call as glyphs. Must run before
+                // `TextViewRenderSet` (which consumes overlays) — same
+                // ordering requirement as selection / cursor.
+                render_document_highlights.before(bevy_text_engine::TextViewRenderSet),
             )
                 .in_set(LspUiRenderSet),
         );
@@ -118,13 +123,6 @@ struct InlayHintText {
     line: u32,
     #[allow(dead_code)]
     character: u32,
-}
-
-/// Marker for document highlight visual entities (sprite path).
-#[derive(Component)]
-struct DocumentHighlightMarker {
-    #[allow(dead_code)]
-    line: u32,
 }
 
 /// Theme for the sprite-rendered inline decorations (inlay hints, document
@@ -248,77 +246,115 @@ fn render_inlay_hints(
     }
 }
 
-/// Render document highlights from marker component data.
+/// Render document highlights as `RectOverlay`s on the editor's
+/// `TextViewOverlays`.
 ///
-/// `DocumentHighlightData` carries semantic data only `(line,
-/// start_character, end_character, is_write)`; this renderer composes
-/// the world rectangle from those + `RowMetrics`. Re-runs every frame
-/// the highlight set changes — but unlike the old "bake position into
-/// the data" approach, scrolling, viewport resize, and font changes
-/// don't need to invalidate the data. The renderer reads live state.
+/// Going through the engine's overlay path (rather than spawning Bevy
+/// `Sprite`s) means the highlight quads ship in the **same draw call
+/// and same instance buffer as the glyphs**, sharing the engine's
+/// row-anchor convention by definition. That's why selections never
+/// drift: they take the same path. Sprites, by contrast, are rendered
+/// by Bevy's stock 2D pipeline and can land on slightly different
+/// pixels under the engine's clip-projection convention — which was
+/// the "half row below" symptom in the previous renderer.
+///
+/// Re-runs every frame: drains the previous frame's highlight rects
+/// (identified by their dedicated `z = -2` slot, which sits below
+/// selection at `z = -1`) and pushes a fresh batch. `(line,
+/// start_character, end_character)` come from semantic
+/// `DocumentHighlightData` and resolve to display rows via
+/// `DisplayLayout::buffer_to_display`, so soft-wrapped lines and
+/// folded regions are handled by the engine's own coordinate system.
 fn render_document_highlights(
-    mut commands: Commands,
-    // No `Added`/`Changed` filter: scrolling and viewport resize need
-    // to reposition the sprite even when the highlight data hasn't
-    // changed. The set is small (one entity per highlighted reference),
-    // so a per-frame `Transform` write is cheap.
-    highlight_query: Query<(Entity, &DocumentHighlightData)>,
-    editors: Query<(Entity, &FontConfig), With<CodeEditor>>,
-    metrics: bevy_text_engine::RowMetricsParam,
+    highlight_query: Query<&DocumentHighlightData>,
+    mut editors: Query<
+        (&FontConfig, &DisplayLayout, &mut bevy_text_engine::TextViewOverlays),
+        With<CodeEditor>,
+    >,
     theme: Res<InlineDecorationsTheme>,
 ) {
-    let Ok((editor_entity, font)) = editors.single() else {
+    let Ok((font, layout, mut overlays)) = editors.single_mut() else {
         return;
     };
-    let m = metrics.get_or_panic(editor_entity);
 
-    for (entity, highlight) in highlight_query.iter() {
+    // Drain previous-frame highlight rects. `z = -2` is reserved for
+    // document highlights so this drain doesn't touch selections (`-1`),
+    // line-bg/cursor decorations (`0`), or carets (`+1`).
+    let had_highlights = overlays.rects.iter().any(|r| r.z == -2);
+    overlays.rects.retain(|r| r.z != -2);
+
+    let mut pushed = 0usize;
+    for highlight in highlight_query.iter() {
         let color = if highlight.is_write {
             theme.document_highlights.write_color
         } else {
             theme.document_highlights.read_color
         };
 
-        // Cap width at one buffer line. `u32::MAX` means "to end of
-        // line" — clamp to a sensible visual cap so the sprite doesn't
-        // overflow the viewport when a multi-line range hits a middle
-        // row.
-        let cells = highlight
-            .end_character
-            .saturating_sub(highlight.start_character)
-            .min(200);
-        let width = cells as f32 * font.char_width;
-
-        let band = m.row_glyph_band(highlight.line);
-        let cell_left = m.cell_world_pos_at_x(
-            highlight.line,
-            highlight.start_character as f32 * font.char_width,
-        );
-        // Sprite anchor is center, so place at the rect's mid-point.
-        let pos = Vec3::new(
-            cell_left.x + width * 0.5,
-            (band.min.y + band.max.y) * 0.5,
-            5.0,
-        );
-
-        let Ok(mut entity_cmd) = commands.get_entity(entity) else {
+        // LSP gives `(line, character)` in buffer coords. Translate to
+        // display coords through the engine's authoritative map; this
+        // honors soft-wrap and hidden (folded) lines automatically.
+        // ASCII-only character→byte for now; non-ASCII LSP highlights
+        // would need bevy_lsp's UTF-16 conversion.
+        let buffer_row = highlight.line;
+        let start_byte = highlight.start_character as usize;
+        let Some((display_row, start_byte_in_row)) =
+            layout.buffer_to_display(buffer_row, start_byte)
+        else {
             continue;
         };
-        entity_cmd.queue_silenced(bevy::ecs::system::entity_command::insert(
-            (
-                Sprite {
-                    color,
-                    custom_size: Some(Vec2::new(width, band.height())),
-                    ..default()
-                },
-                Transform::from_translation(pos),
-                DocumentHighlightMarker {
-                    line: highlight.line,
-                },
-                LspUiVisual,
-            ),
-            bevy::ecs::bundle::InsertMode::Replace,
-        ));
+
+        let start_x = layout
+            .x_at_byte(display_row, start_byte_in_row)
+            .unwrap_or(highlight.start_character as f32 * font.char_width);
+
+        // Resolve the end x. `u32::MAX` (multi-line range continuation)
+        // means "to end of line" — use the row's measured text width.
+        let end_x = if highlight.end_character == u32::MAX {
+            // ShapedLine has the row's pixel-width; reach for it through
+            // the layout iterator since `DisplayLayout` doesn't expose a
+            // direct accessor.
+            layout
+                .lines
+                .iter()
+                .find(|l| l.display_row == display_row)
+                .and_then(|l| layout.x_at_byte(display_row, l.text.len()))
+                .unwrap_or_else(|| {
+                    start_x
+                        + highlight
+                            .end_character
+                            .saturating_sub(highlight.start_character)
+                            .min(200) as f32
+                            * font.char_width
+                })
+        } else {
+            let end_byte = highlight.end_character as usize;
+            // Same row — end byte must also resolve through `buffer_to_display`,
+            // but for single-row highlights the display row is the same.
+            layout
+                .x_at_byte(display_row, end_byte.saturating_sub(start_byte) + start_byte_in_row)
+                .unwrap_or(start_x + (highlight.end_character - highlight.start_character) as f32 * font.char_width)
+        };
+
+        if end_x <= start_x {
+            continue;
+        }
+
+        overlays.rects.push(bevy_text_engine::RectOverlay {
+            display_row,
+            x_range: start_x..end_x,
+            vertical: bevy_text_engine::RowVertical::Full,
+            color,
+            z: -2,
+            corners: bevy_text_engine::CornerRadii::ZERO,
+        });
+        pushed += 1;
+    }
+
+    // Bump the version only when something actually changed, so the
+    // engine can skip the GPU re-upload otherwise.
+    if pushed > 0 || had_highlights {
+        overlays.version = overlays.version.wrapping_add(1);
     }
 }
 
@@ -332,36 +368,29 @@ struct LspEguiViewportOffset {
     screen_offset: Vec2,
 }
 
-/// Cursor screen position (x, y at top of cursor line).
+/// Cursor screen position (x, y at top of cursor line) for an egui
+/// popup anchor.
 ///
-/// Goes through `bevy_text_engine::row_metrics` so the math stays
-/// locked to the engine's actual row anchor — if the engine ever
-/// shifts its convention, every popup tracks automatically.
+/// Thin wrapper over [`bevy_text_engine::BufferAnchorParam`] that adds
+/// the host's panel-screen offset on top of the editor-relative anchor
+/// the engine returns. The engine knows where things are inside the
+/// editor; the host knows where the editor is on screen — they
+/// compose at this seam.
 fn cursor_screen_pos(
     char_index: usize,
-    buffer: &TextBuffer,
-    scroll: &ScrollState,
-    font: &FontConfig,
+    editor: Entity,
+    anchors: &bevy_text_engine::BufferAnchorParam,
     viewport_offset: &LspEguiViewportOffset,
-    viewport: &TextViewViewport,
 ) -> (f32, f32) {
-    let char_index = char_index.min(buffer.rope.len_chars());
-    let line_index = buffer.rope.char_to_line(char_index);
-    let line_start = buffer.rope.line_to_char(line_index);
-    let col_index = char_index - line_start;
-
-    let metrics = bevy_text_engine::row_metrics(viewport, scroll, font);
-    // Screen-space top-left of the cell (the popups want to anchor at
-    // the row's top edge so they can flip above/below the line).
-    // `row_y_top` already composes scroll, text_area_top, and line
-    // height the engine way.
-    let screen_x = viewport.text_area_left + (col_index as f32 * font.char_width)
-        - scroll.horizontal_scroll_offset;
-    let screen_y = metrics.row_y_top(line_index as u32);
-
+    let Some(anchor) = anchors.at_rope_char_index(editor, char_index) else {
+        return (
+            viewport_offset.screen_offset.x,
+            viewport_offset.screen_offset.y,
+        );
+    };
     (
-        viewport_offset.screen_offset.x + screen_x,
-        viewport_offset.screen_offset.y + screen_y,
+        viewport_offset.screen_offset.x + anchor.screen_top_left.x,
+        viewport_offset.screen_offset.y + anchor.screen_top_left.y,
     )
 }
 
@@ -409,13 +438,14 @@ fn position_popup(
 fn render_completion_egui(
     mut contexts: EguiContexts,
     query: Query<
-        (&LspCompletionPopup, &CursorState, &TextBuffer, &ScrollState, &FontConfig),
+        (Entity, &LspCompletionPopup, &CursorState, &FontConfig),
         With<CodeEditor>,
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&TextViewViewport, With<CodeEditor>>,
+    anchors: bevy_text_engine::BufferAnchorParam,
 ) {
-    let Ok((completion_state, cursor_state, buffer, scroll, font)) = query.single() else {
+    let Ok((editor, completion_state, cursor_state, font)) = query.single() else {
         return;
     };
     let filtered_items = completion_state.filtered_items();
@@ -431,14 +461,8 @@ fn render_completion_egui(
         }
     };
 
-    let (cursor_x, cursor_y) = cursor_screen_pos(
-        cursor_state.cursor_pos,
-        buffer,
-        scroll,
-        font,
-        &viewport_offset,
-        *viewport,
-    );
+    let (cursor_x, cursor_y) =
+        cursor_screen_pos(cursor_state.cursor_pos, editor, &anchors, &viewport_offset);
 
     let theme = ctx.armas_theme();
     let max_visible = 10;
@@ -597,13 +621,14 @@ fn render_completion_egui(
 fn render_hover_egui(
     mut contexts: EguiContexts,
     query: Query<
-        (&LspHoverPopup, &LspCompletionPopup, &TextBuffer, &ScrollState, &FontConfig),
+        (Entity, &LspHoverPopup, &LspCompletionPopup, &FontConfig),
         With<CodeEditor>,
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&TextViewViewport, With<CodeEditor>>,
+    anchors: bevy_text_engine::BufferAnchorParam,
 ) {
-    let Ok((hover_state, completion_state, buffer, scroll, font)) = query.single() else {
+    let Ok((editor, hover_state, completion_state, font)) = query.single() else {
         return;
     };
     if !hover_state.visible || hover_state.content.is_empty() {
@@ -624,11 +649,9 @@ fn render_hover_egui(
 
     let (cursor_x, cursor_y) = cursor_screen_pos(
         hover_state.trigger_char_index,
-        buffer,
-        scroll,
-        font,
+        editor,
+        &anchors,
         &viewport_offset,
-        *viewport,
     );
 
     let theme = ctx.armas_theme();
@@ -687,12 +710,13 @@ struct MarkdownHoverPopup;
 /// short-circuit when the format isn't theirs.
 fn render_hover_markdown(
     mut commands: Commands,
-    editors: Query<(&LspHoverPopup, &TextBuffer, &ScrollState, &FontConfig), With<CodeEditor>>,
+    editors: Query<(Entity, &LspHoverPopup, &FontConfig), With<CodeEditor>>,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&TextViewViewport, With<CodeEditor>>,
+    anchors: bevy_text_engine::BufferAnchorParam,
     existing: Query<Entity, With<MarkdownHoverPopup>>,
 ) {
-    let Ok((hover_state, buffer, scroll, font)) = editors.single() else {
+    let Ok((editor, hover_state, font)) = editors.single() else {
         return;
     };
 
@@ -710,7 +734,7 @@ fn render_hover_markdown(
     }
 
     let (cursor_x, cursor_y) =
-        cursor_screen_pos(hover_state.trigger_char_index, buffer, scroll, font, &viewport_offset, *viewport);
+        cursor_screen_pos(hover_state.trigger_char_index, editor, &anchors, &viewport_offset);
 
     let popup_width = 520.0_f32;
     let popup_height = estimate_markdown_popup_height(&hover_state.content, font);
@@ -823,19 +847,14 @@ fn position_popup_world(
 fn render_signature_help_egui(
     mut contexts: EguiContexts,
     query: Query<
-        (
-            &LspSignatureHelpPopup,
-            &CursorState,
-            &TextBuffer,
-            &ScrollState,
-            &FontConfig,
-        ),
+        (Entity, &LspSignatureHelpPopup, &CursorState, &FontConfig),
         With<CodeEditor>,
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&TextViewViewport, With<CodeEditor>>,
+    anchors: bevy_text_engine::BufferAnchorParam,
 ) {
-    let Ok((sig_state, cursor_state, buffer, scroll, font)) = query.single() else {
+    let Ok((editor, sig_state, cursor_state, font)) = query.single() else {
         return;
     };
     if !sig_state.visible || sig_state.signatures.is_empty() {
@@ -854,14 +873,8 @@ fn render_signature_help_egui(
         }
     };
 
-    let (cursor_x, cursor_y) = cursor_screen_pos(
-        cursor_state.cursor_pos,
-        buffer,
-        scroll,
-        font,
-        &viewport_offset,
-        *viewport,
-    );
+    let (cursor_x, cursor_y) =
+        cursor_screen_pos(cursor_state.cursor_pos, editor, &anchors, &viewport_offset);
 
     let theme = ctx.armas_theme();
 
@@ -961,13 +974,14 @@ fn render_signature_help_egui(
 fn render_code_actions_egui(
     mut contexts: EguiContexts,
     query: Query<
-        (&LspCodeActionsPopup, &CursorState, &TextBuffer, &ScrollState, &FontConfig),
+        (Entity, &LspCodeActionsPopup, &CursorState, &FontConfig),
         With<CodeEditor>,
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&TextViewViewport, With<CodeEditor>>,
+    anchors: bevy_text_engine::BufferAnchorParam,
 ) {
-    let Ok((action_state, cursor_state, buffer, scroll, font)) = query.single() else {
+    let Ok((editor, action_state, cursor_state, font)) = query.single() else {
         return;
     };
     if !action_state.visible || action_state.actions.is_empty() {
@@ -978,14 +992,8 @@ fn render_code_actions_egui(
         return;
     };
 
-    let (_, cursor_y) = cursor_screen_pos(
-        cursor_state.cursor_pos,
-        buffer,
-        scroll,
-        font,
-        &viewport_offset,
-        *viewport,
-    );
+    let (_, cursor_y) =
+        cursor_screen_pos(cursor_state.cursor_pos, editor, &anchors, &viewport_offset);
 
     let theme = ctx.armas_theme();
     let item_height = font.line_height.max(22.0);
@@ -1074,9 +1082,8 @@ fn render_rename_egui(
     mut contexts: EguiContexts,
     mut query: Query<
         (
+            Entity,
             &mut LspRenamePopup,
-            &TextBuffer,
-            &ScrollState,
             &LspClient,
             Option<&LspDocument>,
             &FontConfig,
@@ -1085,8 +1092,9 @@ fn render_rename_egui(
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&TextViewViewport, With<CodeEditor>>,
+    anchors: bevy_text_engine::BufferAnchorParam,
 ) {
-    let Ok((mut rename_state, buffer, scroll, lsp_client, lsp_document, font)) = query.single_mut() else {
+    let Ok((editor, mut rename_state, lsp_client, lsp_document, font)) = query.single_mut() else {
         return;
     };
     if !rename_state.visible {
@@ -1102,16 +1110,14 @@ fn render_rename_egui(
         return;
     };
 
-    let line = range.start.line as usize;
-    let char_index = if line < buffer.rope.len_lines() {
-        let line_start = buffer.rope.line_to_char(line);
-        line_start + range.start.character as usize
-    } else {
-        buffer.rope.len_chars()
+    // LSP-flavored anchor: `(line, character)` straight from the
+    // server's response, no rope-arithmetic in the host.
+    let Some(anchor) = anchors.at_buffer_pos(editor, range.start.line, range.start.character)
+    else {
+        return;
     };
-
-    let (cursor_x, cursor_y) =
-        cursor_screen_pos(char_index, buffer, scroll, font, &viewport_offset, *viewport);
+    let cursor_x = viewport_offset.screen_offset.x + anchor.screen_top_left.x;
+    let cursor_y = viewport_offset.screen_offset.y + anchor.screen_top_left.y;
 
     let theme = ctx.armas_theme();
     let rename_width = (rename_state.new_name.len() as f32 * font.char_width + 40.0).max(150.0);

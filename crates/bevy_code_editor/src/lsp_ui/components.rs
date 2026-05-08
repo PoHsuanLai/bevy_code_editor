@@ -16,9 +16,16 @@ use bevy::prelude::*;
 use super::state::UnifiedCompletionItem;
 
 /// Completion popup data. Hosts query this and render however they prefer.
+///
+/// Anchor is given as `(line, character)` of the cursor; the renderer
+/// composes screen position from those + the editor's `RowMetrics`, so
+/// scroll / viewport / font changes don't need to invalidate the data.
 #[derive(Component, Clone, Debug)]
 pub struct CompletionPopupData {
-    pub position: Vec2,
+    /// 0-indexed buffer line of the cursor (anchor row).
+    pub line: u32,
+    /// 0-indexed character column of the cursor (anchor column).
+    pub character: u32,
     pub items: Vec<CompletionItemData>,
     pub selected_index: usize,
     /// First visible item index.
@@ -52,9 +59,16 @@ impl From<&UnifiedCompletionItem> for CompletionItemData {
 }
 
 /// Hover popup data. Hosts query this and render however they prefer.
+///
+/// Anchor is given as `(line, character)` of the trigger position; the
+/// renderer composes screen position from those + the editor's
+/// `RowMetrics`.
 #[derive(Component, Clone, Debug)]
 pub struct HoverPopupData {
-    pub position: Vec2,
+    /// 0-indexed buffer line of the trigger position.
+    pub line: u32,
+    /// 0-indexed character column of the trigger position.
+    pub character: u32,
     pub content: String,
     pub width: f32,
     pub height: f32,
@@ -62,10 +76,16 @@ pub struct HoverPopupData {
 
 /// Marker component for the signature help popup entity.
 /// Contains all data needed to render signature help.
+///
+/// Anchor is given as `(line, character)` of the cursor; the renderer
+/// composes screen position from those + the editor's `RowMetrics` and
+/// flips above/below the line as needed.
 #[derive(Component, Clone, Debug)]
 pub struct SignatureHelpPopupData {
-    /// Position in screen space (bottom-left of popup, shows above cursor)
-    pub position: Vec2,
+    /// 0-indexed buffer line of the cursor.
+    pub line: u32,
+    /// 0-indexed character column of the cursor.
+    pub character: u32,
     /// Signature label text
     pub label: String,
     /// Active parameter index (for highlighting)
@@ -82,9 +102,16 @@ pub struct SignatureHelpPopupData {
     pub height: f32,
 }
 
+/// Code actions popup data. Hosts query this and render however they prefer.
+///
+/// Anchor is given as `(line, character)` of the cursor; the renderer
+/// composes screen position from those + the editor's `RowMetrics`.
 #[derive(Component, Clone, Debug)]
 pub struct CodeActionsPopupData {
-    pub position: Vec2,
+    /// 0-indexed buffer line of the cursor.
+    pub line: u32,
+    /// 0-indexed character column of the cursor.
+    pub character: u32,
     pub actions: Vec<CodeActionItemData>,
     pub selected_index: usize,
     pub width: f32,
@@ -100,10 +127,16 @@ pub struct CodeActionItemData {
 
 /// Marker component for the rename input entity.
 /// Contains all data needed to render the inline rename dialog.
+///
+/// Anchor is given as `(line, character)` at the symbol's start; the
+/// renderer composes screen position from those + the editor's
+/// `RowMetrics`.
 #[derive(Component, Clone, Debug)]
 pub struct RenameInputData {
-    /// Position in screen space (at the symbol location)
-    pub position: Vec2,
+    /// 0-indexed buffer line of the symbol start.
+    pub line: u32,
+    /// 0-indexed character column of the symbol start.
+    pub character: u32,
     /// Current input text
     pub text: String,
     /// Original symbol text (for placeholder/comparison)
