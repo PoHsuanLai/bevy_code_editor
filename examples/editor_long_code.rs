@@ -57,7 +57,7 @@ fn setup_editor(
     };
     input_focus.set(entity);
 
-    let file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/sqlite3.c");
+    let file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/sqlite3.c");
     let content = match std::fs::read_to_string(&file_path) {
         Ok(content) => {
             println!("Loaded {} with {} lines", file_path.display(), content.lines().count());

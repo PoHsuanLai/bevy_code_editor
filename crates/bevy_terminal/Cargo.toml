@@ -29,26 +29,14 @@ bevy = { version = "0.18", default-features = false, features = [
     "bevy_window",
 ] }
 
-# Terminal state machine + VT parser. MIT. Pinned to a specific upstream
-# commit; wezterm-term explicitly does not promise a stable public API
-# (https://github.com/wezterm/wezterm/issues/6663). All wezterm imports
-# in the crate go through `crate::backend`, so a future bump or fork
-# touches one file rather than many.
+# Pinned commit — wezterm-term does not guarantee a stable public API.
+# All wezterm imports are isolated to `crate::backend` to contain future bumps.
 wezterm-term = { git = "https://github.com/wezterm/wezterm", rev = "577474d89ee61aef4a48145cdec82a638d874751" }
 wezterm-surface = { git = "https://github.com/wezterm/wezterm", rev = "577474d89ee61aef4a48145cdec82a638d874751" }
 termwiz = { git = "https://github.com/wezterm/wezterm", rev = "577474d89ee61aef4a48145cdec82a638d874751" }
 
-# Cross-platform PTY allocation + child-process spawning. Replaces the
-# tty + EventLoop machinery that came with alacritty_terminal.
 portable-pty = "0.9"
-
-# crossbeam for the PTY-reader-thread → ECS bytes bridge. (Same crate we
-# used with alacritty's EventLoop — only the payload type changes:
-# parsed events → raw byte chunks.)
 crossbeam-channel = "0.5"
-
-# parking_lot::Mutex for the Terminal handle. Avoids depending on
-# alacritty_terminal's re-export of FairMutex now that the crate is gone.
 parking_lot = "0.12"
 
 leafwing-input-manager = "0.20"
@@ -56,9 +44,6 @@ leafwing-input-manager = "0.20"
 ropey = "1.6"
 serde = { version = "1.0", features = ["derive"] }
 
-# Used by `handle_send_signal` to forward POSIX signals (SIGINT etc.) to
-# the PTY child's process group via `killpg(2)`. portable-pty exposes the
-# PGID; signalling is the host's responsibility.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
@@ -68,14 +53,8 @@ bevy_code_editor = { path = "../bevy_code_editor" }
 
 [features]
 default = ["arboard"]
-# Pull in `bevy_text_editor`'s `arboard`-backed `SystemClipboard`. Disable
-# in headless / web / sandboxed builds and provide your own
-# `ClipboardProvider` via `insert_resource(ClipboardResource::new(...))`.
+# `arboard`-backed clipboard. Disable for headless/web builds and inject your
+# own `ClipboardProvider` via `insert_resource(ClipboardResource::new(...))`.
 arboard = ["bevy_text_editor/arboard"]
-
-# Performance profiling. Enables Bevy's tracing spans on every system and
-# routes them to a Tracy client (https://github.com/wolfpld/tracy). Run the
-# desktop `tracy-profiler` viewer while the example is running to see
-# per-system frame times. Also activates the on-screen FPS / frame-time
-# overlay in `examples/basic_terminal.rs`.
+# Tracy-based performance profiling
 profile = ["bevy/trace", "bevy/trace_tracy"]

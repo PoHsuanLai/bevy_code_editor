@@ -6,6 +6,7 @@
 use crate::state::CursorState;
 use ropey::Rope;
 
+/// Move cursor up one line, preserving column offset.
 pub fn move_cursor_up(cursor: &mut CursorState, rope: &Rope) {
     if cursor.cursor_pos > 0 {
         let line_idx = rope.char_to_line(cursor.cursor_pos);
@@ -19,6 +20,7 @@ pub fn move_cursor_up(cursor: &mut CursorState, rope: &Rope) {
     }
 }
 
+/// Move cursor down one line, preserving column offset.
 pub fn move_cursor_down(cursor: &mut CursorState, rope: &Rope) {
     let line_idx = rope.char_to_line(cursor.cursor_pos);
     if line_idx + 1 < rope.len_lines() {
@@ -30,11 +32,13 @@ pub fn move_cursor_down(cursor: &mut CursorState, rope: &Rope) {
     }
 }
 
+/// Move cursor to the first character of the current line.
 pub fn move_cursor_line_start(cursor: &mut CursorState, rope: &Rope) {
     let line_idx = rope.char_to_line(cursor.cursor_pos);
     cursor.cursor_pos = rope.line_to_char(line_idx);
 }
 
+/// Move cursor to the last character of the current line (before the newline).
 pub fn move_cursor_line_end(cursor: &mut CursorState, rope: &Rope) {
     let line_idx = rope.char_to_line(cursor.cursor_pos);
     let line_start = rope.line_to_char(line_idx);
@@ -161,10 +165,12 @@ pub fn find_word_boundary_right(rope: &Rope, pos: usize) -> usize {
     current
 }
 
+/// Move cursor to the start of the previous word (Ctrl+Left).
 pub fn move_cursor_word_left(cursor: &mut CursorState, rope: &Rope) {
     cursor.cursor_pos = find_word_boundary_left(rope, cursor.cursor_pos);
 }
 
+/// Move cursor to the end of the next word (Ctrl+Right).
 pub fn move_cursor_word_right(cursor: &mut CursorState, rope: &Rope) {
     cursor.cursor_pos = find_word_boundary_right(rope, cursor.cursor_pos);
 }

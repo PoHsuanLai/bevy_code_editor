@@ -26,6 +26,9 @@ pub(crate) struct ReaderHandle {
     pub killer: Box<dyn ChildKiller + Send + Sync>,
 }
 
+/// Tracks per-entity PTY reader threads and child killers so the removal
+/// observer can shut them down deterministically when a `BevyTerminal` entity
+/// is despawned.
 #[derive(Resource, Default)]
 pub struct TerminalEventLoopRegistry {
     pub(crate) handles: HashMap<Entity, ReaderHandle>,

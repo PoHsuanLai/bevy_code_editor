@@ -59,6 +59,8 @@ use bevy_camera::visibility::RenderLayers;
 
 use crate::view::render::{GlyphBatchComponent, GlyphInstance};
 
+/// Registers the GPU instanced text render pipeline: extracts `GlyphBatchComponent`
+/// to the render world and issues one instanced draw call per text view per frame.
 pub struct InstancedTextRenderPlugin;
 
 impl Plugin for InstancedTextRenderPlugin {

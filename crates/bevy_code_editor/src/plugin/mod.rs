@@ -39,15 +39,16 @@ pub(crate) use self::ui_elements::{update_indent_guides, update_selection_highli
 #[require(KeyRepeatState)]
 pub struct EditorInputManager;
 
-// Helper to convert dynamic coordinate based on scroll alignment
-// Returns camera-relative coordinates (entities positioned at camera origin)
-// The camera moves to follow the viewport, so entities stay fixed in world space
+/// Convert top-left-origin editor coordinates to Bevy world space.
+/// The editor camera is positioned so its top-left maps to world (−w/2, h/2).
 pub fn to_bevy_coords_dynamic(x: f32, y: f32, viewport_w: f32, viewport_h: f32) -> Vec3 {
     let world_x = -viewport_w / 2.0 + x;
     let world_y = viewport_h / 2.0 - y;
     Vec3::new(world_x, world_y, 0.0)
 }
 
+/// Like [`to_bevy_coords_dynamic`] but also subtracts the horizontal scroll offset,
+/// keeping left-aligned content (line numbers, code text) pinned to the left edge.
 pub fn to_bevy_coords_left_aligned(
     x: f32,
     y: f32,
@@ -60,22 +61,25 @@ pub fn to_bevy_coords_left_aligned(
     Vec3::new(world_x, world_y, 0.0)
 }
 
-// System sets for ordering
+/// System set for keyboard / mouse input processing (runs first in Update).
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InputSet;
 
-/// Marker set for `dispatch_action_events`. Per-action handler systems
-/// declare `.after(ActionDispatchSet)` so the fan-out of typed events
-/// happens before any handler reads them.
+/// System set for `dispatch_action_events`. Per-action handler systems run
+/// `.after(ActionDispatchSet)` so the typed-event fan-out completes before
+/// any handler reads it.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ActionDispatchSet;
 
+/// System set for state-application systems (runs after `InputSet`).
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ApplyStateSet;
 
+/// System set for rendering systems (runs after `ApplyStateSet`).
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RenderingSet;
 
+/// System set for one-time editor setup systems (Startup / PostStartup).
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EditorSetupSet;
 

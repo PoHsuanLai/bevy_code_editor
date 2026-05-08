@@ -1,5 +1,9 @@
-//! Cursor movement handlers — Move{Left,Right,Up,Down,Word*,LineStart,LineEnd,
-//! DocumentStart,DocumentEnd,PageUp,PageDown}.
+//! Cursor movement handler systems.
+//!
+//! Each `handle_move_cursor_*` function is a Bevy system that reads one
+//! `*Requested` event from [`crate::editing_events`] and moves the primary
+//! cursor on the focused [`crate::TextEditor`] entity accordingly.
+//! Selection is cleared; use the selection handlers for shift-extended moves.
 
 use crate::cursor_movement::{
     move_cursor, move_cursor_down, move_cursor_line_end, move_cursor_line_start, move_cursor_lines,

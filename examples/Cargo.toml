@@ -22,10 +22,6 @@ bevy = { version = "0.18", default-features = false, features = [
     "bevy_window",
     "bevy_winit",
     "bevy_log",
-    # Enable threaded task pools so `AsyncComputeTaskPool::spawn` actually runs
-    # on a worker thread. Without this, Bevy falls back to its single-threaded
-    # task pool which executes tasks inline on the main thread — defeating the
-    # whole point of the async tree-sitter parse pipeline.
     "multi_threaded",
 ] }
 bevy_camera = "0.18"
@@ -66,13 +62,7 @@ lsp = [
     "tree-sitter",
 ]
 
-# Performance profiling for both editor + terminal examples. Enables Bevy's
-# tracing spans (route to a Tracy client) and the on-screen FPS / frame-time
-# overlay in `editor_long_code` and `terminal_basic`. The `debug` feature
-# unblocks system / component names in traces — without it, every Bevy
-# system zone reports as "<Enable the debug feature to see the name>",
-# making it impossible to identify which built-in system is the spike
-# source. Tiny build-time cost; same release optimization level.
+# Tracy-based performance profiling with named system spans
 profile = [
     "bevy_code_editor/profile",
     "bevy_terminal/profile",

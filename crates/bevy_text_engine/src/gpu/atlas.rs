@@ -18,6 +18,7 @@ const GLYPH_PADDING: u32 = 2;
 /// (e.g. headless tests). Matches the typical Retina display.
 pub const DEFAULT_RASTER_SCALE: f32 = 2.0;
 
+/// Atlas entry for one rasterized glyph: UV rect, size, placement offset, and advance.
 #[derive(Clone, Copy, Debug)]
 pub struct GlyphInfo {
     /// UV coordinates in the atlas (0.0 to 1.0)
@@ -37,6 +38,9 @@ struct AtlasRow {
     x_cursor: u32,
 }
 
+/// GPU glyph atlas resource. Rasterizes glyphs once via cosmic-text/swash and
+/// caches them in a single `ATLAS_SIZE × ATLAS_SIZE` RGBA texture. Also caches
+/// shaped `LineShape`s to avoid repeated cosmic-text shaping on scroll.
 #[derive(Resource)]
 pub struct GlyphAtlas {
     pub texture: Handle<Image>,

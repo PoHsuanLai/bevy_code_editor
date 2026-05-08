@@ -69,6 +69,7 @@ pub fn delete_selection(
     sel.apply_primary_cursor(cursor);
 }
 
+/// System: inserts a newline at the cursor (with optional auto-indent).
 pub fn handle_insert_newline(
     mut events: MessageReader<InsertNewlineRequested>,
     input_focus: Res<InputFocus>,
@@ -86,6 +87,7 @@ pub fn handle_insert_newline(
     insert_char(&mut sel, &mut hist, &mut cursor, &mut buffer, '\n');
 }
 
+/// System: inserts a tab (or spaces, depending on `IndentConfig`) at the cursor.
 pub fn handle_insert_tab(
     mut events: MessageReader<InsertTabRequested>,
     input_focus: Res<InputFocus>,
@@ -111,6 +113,7 @@ pub fn handle_insert_tab(
     }
 }
 
+/// System: deletes one character before the cursor (or the selection).
 pub fn handle_delete_backward(
     mut events: MessageReader<DeleteBackwardRequested>,
     input_focus: Res<InputFocus>,
@@ -132,6 +135,7 @@ pub fn handle_delete_backward(
     }
 }
 
+/// System: deletes one character after the cursor (or the selection).
 pub fn handle_delete_forward(
     mut events: MessageReader<DeleteForwardRequested>,
     input_focus: Res<InputFocus>,
@@ -153,6 +157,7 @@ pub fn handle_delete_forward(
     }
 }
 
+/// System: deletes from the previous word boundary to the cursor (Ctrl+Backspace).
 pub fn handle_delete_word_backward(
     mut events: MessageReader<DeleteWordBackwardRequested>,
     input_focus: Res<InputFocus>,
@@ -174,6 +179,7 @@ pub fn handle_delete_word_backward(
     }
 }
 
+/// System: deletes from the cursor to the next word boundary (Ctrl+Delete).
 pub fn handle_delete_word_forward(
     mut events: MessageReader<DeleteWordForwardRequested>,
     input_focus: Res<InputFocus>,
@@ -195,11 +201,13 @@ pub fn handle_delete_word_forward(
     }
 }
 
+/// System: deletes the current line (stub — drains the event queue).
 pub fn handle_delete_line(mut events: MessageReader<DeleteLineRequested>) {
     // Stub: not implemented in the legacy editor either; drain the queue.
     events.read().for_each(|_| {});
 }
 
+/// System: undoes the last edit operation.
 pub fn handle_undo(
     mut events: MessageReader<UndoRequested>,
     input_focus: Res<InputFocus>,
@@ -217,6 +225,7 @@ pub fn handle_undo(
     let _ = hist.undo(&mut sel, &mut cursor, &mut buffer);
 }
 
+/// System: redoes the last undone edit operation.
 pub fn handle_redo(
     mut events: MessageReader<RedoRequested>,
     input_focus: Res<InputFocus>,

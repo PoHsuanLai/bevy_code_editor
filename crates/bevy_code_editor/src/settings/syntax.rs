@@ -7,6 +7,11 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
+/// Per-entity syntax highlight color palette (tree-sitter capture → color).
+///
+/// Cascaded onto every `CodeEditor` entity via `#[require]` when the
+/// `tree-sitter` feature is enabled. Override individual fields at spawn
+/// time or mutate via `Query<&mut SyntaxTheme, With<CodeEditor>>`.
 #[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct SyntaxTheme {

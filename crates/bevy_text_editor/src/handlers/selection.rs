@@ -1,5 +1,8 @@
-//! Selection handlers — Select{Left,Right,Up,Down,WordLeft,WordRight,
-//! LineStart,LineEnd,All}, ClearSelection.
+//! Selection extension handler systems.
+//!
+//! Each `handle_select_*` function is a Bevy system that reads one
+//! `*Requested` event from [`crate::editing_events`] and extends (or clears)
+//! the primary selection on the focused [`crate::TextEditor`] entity.
 
 use crate::cursor_movement::{
     move_cursor, move_cursor_down, move_cursor_line_end, move_cursor_line_start, move_cursor_up,

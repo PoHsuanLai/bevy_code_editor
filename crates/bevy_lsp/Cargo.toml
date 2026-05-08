@@ -23,6 +23,4 @@ lsp-types = "0.95"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# Used only by the `pos` module's rope ↔ LSP Position helpers. Tiny dep,
-# already pulled in by anyone using a rope-based buffer alongside this crate.
 ropey = "1.6"

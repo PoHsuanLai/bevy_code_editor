@@ -8,6 +8,8 @@
 
 use bevy::prelude::*;
 
+/// Per-entity background and foreground colors for the text rendering substrate.
+/// Shared by editors, terminals, markdown viewers — anything that renders styled text.
 #[derive(Component, Clone, Debug, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct RenderTheme {

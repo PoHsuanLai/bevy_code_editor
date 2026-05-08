@@ -75,26 +75,31 @@ impl Default for ViewportConfig {
 )]
 pub struct CodeEditor;
 
+/// Marker for a cursor sprite entity. `cursor_index` 0 is the primary cursor;
+/// higher indices are additional cursors added via multi-cursor commands.
 #[derive(Component, Reflect)]
 #[reflect(Component)]
 pub struct EditorCursor {
-    /// Index of this cursor in the cursors array (0 = primary cursor)
+    /// Index of this cursor in the cursors array (0 = primary cursor).
     pub cursor_index: usize,
 }
 
+/// Marker for line-number gutter text entities.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 pub struct LineNumbers;
 
+/// Marker for the vertical separator sprite between the gutter and the code area.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 pub struct Separator;
 
+/// Marker for a per-line selection highlight rectangle.
 #[derive(Component, Reflect)]
 #[reflect(Component)]
 pub struct SelectionHighlight {
     pub line_index: usize,
-    /// Index of the cursor this selection belongs to (0 = primary cursor)
+    /// Index of the cursor this selection belongs to (0 = primary cursor).
     pub cursor_index: usize,
 }
 

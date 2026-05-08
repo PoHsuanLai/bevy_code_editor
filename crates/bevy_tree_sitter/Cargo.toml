@@ -10,8 +10,6 @@ keywords = ["bevy", "tree-sitter", "syntax", "parsing"]
 categories = ["game-development", "parser-implementations"]
 
 [dependencies]
-# Engine-tier crate: ECS + AsyncComputeTaskPool + log only.
-# No rendering — this crate is text-rendering-agnostic.
 bevy = { version = "0.18", default-features = false, features = [
     "bevy_asset",
     "bevy_log",

@@ -22,12 +22,17 @@ pub struct UiSettings {
     pub margin_top: f32,
 }
 
+/// Controls which whitespace characters are rendered as visible glyphs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Reflect)]
 #[reflect(Debug, PartialEq)]
 pub enum WhitespaceMode {
+    /// No whitespace markers shown.
     None,
+    /// Show markers only within the current selection.
     Selection,
+    /// Show markers for trailing whitespace only.
     Trailing,
+    /// Show all whitespace markers.
     All,
 }
 
@@ -49,6 +54,7 @@ impl Default for UiSettings {
     }
 }
 
+/// Indentation rules: spaces vs tabs, width, and auto-indent on newline.
 #[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
 #[reflect(Resource, Default, Debug)]
 pub struct IndentationSettings {
@@ -70,6 +76,7 @@ impl Default for IndentationSettings {
     }
 }
 
+/// Bracket matching and auto-close settings.
 #[derive(Clone, Debug, Resource, Serialize, Deserialize, Reflect)]
 #[reflect(Resource, Default, Debug)]
 pub struct BracketSettings {
@@ -80,11 +87,15 @@ pub struct BracketSettings {
     pub pairs: Vec<(char, char)>,
 }
 
+/// Visual style used to highlight a matched bracket pair.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Reflect)]
 #[reflect(Debug, PartialEq)]
 pub enum BracketHighlightStyle {
+    /// Underline both brackets.
     Underline,
+    /// Background fill on both brackets.
     Background,
+    /// Both underline and background fill.
     Both,
 }
 

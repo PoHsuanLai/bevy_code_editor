@@ -141,6 +141,8 @@ pub struct TextViewBatch {
     pub built_at_height: u32,
 }
 
+/// Per-`TextView` render component holding the glyph instance buffer for the
+/// current frame. Written by `update_text_views`; consumed by the GPU pipeline.
 #[derive(Component, Clone)]
 pub struct GlyphBatchComponent {
     pub instances: Vec<GlyphInstance>,

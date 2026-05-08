@@ -87,6 +87,8 @@ pub struct TerminalConfig {
     pub cwd: Option<String>,
 }
 
+/// Live PTY handles for a running terminal. Inserted by `open_pending_sessions`
+/// once the viewport size is known; absent before that.
 #[derive(Component)]
 pub struct TerminalSession {
     pub terminal: Arc<Mutex<backend::Terminal>>,
@@ -95,6 +97,9 @@ pub struct TerminalSession {
     pub size: backend::TerminalSize,
 }
 
+/// Channels from the PTY reader thread to the ECS drain system.
+/// `rx` carries raw byte chunks; `alerts` carries wezterm `Alert` values
+/// (bell, title changes, OSC sequences).
 #[derive(Component)]
 pub struct TerminalEventChannel {
     pub rx: crossbeam_channel::Receiver<Vec<u8>>,
@@ -153,6 +158,7 @@ pub struct TerminalBlockState {
     pub current_block: Option<usize>,
 }
 
+/// One OSC 133 shell-integration block (prompt + command + output).
 #[derive(Clone, Debug, Default, Reflect)]
 pub struct TerminalBlock {
     pub id: u64,
@@ -164,11 +170,15 @@ pub struct TerminalBlock {
     pub command_text: String,
 }
 
+/// Lifecycle state of a [`TerminalBlock`].
 #[derive(Clone, Copy, Debug, Default, Reflect, PartialEq, Eq)]
 pub enum BlockStatus {
+    /// Block started but no output yet (prompt shown, no command entered).
     #[default]
     Pending,
+    /// Command is executing.
     Running,
+    /// Command exited; exit code is available on the block.
     Completed,
 }
 

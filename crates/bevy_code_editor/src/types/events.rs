@@ -103,10 +103,12 @@ impl RequestSignatureHelpEvent {
     }
 }
 
+/// Fired to close the completion popup without applying any item.
 #[derive(Message, Clone, Debug, Default, Reflect)]
 #[reflect(Clone, Debug, Default)]
 pub struct DismissCompletionEvent;
 
+/// Fired to apply the completion item at `item_index` in the popup list.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct ApplyCompletionEvent {

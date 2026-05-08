@@ -27,12 +27,17 @@ pub struct CursorLineSettings {
     pub word_highlight_color: Color,
 }
 
+/// Visual style for the cursor-line band.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Reflect)]
 #[reflect(Debug, PartialEq)]
 pub enum CursorLineStyle {
+    /// No highlight.
     None,
+    /// Filled background band behind the active line.
     Background,
+    /// Top/bottom border lines only.
     Border,
+    /// Both background fill and border.
     Both,
 }
 

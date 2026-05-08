@@ -12,6 +12,8 @@ pub use wezterm_surface::CursorVisibility;
 
 pub use termwiz::input::{KeyCode, KeyboardEncoding, Modifiers as KeyModifiers};
 
+/// `TerminalConfiguration` implementation used when the host does not supply
+/// a custom config. Drives scrollback size, color palette, and keyboard encoding.
 #[derive(Debug)]
 pub struct DefaultConfig {
     pub scrollback: usize,
@@ -46,6 +48,8 @@ impl TerminalConfiguration for DefaultConfig {
     }
 }
 
+/// `AlertHandler` implementation that forwards wezterm `Alert` values
+/// (bell, title change, OSC sequences) into a crossbeam channel for the ECS drain.
 pub struct AlertChannel {
     pub tx: crossbeam_channel::Sender<Alert>,
 }

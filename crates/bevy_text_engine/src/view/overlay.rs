@@ -13,6 +13,9 @@ use std::ops::Range;
 
 use super::layout::DisplayLayout;
 
+/// Per-entity list of decoration rectangles painted over the text (cursors,
+/// selections, bracket highlights, line bands). Cleared and rebuilt each frame
+/// by the systems that own each overlay type.
 #[derive(Component, Default, Clone, Reflect)]
 #[reflect(Component, Default)]
 pub struct TextViewOverlays {
