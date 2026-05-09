@@ -131,7 +131,7 @@ pub(crate) fn find_opening_bracket(
 pub(crate) fn update_bracket_match(
     mut editor_query: Query<
         (&CursorState, &TextBuffer, &mut BracketMatchState, &BracketSettings),
-        With<CodeEditor>,
+        (With<CodeEditor>, Or<(Changed<CursorState>, Changed<TextBuffer>)>),
     >,
 ) {
     for (cursor, buffer, mut bracket_state, brackets) in editor_query.iter_mut() {

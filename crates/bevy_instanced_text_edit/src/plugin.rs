@@ -192,7 +192,8 @@ pub fn emit_edit_triggers(
 /// with that system's reads.
 pub fn emit_cursor_moved(
     mut writer: MessageWriter<crate::editing_events::CursorMoved>,
-    q: Query<(Entity, &CursorState), With<TextEditor>>,
+    q: Query<(Entity, &CursorState), (With<TextEditor>, Changed<CursorState>)>,
+    all: Query<Entity, With<TextEditor>>,
     mut last: Local<std::collections::HashMap<Entity, usize>>,
 ) {
     for (entity, cursor) in q.iter() {
@@ -205,7 +206,7 @@ pub fn emit_cursor_moved(
             });
         }
     }
-    last.retain(|e, _| q.get(*e).is_ok());
+    last.retain(|e, _| all.get(*e).is_ok());
 }
 
 /// Watch the selection collection for any change (anchor/head/mode/count)

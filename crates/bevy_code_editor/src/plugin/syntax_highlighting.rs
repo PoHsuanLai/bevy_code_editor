@@ -493,7 +493,7 @@ pub(crate) fn react_language_changed(
 /// `EditorBufferSnapshot` so the next `parse_dirty` tick sees the latest
 /// content. Runs in `ApplyStateSet` after edits land on `TextBuffer`.
 pub(crate) fn sync_editor_parse_source(
-    editors: Query<(&TextBuffer, &EditorParseBufferRef), With<CodeEditor>>,
+    editors: Query<(&TextBuffer, &EditorParseBufferRef), (With<CodeEditor>, Changed<TextBuffer>)>,
 ) {
     for (buffer, buf_ref) in editors.iter() {
         let mut buf = buf_ref.0.write().unwrap();
