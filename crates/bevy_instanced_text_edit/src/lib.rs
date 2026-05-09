@@ -9,12 +9,12 @@
 //!
 //! Two plugins, composable independently:
 //!
-//! - **[`TextInteractionPlugin`]** — pointer interaction only: click-to-place
+//! - **[`InstancedTextInteractionPlugin`]** — pointer interaction only: click-to-place
 //!   cursor, drag-select, scroll wheel, double/triple-click word/line select,
 //!   and copy. No keyboard input. Suitable for read-only views that need
 //!   text selection (log viewers, output panels).
 //!
-//! - **[`TextEditorPlugin`]** — everything in `TextInteractionPlugin` plus
+//! - **[`InstancedTextEditPlugin`]** — everything in `InstancedTextInteractionPlugin` plus
 //!   typed-character input, full edit history, undo/redo, clipboard cut/paste,
 //!   and keyboard shortcuts dispatched as [`editing_events`] messages.
 //!
@@ -43,12 +43,12 @@
 //! ```rust,no_run
 //! use bevy::prelude::*;
 //! use bevy_instanced_text::prelude::*;
-//! use bevy_instanced_text_edit::TextEditorPlugin;
+//! use bevy_instanced_text_edit::InstancedTextEditPlugin;
 //!
 //! App::new()
 //!     .add_plugins(DefaultPlugins)
-//!     .add_plugins(TextEnginePlugins)
-//!     .add_plugins(TextEditorPlugin::default())
+//!     .add_plugins(InstancedTextPlugins)
+//!     .add_plugins(InstancedTextEditPlugin::default())
 //!     .add_systems(Startup, |mut commands: Commands| {
 //!         commands.spawn((
 //!             bevy_instanced_text_edit::TextEditor,
@@ -88,7 +88,7 @@ pub use components::{ScrollConfig, TextViewDragState};
 pub use editing_events::*;
 pub use history::{EditHistory, EditKind, EditOperation, EditTransaction};
 pub use interaction::{copy_selection, screen_to_char_pos, InteractionSettings};
-pub use plugin::{EditEmitSet, TextEditorPlugin, TextInteractionPlugin};
+pub use plugin::{EditEmitSet, InstancedTextEditPlugin, InstancedTextInteractionPlugin};
 pub use selection::{
     Selection, SelectionCollection, SelectionMode, DEFAULT_SEMANTIC_ESCAPE_CHARS,
 };

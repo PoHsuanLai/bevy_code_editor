@@ -40,7 +40,7 @@ impl Plugin for DisplayMapPlugin {
                 .after(crate::plugin::ApplyStateSet)
                 .before(LayoutProduceSet),
         );
-        // Engine's `LayoutProduceSet` is scheduled by `TextEnginePlugin`;
+        // Engine's `LayoutProduceSet` is scheduled by `InstancedTextPlugin`;
         // we configure it to live inside `RenderingSet` so downstream
         // observers (cursor / selection) see the freshly-built layout.
         app.configure_sets(Update, LayoutProduceSet.in_set(crate::plugin::RenderingSet));

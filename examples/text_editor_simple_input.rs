@@ -2,7 +2,7 @@
 //! standalone, without `bevy_code_editor`'s IDE features.
 //!
 //! Spawns one [`TextEditor`] entity with the engine's GPU rendering, plus
-//! [`TextEditorPlugin`] which gives you typed-character insertion, cursor
+//! [`InstancedTextEditPlugin`] which gives you typed-character insertion, cursor
 //! movement (via the editing-event observers), drag selection, scroll, and
 //! clipboard copy out of the box.
 //!
@@ -11,7 +11,7 @@
 //! crate one tier up.
 
 use bevy::prelude::*;
-use bevy_instanced_text_edit::{TextEditor, TextEditorPlugin};
+use bevy_instanced_text_edit::{TextEditor, InstancedTextEditPlugin};
 use bevy_instanced_text::prelude::*;
 
 fn main() {
@@ -24,8 +24,8 @@ fn main() {
             }),
             ..default()
         }))
-        .add_plugins(TextEnginePlugins)
-        .add_plugins(TextEditorPlugin::default())
+        .add_plugins(InstancedTextPlugins)
+        .add_plugins(InstancedTextEditPlugin::default())
         .add_systems(Startup, setup)
         .run();
 }

@@ -1,5 +1,5 @@
-//! [`TextInteractionPlugin`] wires picking + observers for scroll, drag-select,
-//! and copy on any `TextView`. [`TextEditorPlugin`] adds the editable-text core
+//! [`InstancedTextInteractionPlugin`] wires picking + observers for scroll, drag-select,
+//! and copy on any `TextView`. [`InstancedTextEditPlugin`] adds the editable-text core
 //! (typed-char, edit history, undo/redo, clipboard). Both are idempotent re:
 //! `DefaultPickingPlugins` and `InputDispatchPlugin`.
 
@@ -25,11 +25,11 @@ use crate::typing::on_focused_keyboard_typing;
 pub struct EditEmitSet;
 
 /// Pointer + keyboard interaction for `TextView` entities. Pair with
-/// [`bevy_instanced_text::TextEnginePlugins`] for the rendering side.
+/// [`bevy_instanced_text::InstancedTextPlugins`] for the rendering side.
 #[derive(Default)]
-pub struct TextInteractionPlugin;
+pub struct InstancedTextInteractionPlugin;
 
-impl Plugin for TextInteractionPlugin {
+impl Plugin for InstancedTextInteractionPlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<ScrollConfig>()
             .register_type::<TextViewDragState>()
@@ -87,17 +87,17 @@ fn apply_instant_scroll(
 }
 
 /// Editable-text core: typed-char insertion, edit history, undo/redo, clipboard.
-/// Adds [`TextInteractionPlugin`] idempotently. Use
+/// Adds [`InstancedTextInteractionPlugin`] idempotently. Use
 /// [`Self::without_typing_observer()`] when the host handles typing itself
 /// (bracket auto-close, IME, LSP completion triggers).
 #[derive(Clone, Copy, Debug)]
-pub struct TextEditorPlugin {
+pub struct InstancedTextEditPlugin {
     /// When `true`, registers a `FocusedInput<KeyboardInput>` observer that
     /// inserts printable chars. Set `false` when the host inserts them itself.
     pub typing_observer: bool,
 }
 
-impl Default for TextEditorPlugin {
+impl Default for InstancedTextEditPlugin {
     fn default() -> Self {
         Self {
             typing_observer: true,
@@ -105,7 +105,7 @@ impl Default for TextEditorPlugin {
     }
 }
 
-impl TextEditorPlugin {
+impl InstancedTextEditPlugin {
     pub const fn without_typing_observer() -> Self {
         Self {
             typing_observer: false,
@@ -113,10 +113,10 @@ impl TextEditorPlugin {
     }
 }
 
-impl Plugin for TextEditorPlugin {
+impl Plugin for InstancedTextEditPlugin {
     fn build(&self, app: &mut App) {
-        if !app.is_plugin_added::<TextInteractionPlugin>() {
-            app.add_plugins(TextInteractionPlugin);
+        if !app.is_plugin_added::<InstancedTextInteractionPlugin>() {
+            app.add_plugins(InstancedTextInteractionPlugin);
         }
 
         app.register_type::<TextEditor>();

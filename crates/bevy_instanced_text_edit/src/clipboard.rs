@@ -49,7 +49,7 @@ pub trait ClipboardProvider: Send + Sync + 'static {
 }
 
 /// Resource holding the active clipboard backend. Inserted by
-/// `TextInteractionPlugin` with [`SystemClipboard`] as the default
+/// `InstancedTextInteractionPlugin` with [`SystemClipboard`] as the default
 /// (or [`NullClipboard`] when the `arboard` feature is off).
 /// Override by inserting a custom one before plugin setup.
 #[derive(Resource)]

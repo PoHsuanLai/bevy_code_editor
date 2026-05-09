@@ -2,7 +2,7 @@
 //!
 //! The basic editing handlers (cursor movement, selection, delete / insert,
 //! clipboard, undo / redo) live in [`bevy_instanced_text_edit::handlers`] and are
-//! registered by [`bevy_instanced_text_edit::TextEditorPlugin`]. The handlers in
+//! registered by [`bevy_instanced_text_edit::InstancedTextEditPlugin`]. The handlers in
 //! this module cover IDE-only concerns: multi-cursor, folding, the
 //! goto-line dialog, and LSP request handlers.
 //!

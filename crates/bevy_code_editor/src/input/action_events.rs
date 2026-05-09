@@ -3,7 +3,7 @@
 //!
 //! The 33 editing events (cursor movement, selection, delete / insert /
 //! clipboard / undo / redo) are defined in [`bevy_instanced_text_edit`] and
-//! registered by `TextEditorPlugin`; they're re-exported here so dispatcher
+//! registered by `InstancedTextEditPlugin`; they're re-exported here so dispatcher
 //! code stays at `crate::input::action_events::*`.
 //!
 //! The IDE-only events (replace, goto-line, multi-cursor, folding, LSP

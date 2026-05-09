@@ -22,7 +22,7 @@ use bevy_instanced_text::{TextView, TextViewViewport};
 
 /// Picking-backend system: produce `PointerHits` for `TextView` entities.
 ///
-/// Registered by [`crate::plugin::TextInteractionPlugin`] in
+/// Registered by [`crate::plugin::InstancedTextInteractionPlugin`] in
 /// `PickingSystems::Backend` (PreUpdate).
 pub fn text_view_picking_backend(
     pointers: Query<(&PointerId, &PointerLocation)>,

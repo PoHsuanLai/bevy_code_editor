@@ -6,7 +6,7 @@
 
 use bevy::prelude::*;
 use bevy_terminal::prelude::*;
-use bevy_instanced_text::TextEnginePlugins;
+use bevy_instanced_text::InstancedTextPlugins;
 
 #[cfg(feature = "profile")]
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
@@ -21,7 +21,7 @@ fn main() {
         }),
         ..default()
     }))
-    .add_plugins(TextEnginePlugins)
+    .add_plugins(InstancedTextPlugins)
     .add_plugins(BevyTerminalPlugin)
     .add_systems(Startup, (setup_camera, spawn_terminal))
     .add_systems(Update, log_events);

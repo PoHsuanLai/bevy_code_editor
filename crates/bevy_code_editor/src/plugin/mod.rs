@@ -91,7 +91,7 @@ pub struct EditorSetupSet;
 /// Most hosts should use [`CodeEditorPlugins`] instead — the full bundle.
 /// `CodeEditorPlugin` is for hosts that compose their own version of those
 /// dependencies (e.g. a render-to-texture wrapper that owns
-/// [`bevy_instanced_text::TextEnginePlugins`] and [`EditorUiPlugin`] directly)
+/// [`bevy_instanced_text::InstancedTextPlugins`] and [`EditorUiPlugin`] directly)
 /// and need to avoid double-adds.
 ///
 /// ```rust,no_run
@@ -135,7 +135,7 @@ impl Plugin for CodeEditorPlugin {
         app.add_systems(PostStartup, spawn_default_input_manager);
 
         // Register editor-side events. The 33 editing events are registered
-        // by `TextEditorPlugin` already; the IDE-only events (replace,
+        // by `InstancedTextEditPlugin` already; the IDE-only events (replace,
         // goto-line, multi-cursor, folding, LSP request, save / open) are
         // registered here.
         app.add_message::<SaveRequested>();
@@ -165,7 +165,7 @@ impl Plugin for CodeEditorPlugin {
         // `bevy_picking`. Plain-click cursor placement, drag-extend
         // selection, and scroll wheel are handled by
         // `bevy_instanced_text_edit::interaction`'s observers (registered by
-        // `TextInteractionPlugin`); the editor adds modifier-click
+        // `InstancedTextInteractionPlugin`); the editor adds modifier-click
         // behaviors and the LSP hover trigger on top.
         app.add_observer(crate::input::on_fold_gutter_press);
         app.add_observer(crate::input::on_alt_click);
@@ -204,7 +204,7 @@ impl Plugin for CodeEditorPlugin {
                 .in_set(ApplyStateSet),
         );
 
-        // The renderer (`update_text_views`) is registered by `TextEnginePlugin`
+        // The renderer (`update_text_views`) is registered by `InstancedTextPlugin`
         // — see `bevy_instanced_text::view::plugin`. It already runs in
         // `TextViewRenderSet` with `.run_if(atlas_ready)`. We just configure
         // the editor-side ordering: rendering must observe this frame's
@@ -234,9 +234,9 @@ impl PluginGroup for CodeEditorPlugins {
         let group = PluginGroupBuilder::start::<Self>()
             .add(bevy_instanced_text::gpu::GlyphAtlasPlugin)
             .add(bevy_instanced_text::gpu::InstancedTextRenderPlugin)
-            .add(bevy_instanced_text::view::plugin::TextEnginePlugin)
+            .add(bevy_instanced_text::view::plugin::InstancedTextPlugin)
             .add(bevy::input_focus::InputDispatchPlugin)
-            .add(bevy_instanced_text_edit::TextEditorPlugin::without_typing_observer())
+            .add(bevy_instanced_text_edit::InstancedTextEditPlugin::without_typing_observer())
             .add(leafwing_input_manager::plugin::InputManagerPlugin::<
                 crate::input::EditorAction,
             >::default())
@@ -254,7 +254,7 @@ impl PluginGroup for CodeEditorPlugins {
 }
 
 /// Register the IDE-only `*Requested` events. The 33 editing events are
-/// registered by `bevy_instanced_text_edit::TextEditorPlugin`.
+/// registered by `bevy_instanced_text_edit::InstancedTextEditPlugin`.
 fn register_ide_action_events(app: &mut App) {
     use crate::input::action_events::*;
 
@@ -287,7 +287,7 @@ fn register_ide_action_events(app: &mut App) {
 
 /// Register IDE-only per-action handler systems. The basic editing handlers
 /// (cursor / selection / delete / clipboard / undo) are registered by
-/// `bevy_instanced_text_edit::TextEditorPlugin`. Handlers here cover multi-cursor,
+/// `bevy_instanced_text_edit::InstancedTextEditPlugin`. Handlers here cover multi-cursor,
 /// folding, goto-line, LSP requests, and the LSP follow-up.
 fn register_handler_systems(app: &mut App) {
     use crate::input::handlers::*;

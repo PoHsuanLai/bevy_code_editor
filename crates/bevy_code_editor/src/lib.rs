@@ -89,7 +89,7 @@ pub mod prelude {
     //!
     //! Engine-side primitives (`TextView`, `FontConfig`, `DisplayLayout`,
     //! `TextBuffer`, `ScrollState`, `ContentMetrics`, `TextViewViewport`,
-    //! `TextEnginePlugin`, `TextEnginePlugins`) come in via
+    //! `InstancedTextPlugin`, `InstancedTextPlugins`) come in via
     //! `bevy_instanced_text::prelude::*`. The
     //! editor adds: the editor plugin (+ `standalone()`'s plugin group), the
     //! UI plugin, the interaction plugin, the `CodeEditor` marker, and the
@@ -99,7 +99,7 @@ pub mod prelude {
     //! (`bevy_code_editor::types::*`, `::display_map::*`, etc.) for hosts
     //! that need them.
 
-    // Engine surface — TextEnginePlugins, TextEnginePlugin, TextView,
+    // Engine surface — InstancedTextPlugins, InstancedTextPlugin, TextView,
     // FontConfig, DisplayLayout, TextBuffer, ScrollState, ContentMetrics,
     // TextViewViewport.
     pub use bevy_instanced_text::prelude::*;
@@ -117,7 +117,7 @@ pub mod prelude {
     // Editable-text widget types from `bevy_instanced_text_edit`. Re-exported so
     // prelude users get them without a separate import.
     pub use bevy_instanced_text_edit::{
-        ScrollConfig, TextEditor, TextEditorPlugin, TextInteractionPlugin,
+        ScrollConfig, TextEditor, InstancedTextEditPlugin, InstancedTextInteractionPlugin,
     };
 
     // Selection / multi-cursor types and the EditorAction enum.

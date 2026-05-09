@@ -40,8 +40,8 @@ impl Plugin for BevyTerminalPlugin {
         if !app.is_plugin_added::<bevy::input_focus::InputDispatchPlugin>() {
             app.add_plugins(bevy::input_focus::InputDispatchPlugin);
         }
-        if !app.is_plugin_added::<bevy_instanced_text_edit::TextInteractionPlugin>() {
-            app.add_plugins(bevy_instanced_text_edit::TextInteractionPlugin);
+        if !app.is_plugin_added::<bevy_instanced_text_edit::InstancedTextInteractionPlugin>() {
+            app.add_plugins(bevy_instanced_text_edit::InstancedTextInteractionPlugin);
         }
 
         app.register_type::<BevyTerminal>()
@@ -195,9 +195,9 @@ impl PluginGroup for BevyTerminalPlugins {
         PluginGroupBuilder::start::<Self>()
             .add(bevy_instanced_text::gpu::GlyphAtlasPlugin)
             .add(bevy_instanced_text::gpu::InstancedTextRenderPlugin)
-            .add(bevy_instanced_text::view::plugin::TextEnginePlugin)
+            .add(bevy_instanced_text::view::plugin::InstancedTextPlugin)
             .add(bevy::input_focus::InputDispatchPlugin)
-            .add(bevy_instanced_text_edit::TextInteractionPlugin)
+            .add(bevy_instanced_text_edit::InstancedTextInteractionPlugin)
             .add(BevyTerminalPlugin)
     }
 }

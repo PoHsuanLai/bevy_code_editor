@@ -11,7 +11,7 @@ use bevy::prelude::*;
 use bevy_markdown::{MarkdownDoc, MarkdownViewerPlugin};
 use bevy_instanced_text::{
     ContentMetrics, DisplayLayout, FontConfig, FontSynthesis, ScrollState, TextBuffer,
-    TextEnginePlugins, TextView, TextViewViewport,
+    InstancedTextPlugins, TextView, TextViewViewport,
 };
 
 const SCROLL_SPEED: f32 = 40.0;
@@ -60,7 +60,7 @@ fn main() {
         }),
         ..default()
     }))
-    .add_plugins(TextEnginePlugins)
+    .add_plugins(InstancedTextPlugins)
     .add_plugins(MarkdownViewerPlugin)
     .add_systems(Startup, (setup_camera, setup_viewer))
     .add_systems(Update, handle_scroll)

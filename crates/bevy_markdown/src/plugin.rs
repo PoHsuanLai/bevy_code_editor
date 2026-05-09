@@ -43,7 +43,7 @@ pub struct BaseMarkdownLayout {
     pub base_overlays: Vec<RectOverlay>,
 }
 
-/// Adds the markdown rebuild + scroll systems. Pair with `TextEnginePlugins`
+/// Adds the markdown rebuild + scroll systems. Pair with `InstancedTextPlugins`
 /// for rendering.
 pub struct MarkdownViewerPlugin;
 

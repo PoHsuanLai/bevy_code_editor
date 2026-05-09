@@ -1,13 +1,13 @@
-//! Text View Demo — standalone `TextEnginePlugins` without any editor.
+//! Text View Demo — standalone `InstancedTextPlugins` without any editor.
 //!
-//! Demonstrates that the engine's `TextEnginePlugins` (GPU + view systems)
+//! Demonstrates that the engine's `InstancedTextPlugins` (GPU + view systems)
 //! can render styled text independently, without `CodeEditorPlugin`, cursor,
 //! selection, syntax highlighting, or keybindings.
 //!
 //! Builds a `DisplayLayout` directly via `trivial_layout`. Mouse-wheel
 //! scrolling here is handled by a tiny demo-local system; real consumers
 //! that want the editor's scroll/drag/copy behaviour also add
-//! `TextInteractionPlugin`.
+//! `InstancedTextInteractionPlugin`.
 
 use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
@@ -18,14 +18,14 @@ fn main() {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
-            title: "TextEnginePlugins Demo — No Editor".to_string(),
+            title: "InstancedTextPlugins Demo — No Editor".to_string(),
             resolution: (800, 600).into(),
             ..default()
         }),
         ..default()
     }));
 
-    app.add_plugins(TextEnginePlugins)
+    app.add_plugins(InstancedTextPlugins)
         .add_systems(Startup, (setup_camera, setup_text_view))
         .add_systems(Update, handle_scroll)
         .run();

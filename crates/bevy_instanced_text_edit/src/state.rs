@@ -141,7 +141,7 @@ impl Default for IndentConfig {
 
 /// Marker for an editable text widget. `#[require]` cascades all supporting
 /// state (and transitively `TextView` + engine components). Pair with
-/// [`crate::TextEditorPlugin`].
+/// [`crate::InstancedTextEditPlugin`].
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 #[require(

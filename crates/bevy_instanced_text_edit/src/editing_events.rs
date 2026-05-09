@@ -1,7 +1,7 @@
 //! Typed editing-request events — the public contract between hosts (or the
 //! code editor's leafwing dispatcher) and this crate's editing handlers.
 //!
-//! All events are unit-style structs today. The crate's [`crate::TextEditorPlugin`]
+//! All events are unit-style structs today. The crate's [`crate::InstancedTextEditPlugin`]
 //! registers them; per-action handler systems consume them.
 
 use bevy::prelude::*;

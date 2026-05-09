@@ -34,12 +34,12 @@
 //!
 //! ```rust,no_run
 //! use bevy::prelude::*;
-//! use bevy_instanced_text::TextEnginePlugins;
+//! use bevy_instanced_text::InstancedTextPlugins;
 //! use bevy_markdown::prelude::*;
 //!
 //! App::new()
 //!     .add_plugins(DefaultPlugins)
-//!     .add_plugins(TextEnginePlugins)
+//!     .add_plugins(InstancedTextPlugins)
 //!     .add_plugins(MarkdownViewerPlugin)
 //!     .add_systems(Startup, |mut commands: Commands| {
 //!         commands.spawn(MarkdownDoc::new("# Hello\n\nA *markdown* viewer."));
