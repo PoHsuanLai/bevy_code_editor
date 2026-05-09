@@ -8,27 +8,26 @@
 //!     via `bevy::input_focus::InputFocus`.
 //!
 //! Layout: the window is split horizontally; the left editor renders on
-//! `RenderLayers::layer(0)` (default), the right editor on
-//! `RenderLayers::layer(1)`. Each editor has its own viewport rect and a
-//! dedicated 2D camera; mouse hit-testing maps screen coordinates back to
-//! the editor whose viewport contains them.
+//! `RenderLayers::layer(0)`, the right editor on `RenderLayers::layer(1)`.
+//! Each editor has its own viewport rect and dedicated 2D camera; mouse
+//! hit-testing maps screen coordinates back to the editor whose viewport
+//! contains them.
 //!
-//! Run: `cargo run --example multi_editor`
+//! Run: `cargo run --example editor_multi`
 
 use bevy::prelude::*;
 use bevy_camera::visibility::RenderLayers;
 use bevy_code_editor::prelude::*;
 
-const WINDOW_WIDTH: u32 = 1600;
-const WINDOW_HEIGHT: u32 = 900;
-const PANEL_WIDTH: u32 = WINDOW_WIDTH / 2;
+const WINDOW_WIDTH: f32 = 1600.0;
+const WINDOW_HEIGHT: f32 = 900.0;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "bevy_code_editor — multi-editor".into(),
-                resolution: (WINDOW_WIDTH, WINDOW_HEIGHT).into(),
+                resolution: [WINDOW_WIDTH as u32, WINDOW_HEIGHT as u32].into(),
                 ..default()
             }),
             ..default()
@@ -36,29 +35,30 @@ fn main() {
             file_path: "assets".into(),
             ..default()
         }))
+        // Opt out of the auto-resize behavior so we can size each editor's
+        // TextViewViewport ourselves; this also suppresses the plugin's
+        // default editor auto-spawn.
+        .insert_resource(ViewportConfig { auto_resize_to_window: false })
         .add_plugins(CodeEditorPlugins)
-        .add_systems(Startup, (despawn_default_editor, spawn_two_editors).chain())
+        .add_systems(Startup, spawn_two_editors)
         .run();
 }
 
-/// `CodeEditorPlugin` auto-spawns a default editor on `Startup`. Despawn
-/// it before our custom spawn runs so we end up with exactly two editors.
-fn despawn_default_editor(
-    mut commands: Commands,
-    editors: Query<Entity, With<CodeEditor>>,
-) {
-    for e in editors.iter() {
-        commands.entity(e).despawn();
-    }
-}
-
 fn spawn_two_editors(
+    windows: Query<&Window>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut input_focus: ResMut<bevy::input_focus::InputFocus>,
 ) {
-    // Two cameras, one per editor, with non-overlapping viewport rects so
-    // each occupies half of the window.
+    let Ok(window) = windows.single() else { return };
+    // Camera::viewport rects are in physical pixels; TextViewViewport is in logical pixels.
+    let scale = window.scale_factor();
+    let phys_w = (window.width() * scale) as u32;
+    let phys_h = (window.height() * scale) as u32;
+    let phys_half = phys_w / 2;
+    let log_half = phys_half as f32 / scale;
+    let log_h = window.height();
+
     let font = bevy_instanced_text::FontConfig::from_size(14.0)
         .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
         .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
@@ -72,7 +72,7 @@ fn spawn_two_editors(
             order: 0,
             viewport: Some(bevy::camera::Viewport {
                 physical_position: UVec2::new(0, 0),
-                physical_size: UVec2::new(PANEL_WIDTH, WINDOW_HEIGHT),
+                physical_size: UVec2::new(phys_half, phys_h),
                 ..default()
             }),
             ..default()
@@ -85,8 +85,8 @@ fn spawn_two_editors(
         Camera {
             order: 1,
             viewport: Some(bevy::camera::Viewport {
-                physical_position: UVec2::new(PANEL_WIDTH, 0),
-                physical_size: UVec2::new(PANEL_WIDTH, WINDOW_HEIGHT),
+                physical_position: UVec2::new(phys_half, 0),
+                physical_size: UVec2::new(phys_w - phys_half, phys_h),
                 ..default()
             }),
             ..default()
@@ -100,8 +100,8 @@ fn spawn_two_editors(
             CodeEditor,
             font.clone(),
             TextViewViewport {
-                width: PANEL_WIDTH,
-                height: WINDOW_HEIGHT,
+                width: log_half as u32,
+                height: log_h as u32,
                 hit_test_position: Vec2::new(0.0, 0.0),
                 ..default()
             },
@@ -114,9 +114,9 @@ fn spawn_two_editors(
             CodeEditor,
             font,
             TextViewViewport {
-                width: PANEL_WIDTH,
-                height: WINDOW_HEIGHT,
-                hit_test_position: Vec2::new(PANEL_WIDTH as f32, 0.0),
+                width: (window.width() - log_half) as u32,
+                height: log_h as u32,
+                hit_test_position: Vec2::new(log_half, 0.0),
                 ..default()
             },
             right_layer,
