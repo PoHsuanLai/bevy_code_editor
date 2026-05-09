@@ -22,6 +22,10 @@ pub struct ParseTask {
     pub content_version: u64,
     /// The parent entity that holds `SyntaxTree`/`Language`/`ParseSourceComp`.
     pub target: Entity,
+    /// Dirty row range from the edit(s) that triggered this parse. Forwarded
+    /// into [`SyntaxTree::dirty_rows`] on completion so downstream systems
+    /// can do incremental rehighlight instead of a full-window rebuild.
+    pub dirty_rows: Option<(u32, u32)>,
 }
 
 /// Buffer interface for the parse pipeline. `content_version` and `snapshot`
@@ -63,6 +67,13 @@ pub struct SyntaxTree {
     /// Bumps on each tree replacement so readers can cache derived data by
     /// tree identity instead of pointer equality.
     pub tree_version: u64,
+    /// Buffer-line range dirtied by the edit(s) that produced this tree.
+    /// `None` means the full visible window must be rehighlighted (e.g. first
+    /// parse, or a huge edit that dropped the cached tree). Set by
+    /// `record_edits_for_incremental_parsing` via `bypass_change_detection`
+    /// and forwarded through the async task so `produce_line_styles` can do
+    /// an incremental rehighlight instead of a full-window rebuild.
+    pub dirty_rows: Option<(u32, u32)>,
 }
 
 impl SyntaxTree {
@@ -86,7 +97,7 @@ pub(crate) fn parse_dirty(
         in_flight.insert(task.target);
     }
 
-    for (entity, language, source, syntax) in targets.iter_mut() {
+    for (entity, language, source, mut syntax) in targets.iter_mut() {
         let source_version = source.0.content_version();
         if source_version == syntax.content_version {
             continue;
@@ -101,6 +112,9 @@ pub(crate) fn parse_dirty(
 
         let rope = source.0.snapshot();
         let cached_tree = syntax.tree.clone();
+        // Snapshot the current dirty range so the completed parse can forward
+        // it to `SyntaxTree::dirty_rows` for incremental rehighlight.
+        let dirty_rows = syntax.bypass_change_detection().dirty_rows;
         let task_pool = AsyncComputeTaskPool::get();
         let task = task_pool
             .spawn(async move { parse_tree_async(rope, grammar, cached_tree) });
@@ -110,6 +124,7 @@ pub(crate) fn parse_dirty(
                 task,
                 content_version: source_version,
                 target: entity,
+                dirty_rows,
             },
             ChildOf(entity),
         ));
@@ -128,6 +143,7 @@ pub(crate) fn parse_dirty(
             ParseCompletion {
                 target: parse_task.target,
                 content_version: parse_task.content_version,
+                dirty_rows: parse_task.dirty_rows,
                 tree,
             },
         ));
@@ -139,6 +155,10 @@ pub(crate) fn parse_dirty(
                 syntax.tree = Some(tree);
                 syntax.content_version = completion.content_version;
                 syntax.tree_version = syntax.tree_version.wrapping_add(1);
+                // Forward the dirty row range from the spawning edit so
+                // `produce_line_styles` can rehighlight only the touched lines
+                // instead of the full visible window.
+                syntax.dirty_rows = completion.dirty_rows;
             } else {
                 // Record the attempted version to avoid infinite-loop retries.
                 // bypass_change_detection keeps Changed<SyntaxTree> silent on
@@ -154,6 +174,7 @@ pub(crate) fn parse_dirty(
 struct ParseCompletion {
     target: Entity,
     content_version: u64,
+    dirty_rows: Option<(u32, u32)>,
     tree: Option<tree_sitter::Tree>,
 }
 

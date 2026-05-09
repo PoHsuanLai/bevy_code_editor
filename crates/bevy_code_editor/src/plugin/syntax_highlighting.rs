@@ -615,6 +615,15 @@ fn record_edits_for_incremental_parsing(
                 if let Some(tree) = st.tree.as_mut() {
                     tree.edit(&edit);
                 }
+                // Union the edit's row range into dirty_rows so the async
+                // parse completion can forward it to produce_line_styles for
+                // incremental rehighlight instead of a full-window rebuild.
+                let start_row = edit.start_position.row as u32;
+                let end_row = edit.new_end_position.row as u32;
+                st.dirty_rows = Some(match st.dirty_rows {
+                    Some((lo, hi)) => (lo.min(start_row), hi.max(end_row)),
+                    None => (start_row, end_row),
+                });
                 parse_source.0.apply_edit(edit);
             } else {
                 // For huge edits, drop the cached trees entirely so any
@@ -623,6 +632,8 @@ fn record_edits_for_incremental_parsing(
                 // structure. The async reparse will repopulate.
                 let st = syntax_tree.bypass_change_detection();
                 st.tree = None;
+                // Full rebuild needed — clear dirty_rows.
+                st.dirty_rows = None;
                 if let Some(provider) =
                     &mut syntax_state.inner.write().unwrap().provider
                 {

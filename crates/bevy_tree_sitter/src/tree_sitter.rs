@@ -271,6 +271,12 @@ impl SyntaxProvider for TreeSitterProvider {
         let byte_range = start_byte..query_end;
 
         self.query_cursor.set_byte_range(byte_range.clone());
+        // Cap the number of in-flight match states. Without this, tree-sitter
+        // can spend O(n²) time on deeply-nested patterns in C/Rust grammars
+        // (e.g. long initializer lists, macro expansions). Matches that exceed
+        // the limit are silently dropped — worst case: a token on a very long
+        // line loses its highlight color for that frame.
+        self.query_cursor.set_match_limit(64);
 
         let mut captures = self
             .query_cursor

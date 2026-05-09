@@ -128,6 +128,7 @@ pub fn handle_delete_backward(
     let Ok((mut sel, mut hist, mut cursor, mut buffer)) = q.get_mut(entity) else {
         return;
     };
+    let _span = bevy::prelude::info_span!("delete_backward").entered();
     if sel.selections.primary().has_selection() {
         delete_selection(&mut sel, &mut hist, &mut cursor, &mut buffer);
     } else {

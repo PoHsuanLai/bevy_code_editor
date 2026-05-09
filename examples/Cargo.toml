@@ -30,7 +30,7 @@ bevy_instanced_text = { path = "../crates/bevy_instanced_text" }
 bevy_instanced_text_edit = { path = "../crates/bevy_instanced_text_edit" }
 bevy_code_editor = { path = "../crates/bevy_code_editor" }
 bevy_terminal = { path = "../crates/bevy_terminal" }
-bevy_markdown = { path = "../crates/bevy_markdown" }
+bevy_markdown = { path = "../crates/bevy_markdown", features = ["tree-sitter"] }
 bevy_tree_sitter = { path = "../crates/bevy_tree_sitter", optional = true }
 bevy_lsp = { path = "../crates/bevy_lsp", optional = true }
 

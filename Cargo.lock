@@ -1183,6 +1183,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_camera",
+ "bitflags 2.10.0",
  "bytemuck",
  "cosmic-text 0.12.1",
  "ropey",
@@ -1331,8 +1332,11 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_instanced_text",
+ "bevy_tree_sitter",
  "pulldown-cmark",
  "ropey",
+ "tree-sitter-c",
+ "tree-sitter-rust",
 ]
 
 [[package]]

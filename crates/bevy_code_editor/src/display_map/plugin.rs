@@ -18,6 +18,7 @@ use bevy_instanced_text::{
     RunWithText, ScrollState, TextBuffer, TextViewViewport,
 };
 use std::collections::{HashMap, HashSet};
+use crate::types::events::TextEditEvent;
 
 use super::styling::segs_to_runs;
 use crate::plugin::syntax_highlighting::EditorSyntaxState;
@@ -91,6 +92,12 @@ pub(crate) fn insert_styling_components(
 }
 
 /// Refresh the `HiddenLines` Component when `FoldState` changes.
+///
+/// Only writes when the hidden-line set actually differs from the current one.
+/// `FoldState` change-detection fires on every async fold-detection completion
+/// (which preserves `is_folded` flags across reparses), so without this check
+/// every reparse would invalidate `HiddenLines` and cascade into a full
+/// `produce_line_styles` rebuild via `Changed<HiddenLines>`.
 #[cfg(feature = "tree-sitter")]
 pub(crate) fn produce_hidden_lines(
     mut editors: Query<
@@ -104,27 +111,24 @@ pub(crate) fn produce_hidden_lines(
             if !region.is_folded {
                 continue;
             }
-            // The fold hides lines (start_line + 1 ..= end_line) — match
-            // `FoldRegion::hides_line`'s semantics.
             for line in (region.start_line + 1)..=region.end_line {
                 set.insert(line);
             }
         }
-        *hidden = HiddenLines::new(set);
+        if *hidden.0 != set {
+            *hidden = HiddenLines::new(set);
+        }
     }
 }
 
 /// Recompute styled runs for each editor's visible buffer-line window and
 /// write them into the entity's `LineStyles` Component.
 ///
-/// Runs when any input that affects styling output changes (per-entity
-/// `Changed<>` filter): `TextBuffer`, `ScrollState`, `TextViewViewport`,
-/// `HiddenLines`, `ThemeConfig`, `SyntaxTheme`, and (with `tree-sitter`)
-/// `SyntaxTree`.
-///
-/// Uses [`visible_buffer_range`] to scope work to lines about to render —
-/// the engine's layout system uses the same helper, so producer and
-/// consumer agree by construction.
+/// On a pure content edit (only `TextBuffer` changed), only the lines
+/// touched by the edit are re-highlighted and merged into the existing map —
+/// unchanged lines keep their cached runs. On any other change (scroll,
+/// viewport resize, theme swap, new parse tree, hidden-lines update) the
+/// full visible window is rebuilt from scratch.
 #[allow(clippy::type_complexity)]
 pub(crate) fn produce_line_styles(
     mut editors: Query<
@@ -143,27 +147,18 @@ pub(crate) fn produce_line_styles(
         ),
         With<CodeEditor>,
     >,
-    #[cfg(feature = "tree-sitter")] state_changed: Query<
+    #[cfg(feature = "tree-sitter")] content_changed: Query<
         Entity,
-        (
-            With<CodeEditor>,
-            Or<(
-                Changed<TextBuffer>,
-                Changed<ScrollState>,
-                Changed<TextViewViewport>,
-                Changed<HiddenLines>,
-                Changed<ThemeConfig>,
-                Changed<SyntaxTheme>,
-                Changed<bevy_tree_sitter::SyntaxTree>,
-            )>,
-        ),
+        (With<CodeEditor>, Changed<TextBuffer>),
     >,
-    #[cfg(not(feature = "tree-sitter"))] state_changed: Query<
+    // Full viewport rebuild: layout/theme/viewport changes that invalidate
+    // the entire visible window. Does NOT include Changed<SyntaxTree> —
+    // that's handled incrementally via SyntaxTree::dirty_rows below.
+    #[cfg(feature = "tree-sitter")] full_rebuild_changed: Query<
         Entity,
         (
             With<CodeEditor>,
             Or<(
-                Changed<TextBuffer>,
                 Changed<ScrollState>,
                 Changed<TextViewViewport>,
                 Changed<HiddenLines>,
@@ -172,9 +167,76 @@ pub(crate) fn produce_line_styles(
             )>,
         ),
     >,
+    // Async parse completions: SyntaxTree changed, but only the rows touched
+    // by the original edit need rehighlighting. dirty_rows carries that range.
+    #[cfg(feature = "tree-sitter")] syntax_tree_changed: Query<
+        (Entity, &bevy_tree_sitter::SyntaxTree),
+        (With<CodeEditor>, Changed<bevy_tree_sitter::SyntaxTree>),
+    >,
+    #[cfg(not(feature = "tree-sitter"))] content_changed: Query<
+        Entity,
+        (With<CodeEditor>, Changed<TextBuffer>),
+    >,
+    #[cfg(not(feature = "tree-sitter"))] full_rebuild_changed: Query<
+        Entity,
+        (
+            With<CodeEditor>,
+            Or<(
+                Changed<ScrollState>,
+                Changed<TextViewViewport>,
+                Changed<HiddenLines>,
+                Changed<ThemeConfig>,
+                Changed<SyntaxTheme>,
+            )>,
+        ),
+    >,
+    mut edit_events: MessageReader<TextEditEvent>,
+    // Per-entity dirty line range from the last edit. None = full rebuild needed.
+    mut dirty_lines: Local<HashMap<Entity, Option<(u32, u32)>>>,
 ) {
-    let dirty: HashSet<Entity> = state_changed.iter().collect();
-    if dirty.is_empty() {
+    let _span = bevy::prelude::info_span!("produce_line_styles").entered();
+    // Collect edit events: record the changed line range per entity.
+    // Multiple edits in one frame are unioned. `None` means full rebuild.
+    for event in edit_events.read() {
+        // TextEditEvent is not entity-keyed in its current form — it's broadcast.
+        // We can only use the row range; apply to all editors that changed.
+        let start_row = event.delta.start_position.row;
+        let end_row = event.delta.new_end_position.row;
+        // Mark all content-changed editors with this dirty range (union if multiple).
+        for entity in content_changed.iter() {
+            let entry = dirty_lines.entry(entity).or_insert(Some((start_row, end_row)));
+            if let Some((lo, hi)) = entry {
+                *lo = (*lo).min(start_row);
+                *hi = (*hi).max(end_row);
+            }
+        }
+    }
+
+    // When an async parse completes, union SyntaxTree::dirty_rows into our
+    // dirty_lines map. `None` dirty_rows = full rebuild (first parse / huge edit).
+    #[cfg(feature = "tree-sitter")]
+    for (entity, syntax_tree) in syntax_tree_changed.iter() {
+        let entry = dirty_lines.entry(entity).or_insert(syntax_tree.dirty_rows);
+        match (entry.as_mut(), syntax_tree.dirty_rows) {
+            (Some((lo, hi)), Some((new_lo, new_hi))) => {
+                *lo = (*lo).min(new_lo);
+                *hi = (*hi).max(new_hi);
+            }
+            // Either side is None → full rebuild needed.
+            _ => *entry = None,
+        }
+    }
+
+    let full_rebuild: HashSet<Entity> = full_rebuild_changed.iter().collect();
+    let content_only: HashSet<Entity> = content_changed.iter().collect();
+    #[cfg(feature = "tree-sitter")]
+    let syntax_changed: HashSet<Entity> = syntax_tree_changed.iter().map(|(e, _)| e).collect();
+    #[cfg(not(feature = "tree-sitter"))]
+    let syntax_changed: HashSet<Entity> = HashSet::new();
+
+    let any_dirty = !full_rebuild.is_empty() || !content_only.is_empty() || !syntax_changed.is_empty();
+    if !any_dirty {
+        dirty_lines.retain(|e, _| content_only.contains(e) || full_rebuild.contains(e) || syntax_changed.contains(e));
         return;
     }
 
@@ -192,7 +254,10 @@ pub(crate) fn produce_line_styles(
         syntax_theme,
     ) in editors.iter_mut()
     {
-        if !dirty.contains(&entity) {
+        let needs_full = full_rebuild.contains(&entity);
+        let needs_content = content_only.contains(&entity);
+        let needs_syntax = syntax_changed.contains(&entity);
+        if !needs_full && !needs_content && !needs_syntax {
             continue;
         }
 
@@ -200,19 +265,64 @@ pub(crate) fn produce_line_styles(
         let range = visible_buffer_range(buffer, scroll, viewport, font, wrap, hidden);
         if range.start >= range.end {
             *line_styles = LineStyles::new(HashMap::new(), 0..0);
+            dirty_lines.remove(&entity);
             continue;
         }
 
-        let mut by_line: HashMap<u32, Vec<RunWithText>> = HashMap::new();
         let total_lines = buffer.line_count();
-        for buffer_line in range.start..range.end {
+
+        // Determine which lines to (re)highlight this frame.
+        // `None` = full rebuild. Content edits without a matching edit event
+        // (e.g. set_text) also get a full rebuild.
+        let dirty_range: Option<(u32, u32)> = if needs_full {
+            None
+        } else {
+            match dirty_lines.get(&entity).copied() {
+                Some(range) => range, // Some((lo, hi)) = incremental, None = full
+                None => None,         // no dirty range recorded → full rebuild
+            }
+        };
+
+        let highlight_lines: Box<dyn Iterator<Item = usize>> = match dirty_range {
+            // Incremental: only highlight the lines the edit touched, clamped
+            // to the visible window. Unchanged lines keep their cached runs.
+            Some((dirty_start, dirty_end)) => {
+                let lo = (dirty_start as usize).max(range.start).min(range.end);
+                let hi = (dirty_end as usize + 1).min(range.end);
+                Box::new(lo..hi)
+            }
+            // Full rebuild: highlight the entire visible window.
+            None => Box::new(range.start..range.end),
+        };
+
+        // On a full rebuild start fresh; on incremental reuse the existing map.
+        let is_incremental = dirty_range.is_some();
+        let mut by_line: HashMap<u32, Vec<RunWithText>> = if !is_incremental {
+            HashMap::new()
+        } else {
+            // Clone the existing Arc'd map so we can patch it.
+            (*line_styles.by_line).clone()
+        };
+
+        // On a full rebuild the covered range expands to the full window.
+        // On incremental the covered range doesn't shrink (scroll handles that).
+        let new_covered = if !is_incremental {
+            range.start as u32..range.end as u32
+        } else {
+            let old = &line_styles.covered;
+            old.start.min(range.start as u32)..old.end.max(range.end as u32)
+        };
+
+        let mut map_changed = false;
+        for buffer_line in highlight_lines {
             if buffer_line >= total_lines {
                 break;
             }
-            // Skip hidden lines — styling them wastes work since the engine
-            // won't render them anyway.
             if let Some(h) = hidden {
                 if !h.is_visible(buffer_line) {
+                    if by_line.remove(&(buffer_line as u32)).is_some() {
+                        map_changed = true;
+                    }
                     continue;
                 }
             }
@@ -220,6 +330,7 @@ pub(crate) fn produce_line_styles(
             let line_no_nl = line_text.strip_suffix('\n').unwrap_or(&line_text);
             let start_byte = buffer.rope.line_to_byte(buffer_line);
 
+            let _hl_span = bevy::prelude::info_span!("highlight_line").entered();
             let mut per_line = syntax.highlight_range(
                 line_no_nl,
                 buffer_line,
@@ -229,15 +340,24 @@ pub(crate) fn produce_line_styles(
                 theme.foreground,
             );
             let segs = per_line.pop().unwrap_or_default();
-            // Whitespace-only lines: the engine renders the rope text in
-            // `default_fg`. Emitting an empty `Vec` matches that contract.
             if segs.iter().all(|s| s.text.trim().is_empty()) {
+                if by_line.remove(&(buffer_line as u32)).is_some() {
+                    map_changed = true;
+                }
                 continue;
             }
             by_line.insert(buffer_line as u32, segs_to_runs(&segs));
+            map_changed = true;
         }
 
-        *line_styles = LineStyles::new(by_line, range.start as u32..range.end as u32);
+        // Only write LineStyles when content actually changed. An unconditional
+        // write creates a fresh Arc every frame, changing the Arc address and
+        // triggering layout_miss_styles on every idle frame.
+        let covered_changed = line_styles.covered != new_covered;
+        if map_changed || covered_changed || !is_incremental {
+            *line_styles = LineStyles::new(by_line, new_covered);
+        }
+        dirty_lines.remove(&entity);
     }
 }
 
