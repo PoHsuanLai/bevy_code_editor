@@ -23,6 +23,9 @@ fn main() {
             ..default()
         }),
         ..default()
+    }).set(bevy::asset::AssetPlugin {
+        file_path: "assets".into(),
+        ..default()
     }));
 
     app.add_plugins(InstancedTextPlugins)
@@ -35,7 +38,7 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
 
-fn setup_text_view(mut commands: Commands, windows: Query<&Window>) {
+fn setup_text_view(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<&Window>) {
     let Ok(window) = windows.single() else {
         return;
     };
@@ -142,11 +145,16 @@ fn setup_text_view(mut commands: Commands, windows: Query<&Window>) {
         Color::srgb(0.85, 0.85, 0.85),
     );
 
+    let font = FontConfig::from_size(16.0)
+        .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
+        .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
+
     commands.spawn((
         TextView,
         buffer,
         scroll,
         metrics,
+        font,
         TextViewViewport {
             width: window.physical_width(),
             height: window.physical_height(),

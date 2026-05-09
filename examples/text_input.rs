@@ -23,6 +23,9 @@ fn main() {
                 ..default()
             }),
             ..default()
+        }).set(bevy::asset::AssetPlugin {
+            file_path: "assets".into(),
+            ..default()
         }))
         .add_plugins(InstancedTextPlugins)
         .add_plugins(InstancedTextEditPlugin::default())
@@ -30,12 +33,15 @@ fn main() {
         .run();
 }
 
-fn setup(mut commands: Commands) {
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn(Camera2d);
 
     commands.spawn((
         TextEditor,
-        FontConfig::from_size(20.0).with_line_height_multiplier(1.4),
+        FontConfig::from_size(20.0)
+            .with_line_height_multiplier(1.4)
+            .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
+            .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf")),
         Name::new("simple-text-input"),
     ));
 }

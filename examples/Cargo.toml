@@ -34,7 +34,7 @@ bevy_markdown = { path = "../crates/bevy_markdown" }
 bevy_tree_sitter = { path = "../crates/bevy_tree_sitter", optional = true }
 bevy_lsp = { path = "../crates/bevy_lsp", optional = true }
 
-# Used by editor_long_code / editor_tree_sitter for syntax highlighting.
+# Used by editor_perf / editor_syntax for syntax highlighting.
 tree-sitter-rust = "0.23"
 tree-sitter-c = "0.23"
 
@@ -72,20 +72,16 @@ profile = [
 ]
 
 [[example]]
-name = "editor_basic"
-path = "editor_basic.rs"
+name = "editor"
+path = "editor.rs"
 
 [[example]]
-name = "editor_screenshot"
-path = "editor_screenshot.rs"
+name = "editor_gpu"
+path = "editor_gpu.rs"
 
 [[example]]
-name = "editor_gpu_text"
-path = "editor_gpu_text.rs"
-
-[[example]]
-name = "editor_long_code"
-path = "editor_long_code.rs"
+name = "editor_perf"
+path = "editor_perf.rs"
 
 [[example]]
 name = "editor_resizable"
@@ -96,12 +92,12 @@ name = "editor_multi"
 path = "editor_multi.rs"
 
 [[example]]
-name = "editor_text_view_demo"
-path = "editor_text_view_demo.rs"
+name = "text_view"
+path = "text_view.rs"
 
 [[example]]
-name = "editor_tree_sitter"
-path = "editor_tree_sitter.rs"
+name = "editor_syntax"
+path = "editor_syntax.rs"
 required-features = ["tree-sitter"]
 
 [[example]]
@@ -110,17 +106,17 @@ path = "editor_lsp.rs"
 required-features = ["lsp"]
 
 [[example]]
-name = "terminal_basic"
-path = "terminal_basic.rs"
+name = "terminal"
+path = "terminal.rs"
 
 [[example]]
-name = "terminal_with_editor"
-path = "terminal_with_editor.rs"
+name = "terminal_editor"
+path = "terminal_editor.rs"
 
 [[example]]
-name = "text_editor_simple_input"
-path = "text_editor_simple_input.rs"
+name = "text_input"
+path = "text_input.rs"
 
 [[example]]
-name = "markdown_basic"
-path = "markdown_basic.rs"
+name = "markdown"
+path = "markdown.rs"

@@ -2,7 +2,7 @@
 //! supported features: headings, bold/italic, inline code, fenced code
 //! blocks, lists, blockquotes, links, and a horizontal rule.
 //!
-//! Drop a bold/italic font face into `assets/fonts/` to see the renderer
+//! Drop a bold/italic font face into `examples/assets/fonts/` to see the renderer
 //! pick the real face — without one, the engine synthesizes via stroke
 //! doubling (bold) and skew (italic).
 
@@ -58,6 +58,9 @@ fn main() {
             resolution: (900, 700).into(),
             ..default()
         }),
+        ..default()
+    }).set(bevy::asset::AssetPlugin {
+        file_path: "assets".into(),
         ..default()
     }))
     .add_plugins(InstancedTextPlugins)

@@ -17,6 +17,9 @@ fn main() {
                 ..default()
             }),
             ..default()
+        }).set(bevy::asset::AssetPlugin {
+            file_path: "assets".into(),
+            ..default()
         }))
         .add_plugins(CodeEditorPlugins)
         .add_plugins(BevyTerminalPlugin)
@@ -37,7 +40,7 @@ fn setup_camera(mut commands: Commands) {
 fn layout_panes(
     asset_server: Res<AssetServer>,
     windows: Query<&Window>,
-    mut editors: Query<&mut TextViewViewport, (With<CodeEditor>, Without<BevyTerminal>)>,
+    mut editors: Query<(Entity, &mut TextViewViewport), (With<CodeEditor>, Without<BevyTerminal>)>,
     mut commands: Commands,
 ) {
     let Ok(window) = windows.single() else {
@@ -47,19 +50,21 @@ fn layout_panes(
     let logical_h = window.height() as u32;
     let half_w = logical_w / 2;
 
+    let regular: Handle<bevy::text::Font> = asset_server.load("fonts/FiraMono-Regular.ttf");
+    let bold: Handle<bevy::text::Font> = asset_server.load("fonts/FiraMono-Medium.ttf");
+    let font = FontConfig::from_size(14.0)
+        .with_font(regular)
+        .with_bold_font(bold);
+
     // Editor occupies the left half.
-    if let Ok(mut viewport) = editors.single_mut() {
+    if let Ok((editor_entity, mut viewport)) = editors.single_mut() {
+        commands.entity(editor_entity).insert(font.clone());
         viewport.width = half_w;
         viewport.height = logical_h;
         viewport.hit_test_position = Vec2::ZERO;
     }
 
     // Terminal entity for the right half.
-    let regular: Handle<bevy::text::Font> = asset_server.load("fonts/FiraMono-Regular.ttf");
-    let bold: Handle<bevy::text::Font> = asset_server.load("fonts/FiraMono-Medium.ttf");
-    let font = FontConfig::from_size(14.0)
-        .with_font(regular)
-        .with_bold_font(bold);
 
     commands.spawn((
         BevyTerminal,

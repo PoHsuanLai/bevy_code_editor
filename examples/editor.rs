@@ -26,6 +26,9 @@ fn main() {
                 ..default()
             }),
             ..default()
+        }).set(bevy::asset::AssetPlugin {
+            file_path: "assets".into(),
+            ..default()
         }))
         .add_plugins(CodeEditorPlugins)
         .add_systems(Startup, setup_camera)
@@ -116,13 +119,20 @@ fn setup_camera(mut commands: Commands) {
 }
 
 fn setup_editor(
+    mut commands: Commands,
     editor_query: Query<Entity, With<CodeEditor>>,
+    asset_server: Res<AssetServer>,
     mut input_focus: ResMut<bevy::input_focus::InputFocus>,
     mut set_text_writer: MessageWriter<bevy_instanced_text_edit::SetTextRequested>,
 ) {
     let Ok(entity) = editor_query.single() else {
         return;
     };
+
+    let font = bevy_instanced_text::FontConfig::from_size(14.0)
+        .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
+        .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
+    commands.entity(entity).insert(font);
 
     input_focus.set(entity);
 
