@@ -75,17 +75,10 @@ profile = [
 name = "editor"
 path = "editor.rs"
 
-[[example]]
-name = "editor_gpu"
-path = "editor_gpu.rs"
 
 [[example]]
 name = "editor_perf"
 path = "editor_perf.rs"
-
-[[example]]
-name = "editor_resizable"
-path = "editor_resizable.rs"
 
 [[example]]
 name = "editor_multi"

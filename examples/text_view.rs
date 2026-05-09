@@ -43,81 +43,120 @@ fn setup_text_view(mut commands: Commands, asset_server: Res<AssetServer>, windo
         return;
     };
 
+    // Bevy introduction content from https://bevy.org/learn/quick-start/introduction/
+    let h1 = Color::srgb(1.0, 1.0, 1.0);
+    let h2 = Color::srgb(0.9, 0.75, 0.4);
+    let body = Color::srgb(0.82, 0.82, 0.82);
+    let bullet_key = Color::srgb(0.4, 0.8, 1.0);
+    let dim = Color::srgb(0.55, 0.55, 0.55);
+    let warn = Color::srgb(1.0, 0.75, 0.3);
+
     let lines = vec![
-        styled_line("You:", Color::srgb(0.4, 0.7, 1.0)),
-        styled_line(
-            "  Can you explain how GPU instanced rendering works?",
-            Color::srgb(0.9, 0.9, 0.9),
-        ),
-        plain_line(""),
-        styled_line("Assistant:", Color::srgb(0.5, 1.0, 0.5)),
-        styled_line(
-            "  GPU instanced rendering draws many copies of geometry",
-            Color::srgb(0.85, 0.85, 0.85),
-        ),
-        styled_line(
-            "  in a single draw call. Each instance gets its own",
-            Color::srgb(0.85, 0.85, 0.85),
-        ),
-        styled_line(
-            "  position, color, and UV coordinates via per-instance",
-            Color::srgb(0.85, 0.85, 0.85),
-        ),
-        styled_line("  data buffers.", Color::srgb(0.85, 0.85, 0.85)),
+        styled_line("Introduction", h1),
         plain_line(""),
         styled_line(
-            "  For text rendering, each glyph is an instance of a",
-            Color::srgb(0.85, 0.85, 0.85),
+            "If you came here to learn how to make 2D/3D games, visualizations,",
+            body,
         ),
         styled_line(
-            "  textured quad. The shader samples from a glyph atlas",
-            Color::srgb(0.85, 0.85, 0.85),
+            "user interfaces, or other graphical applications with Bevy,",
+            body,
         ),
-        styled_line(
-            "  texture to render the correct character.",
-            Color::srgb(0.85, 0.85, 0.85),
-        ),
+        styled_line("this is the right place.", body),
         plain_line(""),
-        styled_line("  ```rust", Color::srgb(0.6, 0.6, 0.6)),
+        plain_line(""),
+        styled_line("What's a BEVY?", h2),
+        plain_line(""),
+        styled_line("A bevy is a group of birds!", body),
+        plain_line(""),
+        styled_line(
+            "Bevy is also described as \"a refreshingly simple data-driven",
+            body,
+        ),
+        styled_line(
+            "game engine built in Rust.\" It is free and open-source under",
+            body,
+        ),
+        styled_line("the MIT or Apache 2.0 licenses.", body),
+        plain_line(""),
+        plain_line(""),
+        styled_line("Design Goals", h2),
+        plain_line(""),
+        styled_line("Bevy aims to be:", body),
+        plain_line(""),
         multi_segment_line(vec![
-            ("  fn ", Color::srgb(0.8, 0.5, 0.8)),
-            ("render_glyphs", Color::srgb(0.9, 0.8, 0.4)),
-            ("(instances: &[", Color::srgb(0.9, 0.9, 0.9)),
-            ("GlyphInstance", Color::srgb(0.4, 0.8, 0.8)),
-            ("]) {", Color::srgb(0.9, 0.9, 0.9)),
+            ("  Capable     ", bullet_key),
+            ("— Complete 2D and 3D feature set", body),
         ]),
         multi_segment_line(vec![
-            ("      gpu", Color::srgb(0.9, 0.9, 0.9)),
-            (".", Color::srgb(0.9, 0.9, 0.9)),
-            ("draw_instanced", Color::srgb(0.9, 0.8, 0.4)),
-            ("(instances);", Color::srgb(0.9, 0.9, 0.9)),
+            ("  Simple      ", bullet_key),
+            ("— Accessible for newcomers, flexible for advanced users", body),
         ]),
-        styled_line("  }", Color::srgb(0.9, 0.9, 0.9)),
-        styled_line("  ```", Color::srgb(0.6, 0.6, 0.6)),
+        multi_segment_line(vec![
+            ("  Data Focused", bullet_key),
+            ("— Entity Component System (ECS) architecture", body),
+        ]),
+        multi_segment_line(vec![
+            ("  Modular     ", bullet_key),
+            ("— Use only the components you need", body),
+        ]),
+        multi_segment_line(vec![
+            ("  Fast        ", bullet_key),
+            ("— Quick app logic with parallel processing capability", body),
+        ]),
+        multi_segment_line(vec![
+            ("  Productive  ", bullet_key),
+            ("— Fast compilation times", body),
+        ]),
         plain_line(""),
-        styled_line("You:", Color::srgb(0.4, 0.7, 1.0)),
+        plain_line(""),
+        styled_line("Development Philosophy", h2),
+        plain_line(""),
         styled_line(
-            "  That makes sense! How does the atlas work?",
-            Color::srgb(0.9, 0.9, 0.9),
+            "The engine is \"built in the open by volunteers\" using Rust.",
+            body,
+        ),
+        styled_line(
+            "The developers emphasize that games represent millions of hours",
+            body,
+        ),
+        styled_line(
+            "of human development effort, yet many developers rely on",
+            body,
+        ),
+        styled_line(
+            "closed-source commercial engines that take revenue cuts.",
+            body,
         ),
         plain_line(""),
-        styled_line("Assistant:", Color::srgb(0.5, 1.0, 0.5)),
+        plain_line(""),
+        styled_line("Stability Warning", h2),
+        plain_line(""),
         styled_line(
-            "  The glyph atlas is a large texture that stores all",
-            Color::srgb(0.85, 0.85, 0.85),
+            "Important features remain under development and documentation",
+            warn,
         ),
         styled_line(
-            "  rasterized characters. When a new character is needed,",
-            Color::srgb(0.85, 0.85, 0.85),
+            "may be limited. Breaking API changes occur approximately once",
+            warn,
+        ),
+        styled_line("every 3 months.", warn),
+        plain_line(""),
+        styled_line(
+            "Migration guides are provided, though migrations are not always",
+            body,
+        ),
+        styled_line("straightforward.", body),
+        plain_line(""),
+        styled_line(
+            "The page recommends Godot Engine for production projects",
+            dim,
         ),
         styled_line(
-            "  it's rasterized once and packed into the atlas. Future",
-            Color::srgb(0.85, 0.85, 0.85),
+            "requiring stability, noting it offers similar open-source",
+            dim,
         ),
-        styled_line(
-            "  uses just reference the UV coordinates in the atlas.",
-            Color::srgb(0.85, 0.85, 0.85),
-        ),
+        styled_line("benefits with greater feature completeness.", dim),
     ];
 
     // Plain rope text for hit-testing / copy.
@@ -156,8 +195,8 @@ fn setup_text_view(mut commands: Commands, asset_server: Res<AssetServer>, windo
         metrics,
         font,
         TextViewViewport {
-            width: window.physical_width(),
-            height: window.physical_height(),
+            width: window.resolution.width() as u32,
+            height: window.resolution.height() as u32,
             text_area_left: 16.0,
             text_area_top: 16.0,
             ..default()
