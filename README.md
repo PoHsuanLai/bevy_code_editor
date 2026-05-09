@@ -1,5 +1,10 @@
 # bevscode
 
+[![CI](https://github.com/PoHsuanLai/bevscode/actions/workflows/ci.yml/badge.svg)](https://github.com/PoHsuanLai/bevscode/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/bevscode.svg)](https://crates.io/crates/bevscode)
+[![docs.rs](https://docs.rs/bevscode/badge.svg)](https://docs.rs/bevscode)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
+
 Embeddable text editing and rendering plugins for Bevy. Drop them into any app and they coexist with your existing ECS world.
 
 | Crate | What it does |
@@ -11,6 +16,12 @@ Embeddable text editing and rendering plugins for Bevy. Drop them into any app a
 | **`bevscode`** | Code editor: multi-cursor, folding, brackets, line numbers, LSP UI. |
 | **`bevsterm`** | PTY-backed terminal widget. |
 | **`bevsmd`** | CommonMark viewer. |
+
+## Bevy compatibility
+
+| bevscode | Bevy |
+|---|---|
+| 0.1 | 0.18 |
 
 ## Quick start
 
