@@ -80,7 +80,8 @@ impl EditHistoryState {
             self.anchors.record_edit(TextEdit::delete(start, end));
         }
         if inserted_chars > 0 {
-            self.anchors.record_edit(TextEdit::insert(start, inserted_chars));
+            self.anchors
+                .record_edit(TextEdit::insert(start, inserted_chars));
         }
 
         if start < end {
@@ -128,7 +129,11 @@ impl EditHistoryState {
         c: char,
     ) {
         let pos = cursor.cursor_pos.min(buffer.rope.len_chars());
-        let kind = if c == '\n' { EditKind::Newline } else { EditKind::Insert };
+        let kind = if c == '\n' {
+            EditKind::Newline
+        } else {
+            EditKind::Insert
+        };
         let mut buf = [0u8; 4];
         let s = c.encode_utf8(&mut buf);
         let outcome = self.replace_range(buffer, pos, pos, s, kind, true);

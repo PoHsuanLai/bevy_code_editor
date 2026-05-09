@@ -41,7 +41,6 @@ impl Anchor {
     pub fn at_right(offset: usize) -> Self {
         Self::new(offset, AnchorBias::Right)
     }
-
 }
 
 impl Default for Anchor {
@@ -260,4 +259,3 @@ impl AnchorSet {
         self.version
     }
 }
-

@@ -91,8 +91,7 @@ pub(crate) fn parse_dirty(
     mut targets: Query<(Entity, &Language, &ParseSourceComp, &mut SyntaxTree)>,
     mut tasks: Query<(Entity, &mut ParseTask)>,
 ) {
-    let mut in_flight: std::collections::HashSet<Entity> =
-        std::collections::HashSet::new();
+    let mut in_flight: std::collections::HashSet<Entity> = std::collections::HashSet::new();
     for (_, task) in tasks.iter() {
         in_flight.insert(task.target);
     }
@@ -116,8 +115,7 @@ pub(crate) fn parse_dirty(
         // it to `SyntaxTree::dirty_rows` for incremental rehighlight.
         let dirty_rows = syntax.bypass_change_detection().dirty_rows;
         let task_pool = AsyncComputeTaskPool::get();
-        let task = task_pool
-            .spawn(async move { parse_tree_async(rope, grammar, cached_tree) });
+        let task = task_pool.spawn(async move { parse_tree_async(rope, grammar, cached_tree) });
 
         commands.spawn((
             ParseTask {
@@ -133,9 +131,9 @@ pub(crate) fn parse_dirty(
 
     let mut completed: Vec<(Entity, ParseCompletion)> = Vec::new();
     for (task_entity, mut parse_task) in tasks.iter_mut() {
-        let Some(tree) = futures_lite::future::block_on(
-            futures_lite::future::poll_once(&mut parse_task.task),
-        ) else {
+        let Some(tree) =
+            futures_lite::future::block_on(futures_lite::future::poll_once(&mut parse_task.task))
+        else {
             continue;
         };
         completed.push((

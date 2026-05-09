@@ -23,4 +23,3 @@ pub struct LineSegment {
     /// Horizontal skew for italic simulation (0.0 = normal, ~0.2 = italic).
     pub skew: f32,
 }
-

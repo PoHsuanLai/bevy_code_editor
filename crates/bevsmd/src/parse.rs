@@ -138,7 +138,8 @@ impl Walker {
         // (rare — empty docs) become a final paragraph.
         let mut root = self.stack.pop().expect("root frame");
         if !root.inlines.is_empty() {
-            root.blocks.push(Block::Paragraph(std::mem::take(&mut root.inlines)));
+            root.blocks
+                .push(Block::Paragraph(std::mem::take(&mut root.inlines)));
         }
         root.blocks
     }

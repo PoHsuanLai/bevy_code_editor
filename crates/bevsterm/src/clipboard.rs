@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy_instanced_text_edit::{copy_selection, ClipboardResource, SelectionState};
 use bevy_instanced_text::{FontConfig, ScrollState, TextBuffer};
+use bevy_instanced_text_edit::{copy_selection, ClipboardResource, SelectionState};
 use portable_pty::PtySize;
 
 use crate::messages::{
@@ -28,10 +28,7 @@ pub fn handle_copy_selection(
     }
 }
 
-pub fn handle_paste(
-    mut events: MessageReader<TerminalPaste>,
-    q: Query<&TerminalSession>,
-) {
+pub fn handle_paste(mut events: MessageReader<TerminalPaste>, q: Query<&TerminalSession>) {
     for ev in events.read() {
         let Ok(session) = q.get(ev.entity) else {
             continue;
@@ -168,15 +165,12 @@ pub fn handle_clear(
 /// Synthesize a keypress. Wezterm encodes the key according to the term's
 /// current input mode (cursor-key application, kitty keyboard, etc.) and
 /// writes the resulting bytes to the PTY.
-pub fn handle_key_input(
-    mut events: MessageReader<TerminalKeyInput>,
-    q: Query<&TerminalSession>,
-) {
+pub fn handle_key_input(mut events: MessageReader<TerminalKeyInput>, q: Query<&TerminalSession>) {
     for ev in events.read() {
         let Ok(session) = q.get(ev.entity) else {
             continue;
         };
-        let _ = session.terminal.lock().key_down(ev.key.clone(), ev.mods);
+        let _ = session.terminal.lock().key_down(ev.key, ev.mods);
     }
 }
 

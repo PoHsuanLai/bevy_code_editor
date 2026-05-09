@@ -13,23 +13,27 @@
 //!
 //! You can customize keybindings via the Keybindings resource.
 
+use bevscode::prelude::*;
 use bevy::prelude::*;
 use bevy::window::{CursorIcon, SystemCursorIcon};
-use bevscode::prelude::*;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Bevy Code Editor".to_string(),
-                resolution: (1400, 900).into(),
-                ..default()
-            }),
-            ..default()
-        }).set(bevy::asset::AssetPlugin {
-            file_path: "assets".into(),
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "Bevy Code Editor".to_string(),
+                        resolution: (1400, 900).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(bevy::asset::AssetPlugin {
+                    file_path: "assets".into(),
+                    ..default()
+                }),
+        )
         .add_plugins(CodeEditorPlugins)
         .add_systems(Startup, setup_camera)
         .add_systems(PostStartup, setup_editor)

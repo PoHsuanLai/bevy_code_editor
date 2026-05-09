@@ -9,6 +9,38 @@ use crate::types::*;
 use bevy::prelude::*;
 use bevy_instanced_text::{visible_buffer_range, FontConfig, HiddenLines, LayoutWrap};
 
+type IndentGuidesQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static TextBuffer,
+        &'static ScrollState,
+        &'static TextViewViewport,
+        &'static FoldState,
+        &'static FontConfig,
+        &'static ThemeConfig,
+        Option<&'static DisplayLayout>,
+        &'static UiSettings,
+        &'static IndentationSettings,
+        Option<&'static bevy_camera::visibility::RenderLayers>,
+    ),
+    With<CodeEditor>,
+>;
+
+type AutoScrollQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static TextBuffer,
+        &'static mut ScrollState,
+        &'static crate::text_view::ContentMetrics,
+        &'static mut CursorState,
+        &'static TextViewViewport,
+        &'static FontConfig,
+    ),
+    With<CodeEditor>,
+>;
+
 /// Push selection rectangles into `TextViewOverlays` for all cursors.
 ///
 /// Selections render as paint-time overlay rects with `z = -1` (below text),
@@ -154,7 +186,11 @@ pub(crate) fn update_selection_highlight(
                         sel_end_col,
                         is_last_buffer_line: line_idx == sel_end_line,
                     },
-                    &RowMap { layout, fold_state, line_idx },
+                    &RowMap {
+                        layout,
+                        fold_state,
+                        line_idx,
+                    },
                     char_width,
                     theme.selection_background,
                     &mut overlays.rects,
@@ -289,28 +325,16 @@ fn selection_rect(display_row: u32, x_range: std::ops::Range<f32>, color: Color)
 /// Update indent guide rendering
 pub(crate) fn update_indent_guides(
     mut commands: Commands,
-    editor_query: Query<
-        (
-            &TextBuffer,
-            &ScrollState,
-            &TextViewViewport,
-            &FoldState,
-            &FontConfig,
-            &ThemeConfig,
-            Option<&DisplayLayout>,
-            &UiSettings,
-            &IndentationSettings,
-            Option<&bevy_camera::visibility::RenderLayers>,
-        ),
-        With<CodeEditor>,
-    >,
+    editor_query: IndentGuidesQuery,
     mut guide_query: Query<(Entity, &mut Transform, &mut Visibility, &mut IndentGuide)>,
 ) {
     // Collect existing guide entities once (shared pool across editors)
     let mut existing_guides: Vec<_> = guide_query.iter_mut().collect();
     let mut entity_index = 0;
 
-    for (buffer, scroll, vp, fold_state, font, theme, layout, ui, indentation, render_layers) in editor_query.iter() {
+    for (buffer, scroll, vp, fold_state, font, theme, layout, ui, indentation, render_layers) in
+        editor_query.iter()
+    {
         if !ui.show_indent_guides {
             continue;
         }
@@ -430,8 +454,12 @@ pub(crate) fn update_indent_guides(
                 // Re-route to the current editor's layer (pool is shared across editors).
                 let mut cmds = commands.entity(*entity);
                 match render_layers {
-                    Some(layers) => { cmds.insert(layers.clone()); }
-                    None => { cmds.remove::<bevy_camera::visibility::RenderLayers>(); }
+                    Some(layers) => {
+                        cmds.insert(layers.clone());
+                    }
+                    None => {
+                        cmds.remove::<bevy_camera::visibility::RenderLayers>();
+                    }
                 }
             } else {
                 // Spawn new guide entity
@@ -459,8 +487,7 @@ pub(crate) fn update_indent_guides(
     }
 
     // Hide unused guide entities
-    for i in entity_index..existing_guides.len() {
-        let (_, _, ref mut visibility, _) = &mut existing_guides[i];
+    for (_, _, visibility, _) in existing_guides.iter_mut().skip(entity_index) {
         **visibility = Visibility::Hidden;
     }
 }
@@ -492,19 +519,7 @@ pub(crate) fn should_auto_scroll(
     false
 }
 
-pub(crate) fn auto_scroll_to_cursor(
-    mut editor_query: Query<
-        (
-            &TextBuffer,
-            &mut ScrollState,
-            &crate::text_view::ContentMetrics,
-            &mut CursorState,
-            &TextViewViewport,
-            &FontConfig,
-        ),
-        With<CodeEditor>,
-    >,
-) {
+pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
     for (buffer, mut scroll, metrics, mut cursor, vp, font) in editor_query.iter_mut() {
         // Get cursor position
         let cursor_pos = cursor.cursor_pos.min(buffer.rope.len_chars());
@@ -519,8 +534,7 @@ pub(crate) fn auto_scroll_to_cursor(
         // === VERTICAL AUTO-SCROLL ===
 
         // Calculate cursor's Y position
-        let cursor_y =
-            vp.text_area_top + scroll.scroll_offset + (line_index as f32 * line_height);
+        let cursor_y = vp.text_area_top + scroll.scroll_offset + (line_index as f32 * line_height);
 
         // Define visible range (with some margin)
         let margin_vertical = line_height * 2.0;
@@ -559,7 +573,8 @@ pub(crate) fn auto_scroll_to_cursor(
         // Define horizontal visible range (with some margin)
         let margin_horizontal = char_width * 5.0; // 5 characters of margin
         let visible_left = scroll.horizontal_scroll_offset;
-        let visible_right = scroll.horizontal_scroll_offset + viewport_width - vp.text_area_left
+        let visible_right = scroll.horizontal_scroll_offset + viewport_width
+            - vp.text_area_left
             - margin_horizontal;
 
         // Adjust horizontal target scroll if cursor is outside visible range

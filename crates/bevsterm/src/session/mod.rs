@@ -173,7 +173,7 @@ fn build_session(
 }
 
 fn io_error<E: std::fmt::Display>(e: E) -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+    std::io::Error::other(e.to_string())
 }
 
 fn build_command(config: Option<&TerminalConfig>) -> CommandBuilder {
@@ -219,8 +219,7 @@ pub fn on_terminal_removed(
     };
     if let Err(e) = handle.killer.kill() {
         // Already exited — fine. Anything else is rare and worth logging.
-        if e.kind() != std::io::ErrorKind::InvalidInput
-            && e.kind() != std::io::ErrorKind::NotFound
+        if e.kind() != std::io::ErrorKind::InvalidInput && e.kind() != std::io::ErrorKind::NotFound
         {
             warn!("bevy_terminal: kill failed for {entity:?}: {e}");
         }

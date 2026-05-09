@@ -8,7 +8,7 @@ use std::sync::Arc;
 /// Source markdown text. The plugin rebuilds the layout whenever this changes.
 /// Spawn as part of [`crate::plugin::MarkdownViewerBundle`] — the plugin fills the rest.
 /// [`crate::theme::MarkdownTheme`] cascades automatically (defaults to dark).
-#[derive(Component, Clone, Debug)]
+#[derive(Component, Clone, Debug, Default)]
 #[require(crate::theme::MarkdownTheme)]
 pub struct MarkdownDoc {
     pub source: String,
@@ -18,14 +18,6 @@ impl MarkdownDoc {
     pub fn new(source: impl Into<String>) -> Self {
         Self {
             source: source.into(),
-        }
-    }
-}
-
-impl Default for MarkdownDoc {
-    fn default() -> Self {
-        Self {
-            source: String::new(),
         }
     }
 }

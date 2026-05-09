@@ -22,10 +22,10 @@ use async_lsp::{ResponseError, ServerSocket};
 use bevy::prelude::*;
 use bevy_tokio_tasks::TokioTasksRuntime;
 use lsp_types::notification::{
-    Cancel as CancelNotif, DidChangeConfiguration, DidChangeTextDocument,
-    DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument, DidOpenTextDocument,
-    DidSaveTextDocument, Exit as ExitNotif, Initialized as InitializedNotif, LogMessage,
-    LogTrace, Notification as LspNotificationTrait, Progress, PublishDiagnostics, ShowMessage,
+    Cancel as CancelNotif, DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles,
+    DidChangeWorkspaceFolders, DidCloseTextDocument, DidOpenTextDocument, DidSaveTextDocument,
+    Exit as ExitNotif, Initialized as InitializedNotif, LogMessage, LogTrace,
+    Notification as LspNotificationTrait, Progress, PublishDiagnostics, ShowMessage,
     TelemetryEvent, WillSaveTextDocument, WorkDoneProgressCancel,
 };
 use lsp_types::request::{
@@ -34,17 +34,16 @@ use lsp_types::request::{
     ColorPresentationRequest, Completion, DocumentColor, DocumentDiagnosticRequest,
     DocumentHighlightRequest, DocumentLinkRequest, DocumentLinkResolve, DocumentSymbolRequest,
     ExecuteCommand, FoldingRangeRequest, Formatting, GotoDeclaration, GotoDefinition,
-    GotoImplementation, GotoTypeDefinition, HoverRequest, InlayHintRefreshRequest,
-    InlayHintRequest, InlayHintResolveRequest, Initialize as InitializeRequest,
-    LinkedEditingRange, MonikerRequest, OnTypeFormatting, PrepareRenameRequest, RangeFormatting,
-    References, RegisterCapability, Rename, Request as LspRequestTrait, ResolveCompletionItem,
+    GotoImplementation, GotoTypeDefinition, HoverRequest, Initialize as InitializeRequest,
+    InlayHintRefreshRequest, InlayHintRequest, InlayHintResolveRequest, LinkedEditingRange,
+    MonikerRequest, OnTypeFormatting, PrepareRenameRequest, RangeFormatting, References,
+    RegisterCapability, Rename, Request as LspRequestTrait, ResolveCompletionItem,
     SelectionRangeRequest, SemanticTokensFullDeltaRequest, SemanticTokensFullRequest,
     SemanticTokensRangeRequest, SemanticTokensRefresh, ShowDocument, ShowMessageRequest,
-    Shutdown as ShutdownRequest, SignatureHelpRequest, TypeHierarchyPrepare,
-    TypeHierarchySubtypes, TypeHierarchySupertypes, UnregisterCapability,
-    WillSaveWaitUntil, WorkDoneProgressCreate, WorkspaceConfiguration,
-    WorkspaceDiagnosticRefresh, WorkspaceDiagnosticRequest, WorkspaceFoldersRequest,
-    WorkspaceSymbolRequest, WorkspaceSymbolResolve,
+    Shutdown as ShutdownRequest, SignatureHelpRequest, TypeHierarchyPrepare, TypeHierarchySubtypes,
+    TypeHierarchySupertypes, UnregisterCapability, WillSaveWaitUntil, WorkDoneProgressCreate,
+    WorkspaceConfiguration, WorkspaceDiagnosticRefresh, WorkspaceDiagnosticRequest,
+    WorkspaceFoldersRequest, WorkspaceSymbolRequest, WorkspaceSymbolResolve,
 };
 use lsp_types::*;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
@@ -227,19 +226,34 @@ impl LspClient {
         };
 
         match message {
-            LspMessage::Initialize { root_uri, capabilities } => {
+            LspMessage::Initialize {
+                root_uri,
+                capabilities,
+            } => {
                 self.start_initialize(server.clone(), handle.clone(), root_uri, capabilities);
             }
             LspMessage::Initialized => {}
             // Shutdown / Exit must always go through, even before init is
             // done — the host may be exiting on a half-initialized server.
             other @ (LspMessage::Shutdown { .. } | LspMessage::Exit) => {
-                dispatch(server, &self.response_tx, handle, &self.inbound_slots, other);
+                dispatch(
+                    server,
+                    &self.response_tx,
+                    handle,
+                    &self.inbound_slots,
+                    other,
+                );
             }
             other if !self.init_done.load(Ordering::Acquire) => {
                 self.pre_init_queue.lock().unwrap().push(other);
             }
-            other => dispatch(server, &self.response_tx, handle, &self.inbound_slots, other),
+            other => dispatch(
+                server,
+                &self.response_tx,
+                handle,
+                &self.inbound_slots,
+                other,
+            ),
         }
     }
 
@@ -248,7 +262,7 @@ impl LspClient {
         server: ServerSocket,
         handle: tokio::runtime::Handle,
         root_uri: Url,
-        capabilities: ClientCapabilities,
+        capabilities: Box<ClientCapabilities>,
     ) {
         let tx = self.response_tx.clone();
         let init_done = self.init_done.clone();
@@ -259,7 +273,7 @@ impl LspClient {
             let params = InitializeParams {
                 process_id: Some(std::process::id()),
                 root_uri: Some(root_uri),
-                capabilities,
+                capabilities: *capabilities,
                 client_info: Some(ClientInfo {
                     name: "bevy_lsp".into(),
                     version: Some(env!("CARGO_PKG_VERSION").into()),
@@ -268,9 +282,7 @@ impl LspClient {
             };
             match server.request::<InitializeRequest>(params).await {
                 Ok(result) => {
-                    if let Err(err) =
-                        server.notify::<InitializedNotif>(InitializedParams {})
-                    {
+                    if let Err(err) = server.notify::<InitializedNotif>(InitializedParams {}) {
                         warn!("[LSP] initialized notify failed: {err}");
                     }
                     init_done.store(true, Ordering::Release);
@@ -279,7 +291,12 @@ impl LspClient {
                     for msg in drained {
                         dispatch(&server, &tx, &h, &slots, msg);
                     }
-                    emit(&tx, LspResponse::Initialized { capabilities: result.capabilities });
+                    emit(
+                        &tx,
+                        LspResponse::Initialized {
+                            capabilities: Box::new(result.capabilities),
+                        },
+                    );
                 }
                 Err(err) => warn!("[LSP] {} failed: {err}", InitializeRequest::METHOD),
             }
@@ -335,8 +352,12 @@ impl Drop for LspClient {
 type Tx = UnboundedSender<LspResponse>;
 
 /// Spawn a typed request and feed its result into `map` on success.
-fn spawn<R>(server: &ServerSocket, tx: &Tx, params: R::Params, map: impl FnOnce(R::Result, &Tx) + Send + 'static)
-where
+fn spawn<R>(
+    server: &ServerSocket,
+    tx: &Tx,
+    params: R::Params,
+    map: impl FnOnce(R::Result, &Tx) + Send + 'static,
+) where
     R: LspRequestTrait + 'static,
     R::Params: Send + 'static,
     R::Result: Send + 'static,
@@ -391,11 +412,7 @@ fn text_pos(uri: Url, position: Position) -> TextDocumentPositionParams {
 /// stashed in `slots`, and the response variant goes onto the bridge — the
 /// host then sends a matching `LspMessage::Respond*` which fulfills the
 /// suspended sender.
-fn build_router(
-    tx: Tx,
-    next_id: Arc<AtomicU64>,
-    slots: Arc<InboundReplySlots>,
-) -> Router<()> {
+fn build_router(tx: Tx, next_id: Arc<AtomicU64>, slots: Arc<InboundReplySlots>) -> Router<()> {
     let mut router: Router<()> = Router::new(());
 
     // ─── Notifications ─────────────────────────────────────────────────────
@@ -624,8 +641,11 @@ fn inbound_request<R, F>(
     });
 }
 
-fn fulfill_slot<T>(slots: &Mutex<HashMap<u64, oneshot::Sender<Result<T, ResponseError>>>>, id: u64, value: T)
-where
+fn fulfill_slot<T>(
+    slots: &Mutex<HashMap<u64, oneshot::Sender<Result<T, ResponseError>>>>,
+    id: u64,
+    value: T,
+) where
     T: 'static,
 {
     if let Some(slot) = slots.lock().unwrap().remove(&id) {
@@ -654,21 +674,34 @@ fn dispatch(
                 id: NumberOrString::Number(id as i32),
             },
         ),
-        M::WorkDoneProgressCancel { token } => fire::<WorkDoneProgressCancel>(
-            server,
-            WorkDoneProgressCancelParams { token },
-        ),
+        M::WorkDoneProgressCancel { token } => {
+            fire::<WorkDoneProgressCancel>(server, WorkDoneProgressCancelParams { token })
+        }
 
         // ─── Document sync ────────────────────────────────────────────────
-        M::DidOpen { uri, language_id, version, text } => {
+        M::DidOpen {
+            uri,
+            language_id,
+            version,
+            text,
+        } => {
             fire::<DidOpenTextDocument>(
                 server,
                 DidOpenTextDocumentParams {
-                    text_document: TextDocumentItem { uri, language_id, version, text },
+                    text_document: TextDocumentItem {
+                        uri,
+                        language_id,
+                        version,
+                        text,
+                    },
                 },
             );
         }
-        M::DidChange { uri, version, changes } => fire::<DidChangeTextDocument>(
+        M::DidChange {
+            uri,
+            version,
+            changes,
+        } => fire::<DidChangeTextDocument>(
             server,
             DidChangeTextDocumentParams {
                 text_document: VersionedTextDocumentIdentifier { uri, version },
@@ -701,35 +734,40 @@ fn dispatch(
                 reason,
             };
             spawn::<WillSaveWaitUntil>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::WillSaveWaitUntil {
-                    id,
-                    edits: result.unwrap_or_default(),
-                });
+                emit(
+                    tx,
+                    LspResponse::WillSaveWaitUntil {
+                        id,
+                        edits: result.unwrap_or_default(),
+                    },
+                );
             });
         }
 
         // ─── Workspace sync ───────────────────────────────────────────────
-        M::DidChangeConfiguration { settings } => fire::<DidChangeConfiguration>(
-            server,
-            DidChangeConfigurationParams { settings },
-        ),
-        M::DidChangeWatchedFiles { changes } => fire::<DidChangeWatchedFiles>(
-            server,
-            DidChangeWatchedFilesParams { changes },
-        ),
-        M::DidChangeWorkspaceFolders { event } => fire::<DidChangeWorkspaceFolders>(
-            server,
-            DidChangeWorkspaceFoldersParams { event },
-        ),
+        M::DidChangeConfiguration { settings } => {
+            fire::<DidChangeConfiguration>(server, DidChangeConfigurationParams { settings })
+        }
+        M::DidChangeWatchedFiles { changes } => {
+            fire::<DidChangeWatchedFiles>(server, DidChangeWatchedFilesParams { changes })
+        }
+        M::DidChangeWorkspaceFolders { event } => {
+            fire::<DidChangeWorkspaceFolders>(server, DidChangeWorkspaceFoldersParams { event })
+        }
 
         // ─── Completion / hover / signature ──────────────────────────────
         M::Completion { uri, position, id } => completion(server, tx, uri, position, id),
-        M::ResolveCompletionItem { item, id } => spawn::<ResolveCompletionItem>(
-            server,
-            tx,
-            item,
-            move |result, tx| emit(tx, LspResponse::ResolvedCompletionItem { id, item: result }),
-        ),
+        M::ResolveCompletionItem { item, id } => {
+            spawn::<ResolveCompletionItem>(server, tx, *item, move |result, tx| {
+                emit(
+                    tx,
+                    LspResponse::ResolvedCompletionItem {
+                        id,
+                        item: Box::new(result),
+                    },
+                )
+            })
+        }
         M::Hover { uri, position, id } => hover(server, tx, uri, position, id),
         M::SignatureHelp { uri, position, id } => signature_help(server, tx, uri, position, id),
 
@@ -741,10 +779,13 @@ fn dispatch(
                 partial_result_params: Default::default(),
             };
             spawn::<GotoDeclaration>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::Declaration {
-                    id,
-                    locations: flatten_decl(result),
-                });
+                emit(
+                    tx,
+                    LspResponse::Declaration {
+                        id,
+                        locations: flatten_decl(result),
+                    },
+                );
             });
         }
         M::GotoDefinition { uri, position, id } => {
@@ -754,10 +795,13 @@ fn dispatch(
                 partial_result_params: Default::default(),
             };
             spawn::<GotoDefinition>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::Definition {
-                    id,
-                    locations: flatten_def(result),
-                });
+                emit(
+                    tx,
+                    LspResponse::Definition {
+                        id,
+                        locations: flatten_def(result),
+                    },
+                );
             });
         }
         M::GotoTypeDefinition { uri, position, id } => {
@@ -767,10 +811,13 @@ fn dispatch(
                 partial_result_params: Default::default(),
             };
             spawn::<GotoTypeDefinition>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::TypeDefinition {
-                    id,
-                    locations: flatten_type_def(result),
-                });
+                emit(
+                    tx,
+                    LspResponse::TypeDefinition {
+                        id,
+                        locations: flatten_type_def(result),
+                    },
+                );
             });
         }
         M::GotoImplementation { uri, position, id } => {
@@ -780,10 +827,13 @@ fn dispatch(
                 partial_result_params: Default::default(),
             };
             spawn::<GotoImplementation>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::Implementation {
-                    id,
-                    locations: flatten_impl(result),
-                });
+                emit(
+                    tx,
+                    LspResponse::Implementation {
+                        id,
+                        locations: flatten_impl(result),
+                    },
+                );
             });
         }
         M::References { uri, position, id } => {
@@ -791,13 +841,18 @@ fn dispatch(
                 text_document_position: text_pos(uri, position),
                 work_done_progress_params: Default::default(),
                 partial_result_params: Default::default(),
-                context: ReferenceContext { include_declaration: true },
+                context: ReferenceContext {
+                    include_declaration: true,
+                },
             };
             spawn::<References>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::References {
-                    id,
-                    locations: result.unwrap_or_default(),
-                });
+                emit(
+                    tx,
+                    LspResponse::References {
+                        id,
+                        locations: result.unwrap_or_default(),
+                    },
+                );
             });
         }
         M::DocumentHighlight { uri, position, id } => {
@@ -807,10 +862,13 @@ fn dispatch(
                 partial_result_params: Default::default(),
             };
             spawn::<DocumentHighlightRequest>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::DocumentHighlights {
-                    id,
-                    highlights: result.unwrap_or_default(),
-                });
+                emit(
+                    tx,
+                    LspResponse::DocumentHighlights {
+                        id,
+                        highlights: result.unwrap_or_default(),
+                    },
+                );
             });
         }
         M::DocumentSymbol { uri, id } => {
@@ -849,12 +907,14 @@ fn dispatch(
                 emit(tx, LspResponse::WorkspaceSymbols { id, symbols });
             });
         }
-        M::WorkspaceSymbolResolve { symbol, id } => spawn::<WorkspaceSymbolResolve>(
-            server,
-            tx,
-            symbol,
-            move |result, tx| emit(tx, LspResponse::ResolvedWorkspaceSymbol { id, symbol: result }),
-        ),
+        M::WorkspaceSymbolResolve { symbol, id } => {
+            spawn::<WorkspaceSymbolResolve>(server, tx, symbol, move |result, tx| {
+                emit(
+                    tx,
+                    LspResponse::ResolvedWorkspaceSymbol { id, symbol: result },
+                )
+            })
+        }
 
         // ─── Folding / selection ──────────────────────────────────────────
         M::FoldingRange { uri, id } => {
@@ -864,10 +924,13 @@ fn dispatch(
                 partial_result_params: Default::default(),
             };
             spawn::<FoldingRangeRequest>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::FoldingRanges {
-                    id,
-                    ranges: result.unwrap_or_default(),
-                });
+                emit(
+                    tx,
+                    LspResponse::FoldingRanges {
+                        id,
+                        ranges: result.unwrap_or_default(),
+                    },
+                );
             });
         }
         M::SelectionRange { uri, positions, id } => {
@@ -878,21 +941,34 @@ fn dispatch(
                 partial_result_params: Default::default(),
             };
             spawn::<SelectionRangeRequest>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::SelectionRanges {
-                    id,
-                    ranges: result.unwrap_or_default(),
-                });
+                emit(
+                    tx,
+                    LspResponse::SelectionRanges {
+                        id,
+                        ranges: result.unwrap_or_default(),
+                    },
+                );
             });
         }
 
         // ─── Code actions / formatting ────────────────────────────────────
-        M::CodeAction { uri, range, diagnostics, id } => code_action(server, tx, uri, range, diagnostics, id),
-        M::CodeActionResolve { action, id } => spawn::<CodeActionResolveRequest>(
-            server,
-            tx,
-            action,
-            move |result, tx| emit(tx, LspResponse::ResolvedCodeAction { id, action: result }),
-        ),
+        M::CodeAction {
+            uri,
+            range,
+            diagnostics,
+            id,
+        } => code_action(server, tx, uri, range, diagnostics, id),
+        M::CodeActionResolve { action, id } => {
+            spawn::<CodeActionResolveRequest>(server, tx, *action, move |result, tx| {
+                emit(
+                    tx,
+                    LspResponse::ResolvedCodeAction {
+                        id,
+                        action: Box::new(result),
+                    },
+                )
+            })
+        }
         M::Format { uri, options, id } => {
             let params = DocumentFormattingParams {
                 text_document: TextDocumentIdentifier { uri },
@@ -900,13 +976,21 @@ fn dispatch(
                 work_done_progress_params: Default::default(),
             };
             spawn::<Formatting>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::Format {
-                    id,
-                    edits: result.unwrap_or_default(),
-                });
+                emit(
+                    tx,
+                    LspResponse::Format {
+                        id,
+                        edits: result.unwrap_or_default(),
+                    },
+                );
             });
         }
-        M::RangeFormatting { uri, range, options, id } => {
+        M::RangeFormatting {
+            uri,
+            range,
+            options,
+            id,
+        } => {
             let params = DocumentRangeFormattingParams {
                 text_document: TextDocumentIdentifier { uri },
                 range,
@@ -914,23 +998,35 @@ fn dispatch(
                 work_done_progress_params: Default::default(),
             };
             spawn::<RangeFormatting>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::RangeFormatting {
-                    id,
-                    edits: result.unwrap_or_default(),
-                });
+                emit(
+                    tx,
+                    LspResponse::RangeFormatting {
+                        id,
+                        edits: result.unwrap_or_default(),
+                    },
+                );
             });
         }
-        M::OnTypeFormatting { uri, position, ch, options, id } => {
+        M::OnTypeFormatting {
+            uri,
+            position,
+            ch,
+            options,
+            id,
+        } => {
             let params = DocumentOnTypeFormattingParams {
                 text_document_position: text_pos(uri, position),
                 ch,
                 options,
             };
             spawn::<OnTypeFormatting>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::OnTypeFormatting {
-                    id,
-                    edits: result.unwrap_or_default(),
-                });
+                emit(
+                    tx,
+                    LspResponse::OnTypeFormatting {
+                        id,
+                        edits: result.unwrap_or_default(),
+                    },
+                );
             });
         }
         M::ExecuteCommand { command, arguments } => execute_command(server, tx, command, arguments),
@@ -943,18 +1039,20 @@ fn dispatch(
                 work_done_progress_params: Default::default(),
             };
             spawn::<InlayHintRequest>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::InlayHints {
-                    id,
-                    hints: result.unwrap_or_default(),
-                });
+                emit(
+                    tx,
+                    LspResponse::InlayHints {
+                        id,
+                        hints: result.unwrap_or_default(),
+                    },
+                );
             });
         }
-        M::InlayHintResolve { hint, id } => spawn::<InlayHintResolveRequest>(
-            server,
-            tx,
-            hint,
-            move |result, tx| emit(tx, LspResponse::ResolvedInlayHint { id, hint: result }),
-        ),
+        M::InlayHintResolve { hint, id } => {
+            spawn::<InlayHintResolveRequest>(server, tx, hint, move |result, tx| {
+                emit(tx, LspResponse::ResolvedInlayHint { id, hint: result })
+            })
+        }
         M::DocumentLink { uri, id } => {
             let params = DocumentLinkParams {
                 text_document: TextDocumentIdentifier { uri },
@@ -962,18 +1060,20 @@ fn dispatch(
                 partial_result_params: Default::default(),
             };
             spawn::<DocumentLinkRequest>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::DocumentLinks {
-                    id,
-                    links: result.unwrap_or_default(),
-                });
+                emit(
+                    tx,
+                    LspResponse::DocumentLinks {
+                        id,
+                        links: result.unwrap_or_default(),
+                    },
+                );
             });
         }
-        M::DocumentLinkResolve { link, id } => spawn::<DocumentLinkResolve>(
-            server,
-            tx,
-            link,
-            move |result, tx| emit(tx, LspResponse::ResolvedDocumentLink { id, link: result }),
-        ),
+        M::DocumentLinkResolve { link, id } => {
+            spawn::<DocumentLinkResolve>(server, tx, link, move |result, tx| {
+                emit(tx, LspResponse::ResolvedDocumentLink { id, link: result })
+            })
+        }
         M::DocumentColor { uri, id } => {
             let params = DocumentColorParams {
                 text_document: TextDocumentIdentifier { uri },
@@ -984,7 +1084,12 @@ fn dispatch(
                 emit(tx, LspResponse::DocumentColors { id, colors: result });
             });
         }
-        M::ColorPresentation { uri, color, range, id } => {
+        M::ColorPresentation {
+            uri,
+            color,
+            range,
+            id,
+        } => {
             let params = ColorPresentationParams {
                 text_document: TextDocumentIdentifier { uri },
                 color,
@@ -993,10 +1098,13 @@ fn dispatch(
                 partial_result_params: Default::default(),
             };
             spawn::<ColorPresentationRequest>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::ColorPresentations {
-                    id,
-                    presentations: result,
-                });
+                emit(
+                    tx,
+                    LspResponse::ColorPresentations {
+                        id,
+                        presentations: result,
+                    },
+                );
             });
         }
         M::LinkedEditingRange { uri, position, id } => {
@@ -1015,16 +1123,24 @@ fn dispatch(
                 partial_result_params: Default::default(),
             };
             spawn::<MonikerRequest>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::Monikers {
-                    id,
-                    monikers: result.unwrap_or_default(),
-                });
+                emit(
+                    tx,
+                    LspResponse::Monikers {
+                        id,
+                        monikers: result.unwrap_or_default(),
+                    },
+                );
             });
         }
 
         // ─── Rename ───────────────────────────────────────────────────────
         M::PrepareRename { uri, position, id } => prepare_rename(server, tx, uri, position, id),
-        M::Rename { uri, position, new_name, id } => {
+        M::Rename {
+            uri,
+            position,
+            new_name,
+            id,
+        } => {
             let params = RenameParams {
                 text_document_position: text_pos(uri, position),
                 new_name,
@@ -1044,10 +1160,13 @@ fn dispatch(
                 work_done_progress_params: Default::default(),
             };
             spawn::<CallHierarchyPrepare>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::PrepareCallHierarchy {
-                    id,
-                    items: result.unwrap_or_default(),
-                });
+                emit(
+                    tx,
+                    LspResponse::PrepareCallHierarchy {
+                        id,
+                        items: result.unwrap_or_default(),
+                    },
+                );
             });
         }
         M::CallHierarchyIncomingCalls { item, id } => {
@@ -1057,10 +1176,13 @@ fn dispatch(
                 partial_result_params: Default::default(),
             };
             spawn::<CallHierarchyIncomingCalls>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::CallHierarchyIncomingCalls {
-                    id,
-                    calls: result.unwrap_or_default(),
-                });
+                emit(
+                    tx,
+                    LspResponse::CallHierarchyIncomingCalls {
+                        id,
+                        calls: result.unwrap_or_default(),
+                    },
+                );
             });
         }
         M::CallHierarchyOutgoingCalls { item, id } => {
@@ -1070,10 +1192,13 @@ fn dispatch(
                 partial_result_params: Default::default(),
             };
             spawn::<CallHierarchyOutgoingCalls>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::CallHierarchyOutgoingCalls {
-                    id,
-                    calls: result.unwrap_or_default(),
-                });
+                emit(
+                    tx,
+                    LspResponse::CallHierarchyOutgoingCalls {
+                        id,
+                        calls: result.unwrap_or_default(),
+                    },
+                );
             });
         }
 
@@ -1084,10 +1209,13 @@ fn dispatch(
                 work_done_progress_params: Default::default(),
             };
             spawn::<TypeHierarchyPrepare>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::PrepareTypeHierarchy {
-                    id,
-                    items: result.unwrap_or_default(),
-                });
+                emit(
+                    tx,
+                    LspResponse::PrepareTypeHierarchy {
+                        id,
+                        items: result.unwrap_or_default(),
+                    },
+                );
             });
         }
         M::TypeHierarchySupertypes { item, id } => {
@@ -1097,10 +1225,13 @@ fn dispatch(
                 partial_result_params: Default::default(),
             };
             spawn::<TypeHierarchySupertypes>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::TypeHierarchySupertypes {
-                    id,
-                    items: result.unwrap_or_default(),
-                });
+                emit(
+                    tx,
+                    LspResponse::TypeHierarchySupertypes {
+                        id,
+                        items: result.unwrap_or_default(),
+                    },
+                );
             });
         }
         M::TypeHierarchySubtypes { item, id } => {
@@ -1110,10 +1241,13 @@ fn dispatch(
                 partial_result_params: Default::default(),
             };
             spawn::<TypeHierarchySubtypes>(server, tx, params, move |result, tx| {
-                emit(tx, LspResponse::TypeHierarchySubtypes {
-                    id,
-                    items: result.unwrap_or_default(),
-                });
+                emit(
+                    tx,
+                    LspResponse::TypeHierarchySubtypes {
+                        id,
+                        items: result.unwrap_or_default(),
+                    },
+                );
             });
         }
 
@@ -1130,7 +1264,11 @@ fn dispatch(
                 }
             });
         }
-        M::SemanticTokensFullDelta { uri, previous_result_id, id } => {
+        M::SemanticTokensFullDelta {
+            uri,
+            previous_result_id,
+            id,
+        } => {
             let params = SemanticTokensDeltaParams {
                 text_document: TextDocumentIdentifier { uri },
                 previous_result_id,
@@ -1158,7 +1296,12 @@ fn dispatch(
         }
 
         // ─── Pull diagnostics ────────────────────────────────────────────
-        M::DocumentDiagnostic { uri, identifier, previous_result_id, id } => {
+        M::DocumentDiagnostic {
+            uri,
+            identifier,
+            previous_result_id,
+            id,
+        } => {
             let params = DocumentDiagnosticParams {
                 text_document: TextDocumentIdentifier { uri },
                 identifier,
@@ -1170,7 +1313,11 @@ fn dispatch(
                 emit(tx, LspResponse::DocumentDiagnostic { id, report: result });
             });
         }
-        M::WorkspaceDiagnostic { identifier, previous_result_ids, id } => {
+        M::WorkspaceDiagnostic {
+            identifier,
+            previous_result_ids,
+            id,
+        } => {
             let params = WorkspaceDiagnosticParams {
                 identifier,
                 previous_result_ids,
@@ -1185,14 +1332,20 @@ fn dispatch(
         // ─── Server-pull responses ───────────────────────────────────────
         M::RespondConfiguration { id, items } => fulfill_slot(&slots.configuration, id, items),
         M::RespondApplyEdit { id, response } => fulfill_slot(&slots.apply_edit, id, response),
-        M::RespondShowMessageRequest { id, action } => fulfill_slot(&slots.show_message, id, action),
+        M::RespondShowMessageRequest { id, action } => {
+            fulfill_slot(&slots.show_message, id, action)
+        }
         M::RespondShowDocument { id, success } => {
             fulfill_slot(&slots.show_document, id, ShowDocumentResult { success })
         }
-        M::RespondWorkDoneProgressCreate { id } => fulfill_slot(&slots.work_done_progress_create, id, ()),
+        M::RespondWorkDoneProgressCreate { id } => {
+            fulfill_slot(&slots.work_done_progress_create, id, ())
+        }
         M::RespondRegisterCapability { id } => fulfill_slot(&slots.register_capability, id, ()),
         M::RespondUnregisterCapability { id } => fulfill_slot(&slots.unregister_capability, id, ()),
-        M::RespondWorkspaceFolders { id, folders } => fulfill_slot(&slots.workspace_folders, id, folders),
+        M::RespondWorkspaceFolders { id, folders } => {
+            fulfill_slot(&slots.workspace_folders, id, folders)
+        }
 
         // ─── Termination ──────────────────────────────────────────────────
         M::Shutdown { id } => spawn::<ShutdownRequest>(server, tx, (), move |_result, tx| {
@@ -1211,17 +1364,34 @@ fn completion(server: &ServerSocket, tx: &Tx, uri: Url, position: Position, id: 
     };
     spawn::<Completion>(server, tx, params, move |result, tx| match result {
         Some(CompletionResponse::Array(items)) => {
-            emit(tx, LspResponse::Completion { id, items, is_incomplete: false });
+            emit(
+                tx,
+                LspResponse::Completion {
+                    id,
+                    items,
+                    is_incomplete: false,
+                },
+            );
         }
         Some(CompletionResponse::List(list)) => {
-            emit(tx, LspResponse::Completion {
-                id,
-                items: list.items,
-                is_incomplete: list.is_incomplete,
-            });
+            emit(
+                tx,
+                LspResponse::Completion {
+                    id,
+                    items: list.items,
+                    is_incomplete: list.is_incomplete,
+                },
+            );
         }
         None => {
-            emit(tx, LspResponse::Completion { id, items: Vec::new(), is_incomplete: false });
+            emit(
+                tx,
+                LspResponse::Completion {
+                    id,
+                    items: Vec::new(),
+                    is_incomplete: false,
+                },
+            );
         }
     });
 }
@@ -1234,12 +1404,15 @@ fn hover(server: &ServerSocket, tx: &Tx, uri: Url, position: Position, id: u64) 
     spawn::<HoverRequest>(server, tx, params, move |result, tx| {
         if let Some(h) = result {
             let (content, kind) = extract_hover_content(&h.contents);
-            emit(tx, LspResponse::Hover {
-                id,
-                content,
-                kind,
-                range: h.range,
-            });
+            emit(
+                tx,
+                LspResponse::Hover {
+                    id,
+                    content,
+                    kind,
+                    range: h.range,
+                },
+            );
         }
     });
 }
@@ -1257,7 +1430,12 @@ fn signature_help(server: &ServerSocket, tx: &Tx, uri: Url, position: Position, 
         };
         emit(
             tx,
-            LspResponse::SignatureHelp { id, signatures, active_signature, active_parameter },
+            LspResponse::SignatureHelp {
+                id,
+                signatures,
+                active_signature,
+                active_parameter,
+            },
         );
     });
 }
@@ -1273,7 +1451,11 @@ fn code_action(
     let params = CodeActionParams {
         text_document: TextDocumentIdentifier { uri },
         range,
-        context: CodeActionContext { diagnostics, only: None, trigger_kind: None },
+        context: CodeActionContext {
+            diagnostics,
+            only: None,
+            trigger_kind: None,
+        },
         work_done_progress_params: Default::default(),
         partial_result_params: Default::default(),
     };
@@ -1282,7 +1464,9 @@ fn code_action(
             .unwrap_or_default()
             .into_iter()
             .map(|a| match a {
-                lsp_types::CodeActionOrCommand::CodeAction(a) => CodeActionOrCommand::Action(a),
+                lsp_types::CodeActionOrCommand::CodeAction(a) => {
+                    CodeActionOrCommand::Action(Box::new(a))
+                }
                 lsp_types::CodeActionOrCommand::Command(c) => CodeActionOrCommand::Command(c),
             })
             .collect();
@@ -1310,14 +1494,24 @@ fn prepare_rename(server: &ServerSocket, tx: &Tx, uri: Url, position: Position, 
     spawn::<PrepareRenameRequest>(server, tx, text_pos(uri, position), move |result, tx| {
         match result {
             Some(PrepareRenameResponse::Range(range)) => {
-                emit(tx, LspResponse::PrepareRename { id, range, placeholder: None });
+                emit(
+                    tx,
+                    LspResponse::PrepareRename {
+                        id,
+                        range,
+                        placeholder: None,
+                    },
+                );
             }
             Some(PrepareRenameResponse::RangeWithPlaceholder { range, placeholder }) => {
-                emit(tx, LspResponse::PrepareRename {
-                    id,
-                    range,
-                    placeholder: Some(placeholder),
-                });
+                emit(
+                    tx,
+                    LspResponse::PrepareRename {
+                        id,
+                        range,
+                        placeholder: Some(placeholder),
+                    },
+                );
             }
             // DefaultBehavior wants an identifier-at-cursor fallback, which the
             // protocol layer can't compute.
@@ -1332,7 +1526,10 @@ fn flatten_def(r: Option<GotoDefinitionResponse>) -> Vec<Location> {
         Some(GotoDefinitionResponse::Array(locs)) => locs,
         Some(GotoDefinitionResponse::Link(links)) => links
             .into_iter()
-            .map(|link| Location { uri: link.target_uri, range: link.target_selection_range })
+            .map(|link| Location {
+                uri: link.target_uri,
+                range: link.target_selection_range,
+            })
             .collect(),
         None => Vec::new(),
     }
@@ -1340,9 +1537,15 @@ fn flatten_def(r: Option<GotoDefinitionResponse>) -> Vec<Location> {
 
 // Declaration / type-definition / implementation all alias to
 // `GotoDefinitionResponse` in lsp_types — single helper handles all four.
-fn flatten_decl(r: Option<GotoDefinitionResponse>) -> Vec<Location> { flatten_def(r) }
-fn flatten_type_def(r: Option<GotoDefinitionResponse>) -> Vec<Location> { flatten_def(r) }
-fn flatten_impl(r: Option<GotoDefinitionResponse>) -> Vec<Location> { flatten_def(r) }
+fn flatten_decl(r: Option<GotoDefinitionResponse>) -> Vec<Location> {
+    flatten_def(r)
+}
+fn flatten_type_def(r: Option<GotoDefinitionResponse>) -> Vec<Location> {
+    flatten_def(r)
+}
+fn flatten_impl(r: Option<GotoDefinitionResponse>) -> Vec<Location> {
+    flatten_def(r)
+}
 
 /// Flatten LSP `HoverContents` into a `(text, kind)` pair. An `Array` mixing
 /// `LanguageString` with plain text renders as Markdown so the renderer can

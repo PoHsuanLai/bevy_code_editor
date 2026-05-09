@@ -120,7 +120,10 @@ impl ServerCapabilities {
     /// Negotiated per LSP 3.17+. Spec default (omitted field) is UTF-16.
     pub fn position_encoding(&self) -> crate::pos::PositionEncoding {
         use lsp_types::PositionEncodingKind;
-        let raw = self.inner.as_ref().and_then(|c| c.position_encoding.clone());
+        let raw = self
+            .inner
+            .as_ref()
+            .and_then(|c| c.position_encoding.clone());
         match raw {
             Some(k) if k == PositionEncodingKind::UTF8 => crate::pos::PositionEncoding::Utf8,
             Some(k) if k == PositionEncodingKind::UTF32 => crate::pos::PositionEncoding::Utf32,
@@ -169,15 +172,21 @@ impl ServerCapabilities {
     }
 
     pub fn supports_declaration(&self) -> bool {
-        self.inner.as_ref().is_some_and(|c| c.declaration_provider.is_some())
+        self.inner
+            .as_ref()
+            .is_some_and(|c| c.declaration_provider.is_some())
     }
 
     pub fn supports_type_definition(&self) -> bool {
-        self.inner.as_ref().is_some_and(|c| c.type_definition_provider.is_some())
+        self.inner
+            .as_ref()
+            .is_some_and(|c| c.type_definition_provider.is_some())
     }
 
     pub fn supports_implementation(&self) -> bool {
-        self.inner.as_ref().is_some_and(|c| c.implementation_provider.is_some())
+        self.inner
+            .as_ref()
+            .is_some_and(|c| c.implementation_provider.is_some())
     }
 
     pub fn supports_document_symbol(&self) -> bool {
@@ -197,11 +206,15 @@ impl ServerCapabilities {
     }
 
     pub fn supports_folding_range(&self) -> bool {
-        self.inner.as_ref().is_some_and(|c| c.folding_range_provider.is_some())
+        self.inner
+            .as_ref()
+            .is_some_and(|c| c.folding_range_provider.is_some())
     }
 
     pub fn supports_selection_range(&self) -> bool {
-        self.inner.as_ref().is_some_and(|c| c.selection_range_provider.is_some())
+        self.inner
+            .as_ref()
+            .is_some_and(|c| c.selection_range_provider.is_some())
     }
 
     pub fn supports_range_formatting(&self) -> bool {
@@ -221,31 +234,45 @@ impl ServerCapabilities {
     }
 
     pub fn supports_document_link(&self) -> bool {
-        self.inner.as_ref().is_some_and(|c| c.document_link_provider.is_some())
+        self.inner
+            .as_ref()
+            .is_some_and(|c| c.document_link_provider.is_some())
     }
 
     pub fn supports_document_color(&self) -> bool {
-        self.inner.as_ref().is_some_and(|c| c.color_provider.is_some())
+        self.inner
+            .as_ref()
+            .is_some_and(|c| c.color_provider.is_some())
     }
 
     pub fn supports_linked_editing_range(&self) -> bool {
-        self.inner.as_ref().is_some_and(|c| c.linked_editing_range_provider.is_some())
+        self.inner
+            .as_ref()
+            .is_some_and(|c| c.linked_editing_range_provider.is_some())
     }
 
     pub fn supports_moniker(&self) -> bool {
-        self.inner.as_ref().is_some_and(|c| c.moniker_provider.is_some())
+        self.inner
+            .as_ref()
+            .is_some_and(|c| c.moniker_provider.is_some())
     }
 
     pub fn supports_call_hierarchy(&self) -> bool {
-        self.inner.as_ref().is_some_and(|c| c.call_hierarchy_provider.is_some())
+        self.inner
+            .as_ref()
+            .is_some_and(|c| c.call_hierarchy_provider.is_some())
     }
 
     pub fn supports_semantic_tokens(&self) -> bool {
-        self.inner.as_ref().is_some_and(|c| c.semantic_tokens_provider.is_some())
+        self.inner
+            .as_ref()
+            .is_some_and(|c| c.semantic_tokens_provider.is_some())
     }
 
     pub fn supports_pull_diagnostics(&self) -> bool {
-        self.inner.as_ref().is_some_and(|c| c.diagnostic_provider.is_some())
+        self.inner
+            .as_ref()
+            .is_some_and(|c| c.diagnostic_provider.is_some())
     }
 
     /// Whether `textDocument/codeAction` results require a follow-up

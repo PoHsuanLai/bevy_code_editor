@@ -173,8 +173,8 @@ pub fn request_completion(
 
         completion_state.filter = new_query;
         completion_state.update_word_completions(rope, cursor_pos);
-        completion_state.visible = !completion_state.word_items.is_empty()
-            || !completion_state.items.is_empty();
+        completion_state.visible =
+            !completion_state.word_items.is_empty() || !completion_state.items.is_empty();
     } else {
         if !completion_state.visible {
             completion_state.start_char_index = find_word_start(rope, cursor_pos);
@@ -192,4 +192,3 @@ pub fn request_completion(
         );
     }
 }
-

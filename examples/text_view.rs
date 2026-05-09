@@ -16,17 +16,21 @@ use bevy_instanced_text::view::snapshot::{trivial_layout, StyleRun};
 
 fn main() {
     let mut app = App::new();
-    app.add_plugins(DefaultPlugins.set(WindowPlugin {
-        primary_window: Some(Window {
-            title: "InstancedTextPlugins Demo — No Editor".to_string(),
-            resolution: (800, 600).into(),
-            ..default()
-        }),
-        ..default()
-    }).set(bevy::asset::AssetPlugin {
-        file_path: "assets".into(),
-        ..default()
-    }));
+    app.add_plugins(
+        DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "InstancedTextPlugins Demo — No Editor".to_string(),
+                    resolution: (800, 600).into(),
+                    ..default()
+                }),
+                ..default()
+            })
+            .set(bevy::asset::AssetPlugin {
+                file_path: "assets".into(),
+                ..default()
+            }),
+    );
 
     app.add_plugins(InstancedTextPlugins)
         .add_systems(Startup, (setup_camera, setup_text_view))
@@ -38,7 +42,11 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
 
-fn setup_text_view(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<&Window>) {
+fn setup_text_view(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    windows: Query<&Window>,
+) {
     let Ok(window) = windows.single() else {
         return;
     };
@@ -90,7 +98,10 @@ fn setup_text_view(mut commands: Commands, asset_server: Res<AssetServer>, windo
         ]),
         multi_segment_line(vec![
             ("  Simple      ", bullet_key),
-            ("— Accessible for newcomers, flexible for advanced users", body),
+            (
+                "— Accessible for newcomers, flexible for advanced users",
+                body,
+            ),
         ]),
         multi_segment_line(vec![
             ("  Data Focused", bullet_key),
@@ -102,7 +113,10 @@ fn setup_text_view(mut commands: Commands, asset_server: Res<AssetServer>, windo
         ]),
         multi_segment_line(vec![
             ("  Fast        ", bullet_key),
-            ("— Quick app logic with parallel processing capability", body),
+            (
+                "— Quick app logic with parallel processing capability",
+                body,
+            ),
         ]),
         multi_segment_line(vec![
             ("  Productive  ", bullet_key),

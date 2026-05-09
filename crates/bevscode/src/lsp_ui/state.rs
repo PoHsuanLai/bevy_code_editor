@@ -65,7 +65,7 @@ pub struct WordCompletionItem {
 #[derive(Clone, Debug)]
 pub enum UnifiedCompletionItem {
     /// LSP completion item
-    Lsp(CompletionItem),
+    Lsp(Box<CompletionItem>),
     /// Word from document
     Word(WordCompletionItem),
 }
@@ -214,7 +214,7 @@ impl LspCompletionPopup {
         let mut lsp_scored: Vec<(UnifiedCompletionItem, i64)> = if self.filter.is_empty() {
             self.items
                 .iter()
-                .map(|item| (UnifiedCompletionItem::Lsp(item.clone()), 0))
+                .map(|item| (UnifiedCompletionItem::Lsp(Box::new(item.clone())), 0))
                 .collect()
         } else {
             self.items
@@ -225,7 +225,7 @@ impl LspCompletionPopup {
                             .as_ref()
                             .and_then(|f| matcher.fuzzy_match(f, &self.filter))
                     });
-                    score.map(|s| (UnifiedCompletionItem::Lsp(item.clone()), s))
+                    score.map(|s| (UnifiedCompletionItem::Lsp(Box::new(item.clone())), s))
                 })
                 .collect()
         };

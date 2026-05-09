@@ -27,18 +27,18 @@ pub struct SyntaxPalette {
 impl Default for SyntaxPalette {
     fn default() -> Self {
         Self {
-            keyword:     Color::srgb(0.847, 0.486, 0.659),
-            function:    Color::srgb(0.863, 0.863, 0.549),
-            type_name:   Color::srgb(0.298, 0.686, 0.914),
-            variable:    Color::srgb(0.608, 0.788, 0.933),
-            constant:    Color::srgb(0.298, 0.686, 0.914),
-            string:      Color::srgb(0.808, 0.616, 0.502),
-            comment:     Color::srgb(0.384, 0.514, 0.376),
-            operator:    Color::srgb(0.827, 0.827, 0.827),
+            keyword: Color::srgb(0.847, 0.486, 0.659),
+            function: Color::srgb(0.863, 0.863, 0.549),
+            type_name: Color::srgb(0.298, 0.686, 0.914),
+            variable: Color::srgb(0.608, 0.788, 0.933),
+            constant: Color::srgb(0.298, 0.686, 0.914),
+            string: Color::srgb(0.808, 0.616, 0.502),
+            comment: Color::srgb(0.384, 0.514, 0.376),
+            operator: Color::srgb(0.827, 0.827, 0.827),
             punctuation: Color::srgb(0.827, 0.827, 0.827),
-            property:    Color::srgb(0.608, 0.788, 0.933),
-            escape:      Color::srgb(0.863, 0.863, 0.549),
-            default:     Color::srgb(0.90, 0.90, 0.92),
+            property: Color::srgb(0.608, 0.788, 0.933),
+            escape: Color::srgb(0.863, 0.863, 0.549),
+            default: Color::srgb(0.90, 0.90, 0.92),
         }
     }
 }
@@ -49,7 +49,9 @@ impl SyntaxPalette {
         match base {
             "keyword" | "conditional" | "repeat" | "exception" => self.keyword,
             "function" | "method" => self.function,
-            "type" | "class" | "interface" | "struct" | "enum" | "namespace" | "module" => self.type_name,
+            "type" | "class" | "interface" | "struct" | "enum" | "namespace" | "module" => {
+                self.type_name
+            }
             "variable" | "parameter" | "field" => self.variable,
             "constant" | "boolean" | "number" | "float" => self.constant,
             "string" | "character" => self.string,

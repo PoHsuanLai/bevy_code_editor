@@ -45,16 +45,25 @@ pub(crate) struct FoldDetectTask {
 /// equality) catches the case where another tree version arrived during
 /// the walk and re-spawns naturally on the next tick.
 #[cfg(feature = "tree-sitter")]
+type FoldDetectQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static FoldState,
+        &'static TextBuffer,
+        &'static bevy_tree_sitter::SyntaxTree,
+    ),
+    (With<CodeEditor>, Changed<bevy_tree_sitter::SyntaxTree>),
+>;
+
+#[cfg(feature = "tree-sitter")]
 pub(crate) fn spawn_fold_detect_tasks(
     mut commands: Commands,
-    editor_query: Query<
-        (Entity, &FoldState, &TextBuffer, &bevy_tree_sitter::SyntaxTree),
-        (With<CodeEditor>, Changed<bevy_tree_sitter::SyntaxTree>),
-    >,
+    editor_query: FoldDetectQuery,
     in_flight: Query<&FoldDetectTask>,
 ) {
-    let busy: std::collections::HashSet<Entity> =
-        in_flight.iter().map(|t| t.target).collect();
+    let busy: std::collections::HashSet<Entity> = in_flight.iter().map(|t| t.target).collect();
 
     for (entity, fold_state, buffer, syntax_tree) in editor_query.iter() {
         if busy.contains(&entity) {
@@ -101,9 +110,7 @@ pub(crate) fn apply_fold_detect_tasks(
     mut editors: Query<&mut FoldState, With<CodeEditor>>,
 ) {
     for (task_entity, mut task) in tasks.iter_mut() {
-        let Some(regions) =
-            block_on(futures_lite::future::poll_once(&mut task.task))
-        else {
+        let Some(regions) = block_on(futures_lite::future::poll_once(&mut task.task)) else {
             continue;
         };
 
@@ -318,4 +325,3 @@ impl Plugin for FoldingPlugin {
         );
     }
 }
-

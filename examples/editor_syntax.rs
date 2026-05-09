@@ -3,24 +3,28 @@
 //! Demonstrates how to use tree-sitter for syntax highlighting in the code editor.
 //! This example highlights Rust code using the tree-sitter-rust grammar.
 
-use bevy::prelude::*;
 use bevscode::prelude::*;
+use bevy::prelude::*;
 #[cfg(feature = "tree-sitter")]
 use bevy_tree_sitter::Language;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Tree-sitter Syntax Highlighting Example".to_string(),
-                resolution: (1200, 800).into(),
-                ..default()
-            }),
-            ..default()
-        }).set(bevy::asset::AssetPlugin {
-            file_path: "assets".into(),
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "Tree-sitter Syntax Highlighting Example".to_string(),
+                        resolution: (1200, 800).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(bevy::asset::AssetPlugin {
+                    file_path: "assets".into(),
+                    ..default()
+                }),
+        )
         .add_plugins(CodeEditorPlugins)
         .add_systems(Startup, setup_camera)
         .add_systems(PostStartup, setup_editor_with_treesitter)

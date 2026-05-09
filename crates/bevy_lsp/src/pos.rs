@@ -98,7 +98,12 @@ pub fn lsp_position_to_rope_byte(
 }
 
 /// Sum the encoding units of `[start_char, end_char)` within `rope`.
-fn count_units(rope: &Rope, start_char: usize, end_char: usize, encoding: PositionEncoding) -> usize {
+fn count_units(
+    rope: &Rope,
+    start_char: usize,
+    end_char: usize,
+    encoding: PositionEncoding,
+) -> usize {
     if start_char == end_char {
         return 0;
     }
@@ -190,7 +195,7 @@ mod tests {
             text: "ok\nx🎉y",
             char_offset: 5, // 'ok\n' = 3 chars; 'x🎉' = 2 chars
             line: 1,
-            utf8: 5, // 'x' (1) + '🎉' (4)
+            utf8: 5,  // 'x' (1) + '🎉' (4)
             utf16: 3, // 'x' (1) + '🎉' (2)
             utf32: 2,
         },
@@ -202,7 +207,10 @@ mod tests {
             let pos = rope_char_to_lsp_position(&rope, c.char_offset, enc);
             assert_eq!(
                 pos,
-                Position { line: c.line, character: char(c) },
+                Position {
+                    line: c.line,
+                    character: char(c)
+                },
                 "case {} ({:?}) char_offset={}",
                 c.name,
                 enc,
@@ -240,7 +248,10 @@ mod tests {
     fn clamps_past_end_of_line() {
         let rope = Rope::from_str("ab\ncd");
         // Asking for column 99 on line 0 should land at end of "ab".
-        let pos = Position { line: 0, character: 99 };
+        let pos = Position {
+            line: 0,
+            character: 99,
+        };
         let off = lsp_position_to_rope_char(&rope, pos, PositionEncoding::Utf16);
         // "ab\n" = 3 chars; rope.line(0).len_chars() includes the newline = 3.
         assert_eq!(off, 3);
@@ -249,7 +260,10 @@ mod tests {
     #[test]
     fn clamps_past_end_of_rope() {
         let rope = Rope::from_str("ab");
-        let pos = Position { line: 99, character: 0 };
+        let pos = Position {
+            line: 99,
+            character: 0,
+        };
         let off = lsp_position_to_rope_char(&rope, pos, PositionEncoding::Utf16);
         // Falls back to last line start.
         assert_eq!(off, 0);
@@ -275,7 +289,19 @@ mod tests {
         let range = rope_range_to_lsp_range(&rope, 1, 2, PositionEncoding::Utf16);
         // Char 1 = before emoji = column 1 (utf16: 1 unit for 'a').
         // Char 2 = after emoji = column 3 (utf16: 1 + 2 surrogates).
-        assert_eq!(range.start, Position { line: 0, character: 1 });
-        assert_eq!(range.end, Position { line: 0, character: 3 });
+        assert_eq!(
+            range.start,
+            Position {
+                line: 0,
+                character: 1
+            }
+        );
+        assert_eq!(
+            range.end,
+            Position {
+                line: 0,
+                character: 3
+            }
+        );
     }
 }

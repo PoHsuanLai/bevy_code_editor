@@ -124,12 +124,7 @@ fn rebuild_markdown_layout(
 fn apply_markdown_scroll(
     mut commands: Commands,
     q: Query<
-        (
-            Entity,
-            &ScrollState,
-            &TextViewViewport,
-            &BaseMarkdownLayout,
-        ),
+        (Entity, &ScrollState, &TextViewViewport, &BaseMarkdownLayout),
         Or<(
             Changed<ScrollState>,
             Changed<TextViewViewport>,

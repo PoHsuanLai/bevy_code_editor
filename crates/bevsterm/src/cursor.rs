@@ -6,8 +6,10 @@
 
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy_instanced_text_edit::{caret_overlay, cursor_blink_visible, BlinkPhase, CursorSettings, EditTheme};
 use bevy_instanced_text::{FontConfig, TextViewOverlays};
+use bevy_instanced_text_edit::{
+    caret_overlay, cursor_blink_visible, BlinkPhase, CursorSettings, EditTheme,
+};
 
 use crate::types::TerminalGridSnapshot;
 
@@ -25,7 +27,11 @@ pub struct TerminalCursorCell {
 /// editor's behavior: cursor stays solid for half a second after a move).
 pub fn track_cursor_blink(
     time: Res<Time>,
-    mut q: Query<(&TerminalGridSnapshot, &mut TerminalCursorCell, &mut BlinkPhase)>,
+    mut q: Query<(
+        &TerminalGridSnapshot,
+        &mut TerminalCursorCell,
+        &mut BlinkPhase,
+    )>,
 ) {
     for (snapshot, mut cell, mut blink) in q.iter_mut() {
         if snapshot.cursor_row != cell.last_row || snapshot.cursor_col != cell.last_col {

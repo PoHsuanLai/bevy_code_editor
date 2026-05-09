@@ -203,182 +203,346 @@ fn drain_lsp_responses(
             match response {
                 R::Initialized { capabilities } => {
                     client.initialized = true;
-                    d.initialized.push(LspServerInitialized { entity, capabilities });
+                    d.initialized.push(LspServerInitialized {
+                        entity,
+                        capabilities: *capabilities,
+                    });
                 }
 
                 R::Diagnostics { uri, diagnostics } => {
-                    d.diagnostics.push(LspDiagnosticsUpdated { entity, uri, diagnostics });
+                    d.diagnostics.push(LspDiagnosticsUpdated {
+                        entity,
+                        uri,
+                        diagnostics,
+                    });
                 }
                 R::LogMessage { typ, message } => {
-                    d.log_message.push(LspLogMessage { entity, typ, message });
+                    d.log_message.push(LspLogMessage {
+                        entity,
+                        typ,
+                        message,
+                    });
                 }
                 R::ShowMessage { typ, message } => {
-                    d.show_message.push(LspShowMessage { entity, typ, message });
+                    d.show_message.push(LspShowMessage {
+                        entity,
+                        typ,
+                        message,
+                    });
                 }
                 R::Progress { token, value } => {
-                    d.progress.push(LspProgress { entity, token, value });
+                    d.progress.push(LspProgress {
+                        entity,
+                        token,
+                        value,
+                    });
                 }
                 R::Telemetry { data } => {
                     d.telemetry.push(LspTelemetry { entity, data });
                 }
                 R::LogTrace { message, verbose } => {
-                    d.log_trace.push(LspLogTrace { entity, message, verbose });
+                    d.log_trace.push(LspLogTrace {
+                        entity,
+                        message,
+                        verbose,
+                    });
                 }
 
                 R::ConfigurationRequested { request_id, items } => {
                     d.configuration_req.push(LspConfigurationRequested {
-                        entity, request_id, items,
+                        entity,
+                        request_id,
+                        items,
                     });
                 }
-                R::ApplyEditRequested { request_id, label, edit } => {
+                R::ApplyEditRequested {
+                    request_id,
+                    label,
+                    edit,
+                } => {
                     d.apply_edit_req.push(LspApplyEditRequested {
-                        entity, request_id, label, edit,
+                        entity,
+                        request_id,
+                        label,
+                        edit,
                     });
                 }
-                R::ShowMessageRequestRequested { request_id, typ, message, actions } => {
+                R::ShowMessageRequestRequested {
+                    request_id,
+                    typ,
+                    message,
+                    actions,
+                } => {
                     d.show_message_req.push(LspShowMessageRequestRequested {
-                        entity, request_id, typ, message, actions,
+                        entity,
+                        request_id,
+                        typ,
+                        message,
+                        actions,
                     });
                 }
-                R::ShowDocumentRequested { request_id, uri, external, take_focus, selection } => {
+                R::ShowDocumentRequested {
+                    request_id,
+                    uri,
+                    external,
+                    take_focus,
+                    selection,
+                } => {
                     d.show_document_req.push(LspShowDocumentRequested {
-                        entity, request_id, uri, external, take_focus, selection,
+                        entity,
+                        request_id,
+                        uri,
+                        external,
+                        take_focus,
+                        selection,
                     });
                 }
                 R::WorkDoneProgressCreateRequested { request_id, token } => {
-                    d.work_done_create_req.push(LspWorkDoneProgressCreateRequested {
-                        entity, request_id, token,
-                    });
+                    d.work_done_create_req
+                        .push(LspWorkDoneProgressCreateRequested {
+                            entity,
+                            request_id,
+                            token,
+                        });
                 }
-                R::RegisterCapabilityRequested { request_id, registrations } => {
+                R::RegisterCapabilityRequested {
+                    request_id,
+                    registrations,
+                } => {
                     d.register_cap_req.push(LspRegisterCapabilityRequested {
-                        entity, request_id, registrations,
+                        entity,
+                        request_id,
+                        registrations,
                     });
                 }
-                R::UnregisterCapabilityRequested { request_id, unregistrations } => {
+                R::UnregisterCapabilityRequested {
+                    request_id,
+                    unregistrations,
+                } => {
                     d.unregister_cap_req.push(LspUnregisterCapabilityRequested {
-                        entity, request_id, unregistrations,
+                        entity,
+                        request_id,
+                        unregistrations,
                     });
                 }
                 R::WorkspaceFoldersRequested { request_id } => {
-                    d.workspace_folders_req.push(LspWorkspaceFoldersRequested { entity, request_id });
+                    d.workspace_folders_req
+                        .push(LspWorkspaceFoldersRequested { entity, request_id });
                 }
 
                 R::SemanticTokensRefreshRequested => {
-                    d.semantic_refresh_req.push(LspSemanticTokensRefreshRequested { entity });
+                    d.semantic_refresh_req
+                        .push(LspSemanticTokensRefreshRequested { entity });
                 }
                 R::InlayHintRefreshRequested => {
-                    d.inlay_refresh_req.push(LspInlayHintRefreshRequested { entity });
+                    d.inlay_refresh_req
+                        .push(LspInlayHintRefreshRequested { entity });
                 }
                 R::CodeLensRefreshRequested => {
-                    d.code_lens_refresh_req.push(LspCodeLensRefreshRequested { entity });
+                    d.code_lens_refresh_req
+                        .push(LspCodeLensRefreshRequested { entity });
                 }
                 R::DiagnosticsRefreshRequested => {
-                    d.diagnostics_refresh_req.push(LspDiagnosticsRefreshRequested { entity });
+                    d.diagnostics_refresh_req
+                        .push(LspDiagnosticsRefreshRequested { entity });
                 }
 
-                R::Completion { id, items, is_incomplete } => {
-                    d.completion.push(LspCompletionResponse { entity, id, items, is_incomplete });
+                R::Completion {
+                    id,
+                    items,
+                    is_incomplete,
+                } => {
+                    d.completion.push(LspCompletionResponse {
+                        entity,
+                        id,
+                        items,
+                        is_incomplete,
+                    });
                 }
                 R::ResolvedCompletionItem { id, item } => {
-                    d.resolved_completion.push(LspResolvedCompletionItem { entity, id, item });
+                    d.resolved_completion.push(LspResolvedCompletionItem {
+                        entity,
+                        id,
+                        item: *item,
+                    });
                 }
-                R::Hover { id, content, kind, range } => {
-                    d.hover.push(LspHoverResponse { entity, id, content, kind, range });
+                R::Hover {
+                    id,
+                    content,
+                    kind,
+                    range,
+                } => {
+                    d.hover.push(LspHoverResponse {
+                        entity,
+                        id,
+                        content,
+                        kind,
+                        range,
+                    });
                 }
-                R::SignatureHelp { id, signatures, active_signature, active_parameter } => {
+                R::SignatureHelp {
+                    id,
+                    signatures,
+                    active_signature,
+                    active_parameter,
+                } => {
                     d.signature_help.push(LspSignatureHelpResponse {
-                        entity, id, signatures, active_signature, active_parameter,
+                        entity,
+                        id,
+                        signatures,
+                        active_signature,
+                        active_parameter,
                     });
                 }
 
                 R::Declaration { id, locations } => {
-                    d.declaration.push(LspDeclarationResponse { entity, id, locations });
+                    d.declaration.push(LspDeclarationResponse {
+                        entity,
+                        id,
+                        locations,
+                    });
                 }
                 R::Definition { id, locations } => {
-                    d.definition.push(LspDefinitionResponse { entity, id, locations });
+                    d.definition.push(LspDefinitionResponse {
+                        entity,
+                        id,
+                        locations,
+                    });
                 }
                 R::TypeDefinition { id, locations } => {
-                    d.type_definition.push(LspTypeDefinitionResponse { entity, id, locations });
+                    d.type_definition.push(LspTypeDefinitionResponse {
+                        entity,
+                        id,
+                        locations,
+                    });
                 }
                 R::Implementation { id, locations } => {
-                    d.implementation.push(LspImplementationResponse { entity, id, locations });
+                    d.implementation.push(LspImplementationResponse {
+                        entity,
+                        id,
+                        locations,
+                    });
                 }
                 R::References { id, locations } => {
-                    d.references.push(LspReferencesResponse { entity, id, locations });
+                    d.references.push(LspReferencesResponse {
+                        entity,
+                        id,
+                        locations,
+                    });
                 }
                 R::DocumentHighlights { id, highlights } => {
-                    d.highlights.push(LspDocumentHighlightsResponse { entity, id, highlights });
+                    d.highlights.push(LspDocumentHighlightsResponse {
+                        entity,
+                        id,
+                        highlights,
+                    });
                 }
                 R::DocumentSymbols { id, flat, nested } => {
                     d.document_symbols.push(LspDocumentSymbolsResponse {
-                        entity, id, flat, nested,
+                        entity,
+                        id,
+                        flat,
+                        nested,
                     });
                 }
                 R::WorkspaceSymbols { id, symbols } => {
-                    d.workspace_symbols.push(LspWorkspaceSymbolsResponse { entity, id, symbols });
-                }
-                R::ResolvedWorkspaceSymbol { id, symbol } => {
-                    d.resolved_workspace_symbol.push(LspResolvedWorkspaceSymbol {
-                        entity, id, symbol,
+                    d.workspace_symbols.push(LspWorkspaceSymbolsResponse {
+                        entity,
+                        id,
+                        symbols,
                     });
                 }
+                R::ResolvedWorkspaceSymbol { id, symbol } => {
+                    d.resolved_workspace_symbol
+                        .push(LspResolvedWorkspaceSymbol { entity, id, symbol });
+                }
                 R::FoldingRanges { id, ranges } => {
-                    d.folding.push(LspFoldingRangesResponse { entity, id, ranges });
+                    d.folding
+                        .push(LspFoldingRangesResponse { entity, id, ranges });
                 }
                 R::SelectionRanges { id, ranges } => {
-                    d.selection.push(LspSelectionRangesResponse { entity, id, ranges });
+                    d.selection
+                        .push(LspSelectionRangesResponse { entity, id, ranges });
                 }
 
                 R::CodeActions { id, actions } => {
-                    d.code_actions.push(LspCodeActionsResponse { entity, id, actions });
+                    d.code_actions.push(LspCodeActionsResponse {
+                        entity,
+                        id,
+                        actions,
+                    });
                 }
                 R::ResolvedCodeAction { id, action } => {
-                    d.resolved_code_action.push(LspResolvedCodeAction { entity, id, action });
+                    d.resolved_code_action.push(LspResolvedCodeAction {
+                        entity,
+                        id,
+                        action: *action,
+                    });
                 }
                 R::Format { id, edits } => {
                     d.format.push(LspFormatResponse { entity, id, edits });
                 }
                 R::RangeFormatting { id, edits } => {
-                    d.range_formatting.push(LspRangeFormattingResponse { entity, id, edits });
+                    d.range_formatting
+                        .push(LspRangeFormattingResponse { entity, id, edits });
                 }
                 R::OnTypeFormatting { id, edits } => {
-                    d.on_type_formatting.push(LspOnTypeFormattingResponse { entity, id, edits });
+                    d.on_type_formatting
+                        .push(LspOnTypeFormattingResponse { entity, id, edits });
                 }
                 R::WillSaveWaitUntil { id, edits } => {
-                    d.will_save_wait.push(LspWillSaveWaitUntilResponse { entity, id, edits });
+                    d.will_save_wait
+                        .push(LspWillSaveWaitUntilResponse { entity, id, edits });
                 }
 
                 R::InlayHints { id, hints } => {
                     d.inlay.push(LspInlayHintsResponse { entity, id, hints });
                 }
                 R::ResolvedInlayHint { id, hint } => {
-                    d.resolved_inlay.push(LspResolvedInlayHint { entity, id, hint });
+                    d.resolved_inlay
+                        .push(LspResolvedInlayHint { entity, id, hint });
                 }
                 R::DocumentLinks { id, links } => {
-                    d.doc_links.push(LspDocumentLinksResponse { entity, id, links });
+                    d.doc_links
+                        .push(LspDocumentLinksResponse { entity, id, links });
                 }
                 R::ResolvedDocumentLink { id, link } => {
-                    d.resolved_doc_link.push(LspResolvedDocumentLink { entity, id, link });
+                    d.resolved_doc_link
+                        .push(LspResolvedDocumentLink { entity, id, link });
                 }
                 R::DocumentColors { id, colors } => {
-                    d.doc_colors.push(LspDocumentColorsResponse { entity, id, colors });
+                    d.doc_colors
+                        .push(LspDocumentColorsResponse { entity, id, colors });
                 }
                 R::ColorPresentations { id, presentations } => {
                     d.color_presentations.push(LspColorPresentationsResponse {
-                        entity, id, presentations,
+                        entity,
+                        id,
+                        presentations,
                     });
                 }
                 R::LinkedEditingRanges { id, ranges } => {
-                    d.linked_editing.push(LspLinkedEditingRangesResponse { entity, id, ranges });
+                    d.linked_editing
+                        .push(LspLinkedEditingRangesResponse { entity, id, ranges });
                 }
                 R::Monikers { id, monikers } => {
-                    d.monikers.push(LspMonikersResponse { entity, id, monikers });
+                    d.monikers.push(LspMonikersResponse {
+                        entity,
+                        id,
+                        monikers,
+                    });
                 }
 
-                R::PrepareRename { id, range, placeholder } => {
+                R::PrepareRename {
+                    id,
+                    range,
+                    placeholder,
+                } => {
                     d.prepare_rename.push(LspPrepareRenameResponse {
-                        entity, id, range, placeholder,
+                        entity,
+                        id,
+                        range,
+                        placeholder,
                     });
                 }
                 R::Rename { id, edit } => {
@@ -386,42 +550,49 @@ fn drain_lsp_responses(
                 }
 
                 R::PrepareCallHierarchy { id, items } => {
-                    d.prepare_call.push(LspPrepareCallHierarchyResponse { entity, id, items });
+                    d.prepare_call
+                        .push(LspPrepareCallHierarchyResponse { entity, id, items });
                 }
                 R::CallHierarchyIncomingCalls { id, calls } => {
-                    d.incoming_calls.push(LspCallHierarchyIncomingCallsResponse {
-                        entity, id, calls,
-                    });
+                    d.incoming_calls
+                        .push(LspCallHierarchyIncomingCallsResponse { entity, id, calls });
                 }
                 R::CallHierarchyOutgoingCalls { id, calls } => {
-                    d.outgoing_calls.push(LspCallHierarchyOutgoingCallsResponse {
-                        entity, id, calls,
-                    });
+                    d.outgoing_calls
+                        .push(LspCallHierarchyOutgoingCallsResponse { entity, id, calls });
                 }
                 R::PrepareTypeHierarchy { id, items } => {
-                    d.prepare_type.push(LspPrepareTypeHierarchyResponse { entity, id, items });
+                    d.prepare_type
+                        .push(LspPrepareTypeHierarchyResponse { entity, id, items });
                 }
                 R::TypeHierarchySupertypes { id, items } => {
-                    d.super_types.push(LspTypeHierarchySupertypesResponse { entity, id, items });
+                    d.super_types
+                        .push(LspTypeHierarchySupertypesResponse { entity, id, items });
                 }
                 R::TypeHierarchySubtypes { id, items } => {
-                    d.sub_types.push(LspTypeHierarchySubtypesResponse { entity, id, items });
+                    d.sub_types
+                        .push(LspTypeHierarchySubtypesResponse { entity, id, items });
                 }
 
                 R::SemanticTokens { id, result } => {
-                    d.semantic_tokens.push(LspSemanticTokensResponse { entity, id, result });
+                    d.semantic_tokens
+                        .push(LspSemanticTokensResponse { entity, id, result });
                 }
                 R::SemanticTokensDelta { id, result } => {
-                    d.semantic_delta.push(LspSemanticTokensDeltaResponse { entity, id, result });
+                    d.semantic_delta
+                        .push(LspSemanticTokensDeltaResponse { entity, id, result });
                 }
                 R::SemanticTokensRange { id, result } => {
-                    d.semantic_range.push(LspSemanticTokensRangeResponse { entity, id, result });
+                    d.semantic_range
+                        .push(LspSemanticTokensRangeResponse { entity, id, result });
                 }
                 R::DocumentDiagnostic { id, report } => {
-                    d.doc_diagnostic.push(LspDocumentDiagnosticResponse { entity, id, report });
+                    d.doc_diagnostic
+                        .push(LspDocumentDiagnosticResponse { entity, id, report });
                 }
                 R::WorkspaceDiagnostic { id, report } => {
-                    d.ws_diagnostic.push(LspWorkspaceDiagnosticResponse { entity, id, report });
+                    d.ws_diagnostic
+                        .push(LspWorkspaceDiagnosticResponse { entity, id, report });
                 }
 
                 R::ShutdownAck { id } => {
@@ -608,10 +779,7 @@ fn flush_e(
 }
 
 /// Keeps the language server from being hard-killed mid-request.
-fn shutdown_clients_on_app_exit(
-    mut exit: MessageReader<AppExit>,
-    clients: Query<&LspClient>,
-) {
+fn shutdown_clients_on_app_exit(mut exit: MessageReader<AppExit>, clients: Query<&LspClient>) {
     if exit.read().next().is_none() {
         return;
     }

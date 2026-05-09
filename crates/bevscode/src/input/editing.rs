@@ -7,8 +7,8 @@
 
 use crate::types::events::TextEditEvent;
 use bevy::prelude::*;
-use bevy_instanced_text_edit::OnEdit;
 use bevy_instanced_text::TextBuffer;
+use bevy_instanced_text_edit::OnEdit;
 
 /// Observer: emit [`TextEditEvent`] for downstream consumers (tree-sitter
 /// incremental reparse, LSP `did_change`).

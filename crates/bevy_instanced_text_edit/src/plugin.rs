@@ -18,6 +18,11 @@ use crate::state::{
     CursorState, EditHistoryState, IndentConfig, OnEdit, SelectionState, SnapshotPreEdit,
     TextEditor,
 };
+
+type ChangedCursorQuery<'w, 's> =
+    Query<'w, 's, (Entity, &'static CursorState), (With<TextEditor>, Changed<CursorState>)>;
+type ChangedSelectionQuery<'w, 's> =
+    Query<'w, 's, (Entity, &'static SelectionState), (With<TextEditor>, Changed<SelectionState>)>;
 use crate::typing::on_focused_keyboard_typing;
 
 /// Contains `emit_edit_triggers`. Schedule downstream systems `.after(EditEmitSet)`.
@@ -60,15 +65,14 @@ impl Plugin for InstancedTextInteractionPlugin {
         // Instant snap for entities with `ScrollConfig.smooth = false`. Runs
         // before the engine's smooth-scroll animator, so the animator sees
         // target == offset and is a no-op for those entities.
-        app.add_systems(Update, apply_instant_scroll.before(
-            bevy_instanced_text::view::plugin::TextViewRenderSet,
-        ));
+        app.add_systems(
+            Update,
+            apply_instant_scroll.before(bevy_instanced_text::view::plugin::TextViewRenderSet),
+        );
     }
 }
 
-fn apply_instant_scroll(
-    mut q: Query<(&mut bevy_instanced_text::ScrollState, &ScrollConfig)>,
-) {
+fn apply_instant_scroll(mut q: Query<(&mut bevy_instanced_text::ScrollState, &ScrollConfig)>) {
     for (mut scroll, cfg) in q.iter_mut() {
         if (scroll.smooth_scroll_duration - cfg.smooth_scroll_duration).abs() > f32::EPSILON {
             scroll.smooth_scroll_duration = cfg.smooth_scroll_duration;
@@ -192,7 +196,7 @@ pub fn emit_edit_triggers(
 /// with that system's reads.
 pub fn emit_cursor_moved(
     mut writer: MessageWriter<crate::editing_events::CursorMoved>,
-    q: Query<(Entity, &CursorState), (With<TextEditor>, Changed<CursorState>)>,
+    q: ChangedCursorQuery,
     all: Query<Entity, With<TextEditor>>,
     mut last: Local<std::collections::HashMap<Entity, usize>>,
 ) {
@@ -214,7 +218,7 @@ pub fn emit_cursor_moved(
 /// the dedupe survives a re-construction that produces the same selection.
 pub fn emit_selection_changed(
     mut writer: MessageWriter<crate::editing_events::SelectionChanged>,
-    q: Query<(Entity, &SelectionState), (With<TextEditor>, Changed<SelectionState>)>,
+    q: ChangedSelectionQuery,
     mut last: Local<std::collections::HashMap<Entity, u64>>,
     all: Query<Entity, With<TextEditor>>,
 ) {
@@ -233,11 +237,7 @@ pub fn emit_selection_changed(
         }
         last.insert(entity, fingerprint);
 
-        let total: usize = sel
-            .selections
-            .iter()
-            .map(|s| s.end() - s.start())
-            .sum();
+        let total: usize = sel.selections.iter().map(|s| s.end() - s.start()).sum();
         writer.write(crate::editing_events::SelectionChanged {
             entity,
             selection_count: sel.selections.iter().count(),

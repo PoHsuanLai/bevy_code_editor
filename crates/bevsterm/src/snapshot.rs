@@ -11,9 +11,7 @@ use ropey::Rope;
 use wezterm_surface::SequenceNo;
 use wezterm_term::Line as VtLine;
 
-use crate::backend::{
-    ColorAttribute, CursorVisibility, Intensity, Underline as VtUnderline,
-};
+use crate::backend::{ColorAttribute, CursorVisibility, Intensity, Underline as VtUnderline};
 use crate::types::{
     TerminalColorPalette, TerminalGridSnapshot, TerminalScrollFollow, TerminalSession,
 };
@@ -56,23 +54,25 @@ pub struct RebuildCache {
     lines: Vec<CachedLine>,
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn sync_grid_snapshot(
-    mut q: Query<(
+type SnapshotQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
         Entity,
-        &TerminalSession,
-        &mut TextBuffer,
-        &TextViewViewport,
-        &FontConfig,
-        &mut ScrollState,
-        &TerminalColorPalette,
-        &RenderTheme,
-        &mut LineStyles,
-        &mut TerminalGridSnapshot,
-        &mut TerminalScrollFollow,
-    )>,
-    mut cache: Local<HashMap<Entity, RebuildCache>>,
-) {
+        &'static TerminalSession,
+        &'static mut TextBuffer,
+        &'static TextViewViewport,
+        &'static FontConfig,
+        &'static mut ScrollState,
+        &'static TerminalColorPalette,
+        &'static RenderTheme,
+        &'static mut LineStyles,
+        &'static mut TerminalGridSnapshot,
+        &'static mut TerminalScrollFollow,
+    ),
+>;
+
+pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity, RebuildCache>>) {
     cache.retain(|e, _| q.contains(*e));
     for (
         entity,
@@ -97,8 +97,7 @@ pub fn sync_grid_snapshot(
         let total_lines = screen.scrollback_rows();
         let scrollback_offset = total_lines.saturating_sub(rows);
         let seqno = term.current_seqno();
-        let needs_rebuild =
-            cache_entry.last_seqno != Some(seqno) || cache_entry.last_rows != rows;
+        let needs_rebuild = cache_entry.last_seqno != Some(seqno) || cache_entry.last_rows != rows;
 
         if !needs_rebuild {
             drop(term);
@@ -155,8 +154,7 @@ pub fn sync_grid_snapshot(
         snapshot.version = snapshot.version.wrapping_add(1);
         snapshot.cols = cols as u16;
         snapshot.rows = rows as u16;
-        let cursor_row_in_buffer =
-            scrollback_offset as u32 + cursor.y.max(0) as u32;
+        let cursor_row_in_buffer = scrollback_offset as u32 + cursor.y.max(0) as u32;
         let max_row = total_lines.saturating_sub(1) as u32;
         let max_col = (cols as u16).saturating_sub(1);
         snapshot.cursor_row = cursor_row_in_buffer.min(max_row);
@@ -263,8 +261,12 @@ fn shape_phys_line(
             font: None,
             decoration: {
                 let mut d = bevy_instanced_text::TextDecoration::empty();
-                if !matches!(attrs.underline(), VtUnderline::None) { d |= bevy_instanced_text::TextDecoration::UNDERLINE; }
-                if attrs.strikethrough() { d |= bevy_instanced_text::TextDecoration::STRIKETHROUGH; }
+                if !matches!(attrs.underline(), VtUnderline::None) {
+                    d |= bevy_instanced_text::TextDecoration::UNDERLINE;
+                }
+                if attrs.strikethrough() {
+                    d |= bevy_instanced_text::TextDecoration::STRIKETHROUGH;
+                }
                 d
             },
             link: None,
@@ -340,7 +342,13 @@ fn indexed_to_color(idx: u8) -> Color {
         let r = (n / 36) % 6;
         let g = (n / 6) % 6;
         let b = n % 6;
-        let to_f = |c: u8| if c == 0 { 0.0 } else { (40.0 * c as f32 + 55.0) / 255.0 };
+        let to_f = |c: u8| {
+            if c == 0 {
+                0.0
+            } else {
+                (40.0 * c as f32 + 55.0) / 255.0
+            }
+        };
         return Color::srgb(to_f(r), to_f(g), to_f(b));
     }
     let step = idx - 232;

@@ -12,13 +12,13 @@
 //!   domain state changes. They run in [`LayoutSyncSet`], scheduled
 //!   `.before(LayoutProduceSet)`.
 
+use crate::types::events::TextEditEvent;
 use bevy::prelude::*;
 use bevy_instanced_text::{
     visible_buffer_range, FontConfig, HiddenLines, LayoutProduceSet, LayoutWrap, LineStyles,
     RunWithText, ScrollState, TextBuffer, TextViewViewport,
 };
 use std::collections::{HashMap, HashSet};
-use crate::types::events::TextEditEvent;
 
 use super::styling::segs_to_runs;
 use crate::plugin::syntax_highlighting::EditorSyntaxState;
@@ -55,8 +55,7 @@ impl Plugin for DisplayMapPlugin {
         // runtime get their styling Components attached on the next tick.
         app.add_systems(
             Startup,
-            insert_styling_components
-                .after(crate::plugin::syntax_highlighting::init_editor_syntax),
+            insert_styling_components.after(crate::plugin::syntax_highlighting::init_editor_syntax),
         );
         app.add_systems(
             Update,
@@ -99,12 +98,15 @@ pub(crate) fn insert_styling_components(
 /// every reparse would invalidate `HiddenLines` and cascade into a full
 /// `produce_line_styles` rebuild via `Changed<HiddenLines>`.
 #[cfg(feature = "tree-sitter")]
-pub(crate) fn produce_hidden_lines(
-    mut editors: Query<
-        (&FoldState, &mut HiddenLines),
-        (With<CodeEditor>, Changed<FoldState>),
-    >,
-) {
+type ProduceHiddenLinesQuery<'w, 's> = Query<
+    'w,
+    's,
+    (&'static FoldState, &'static mut HiddenLines),
+    (With<CodeEditor>, Changed<FoldState>),
+>;
+
+#[cfg(feature = "tree-sitter")]
+pub(crate) fn produce_hidden_lines(mut editors: ProduceHiddenLinesQuery) {
     for (fold_state, mut hidden) in editors.iter_mut() {
         let mut set = HashSet::new();
         for region in &fold_state.regions {
@@ -204,7 +206,9 @@ pub(crate) fn produce_line_styles(
         let end_row = event.delta.new_end_position.row;
         // Mark all content-changed editors with this dirty range (union if multiple).
         for entity in content_changed.iter() {
-            let entry = dirty_lines.entry(entity).or_insert(Some((start_row, end_row)));
+            let entry = dirty_lines
+                .entry(entity)
+                .or_insert(Some((start_row, end_row)));
             if let Some((lo, hi)) = entry {
                 *lo = (*lo).min(start_row);
                 *hi = (*hi).max(end_row);
@@ -234,9 +238,12 @@ pub(crate) fn produce_line_styles(
     #[cfg(not(feature = "tree-sitter"))]
     let syntax_changed: HashSet<Entity> = HashSet::new();
 
-    let any_dirty = !full_rebuild.is_empty() || !content_only.is_empty() || !syntax_changed.is_empty();
+    let any_dirty =
+        !full_rebuild.is_empty() || !content_only.is_empty() || !syntax_changed.is_empty();
     if !any_dirty {
-        dirty_lines.retain(|e, _| content_only.contains(e) || full_rebuild.contains(e) || syntax_changed.contains(e));
+        dirty_lines.retain(|e, _| {
+            content_only.contains(e) || full_rebuild.contains(e) || syntax_changed.contains(e)
+        });
         return;
     }
 
@@ -277,10 +284,7 @@ pub(crate) fn produce_line_styles(
         let dirty_range: Option<(u32, u32)> = if needs_full {
             None
         } else {
-            match dirty_lines.get(&entity).copied() {
-                Some(range) => range, // Some((lo, hi)) = incremental, None = full
-                None => None,         // no dirty range recorded → full rebuild
-            }
+            dirty_lines.get(&entity).copied().unwrap_or_default()
         };
 
         let highlight_lines: Box<dyn Iterator<Item = usize>> = match dirty_range {
@@ -364,15 +368,20 @@ pub(crate) fn produce_line_styles(
 /// Refresh `LayoutWrap` from `WrappingSettings` + `IndentationSettings`.
 pub(crate) fn sync_layout_wrap(
     mut editors: Query<
-        (&TextViewViewport, &FontConfig, &mut LayoutWrap, &WrappingSettings, &IndentationSettings),
+        (
+            &TextViewViewport,
+            &FontConfig,
+            &mut LayoutWrap,
+            &WrappingSettings,
+            &IndentationSettings,
+        ),
         With<CodeEditor>,
     >,
 ) {
     for (viewport, font, mut wrap, wrapping, indentation) in editors.iter_mut() {
         let char_width = font.char_width;
         let budget_px: Option<f32> = if wrapping.enabled {
-            let viewport_text_w =
-                (viewport.width as f32 - viewport.text_area_left).max(char_width);
+            let viewport_text_w = (viewport.width as f32 - viewport.text_area_left).max(char_width);
             let budget = match wrapping.wrap_column {
                 Some(col) => (col as f32) * char_width,
                 None => viewport_text_w,

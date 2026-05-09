@@ -21,13 +21,60 @@
 
 use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
 use crate::types::*;
-use bevy::picking::events::{Pointer, Press};
 #[cfg(feature = "lsp")]
 use bevy::picking::events::Move;
+use bevy::picking::events::{Pointer, Press};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy_instanced_text::{DisplayLayout, FontConfig};
 use ropey::Rope;
+
+type AltClickQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut SelectionState,
+        &'static mut CursorState,
+        &'static TextBuffer,
+        &'static ScrollState,
+        &'static TextViewViewport,
+        &'static FoldState,
+        &'static FontConfig,
+        Option<&'static DisplayLayout>,
+    ),
+    With<CodeEditor>,
+>;
+
+#[cfg(feature = "lsp")]
+type CtrlClickQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static TextBuffer,
+        &'static ScrollState,
+        &'static TextViewViewport,
+        &'static FoldState,
+        &'static FontConfig,
+        Option<&'static DisplayLayout>,
+    ),
+    With<CodeEditor>,
+>;
+
+#[cfg(feature = "lsp")]
+type HoverMoveQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static TextBuffer,
+        &'static ScrollState,
+        &'static TextViewViewport,
+        &'static FoldState,
+        &'static FontConfig,
+        Option<&'static DisplayLayout>,
+        &'static crate::settings::LspSettings,
+    ),
+    With<CodeEditor>,
+>;
 
 #[cfg(feature = "lsp")]
 use crate::lsp_ui::reset_hover_state;
@@ -75,8 +122,7 @@ fn screen_to_char_pos(screen_pos: Vec2, ctx: &HitTestCtx<'_>) -> usize {
             } else {
                 ctx.rope.len_bytes()
             };
-            let abs_byte =
-                (line_start_byte + buffer_byte_offset + byte_in_row).min(line_end_byte);
+            let abs_byte = (line_start_byte + buffer_byte_offset + byte_in_row).min(line_end_byte);
             return ctx.rope.byte_to_char(abs_byte);
         }
     }
@@ -93,12 +139,7 @@ fn screen_to_char_pos(screen_pos: Vec2, ctx: &HitTestCtx<'_>) -> usize {
 pub fn on_fold_gutter_press(
     trigger: On<Pointer<Press>>,
     mut editor_query: Query<
-        (
-            &ScrollState,
-            &TextViewViewport,
-            &mut FoldState,
-            &FontConfig,
-        ),
+        (&ScrollState, &TextViewViewport, &mut FoldState, &FontConfig),
         With<CodeEditor>,
     >,
 ) {
@@ -136,19 +177,7 @@ pub fn on_fold_gutter_press(
 #[allow(clippy::too_many_arguments)]
 pub fn on_alt_click(
     trigger: On<Pointer<Press>>,
-    mut editor_query: Query<
-        (
-            &mut SelectionState,
-            &mut CursorState,
-            &TextBuffer,
-            &ScrollState,
-            &TextViewViewport,
-            &FoldState,
-            &FontConfig,
-            Option<&DisplayLayout>,
-        ),
-        With<CodeEditor>,
-    >,
+    mut editor_query: AltClickQuery,
     keyboard: Res<ButtonInput<KeyCode>>,
     #[cfg(feature = "lsp")] mut lsp_query: Query<
         &mut crate::lsp_ui::state::LspHoverPopup,
@@ -175,7 +204,7 @@ pub fn on_alt_click(
         local_pos,
         &HitTestCtx {
             rope: &buffer.rope,
-            layout: layout.as_deref(),
+            layout,
             font,
             viewport,
             fold_state,
@@ -200,21 +229,8 @@ pub fn on_alt_click(
 #[allow(clippy::too_many_arguments)]
 pub fn on_ctrl_click_goto_definition(
     trigger: On<Pointer<Press>>,
-    editor_query: Query<
-        (
-            &TextBuffer,
-            &ScrollState,
-            &TextViewViewport,
-            &FoldState,
-            &FontConfig,
-            Option<&DisplayLayout>,
-        ),
-        With<CodeEditor>,
-    >,
-    lsp_query: Query<
-        (&bevy_lsp::LspClient, Option<&bevy_lsp::LspDocument>),
-        With<CodeEditor>,
-    >,
+    editor_query: CtrlClickQuery,
+    lsp_query: Query<(&bevy_lsp::LspClient, Option<&bevy_lsp::LspDocument>), With<CodeEditor>>,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     if trigger.event().button != PointerButton::Primary {
@@ -241,7 +257,7 @@ pub fn on_ctrl_click_goto_definition(
         local_pos,
         &HitTestCtx {
             rope: &buffer.rope,
-            layout: layout.as_deref(),
+            layout,
             font,
             viewport,
             fold_state,
@@ -271,22 +287,13 @@ pub fn on_ctrl_click_goto_definition(
 #[cfg(feature = "lsp")]
 pub fn on_pointer_move_for_hover(
     trigger: On<Pointer<Move>>,
-    editor_query: Query<
-        (
-            &TextBuffer,
-            &ScrollState,
-            &TextViewViewport,
-            &FoldState,
-            &FontConfig,
-            Option<&DisplayLayout>,
-            &crate::settings::LspSettings,
-        ),
-        With<CodeEditor>,
-    >,
+    editor_query: HoverMoveQuery,
     mut hover_query: Query<&mut crate::lsp_ui::state::LspHoverPopup, With<CodeEditor>>,
 ) {
     let entity = trigger.event().entity;
-    let Ok((buffer, scroll, viewport, fold_state, font, layout, hover_settings)) = editor_query.get(entity) else {
+    let Ok((buffer, scroll, viewport, fold_state, font, layout, hover_settings)) =
+        editor_query.get(entity)
+    else {
         return;
     };
     if !hover_settings.hover.enabled {
@@ -313,7 +320,7 @@ pub fn on_pointer_move_for_hover(
         local_pos,
         &HitTestCtx {
             rope: &buffer.rope,
-            layout: layout.as_deref(),
+            layout,
             font,
             viewport,
             fold_state,
@@ -382,8 +389,7 @@ pub fn tick_lsp_hover_timer(
         let line_index = buffer.rope.char_to_line(current_char_pos);
         let line_start = buffer.rope.line_to_char(line_index);
         let line_len = buffer.rope.line(line_index).len_chars();
-        let clamped =
-            line_start + (current_char_pos - line_start).min(line_len.saturating_sub(1));
+        let clamped = line_start + (current_char_pos - line_start).min(line_len.saturating_sub(1));
         let lsp_position = bevy_lsp::rope_char_to_lsp_position(
             &buffer.rope,
             clamped,

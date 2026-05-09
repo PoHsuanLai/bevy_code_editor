@@ -13,14 +13,7 @@ use bevy::prelude::*;
 pub fn handle_toggle_fold(
     mut events: MessageReader<ToggleFoldRequested>,
     input_focus: Res<InputFocus>,
-    mut q: Query<
-        (
-            &CursorState,
-            &crate::text_view::TextBuffer,
-            &mut FoldState,
-        ),
-        With<CodeEditor>,
-    >,
+    mut q: Query<(&CursorState, &crate::text_view::TextBuffer, &mut FoldState), With<CodeEditor>>,
 ) {
     if events.read().next().is_none() {
         return;
@@ -38,14 +31,7 @@ pub fn handle_toggle_fold(
 pub fn handle_fold(
     mut events: MessageReader<FoldRequested>,
     input_focus: Res<InputFocus>,
-    mut q: Query<
-        (
-            &CursorState,
-            &crate::text_view::TextBuffer,
-            &mut FoldState,
-        ),
-        With<CodeEditor>,
-    >,
+    mut q: Query<(&CursorState, &crate::text_view::TextBuffer, &mut FoldState), With<CodeEditor>>,
 ) {
     if events.read().next().is_none() {
         return;
@@ -63,14 +49,7 @@ pub fn handle_fold(
 pub fn handle_unfold(
     mut events: MessageReader<UnfoldRequested>,
     input_focus: Res<InputFocus>,
-    mut q: Query<
-        (
-            &CursorState,
-            &crate::text_view::TextBuffer,
-            &mut FoldState,
-        ),
-        With<CodeEditor>,
-    >,
+    mut q: Query<(&CursorState, &crate::text_view::TextBuffer, &mut FoldState), With<CodeEditor>>,
 ) {
     if events.read().next().is_none() {
         return;
@@ -130,8 +109,11 @@ pub fn handle_unfold_all(
 /// the fingerprint stays stable and we skip the per-region diff entirely.
 /// Without this fast path, sqlite3.c's thousands of regions cost ~8 ms per
 /// reparse just to discover nothing flipped.
+type FoldStateChangedQuery<'w, 's> =
+    Query<'w, 's, (Entity, &'static FoldState), (With<CodeEditor>, Changed<FoldState>)>;
+
 pub fn emit_fold_state_changed(
-    q: Query<(Entity, &FoldState), (With<CodeEditor>, Changed<FoldState>)>,
+    q: FoldStateChangedQuery,
     mut writer: MessageWriter<EditorFoldStateChanged>,
     mut last_known: Local<HashMap<(Entity, usize), bool>>,
     mut last_fingerprint: Local<HashMap<Entity, u64>>,
@@ -156,8 +138,7 @@ pub fn emit_fold_state_changed(
 
         // Fingerprint changed — fall back to the per-region diff to find
         // exactly which lines flipped.
-        let mut seen: HashMap<(Entity, usize), bool> =
-            HashMap::with_capacity(state.regions.len());
+        let mut seen: HashMap<(Entity, usize), bool> = HashMap::with_capacity(state.regions.len());
         for region in &state.regions {
             let key = (entity, region.start_line);
             seen.insert(key, region.is_folded);

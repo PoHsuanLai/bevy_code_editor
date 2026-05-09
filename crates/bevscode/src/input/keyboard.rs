@@ -11,17 +11,15 @@
 //! [`super::dispatch::dispatch_action_events`] (event emission) and the
 //! per-action handler systems under [`super::handlers`].
 
+#[cfg(feature = "lsp")]
+use super::actions::{find_word_start, request_completion, update_completion_filter};
 use super::actions::{
     get_closing_bracket, get_closing_quote, insert_closing_char, should_skip_auto_close,
 };
-#[cfg(feature = "lsp")]
-use super::actions::{
-    find_word_start, request_completion, update_completion_filter,
-};
 use super::editor_ops::move_cursor;
+use crate::settings::BracketSettings;
 #[cfg(feature = "lsp")]
 use crate::settings::LspSettings;
-use crate::settings::BracketSettings;
 use crate::types::*;
 use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
 use bevy::input_focus::FocusedInput;
@@ -40,6 +38,22 @@ fn modifier_held(keyboard: &ButtonInput<KeyCode>) -> bool {
         || keyboard.pressed(KeyCode::AltRight)
 }
 
+#[cfg(feature = "lsp")]
+type KeyboardLspQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static bevy_lsp::LspClient,
+        Option<&'static mut bevy_lsp::LspDocument>,
+        &'static bevy_lsp::ServerCapabilities,
+        &'static mut crate::lsp_ui::state::LspCompletionPopup,
+        &'static mut crate::lsp_ui::state::LspRenamePopup,
+        Option<&'static crate::plugin::syntax_highlighting::EditorSyntaxState>,
+        &'static LspSettings,
+    ),
+    With<CodeEditor>,
+>;
+
 /// Per-event observer for keyboard input dispatched to the focused editor.
 ///
 /// `bevy_input_focus` already routed this event because the editor entity
@@ -57,23 +71,13 @@ pub fn on_focused_keyboard(
         ),
         With<CodeEditor>,
     >,
-    #[cfg(feature = "lsp")] mut lsp_query: Query<
-        (
-            &bevy_lsp::LspClient,
-            Option<&mut bevy_lsp::LspDocument>,
-            &bevy_lsp::ServerCapabilities,
-            &mut crate::lsp_ui::state::LspCompletionPopup,
-            &mut crate::lsp_ui::state::LspRenamePopup,
-            Option<&crate::plugin::syntax_highlighting::EditorSyntaxState>,
-            &LspSettings,
-        ),
-        With<CodeEditor>,
-    >,
+    #[cfg(feature = "lsp")] mut lsp_query: KeyboardLspQuery,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     let entity = trigger.event().focused_entity;
 
-    let Ok((mut sel, mut hist, mut cursor, mut buffer, brackets)) = editor_query.get_mut(entity) else {
+    let Ok((mut sel, mut hist, mut cursor, mut buffer, brackets)) = editor_query.get_mut(entity)
+    else {
         return;
     };
 
@@ -151,9 +155,9 @@ pub fn on_focused_keyboard(
                     &mut hist,
                     &mut cursor,
                     &mut buffer,
-                    &brackets,
+                    brackets,
                     #[cfg(feature = "lsp")]
-                    &lsp,
+                    lsp,
                     #[cfg(feature = "lsp")]
                     lsp_client,
                     #[cfg(feature = "lsp")]
@@ -169,7 +173,11 @@ pub fn on_focused_keyboard(
         }
         Key::Space => {
             bevy_instanced_text_edit::handlers::edit::insert_char(
-                &mut sel, &mut hist, &mut cursor, &mut buffer, ' ',
+                &mut sel,
+                &mut hist,
+                &mut cursor,
+                &mut buffer,
+                ' ',
             );
             #[cfg(feature = "lsp")]
             {
@@ -278,7 +286,8 @@ fn insert_typed_char(
                     }
                 } else if cursor_pos >= trigger.len() {
                     let start = cursor_pos - trigger.len();
-                    let recent_text: String = buffer.rope.slice(start..cursor_pos).chars().collect();
+                    let recent_text: String =
+                        buffer.rope.slice(start..cursor_pos).chars().collect();
                     if recent_text == *trigger {
                         is_trigger = true;
                         break;

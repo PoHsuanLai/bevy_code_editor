@@ -79,10 +79,9 @@ pub enum RequestType {
 #[derive(Debug, Clone)]
 pub enum LspMessage {
     // ─── Lifecycle ────────────────────────────────────────────────────────
-
     Initialize {
         root_uri: Url,
-        capabilities: ClientCapabilities,
+        capabilities: Box<ClientCapabilities>,
     },
 
     /// Sent by the transport once `initialize` succeeds. Hosts do not
@@ -93,10 +92,11 @@ pub enum LspMessage {
     /// returned at request submission time on the underlying JSON-RPC
     /// request. async-lsp manages most cancellation via futures, but this
     /// variant exists for completeness.
-    CancelRequest { id: u64 },
+    CancelRequest {
+        id: u64,
+    },
 
     // ─── Document sync ────────────────────────────────────────────────────
-
     DidOpen {
         uri: Url,
         language_id: String,
@@ -112,11 +112,16 @@ pub enum LspMessage {
 
     /// `text` is included only when the server's `save.includeText` option
     /// is `true`. Pass `None` otherwise.
-    DidSave { uri: Url, text: Option<String> },
+    DidSave {
+        uri: Url,
+        text: Option<String>,
+    },
 
     /// The matching `didOpen` is paired with this notification when a
     /// document tab closes.
-    DidClose { uri: Url },
+    DidClose {
+        uri: Url,
+    },
 
     /// `reason` is one of the `TextDocumentSaveReason` values
     /// (Manual / AfterDelay / FocusOut).
@@ -134,21 +139,25 @@ pub enum LspMessage {
     },
 
     // ─── Workspace sync ───────────────────────────────────────────────────
-
     /// Settings the server should re-read. `settings` is opaque JSON keyed
     /// however the specific server expects (e.g. rust-analyzer's section
     /// tree, pyright's `python.analysis.*`).
-    DidChangeConfiguration { settings: serde_json::Value },
+    DidChangeConfiguration {
+        settings: serde_json::Value,
+    },
 
     /// Files that changed outside the editor (git pull, rebase, build
     /// outputs). Servers expect this to refresh their watchers.
-    DidChangeWatchedFiles { changes: Vec<FileEvent> },
+    DidChangeWatchedFiles {
+        changes: Vec<FileEvent>,
+    },
 
     /// Multi-root workspace folder set changed.
-    DidChangeWorkspaceFolders { event: WorkspaceFoldersChangeEvent },
+    DidChangeWorkspaceFolders {
+        event: WorkspaceFoldersChangeEvent,
+    },
 
     // ─── Completion / hover / signature ──────────────────────────────────
-
     Completion {
         uri: Url,
         position: Position,
@@ -157,7 +166,10 @@ pub enum LspMessage {
 
     /// Lazy-load completion details (docs, additional edits). Gated on
     /// `completion_provider.resolve_provider`.
-    ResolveCompletionItem { item: CompletionItem, id: u64 },
+    ResolveCompletionItem {
+        item: Box<CompletionItem>,
+        id: u64,
+    },
 
     Hover {
         uri: Url,
@@ -172,7 +184,6 @@ pub enum LspMessage {
     },
 
     // ─── Navigation ───────────────────────────────────────────────────────
-
     GotoDeclaration {
         uri: Url,
         position: Position,
@@ -212,11 +223,17 @@ pub enum LspMessage {
     /// File-scoped outline. Servers either return a `SymbolInformation[]`
     /// (flat) or a `DocumentSymbol[]` (hierarchical) — the response carries
     /// both so consumers pick the shape they want.
-    DocumentSymbol { uri: Url, id: u64 },
+    DocumentSymbol {
+        uri: Url,
+        id: u64,
+    },
 
     /// Workspace-wide symbol query (Cmd+T / Ctrl+T). `query` is the
     /// substring filter.
-    WorkspaceSymbol { query: String, id: u64 },
+    WorkspaceSymbol {
+        query: String,
+        id: u64,
+    },
 
     /// Some servers (rust-analyzer) return cheap stubs from
     /// `WorkspaceSymbol` and fill in `Location` lazily here.
@@ -226,8 +243,10 @@ pub enum LspMessage {
     },
 
     // ─── Folding / selection ──────────────────────────────────────────────
-
-    FoldingRange { uri: Url, id: u64 },
+    FoldingRange {
+        uri: Url,
+        id: u64,
+    },
 
     /// "Smart expand selection" — server-driven semantic ranges around
     /// each cursor position.
@@ -238,7 +257,6 @@ pub enum LspMessage {
     },
 
     // ─── Code actions / formatting ────────────────────────────────────────
-
     CodeAction {
         uri: Url,
         range: Range,
@@ -248,7 +266,10 @@ pub enum LspMessage {
 
     /// Lazy-resolve the edits / commands inside a `CodeAction` returned
     /// without an `edit` field.
-    CodeActionResolve { action: CodeAction, id: u64 },
+    CodeActionResolve {
+        action: Box<CodeAction>,
+        id: u64,
+    },
 
     Format {
         uri: Url,
@@ -278,7 +299,6 @@ pub enum LspMessage {
     },
 
     // ─── Inlay hints / decorative ─────────────────────────────────────────
-
     InlayHint {
         uri: Url,
         range: Range,
@@ -286,16 +306,28 @@ pub enum LspMessage {
     },
 
     /// Lazy-resolve inlay hint details (tooltips, command bindings).
-    InlayHintResolve { hint: InlayHint, id: u64 },
+    InlayHintResolve {
+        hint: InlayHint,
+        id: u64,
+    },
 
     /// Clickable spans in the document (URL → goto). Most servers
     /// implement this for comments containing URIs.
-    DocumentLink { uri: Url, id: u64 },
+    DocumentLink {
+        uri: Url,
+        id: u64,
+    },
 
-    DocumentLinkResolve { link: DocumentLink, id: u64 },
+    DocumentLinkResolve {
+        link: DocumentLink,
+        id: u64,
+    },
 
     /// Color literals (`#fff`, `rgb(...)`) the server can recognize.
-    DocumentColor { uri: Url, id: u64 },
+    DocumentColor {
+        uri: Url,
+        id: u64,
+    },
 
     /// Alternate textual presentations for a picked color.
     ColorPresentation {
@@ -321,7 +353,6 @@ pub enum LspMessage {
     },
 
     // ─── Rename ───────────────────────────────────────────────────────────
-
     PrepareRename {
         uri: Url,
         position: Position,
@@ -336,7 +367,6 @@ pub enum LspMessage {
     },
 
     // ─── Call hierarchy ───────────────────────────────────────────────────
-
     PrepareCallHierarchy {
         uri: Url,
         position: Position,
@@ -354,7 +384,6 @@ pub enum LspMessage {
     },
 
     // ─── Type hierarchy ──────────────────────────────────────────────────
-
     PrepareTypeHierarchy {
         uri: Url,
         position: Position,
@@ -372,8 +401,10 @@ pub enum LspMessage {
     },
 
     // ─── Semantic tokens ──────────────────────────────────────────────────
-
-    SemanticTokensFull { uri: Url, id: u64 },
+    SemanticTokensFull {
+        uri: Url,
+        id: u64,
+    },
 
     /// Delta encoding from a previous response's `result_id`.
     SemanticTokensFullDelta {
@@ -389,7 +420,6 @@ pub enum LspMessage {
     },
 
     // ─── Pull diagnostics (LSP 3.17) ──────────────────────────────────────
-
     DocumentDiagnostic {
         uri: Url,
         identifier: Option<String>,
@@ -413,32 +443,55 @@ pub enum LspMessage {
     // The host computes its answer and sends one of these `Respond*`
     // variants back through the same client; the transport pairs `id`
     // with the suspended JSON-RPC response slot.
-
     /// Reply to a `workspace/configuration` request from the server. The
     /// `items` Vec must match the order of the requested items.
-    RespondConfiguration { id: u64, items: Vec<serde_json::Value> },
+    RespondConfiguration {
+        id: u64,
+        items: Vec<serde_json::Value>,
+    },
 
-    RespondApplyEdit { id: u64, response: ApplyWorkspaceEditResponse },
+    RespondApplyEdit {
+        id: u64,
+        response: ApplyWorkspaceEditResponse,
+    },
 
-    RespondShowMessageRequest { id: u64, action: Option<MessageActionItem> },
+    RespondShowMessageRequest {
+        id: u64,
+        action: Option<MessageActionItem>,
+    },
 
-    RespondShowDocument { id: u64, success: bool },
+    RespondShowDocument {
+        id: u64,
+        success: bool,
+    },
 
-    RespondWorkDoneProgressCreate { id: u64 },
+    RespondWorkDoneProgressCreate {
+        id: u64,
+    },
 
-    RespondRegisterCapability { id: u64 },
-    RespondUnregisterCapability { id: u64 },
+    RespondRegisterCapability {
+        id: u64,
+    },
+    RespondUnregisterCapability {
+        id: u64,
+    },
 
-    RespondWorkspaceFolders { id: u64, folders: Option<Vec<WorkspaceFolder>> },
+    RespondWorkspaceFolders {
+        id: u64,
+        folders: Option<Vec<WorkspaceFolder>>,
+    },
 
     /// Cancel an active progress operation by its token.
-    WorkDoneProgressCancel { token: ProgressToken },
+    WorkDoneProgressCancel {
+        token: ProgressToken,
+    },
 
     // ─── Termination ──────────────────────────────────────────────────────
-
     /// Send before [`LspMessage::Exit`] for graceful termination. `id` is
     /// opaque; the response arrives as [`LspResponse::ShutdownAck`].
-    Shutdown { id: u64 },
+    Shutdown {
+        id: u64,
+    },
 
     /// Tell the server to exit. Notification — no response.
     Exit,
@@ -455,11 +508,10 @@ pub enum LspMessage {
 #[derive(Debug, Clone)]
 pub enum LspResponse {
     Initialized {
-        capabilities: ServerCapabilities,
+        capabilities: Box<ServerCapabilities>,
     },
 
     // ─── Notifications from the server ────────────────────────────────────
-
     Diagnostics {
         uri: Url,
         diagnostics: Vec<Diagnostic>,
@@ -492,7 +544,6 @@ pub enum LspResponse {
     },
 
     // ─── Server requests requiring a host reply ──────────────────────────
-
     /// Server asks for configuration sections — host inspects `items` and
     /// replies with [`LspMessage::RespondConfiguration`].
     ConfigurationRequested {
@@ -541,14 +592,12 @@ pub enum LspResponse {
     },
 
     // ─── Refresh hints (server asks the client to invalidate caches) ─────
-
     SemanticTokensRefreshRequested,
     InlayHintRefreshRequested,
     CodeLensRefreshRequested,
     DiagnosticsRefreshRequested,
 
     // ─── Responses keyed by request id ────────────────────────────────────
-
     Completion {
         id: u64,
         items: Vec<CompletionItem>,
@@ -557,7 +606,7 @@ pub enum LspResponse {
 
     ResolvedCompletionItem {
         id: u64,
-        item: CompletionItem,
+        item: Box<CompletionItem>,
     },
 
     Hover {
@@ -640,7 +689,7 @@ pub enum LspResponse {
 
     ResolvedCodeAction {
         id: u64,
-        action: CodeAction,
+        action: Box<CodeAction>,
     },
 
     Format {
@@ -782,7 +831,7 @@ pub enum LspResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum CodeActionOrCommand {
-    Action(CodeAction),
+    Action(Box<CodeAction>),
     Command(lsp_types::Command),
 }
 

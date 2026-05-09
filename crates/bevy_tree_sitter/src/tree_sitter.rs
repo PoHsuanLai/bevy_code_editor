@@ -326,8 +326,8 @@ impl SyntaxProvider for TreeSitterProvider {
                 let current_byte = line_start + char_pos;
 
                 let mut active_capture: Option<Arc<str>> = None;
-                for i in current_highlight_idx..highlights.len() {
-                    let (range, name) = &highlights[i];
+                for (i, (range, name)) in highlights[current_highlight_idx..].iter().enumerate() {
+                    let i = current_highlight_idx + i;
                     if range.start > current_byte {
                         break;
                     }

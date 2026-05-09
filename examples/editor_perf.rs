@@ -3,9 +3,9 @@
 //! This example loads sqlite3.c to test scrolling performance, viewport culling,
 //! and entity pooling with a massive codebase.
 
+use bevscode::prelude::*;
 use bevy::prelude::*;
 use bevy::window::{CursorIcon, SystemCursorIcon};
-use bevscode::prelude::*;
 
 #[cfg(feature = "tree-sitter")]
 use bevy_tree_sitter::Language;
@@ -15,17 +15,22 @@ use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 
 fn main() {
     let mut app = App::new();
-    app.add_plugins(DefaultPlugins.set(WindowPlugin {
-        primary_window: Some(Window {
-            title: "Bevy Code Editor - Performance Test (sqlite3.c - 150k lines)".to_string(),
-            resolution: (1400, 900).into(),
-            ..default()
-        }),
-        ..default()
-    }).set(bevy::asset::AssetPlugin {
-        file_path: "assets".into(),
-        ..default()
-    }))
+    app.add_plugins(
+        DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "Bevy Code Editor - Performance Test (sqlite3.c - 150k lines)"
+                        .to_string(),
+                    resolution: (1400, 900).into(),
+                    ..default()
+                }),
+                ..default()
+            })
+            .set(bevy::asset::AssetPlugin {
+                file_path: "assets".into(),
+                ..default()
+            }),
+    )
     .add_plugins(CodeEditorPlugins)
     .add_systems(Startup, setup_camera)
     .add_systems(PostStartup, setup_editor)
@@ -70,12 +75,19 @@ fn setup_editor(
     let file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/sqlite3.c");
     let content = match std::fs::read_to_string(&file_path) {
         Ok(content) => {
-            println!("Loaded {} with {} lines", file_path.display(), content.lines().count());
+            println!(
+                "Loaded {} with {} lines",
+                file_path.display(),
+                content.lines().count()
+            );
             content
         }
         Err(e) => {
             eprintln!("Failed to load {}: {}", file_path.display(), e);
-            format!("// Failed to load sqlite3.c: {}\n// Make sure assets/sqlite3.c exists", e)
+            format!(
+                "// Failed to load sqlite3.c: {}\n// Make sure assets/sqlite3.c exists",
+                e
+            )
         }
     };
 

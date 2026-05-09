@@ -14,8 +14,6 @@
 //! `PATH` (`rustup component add rust-analyzer`).
 
 use armas::prelude::*;
-use bevy::prelude::*;
-use bevy::sprite::Anchor;
 use bevscode::lsp_ui::components::{
     DocumentHighlightData, InlayHintData, InlayHintKind, LspUiVisual,
 };
@@ -23,29 +21,35 @@ use bevscode::lsp_ui::state::{
     LspCodeActionsPopup, LspCompletionPopup, LspHoverPopup, LspRenamePopup, LspSignatureHelpPopup,
 };
 use bevscode::prelude::*;
-use bevy_instanced_text::FontConfig;
 use bevscode::text_view::TextViewViewport;
 use bevscode::types::{CodeEditor, CursorState};
-use bevy_egui::{egui, EguiContexts};
-use bevy_lsp::{LspClient, LspDocument, LspMessage};
 use bevsmd::{MarkdownDoc, MarkdownLinks, MarkdownViewerPlugin};
+use bevy::prelude::*;
+use bevy::sprite::Anchor;
+use bevy_egui::{egui, EguiContexts};
+use bevy_instanced_text::FontConfig;
 use bevy_instanced_text::{ContentMetrics, DisplayLayout, ScrollState, TextBuffer, TextView};
+use bevy_lsp::{LspClient, LspDocument, LspMessage};
 #[cfg(feature = "tree-sitter")]
 use bevy_tree_sitter::Language;
 
 fn main() {
     let mut app = App::new();
-    app.add_plugins(DefaultPlugins.set(WindowPlugin {
-        primary_window: Some(Window {
-            title: "LSP Integration Example (egui+armas)".to_string(),
-            resolution: (1200, 800).into(),
-            ..default()
-        }),
-        ..default()
-    }).set(bevy::asset::AssetPlugin {
-        file_path: "assets".into(),
-        ..default()
-    }));
+    app.add_plugins(
+        DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "LSP Integration Example (egui+armas)".to_string(),
+                    resolution: (1200, 800).into(),
+                    ..default()
+                }),
+                ..default()
+            })
+            .set(bevy::asset::AssetPlugin {
+                file_path: "assets".into(),
+                ..default()
+            }),
+    );
 
     // EguiPlugin must be added BEFORE editor plugins so contexts are available
     // to the egui render systems below.
@@ -271,7 +275,11 @@ fn render_inlay_hints(
 fn render_document_highlights(
     highlight_query: Query<&DocumentHighlightData>,
     mut editors: Query<
-        (&FontConfig, &DisplayLayout, &mut bevy_instanced_text::TextViewOverlays),
+        (
+            &FontConfig,
+            &DisplayLayout,
+            &mut bevy_instanced_text::TextViewOverlays,
+        ),
         With<CodeEditor>,
     >,
     theme: Res<InlineDecorationsTheme>,
@@ -335,8 +343,15 @@ fn render_document_highlights(
             // Same row — end byte must also resolve through `buffer_to_display`,
             // but for single-row highlights the display row is the same.
             layout
-                .x_at_byte(display_row, end_byte.saturating_sub(start_byte) + start_byte_in_row)
-                .unwrap_or(start_x + (highlight.end_character - highlight.start_character) as f32 * font.char_width)
+                .x_at_byte(
+                    display_row,
+                    end_byte.saturating_sub(start_byte) + start_byte_in_row,
+                )
+                .unwrap_or(
+                    start_x
+                        + (highlight.end_character - highlight.start_character) as f32
+                            * font.char_width,
+                )
         };
 
         if end_x <= start_x {
@@ -440,10 +455,7 @@ fn position_popup(
 /// Render the completion popup as an egui overlay using armas styling.
 fn render_completion_egui(
     mut contexts: EguiContexts,
-    query: Query<
-        (Entity, &LspCompletionPopup, &CursorState, &FontConfig),
-        With<CodeEditor>,
-    >,
+    query: Query<(Entity, &LspCompletionPopup, &CursorState, &FontConfig), With<CodeEditor>>,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&TextViewViewport, With<CodeEditor>>,
     anchors: bevy_instanced_text::BufferAnchorParam,
@@ -623,10 +635,7 @@ fn render_completion_egui(
 /// to gain from involving the markdown renderer.
 fn render_hover_egui(
     mut contexts: EguiContexts,
-    query: Query<
-        (Entity, &LspHoverPopup, &LspCompletionPopup, &FontConfig),
-        With<CodeEditor>,
-    >,
+    query: Query<(Entity, &LspHoverPopup, &LspCompletionPopup, &FontConfig), With<CodeEditor>>,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&TextViewViewport, With<CodeEditor>>,
     anchors: bevy_instanced_text::BufferAnchorParam,
@@ -736,8 +745,12 @@ fn render_hover_markdown(
         return;
     }
 
-    let (cursor_x, cursor_y) =
-        cursor_screen_pos(hover_state.trigger_char_index, editor, &anchors, &viewport_offset);
+    let (cursor_x, cursor_y) = cursor_screen_pos(
+        hover_state.trigger_char_index,
+        editor,
+        &anchors,
+        &viewport_offset,
+    );
 
     let popup_width = 520.0_f32;
     let popup_height = estimate_markdown_popup_height(&hover_state.content, font);
@@ -849,10 +862,7 @@ fn position_popup_world(
 /// Render the signature help popup as an egui overlay.
 fn render_signature_help_egui(
     mut contexts: EguiContexts,
-    query: Query<
-        (Entity, &LspSignatureHelpPopup, &CursorState, &FontConfig),
-        With<CodeEditor>,
-    >,
+    query: Query<(Entity, &LspSignatureHelpPopup, &CursorState, &FontConfig), With<CodeEditor>>,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&TextViewViewport, With<CodeEditor>>,
     anchors: bevy_instanced_text::BufferAnchorParam,
@@ -976,10 +986,7 @@ fn render_signature_help_egui(
 /// Render the code actions popup as an egui overlay.
 fn render_code_actions_egui(
     mut contexts: EguiContexts,
-    query: Query<
-        (Entity, &LspCodeActionsPopup, &CursorState, &FontConfig),
-        With<CodeEditor>,
-    >,
+    query: Query<(Entity, &LspCodeActionsPopup, &CursorState, &FontConfig), With<CodeEditor>>,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&TextViewViewport, With<CodeEditor>>,
     anchors: bevy_instanced_text::BufferAnchorParam,
@@ -1194,8 +1201,7 @@ fn setup_editor(
         .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
     commands.entity(editor_entity).insert(font);
 
-    let example_file_path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("editor_lsp.rs");
+    let example_file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("editor_lsp.rs");
     let rust_code =
         std::fs::read_to_string(&example_file_path).expect("Failed to read example file");
 
@@ -1210,11 +1216,13 @@ fn setup_editor(
     // is the host's responsibility (we call `lsp_client.start` further
     // down).
     #[cfg(feature = "tree-sitter")]
-    commands.entity(editor_entity).insert(Language::from_grammar(
-        "rust",
-        tree_sitter_rust::LANGUAGE.into(),
-        tree_sitter_rust::HIGHLIGHTS_QUERY,
-    ));
+    commands
+        .entity(editor_entity)
+        .insert(Language::from_grammar(
+            "rust",
+            tree_sitter_rust::LANGUAGE.into(),
+            tree_sitter_rust::HIGHLIGHTS_QUERY,
+        ));
 
     let file_uri_str = format!("file://{}", example_file_path.to_string_lossy());
     #[cfg(target_os = "windows")]
@@ -1233,8 +1241,8 @@ fn setup_editor(
 
     // rootUri is the project root, which is usually the directory containing Cargo.toml
     let project_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let root_uri = lsp_types::Url::from_directory_path(&project_root)
-        .expect("Failed to get project root URI");
+    let root_uri =
+        lsp_types::Url::from_directory_path(&project_root).expect("Failed to get project root URI");
     let capabilities = lsp_types::ClientCapabilities::default();
 
     lsp_client.send(LspMessage::Initialize {
@@ -1291,5 +1299,7 @@ fn auto_request_completion(
     if cursor_pos == 0 {
         return;
     }
-    writer.write(bevscode::types::events::RequestCompletionEvent::new(cursor_pos));
+    writer.write(bevscode::types::events::RequestCompletionEvent::new(
+        cursor_pos,
+    ));
 }

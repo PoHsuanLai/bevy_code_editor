@@ -8,22 +8,67 @@
 use bevy::prelude::*;
 use lsp_types::*;
 
-use bevy_instanced_text::FontConfig;
 use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
 use crate::types::{CodeEditor, CursorState};
+use bevy_instanced_text::FontConfig;
 
 use super::state::{
-    LspCodeActionsPopup, LspCompletionPopup, LspDocumentHighlights, LspHoverPopup, LspInlayHints,
-    LspDidChangeBatcher, LspRenamePopup, LspSignatureHelpPopup,
+    LspCodeActionsPopup, LspCompletionPopup, LspDidChangeBatcher, LspDocumentHighlights,
+    LspHoverPopup, LspInlayHints, LspRenamePopup, LspSignatureHelpPopup,
 };
 use bevy_lsp::{
     CodeActionOrCommand, LspClient, LspCodeActionsResponse, LspCompletionResponse,
     LspDefinitionResponse, LspDiagnosticsUpdated, LspDocument, LspDocumentHighlightsResponse,
     LspFormatResponse, LspHoverResponse, LspInlayHintsResponse, LspMessage,
-    LspPrepareRenameResponse, LspReferencesResponse, LspRenameResponse,
-    LspResolvedCompletionItem, LspServerCrashed, LspServerInitialized, LspShutdownAck,
-    LspSignatureHelpResponse, ServerCapabilities,
+    LspPrepareRenameResponse, LspReferencesResponse, LspRenameResponse, LspResolvedCompletionItem,
+    LspServerCrashed, LspServerInitialized, LspShutdownAck, LspSignatureHelpResponse,
+    ServerCapabilities,
 };
+
+type LspServerCrashedQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut LspCompletionPopup,
+        &'static mut LspHoverPopup,
+        &'static mut LspSignatureHelpPopup,
+        &'static mut LspCodeActionsPopup,
+        &'static mut LspDocumentHighlights,
+        &'static mut LspRenamePopup,
+    ),
+    With<CodeEditor>,
+>;
+
+type RequestInlayHintsQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static LspClient,
+        &'static ServerCapabilities,
+        Ref<'static, TextBuffer>,
+        Ref<'static, ScrollState>,
+        Ref<'static, TextViewViewport>,
+        Option<&'static LspDocument>,
+        &'static mut LspInlayHints,
+        &'static FontConfig,
+    ),
+    With<CodeEditor>,
+>;
+
+type RequestDocumentHighlightsQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static LspClient,
+        &'static ServerCapabilities,
+        &'static CursorState,
+        &'static TextBuffer,
+        Option<&'static LspDocument>,
+        &'static mut LspDocumentHighlights,
+        &'static crate::settings::LspSettings,
+    ),
+    With<CodeEditor>,
+>;
 
 /// Diagnostic marker for rendering in editor
 #[derive(Component, Clone, Debug)]
@@ -159,8 +204,7 @@ pub fn on_lsp_completion(
         // may no longer be present.
         completion_state.resolved.clear();
         completion_state.pending_resolve = None;
-        completion_state.resolve_request_id =
-            completion_state.resolve_request_id.wrapping_add(1);
+        completion_state.resolve_request_id = completion_state.resolve_request_id.wrapping_add(1);
     }
 }
 
@@ -430,17 +474,7 @@ pub fn on_lsp_shutdown_ack(mut events: MessageReader<LspShutdownAck>) {
 
 pub fn on_lsp_server_crashed(
     mut events: MessageReader<LspServerCrashed>,
-    mut q: Query<
-        (
-            &mut LspCompletionPopup,
-            &mut LspHoverPopup,
-            &mut LspSignatureHelpPopup,
-            &mut LspCodeActionsPopup,
-            &mut LspDocumentHighlights,
-            &mut LspRenamePopup,
-        ),
-        With<CodeEditor>,
-    >,
+    mut q: LspServerCrashedQuery,
 ) {
     for ev in events.read() {
         let Ok((
@@ -570,21 +604,7 @@ pub fn sync_lsp_document(
 }
 
 /// System to request inlay hints for visible range
-pub fn request_inlay_hints(
-    mut query: Query<
-        (
-            &LspClient,
-            &ServerCapabilities,
-            Ref<TextBuffer>,
-            Ref<ScrollState>,
-            Ref<TextViewViewport>,
-            Option<&LspDocument>,
-            &mut LspInlayHints,
-            &FontConfig,
-        ),
-        With<CodeEditor>,
-    >,
-) {
+pub fn request_inlay_hints(mut query: RequestInlayHintsQuery) {
     let Ok((lsp_client, capabilities, buffer, scroll, vp, lsp_document, mut hint_state, font)) =
         query.single_mut()
     else {
@@ -594,7 +614,8 @@ pub fn request_inlay_hints(
         return;
     }
 
-    if !hint_state.needs_refresh && !buffer.is_changed() && !scroll.is_changed() && !vp.is_changed() {
+    if !hint_state.needs_refresh && !buffer.is_changed() && !scroll.is_changed() && !vp.is_changed()
+    {
         return;
     }
 
@@ -716,23 +737,16 @@ pub fn execute_code_action(lsp_client: &LspClient, action: &CodeActionOrCommand)
 /// (the IDE feature where clicking on a name highlights every other use
 /// in the same file). Debounce delay comes from
 /// `LspSettings::highlight_delay_ms`.
-pub fn request_document_highlights(
-    time: Res<Time>,
-    mut query: Query<
-        (
-            &LspClient,
-            &ServerCapabilities,
-            &CursorState,
-            &TextBuffer,
-            Option<&LspDocument>,
-            &mut LspDocumentHighlights,
-            &crate::settings::LspSettings,
-        ),
-        With<CodeEditor>,
-    >,
-) {
-    let Ok((lsp_client, capabilities, cursor_state, buffer, lsp_document, mut highlight_state, settings)) =
-        query.single_mut()
+pub fn request_document_highlights(time: Res<Time>, mut query: RequestDocumentHighlightsQuery) {
+    let Ok((
+        lsp_client,
+        capabilities,
+        cursor_state,
+        buffer,
+        lsp_document,
+        mut highlight_state,
+        settings,
+    )) = query.single_mut()
     else {
         return;
     };
@@ -774,8 +788,11 @@ pub fn request_document_highlights(
     highlight_state.debounce_timer = None;
     highlight_state.in_flight_position = Some(cursor_pos);
 
-    let position =
-        bevy_lsp::rope_char_to_lsp_position(&buffer.rope, cursor_pos, capabilities.position_encoding());
+    let position = bevy_lsp::rope_char_to_lsp_position(
+        &buffer.rope,
+        cursor_pos,
+        capabilities.position_encoding(),
+    );
     lsp_client.send(LspMessage::DocumentHighlight {
         uri: lsp_document.uri.clone(),
         position,

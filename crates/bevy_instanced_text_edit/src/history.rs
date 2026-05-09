@@ -125,12 +125,12 @@ impl EditHistory {
                     let last_kind = last_op.kind;
 
                     // Different edit directions should break transaction
-                    let kind_changed = match (last_kind, op_kind) {
-                        (EditKind::Insert, EditKind::Insert) => false,
-                        (EditKind::DeleteBackward, EditKind::DeleteBackward) => false,
-                        (EditKind::DeleteForward, EditKind::DeleteForward) => false,
-                        _ => true,
-                    };
+                    let kind_changed = !matches!(
+                        (last_kind, op_kind),
+                        (EditKind::Insert, EditKind::Insert)
+                            | (EditKind::DeleteBackward, EditKind::DeleteBackward)
+                            | (EditKind::DeleteForward, EditKind::DeleteForward)
+                    );
 
                     if kind_changed {
                         return self.start_new_transaction(operation, now);

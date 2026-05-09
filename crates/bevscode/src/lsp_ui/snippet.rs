@@ -80,7 +80,11 @@ pub fn parse(body: &str) -> ParsedSnippet {
                     } else if next.is_ascii_digit() {
                         let id = read_digits(&mut chars);
                         let start = text.chars().count();
-                        tabstops.push(Tabstop { id, start, end: start });
+                        tabstops.push(Tabstop {
+                            id,
+                            start,
+                            end: start,
+                        });
                     } else {
                         text.push('$');
                     }
@@ -117,9 +121,7 @@ fn parse_braced(
     chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
     text: &mut String,
 ) -> Option<Tabstop> {
-    let Some(&first) = chars.peek() else {
-        return None;
-    };
+    let &first = chars.peek()?;
     if !first.is_ascii_digit() {
         // Variable substitution like `${TM_FILENAME}` — skip until `}`.
         skip_until_brace(chars);
@@ -132,7 +134,11 @@ fn parse_braced(
     match chars.peek() {
         Some('}') => {
             chars.next();
-            Some(Tabstop { id, start, end: start })
+            Some(Tabstop {
+                id,
+                start,
+                end: start,
+            })
         }
         Some(':') => {
             chars.next();
@@ -163,11 +169,19 @@ fn parse_braced(
             // Choice / transform — not supported. Skip to `}` and emit
             // a zero-width tabstop so Tab still has somewhere to land.
             skip_until_brace(chars);
-            Some(Tabstop { id, start, end: start })
+            Some(Tabstop {
+                id,
+                start,
+                end: start,
+            })
         }
         _ => {
             skip_until_brace(chars);
-            Some(Tabstop { id, start, end: start })
+            Some(Tabstop {
+                id,
+                start,
+                end: start,
+            })
         }
     }
 }
@@ -206,21 +220,42 @@ mod tests {
     fn simple_dollar_tabstop() {
         let p = parse("println!($1)");
         assert_eq!(p.text, "println!()");
-        assert_eq!(p.tabstops, vec![Tabstop { id: 1, start: 9, end: 9 }]);
+        assert_eq!(
+            p.tabstops,
+            vec![Tabstop {
+                id: 1,
+                start: 9,
+                end: 9
+            }]
+        );
     }
 
     #[test]
     fn final_zero_stop() {
         let p = parse("if true { $0 }");
         assert_eq!(p.text, "if true {  }");
-        assert_eq!(p.tabstops, vec![Tabstop { id: 0, start: 10, end: 10 }]);
+        assert_eq!(
+            p.tabstops,
+            vec![Tabstop {
+                id: 0,
+                start: 10,
+                end: 10
+            }]
+        );
     }
 
     #[test]
     fn braced_with_placeholder() {
         let p = parse("for ${1:item} in iter {}");
         assert_eq!(p.text, "for item in iter {}");
-        assert_eq!(p.tabstops, vec![Tabstop { id: 1, start: 4, end: 8 }]);
+        assert_eq!(
+            p.tabstops,
+            vec![Tabstop {
+                id: 1,
+                start: 4,
+                end: 8
+            }]
+        );
     }
 
     #[test]
@@ -230,8 +265,16 @@ mod tests {
         assert_eq!(
             p.tabstops,
             vec![
-                Tabstop { id: 1, start: 0, end: 1 },
-                Tabstop { id: 2, start: 4, end: 5 },
+                Tabstop {
+                    id: 1,
+                    start: 0,
+                    end: 1
+                },
+                Tabstop {
+                    id: 2,
+                    start: 4,
+                    end: 5
+                },
             ]
         );
     }
@@ -248,7 +291,14 @@ mod tests {
         let p = parse("${1|red,green,blue|}");
         // Placeholder skipped, but the tabstop is still there.
         assert_eq!(p.text, "");
-        assert_eq!(p.tabstops, vec![Tabstop { id: 1, start: 0, end: 0 }]);
+        assert_eq!(
+            p.tabstops,
+            vec![Tabstop {
+                id: 1,
+                start: 0,
+                end: 0
+            }]
+        );
     }
 
     #[test]
@@ -256,6 +306,13 @@ mod tests {
         let p = parse("café ${1:τ}");
         assert_eq!(p.text, "café τ");
         // 'café ' is 5 chars
-        assert_eq!(p.tabstops, vec![Tabstop { id: 1, start: 5, end: 6 }]);
+        assert_eq!(
+            p.tabstops,
+            vec![Tabstop {
+                id: 1,
+                start: 5,
+                end: 6
+            }]
+        );
     }
 }

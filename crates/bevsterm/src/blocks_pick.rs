@@ -9,7 +9,12 @@ use crate::types::TerminalBlockState;
 
 pub fn on_terminal_block_press(
     trigger: On<Pointer<Press>>,
-    q: Query<(&TerminalBlockState, &DisplayLayout, &ScrollState, &TextViewViewport)>,
+    q: Query<(
+        &TerminalBlockState,
+        &DisplayLayout,
+        &ScrollState,
+        &TextViewViewport,
+    )>,
     mut selected_w: MessageWriter<TerminalBlockSelected>,
 ) {
     if trigger.event().button != PointerButton::Primary {

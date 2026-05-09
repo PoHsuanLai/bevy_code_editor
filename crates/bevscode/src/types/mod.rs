@@ -12,9 +12,9 @@ pub mod fold;
 
 // Re-export the editable-text core types from bevy_instanced_text_edit.
 pub use bevy_instanced_text_edit::{
-    Anchor, AnchorBias, AnchorSet, CursorState, EditHistory, EditHistoryState,
-    EditKind, EditOperation, EditTransaction, IndentConfig, Selection, SelectionCollection,
-    SelectionState, TextEdit, TextEditor,
+    Anchor, AnchorBias, AnchorSet, CursorState, EditHistory, EditHistoryState, EditKind,
+    EditOperation, EditTransaction, IndentConfig, Selection, SelectionCollection, SelectionState,
+    TextEdit, TextEditor,
 };
 
 pub use display_map::*;

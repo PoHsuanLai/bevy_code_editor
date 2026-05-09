@@ -80,24 +80,22 @@ pub mod theme;
 pub mod typing;
 
 pub use anchor::{Anchor, AnchorBias, AnchorSet, TextEdit};
-pub use clipboard::{ClipboardProvider, ClipboardResource, NullClipboard};
 #[cfg(feature = "arboard")]
 pub use clipboard::SystemClipboard;
-pub use edit::{point_at_byte, EditOutcome};
+pub use clipboard::{ClipboardProvider, ClipboardResource, NullClipboard};
 pub use components::{ScrollConfig, TextViewDragState};
+pub use cursor_settings::{
+    caret_overlay, cursor_blink_visible, BlinkPhase, CursorSettings, CursorStyle,
+};
+pub use edit::{point_at_byte, EditOutcome};
 pub use editing_events::*;
 pub use history::{EditHistory, EditKind, EditOperation, EditTransaction};
 pub use interaction::{copy_selection, screen_to_char_pos, InteractionSettings};
+pub use key_repeat::{KeyRepeatSettings, KeyRepeatState};
 pub use plugin::{EditEmitSet, InstancedTextEditPlugin, InstancedTextInteractionPlugin};
-pub use selection::{
-    Selection, SelectionCollection, SelectionMode, DEFAULT_SEMANTIC_ESCAPE_CHARS,
-};
+pub use selection::{Selection, SelectionCollection, SelectionMode, DEFAULT_SEMANTIC_ESCAPE_CHARS};
 pub use state::{
     CursorState, EditDelta, EditHistoryState, EditPoint, IndentConfig, OnEdit, SelectionState,
     SnapshotPreEdit, TextEditor,
 };
-pub use cursor_settings::{
-    caret_overlay, cursor_blink_visible, BlinkPhase, CursorSettings, CursorStyle,
-};
-pub use key_repeat::{KeyRepeatSettings, KeyRepeatState};
 pub use theme::EditTheme;

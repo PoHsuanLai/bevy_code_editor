@@ -55,11 +55,7 @@ pub fn word_at_position(rope: &Rope, pos: usize) -> Option<(usize, usize)> {
 }
 
 /// Find the next occurrence of text after a given position
-pub fn find_next_occurrence(
-    rope: &Rope,
-    text: &str,
-    after_pos: usize,
-) -> Option<(usize, usize)> {
+pub fn find_next_occurrence(rope: &Rope, text: &str, after_pos: usize) -> Option<(usize, usize)> {
     if text.is_empty() {
         return None;
     }
@@ -128,12 +124,7 @@ pub fn add_cursor_at_next_occurrence(
         return false;
     }
 
-    let search_from = sel
-        .selections
-        .iter()
-        .map(|s| s.end())
-        .max()
-        .unwrap_or(0);
+    let search_from = sel.selections.iter().map(|s| s.end()).max().unwrap_or(0);
 
     if let Some((start, end)) = find_next_occurrence(&buffer.rope, &search_text, search_from) {
         let already_covered = sel.selections.iter().any(|s| {

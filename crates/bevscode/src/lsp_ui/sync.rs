@@ -38,7 +38,16 @@ fn buffer_position(buffer: &TextBuffer, char_index: usize) -> (u32, u32) {
 /// Sync completion state to marker entity
 pub fn sync_completion_popup(
     mut commands: Commands,
-    query: Query<(&LspCompletionPopup, &CursorState, &TextBuffer, &FontConfig, &LspSettings), With<CodeEditor>>,
+    query: Query<
+        (
+            &LspCompletionPopup,
+            &CursorState,
+            &TextBuffer,
+            &FontConfig,
+            &LspSettings,
+        ),
+        With<CodeEditor>,
+    >,
     existing: Query<Entity, With<CompletionPopupData>>,
 ) {
     let Ok((completion_state, cursor_state, buffer, font, lsp)) = query.single() else {
@@ -76,7 +85,10 @@ pub fn sync_completion_popup(
     let visible_count = total_items.min(max_visible);
     let box_height = (visible_count as f32 * font.line_height) + 10.0;
 
-    let items: Vec<CompletionItemData> = filtered_items.iter().map(CompletionItemData::from).collect();
+    let items: Vec<CompletionItemData> = filtered_items
+        .iter()
+        .map(CompletionItemData::from)
+        .collect();
 
     let selected_documentation = filtered_items
         .get(completion_state.selected_index)
@@ -182,7 +194,12 @@ pub fn sync_hover_popup(
 pub fn sync_signature_help_popup(
     mut commands: Commands,
     query: Query<
-        (&LspSignatureHelpPopup, &CursorState, &TextBuffer, &FontConfig),
+        (
+            &LspSignatureHelpPopup,
+            &CursorState,
+            &TextBuffer,
+            &FontConfig,
+        ),
         With<CodeEditor>,
     >,
     existing: Query<Entity, With<SignatureHelpPopupData>>,
@@ -265,10 +282,7 @@ pub fn sync_signature_help_popup(
 /// Sync code action state to marker entity
 pub fn sync_code_actions_popup(
     mut commands: Commands,
-    query: Query<
-        (&LspCodeActionsPopup, &CursorState, &TextBuffer, &FontConfig),
-        With<CodeEditor>,
-    >,
+    query: Query<(&LspCodeActionsPopup, &CursorState, &TextBuffer, &FontConfig), With<CodeEditor>>,
     existing: Query<Entity, With<CodeActionsPopupData>>,
 ) {
     let Ok((action_state, cursor_state, buffer, font)) = query.single() else {
@@ -483,7 +497,7 @@ pub fn sync_inlay_hints(
 /// Each entity carries a `DocumentHighlightData` describing *what* to
 /// highlight (line + character range + read/write kind). The renderer
 /// (in the host crate) composes the world rectangle from these fields
-/// + the editor's `RowMetrics`, so this system doesn't need to re-run
+/// and the editor's `RowMetrics`, so this system doesn't need to re-run
 /// on viewport or scroll changes — the renderer reads live state.
 pub fn sync_document_highlights(
     mut commands: Commands,

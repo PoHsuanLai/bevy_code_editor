@@ -11,8 +11,8 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use bevy::text::Font;
 use bevy::asset::Handle;
+use bevy::text::Font;
 use bevy_instanced_text::{
     for_each_row_in_buffer_span, Block as EBlock, BlockLayoutConfig, DisplayLayout, RectOverlay,
     RowPosition, RowVertical, StyleRun, TextDecoration,
@@ -153,7 +153,12 @@ impl<'a> LayoutBuilder<'a> {
     }
 
     fn finish(self) -> (DisplayLayout, Vec<RectOverlay>, MarkdownLinks) {
-        let LayoutBuilder { cfg, blocks, pending_links, pending_rects } = self;
+        let LayoutBuilder {
+            cfg,
+            blocks,
+            pending_links,
+            pending_rects,
+        } = self;
         let layout = EBlock::layout(
             &blocks,
             BlockLayoutConfig {
@@ -194,7 +199,11 @@ impl<'a> LayoutBuilder<'a> {
             Block::Heading { level, inlines } => self.emit_heading(*level, inlines, depth),
             Block::Paragraph(inlines) => self.emit_paragraph(inlines, depth, is_last),
             Block::BlockQuote(inner) => self.emit_blockquote(inner, depth),
-            Block::List { ordered, start, items } => self.emit_list(*ordered, *start, items, depth),
+            Block::List {
+                ordered,
+                start,
+                items,
+            } => self.emit_list(*ordered, *start, items, depth),
             Block::CodeBlock { text, lang } => self.emit_code_block(text, lang.as_deref(), depth),
             Block::Rule => self.emit_rule(depth),
         }
@@ -352,7 +361,7 @@ impl<'a> LayoutBuilder<'a> {
                 }]
             };
             let mut block = if runs.is_empty() || line.is_empty() {
-                code_block_line(*line, fg, indent, self.cfg.code_font.clone())
+                code_block_line(line, fg, indent, self.cfg.code_font.clone())
             } else {
                 EBlock::new(line.to_string())
                     .with_indent(indent)
@@ -370,9 +379,7 @@ impl<'a> LayoutBuilder<'a> {
         }
         self.pending_rects.push(PendingRect {
             block_idx: start,
-            coverage: RectCoverage::Span {
-                len: lines.len(),
-            },
+            coverage: RectCoverage::Span { len: lines.len() },
             builder: code_block_overlay,
             // Pass the horizontal indent so the overlay extends left of the
             // text by that amount, giving visible left breathing room.
@@ -417,7 +424,12 @@ impl<'a> LayoutBuilder<'a> {
     }
 
     /// Dispatch table for inline kinds. One helper per variant.
-    fn walk_inlines(&mut self, inlines: &[Inline], buf: &mut InlineBuffer, state: &mut InlineState) {
+    fn walk_inlines(
+        &mut self,
+        inlines: &[Inline],
+        buf: &mut InlineBuffer,
+        state: &mut InlineState,
+    ) {
         for inline in inlines {
             match inline {
                 Inline::Text(s) => self.inline_text(s, buf, state),
@@ -460,15 +472,27 @@ impl<'a> LayoutBuilder<'a> {
     }
 
     fn inline_strong(&mut self, inner: &[Inline], buf: &mut InlineBuffer, state: &mut InlineState) {
-        with_state(state, |s| s.bold = true, |state| self.walk_inlines(inner, buf, state));
+        with_state(
+            state,
+            |s| s.bold = true,
+            |state| self.walk_inlines(inner, buf, state),
+        );
     }
 
     fn inline_emph(&mut self, inner: &[Inline], buf: &mut InlineBuffer, state: &mut InlineState) {
-        with_state(state, |s| s.italic = true, |state| self.walk_inlines(inner, buf, state));
+        with_state(
+            state,
+            |s| s.italic = true,
+            |state| self.walk_inlines(inner, buf, state),
+        );
     }
 
     fn inline_strike(&mut self, inner: &[Inline], buf: &mut InlineBuffer, state: &mut InlineState) {
-        with_state(state, |s| s.strike = true, |state| self.walk_inlines(inner, buf, state));
+        with_state(
+            state,
+            |s| s.strike = true,
+            |state| self.walk_inlines(inner, buf, state),
+        );
     }
 
     fn inline_link(
@@ -527,6 +551,7 @@ impl InlineBuffer {
     /// Append `s` and emit a `StyleRun` covering it. `fg`, `bg`, and
     /// `corner_radius` are caller-supplied; weight / italic / decoration /
     /// link come from the active `InlineState`.
+    #[allow(clippy::too_many_arguments)]
     fn push_run(
         &mut self,
         s: &str,
@@ -614,8 +639,12 @@ impl InlineState {
 
     fn decoration(&self) -> TextDecoration {
         let mut d = TextDecoration::empty();
-        if self.strike { d |= TextDecoration::STRIKETHROUGH; }
-        if self.link_active { d |= TextDecoration::UNDERLINE; }
+        if self.strike {
+            d |= TextDecoration::STRIKETHROUGH;
+        }
+        if self.link_active {
+            d |= TextDecoration::UNDERLINE;
+        }
         d
     }
 }
@@ -648,7 +677,12 @@ fn resolve_link_spans(layout: &DisplayLayout, pending: &[PendingLink]) -> Vec<Li
 }
 
 /// Build a single line of a fenced code block (no decoration applied yet).
-fn code_block_line(line: &str, fg: bevy::prelude::Color, indent: f32, font: Option<Handle<Font>>) -> EBlock {
+fn code_block_line(
+    line: &str,
+    fg: bevy::prelude::Color,
+    indent: f32,
+    font: Option<Handle<Font>>,
+) -> EBlock {
     let len = line.len();
     EBlock::new(line.to_string())
         .with_indent(indent)
@@ -711,7 +745,12 @@ fn resolve_pending_rects(
 /// `aux` carries the horizontal text indent (px). The overlay extends that
 /// many pixels to the left of the text, giving visible left breathing room
 /// inside the code-block panel.
-fn code_block_overlay(display_row: u32, pos: RowPosition, ctx: &OverlayContext, aux: f32) -> RectOverlay {
+fn code_block_overlay(
+    display_row: u32,
+    pos: RowPosition,
+    ctx: &OverlayContext,
+    aux: f32,
+) -> RectOverlay {
     RectOverlay {
         display_row,
         x_range: -aux..ctx.content_right,
@@ -729,7 +768,12 @@ fn code_block_overlay(display_row: u32, pos: RowPosition, ctx: &OverlayContext, 
 /// `aux` is unused (0.0). The bar sits one `indent_step` to the left of
 /// the text — the renderer adds `line.x_offset` (inner indent), so
 /// `x_range.start = -indent_step` lands at the outer indent level.
-fn blockquote_bar_overlay(display_row: u32, _pos: RowPosition, ctx: &OverlayContext, _aux: f32) -> RectOverlay {
+fn blockquote_bar_overlay(
+    display_row: u32,
+    _pos: RowPosition,
+    ctx: &OverlayContext,
+    _aux: f32,
+) -> RectOverlay {
     let x_start = -ctx.theme.indent_step;
     RectOverlay {
         display_row,
@@ -743,7 +787,12 @@ fn blockquote_bar_overlay(display_row: u32, _pos: RowPosition, ctx: &OverlayCont
 
 /// Horizontal-rule overlay — a thin band across the row's mid-height,
 /// capped at the content width. Single-row by construction; sharp.
-fn rule_overlay(display_row: u32, _pos: RowPosition, ctx: &OverlayContext, _aux: f32) -> RectOverlay {
+fn rule_overlay(
+    display_row: u32,
+    _pos: RowPosition,
+    ctx: &OverlayContext,
+    _aux: f32,
+) -> RectOverlay {
     RectOverlay {
         display_row,
         x_range: 0.0..ctx.content_right,
@@ -755,7 +804,6 @@ fn rule_overlay(display_row: u32, _pos: RowPosition, ctx: &OverlayContext, _aux:
         corners: bevy_instanced_text::CornerRadii::ZERO,
     }
 }
-
 
 /// Prepend a list marker into an engine block: shifts existing run
 /// byte_ranges by `marker.len()` and inserts a leading body-styled run
@@ -842,40 +890,47 @@ fn syntax_highlight_code(
         off += line.len() + 1; // +1 for the '\n' separator
     }
 
-    lines.iter().enumerate().map(|(i, line)| {
-        let line_ranges = highlight_ranges.get(i).map(|v| v.as_slice()).unwrap_or(&[]);
-        let line_len = line.len();
-        let line_byte_start = line_starts[i];
-        let mut runs: Vec<StyleRun> = Vec::new();
-        let mut cursor_pos = 0usize;
+    lines
+        .iter()
+        .enumerate()
+        .map(|(i, line)| {
+            let line_ranges = highlight_ranges.get(i).map(|v| v.as_slice()).unwrap_or(&[]);
+            let line_len = line.len();
+            let line_byte_start = line_starts[i];
+            let mut runs: Vec<StyleRun> = Vec::new();
+            let mut cursor_pos = 0usize;
 
-        for hr in line_ranges {
-            // hr.byte_range is document-absolute; convert to line-relative.
-            let abs_start = hr.byte_range.start;
-            let abs_end = hr.byte_range.end;
+            for hr in line_ranges {
+                // hr.byte_range is document-absolute; convert to line-relative.
+                let abs_start = hr.byte_range.start;
+                let abs_end = hr.byte_range.end;
 
-            let rel_start = abs_start.saturating_sub(line_byte_start);
-            let rel_end = (abs_end - line_byte_start).min(line_len);
+                let rel_start = abs_start.saturating_sub(line_byte_start);
+                let rel_end = (abs_end - line_byte_start).min(line_len);
 
-            if rel_start >= rel_end || rel_start < cursor_pos {
-                continue;
+                if rel_start >= rel_end || rel_start < cursor_pos {
+                    continue;
+                }
+
+                // Gap before this capture → default color.
+                if cursor_pos < rel_start {
+                    runs.push(plain_run(cursor_pos..rel_start, default_fg));
+                }
+                runs.push(plain_run(
+                    rel_start..rel_end,
+                    palette.color_for(&hr.capture_name),
+                ));
+                cursor_pos = rel_end;
             }
 
-            // Gap before this capture → default color.
-            if cursor_pos < rel_start {
-                runs.push(plain_run(cursor_pos..rel_start, default_fg));
+            // Remaining tail.
+            if cursor_pos < line_len {
+                runs.push(plain_run(cursor_pos..line_len, default_fg));
             }
-            runs.push(plain_run(rel_start..rel_end, palette.color_for(&hr.capture_name)));
-            cursor_pos = rel_end;
-        }
 
-        // Remaining tail.
-        if cursor_pos < line_len {
-            runs.push(plain_run(cursor_pos..line_len, default_fg));
-        }
-
-        runs
-    }).collect()
+            runs
+        })
+        .collect()
 }
 
 #[cfg(feature = "tree-sitter")]

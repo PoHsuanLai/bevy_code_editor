@@ -56,7 +56,9 @@ pub fn on_focused_terminal_keyboard(
         return;
     }
 
-    let Some((wezterm_key, mods)) = bevy_to_wezterm(&event.key_code, &event.logical_key, ctrl, alt, shift) else {
+    let Some((wezterm_key, mods)) =
+        bevy_to_wezterm(&event.key_code, &event.logical_key, ctrl, alt, shift)
+    else {
         return;
     };
 

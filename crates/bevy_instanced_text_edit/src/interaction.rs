@@ -7,8 +7,8 @@
 //! focus dispatch handle entity routing for us.
 
 use bevy::input::keyboard::{KeyCode, KeyboardInput};
-use bevy::input_focus::{FocusedInput, InputFocus};
 use bevy::input::ButtonState;
+use bevy::input_focus::{FocusedInput, InputFocus};
 use bevy::picking::events::{Drag, Pointer, Press, Release, Scroll};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
@@ -20,6 +20,60 @@ use bevy_instanced_text::{
 
 use crate::components::{ScrollConfig, TextViewDragState};
 use crate::state::{CursorState, SelectionState};
+
+type ScrollQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static TextBuffer,
+        &'static mut ScrollState,
+        &'static ContentMetrics,
+        &'static TextViewViewport,
+        &'static FontConfig,
+        Option<&'static ScrollConfig>,
+    ),
+    With<TextView>,
+>;
+
+type PressQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut TextViewDragState,
+        &'static TextBuffer,
+        &'static ScrollState,
+        &'static TextViewViewport,
+        &'static FontConfig,
+        Option<&'static DisplayLayout>,
+        Option<&'static mut SelectionState>,
+        Option<&'static mut CursorState>,
+        Option<&'static InteractionSettings>,
+    ),
+    With<TextView>,
+>;
+
+type DragQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut TextViewDragState,
+        &'static TextBuffer,
+        &'static ScrollState,
+        &'static TextViewViewport,
+        &'static FontConfig,
+        Option<&'static DisplayLayout>,
+        Option<&'static mut SelectionState>,
+        Option<&'static mut CursorState>,
+    ),
+    With<TextView>,
+>;
+
+type CopyQuery<'w, 's> = Query<
+    'w,
+    's,
+    (&'static SelectionState, &'static TextBuffer),
+    (With<TextView>, Without<crate::state::TextEditor>),
+>;
 
 /// Convert screen coordinates (viewport-local, 0,0 at top-left) to a character
 /// position in the rope. Used for click-to-position and drag selection.
@@ -174,20 +228,7 @@ fn block_slice(rope: &Rope, start: usize, end: usize) -> String {
 /// Horizontal scroll only fires when the view's content width exceeds the
 /// available text area (via `ContentMetrics.max_content_width`); the
 /// display-map producer maintains that field as it shapes lines.
-pub fn on_pointer_scroll(
-    trigger: On<Pointer<Scroll>>,
-    mut views: Query<
-        (
-            &TextBuffer,
-            &mut ScrollState,
-            &ContentMetrics,
-            &TextViewViewport,
-            &FontConfig,
-            Option<&ScrollConfig>,
-        ),
-        With<TextView>,
-    >,
-) {
+pub fn on_pointer_scroll(trigger: On<Pointer<Scroll>>, mut views: ScrollQuery) {
     let entity = trigger.event().entity;
     let Ok((buffer, mut scroll, metrics, viewport, font, scroll_cfg)) = views.get_mut(entity)
     else {
@@ -223,8 +264,7 @@ pub fn on_pointer_scroll(
         let line_count = buffer.rope.len_lines();
         let content_height = line_count as f32 * font.line_height;
         let viewport_height = viewport.height as f32;
-        let max_scroll =
-            (-(content_height - viewport_height + viewport.text_area_top)).min(0.0);
+        let max_scroll = (-(content_height - viewport_height + viewport.text_area_top)).min(0.0);
         if scroll_cfg.smooth {
             scroll.target_scroll_offset =
                 (scroll.target_scroll_offset + scroll_delta).clamp(max_scroll, 0.0);
@@ -246,20 +286,7 @@ pub fn on_pointer_scroll(
 /// editor handlers see the new caret on the next frame.
 pub fn on_pointer_press(
     trigger: On<Pointer<Press>>,
-    mut views: Query<
-        (
-            &mut TextViewDragState,
-            &TextBuffer,
-            &ScrollState,
-            &TextViewViewport,
-            &FontConfig,
-            Option<&DisplayLayout>,
-            Option<&mut SelectionState>,
-            Option<&mut CursorState>,
-            Option<&InteractionSettings>,
-        ),
-        With<TextView>,
-    >,
+    mut views: PressQuery,
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     mut input_focus: ResMut<InputFocus>,
@@ -283,7 +310,7 @@ pub fn on_pointer_press(
     let char_pos = screen_to_char_pos(
         local_pos,
         &buffer.rope,
-        layout.as_deref(),
+        layout,
         scroll.scroll_offset,
         font,
         viewport,
@@ -313,13 +340,12 @@ pub fn on_pointer_press(
         .last_press_pos
         .map(|p| (p - local_pos).length() <= interaction.multi_click_radius_px)
         .unwrap_or(false);
-    drag_state.click_count = if near_last
-        && (now - drag_state.last_press_time) <= interaction.multi_click_secs
-    {
-        (drag_state.click_count + 1).min(3)
-    } else {
-        1
-    };
+    drag_state.click_count =
+        if near_last && (now - drag_state.last_press_time) <= interaction.multi_click_secs {
+            (drag_state.click_count + 1).min(3)
+        } else {
+            1
+        };
     drag_state.last_press_time = now;
     drag_state.last_press_pos = Some(local_pos);
 
@@ -338,7 +364,10 @@ pub fn on_pointer_press(
         match mode {
             crate::selection::SelectionMode::Semantic => {
                 let mut s = crate::selection::Selection::cursor(char_pos);
-                s.expand_semantic(&buffer.rope, crate::selection::DEFAULT_SEMANTIC_ESCAPE_CHARS);
+                s.expand_semantic(
+                    &buffer.rope,
+                    crate::selection::DEFAULT_SEMANTIC_ESCAPE_CHARS,
+                );
                 sel.selections.clear_secondary();
                 *sel.selections.primary_mut() = s;
             }
@@ -397,22 +426,7 @@ impl Default for InteractionSettings {
 /// even if the cursor moves out of its viewport.
 ///
 /// Writes through to `SelectionState` and `CursorState` when present.
-pub fn on_pointer_drag(
-    trigger: On<Pointer<Drag>>,
-    mut views: Query<
-        (
-            &mut TextViewDragState,
-            &TextBuffer,
-            &ScrollState,
-            &TextViewViewport,
-            &FontConfig,
-            Option<&DisplayLayout>,
-            Option<&mut SelectionState>,
-            Option<&mut CursorState>,
-        ),
-        With<TextView>,
-    >,
-) {
+pub fn on_pointer_drag(trigger: On<Pointer<Drag>>, mut views: DragQuery) {
     if trigger.event().button != PointerButton::Primary {
         return;
     }
@@ -439,7 +453,7 @@ pub fn on_pointer_drag(
     let char_pos = screen_to_char_pos(
         local_pos,
         &buffer.rope,
-        layout.as_deref(),
+        layout,
         scroll.scroll_offset,
         font,
         viewport,
@@ -454,7 +468,10 @@ pub fn on_pointer_drag(
             let mut s = crate::selection::Selection::with_mode(char_pos, start, mode);
             match mode {
                 crate::selection::SelectionMode::Semantic => {
-                    s.expand_semantic(&buffer.rope, crate::selection::DEFAULT_SEMANTIC_ESCAPE_CHARS);
+                    s.expand_semantic(
+                        &buffer.rope,
+                        crate::selection::DEFAULT_SEMANTIC_ESCAPE_CHARS,
+                    );
                 }
                 crate::selection::SelectionMode::Line => {
                     s.expand_to_lines(&buffer.rope);
@@ -504,10 +521,7 @@ pub fn on_pointer_release(
 /// Cmd+C path.
 pub fn on_focused_keyboard(
     trigger: On<FocusedInput<KeyboardInput>>,
-    views: Query<
-        (&SelectionState, &TextBuffer),
-        (With<TextView>, Without<crate::state::TextEditor>),
-    >,
+    views: CopyQuery,
     keyboard: Res<ButtonInput<KeyCode>>,
     clipboard: Res<crate::clipboard::ClipboardResource>,
 ) {

@@ -7,27 +7,33 @@
 //!
 //! Run with: `cargo run --example terminal_editor`
 
-use bevy::prelude::*;
-use bevy_camera::visibility::RenderLayers;
 use bevscode::prelude::*;
 use bevsterm::prelude::*;
+use bevy::prelude::*;
+use bevy_camera::visibility::RenderLayers;
 
 const DIVIDER_PX: u32 = 1;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "bevsterm — editor + terminal".into(),
-                resolution: [1280u32, 720u32].into(),
-                ..default()
-            }),
-            ..default()
-        }).set(bevy::asset::AssetPlugin {
-            file_path: "assets".into(),
-            ..default()
-        }))
-        .insert_resource(ViewportConfig { auto_resize_to_window: false })
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "bevsterm — editor + terminal".into(),
+                        resolution: [1280u32, 720u32].into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(bevy::asset::AssetPlugin {
+                    file_path: "assets".into(),
+                    ..default()
+                }),
+        )
+        .insert_resource(ViewportConfig {
+            auto_resize_to_window: false,
+        })
         .add_plugins(CodeEditorPlugins)
         .add_plugins(BevyTerminalPlugin)
         .add_systems(Startup, layout_panes)
@@ -125,18 +131,20 @@ fn layout_panes(
     ));
 
     // Editor — left pane.
-    let editor = commands.spawn((
-        CodeEditor,
-        font.clone(),
-        TextViewViewport {
-            width: log_half as u32,
-            height: log_h as u32,
-            hit_test_position: Vec2::new(0.0, 0.0),
-            ..default()
-        },
-        editor_layer,
-        Name::new("Editor"),
-    )).id();
+    let editor = commands
+        .spawn((
+            CodeEditor,
+            font.clone(),
+            TextViewViewport {
+                width: log_half as u32,
+                height: log_h as u32,
+                hit_test_position: Vec2::new(0.0, 0.0),
+                ..default()
+            },
+            editor_layer,
+            Name::new("Editor"),
+        ))
+        .id();
     input_focus.set(editor);
 
     // Terminal — right pane.

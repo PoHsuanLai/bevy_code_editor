@@ -266,6 +266,10 @@ impl Selection {
     pub fn len(&self) -> usize {
         self.end() - self.start()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 fn is_boundary(ch: char, escape_chars: &str) -> bool {
@@ -393,6 +397,10 @@ impl SelectionCollection {
     /// Get the number of selections
     pub fn len(&self) -> usize {
         self.selections.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.selections.is_empty()
     }
 
     /// Check if there's only a single cursor (no multi-selection, no text selected)

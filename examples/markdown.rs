@@ -2,9 +2,9 @@
 //! supported features: headings, bold/italic, inline code, fenced code
 //! blocks, lists, blockquotes, links, and a horizontal rule.
 
+use bevsmd::prelude::*;
 use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
-use bevsmd::prelude::*;
 
 const SCROLL_SPEED: f32 = 40.0;
 
@@ -42,17 +42,21 @@ That's the whole demo.\n";
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "bevsmd — basic demo".to_string(),
-                resolution: (900, 700).into(),
-                ..default()
-            }),
-            ..default()
-        }).set(bevy::asset::AssetPlugin {
-            file_path: "assets".into(),
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "bevsmd — basic demo".to_string(),
+                        resolution: (900, 700).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(bevy::asset::AssetPlugin {
+                    file_path: "assets".into(),
+                    ..default()
+                }),
+        )
         .add_plugins(MarkdownViewerPlugins)
         .add_systems(Startup, (setup_camera, setup_viewer))
         .add_systems(Update, handle_scroll)
@@ -63,11 +67,7 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
 
-fn setup_viewer(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    windows: Query<&Window>,
-) {
+fn setup_viewer(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<&Window>) {
     let Ok(window) = windows.single() else { return };
 
     let font = MarkdownFont::from_size(16.0)

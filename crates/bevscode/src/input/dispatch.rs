@@ -19,9 +19,9 @@
 //!      visible completion popup.
 //!    - [`crate::types::fold::goto_line_intercept`]: Escape on an active
 //!      goto-line dialog.
-//!    Adding a new popup feature means adding its interceptor module and
-//!    one more `if` at this point — no scattered popup state in the
-//!    dispatcher itself.
+//!      Adding a new popup feature means adding its interceptor module and
+//!      one more `if` at this point — no scattered popup state in the
+//!      dispatcher itself.
 //! 4. **Save / Open** are special transforms: these build host-facing events
 //!    with payloads constructed from the editor's current state.
 //! 5. **LSP follow-up snapshot** captures pre-edit state so the post-edit
@@ -212,7 +212,8 @@ impl<'w> ActionEventWriters<'w> {
                 self.move_cursor_down.write(MoveCursorDownRequested);
             }
             EditorAction::MoveCursorWordLeft => {
-                self.move_cursor_word_left.write(MoveCursorWordLeftRequested);
+                self.move_cursor_word_left
+                    .write(MoveCursorWordLeftRequested);
             }
             EditorAction::MoveCursorWordRight => {
                 self.move_cursor_word_right
@@ -237,7 +238,8 @@ impl<'w> ActionEventWriters<'w> {
                 self.move_cursor_page_up.write(MoveCursorPageUpRequested);
             }
             EditorAction::MoveCursorPageDown => {
-                self.move_cursor_page_down.write(MoveCursorPageDownRequested);
+                self.move_cursor_page_down
+                    .write(MoveCursorPageDownRequested);
             }
             EditorAction::SelectLeft => {
                 self.select_left.write(SelectLeftRequested);
@@ -297,7 +299,8 @@ impl<'w> ActionEventWriters<'w> {
                 self.rename_symbol.write(RenameSymbolRequested);
             }
             EditorAction::AddCursorAtNextOccurrence => {
-                self.add_cursor_next.write(AddCursorAtNextOccurrenceRequested);
+                self.add_cursor_next
+                    .write(AddCursorAtNextOccurrenceRequested);
             }
             EditorAction::AddCursorAbove => {
                 self.add_cursor_above.write(AddCursorAboveRequested);
@@ -331,6 +334,20 @@ impl<'w> ActionEventWriters<'w> {
     }
 }
 
+#[cfg(feature = "lsp")]
+type DispatchLspQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static bevy_lsp::LspClient,
+        Option<&'static mut bevy_lsp::LspDocument>,
+        &'static mut crate::lsp_ui::state::LspCompletionPopup,
+        &'static crate::lsp_ui::state::LspRenamePopup,
+        &'static crate::settings::LspSettings,
+    ),
+    With<CodeEditor>,
+>;
+
 /// `EditorAction` → typed event dispatcher.
 #[allow(clippy::too_many_arguments)]
 pub fn dispatch_action_events(
@@ -357,16 +374,7 @@ pub fn dispatch_action_events(
         ),
         With<CodeEditor>,
     >,
-    #[cfg(feature = "lsp")] mut lsp_q: Query<
-        (
-            &bevy_lsp::LspClient,
-            Option<&mut bevy_lsp::LspDocument>,
-            &mut crate::lsp_ui::state::LspCompletionPopup,
-            &crate::lsp_ui::state::LspRenamePopup,
-            &crate::settings::LspSettings,
-        ),
-        With<CodeEditor>,
-    >,
+    #[cfg(feature = "lsp")] mut lsp_q: DispatchLspQuery,
     mut writers: ActionEventWriters,
 ) {
     let Some(focused) = input_focus.get() else {
@@ -410,8 +418,7 @@ pub fn dispatch_action_events(
                 // `CursorSettings`; fall back to default if the focused entity
                 // isn't a CodeEditor (e.g. a terminal pane is focused).
                 let default = CursorSettings::default();
-                let cursor_settings =
-                    cursor_settings_q.get(focused).unwrap_or(&default);
+                let cursor_settings = cursor_settings_q.get(focused).unwrap_or(&default);
                 if let Some(action) = key_repeat_state.tick(now, &cursor_settings.key_repeat) {
                     action_to_execute = Some(action);
                 }

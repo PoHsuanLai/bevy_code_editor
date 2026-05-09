@@ -119,7 +119,7 @@ pub mod prelude {
     // Editable-text widget types from `bevy_instanced_text_edit`. Re-exported so
     // prelude users get them without a separate import.
     pub use bevy_instanced_text_edit::{
-        ScrollConfig, TextEditor, InstancedTextEditPlugin, InstancedTextInteractionPlugin,
+        InstancedTextEditPlugin, InstancedTextInteractionPlugin, ScrollConfig, TextEditor,
     };
 
     // Selection / multi-cursor types and the EditorAction enum.

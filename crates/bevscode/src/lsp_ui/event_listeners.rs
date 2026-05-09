@@ -28,6 +28,72 @@ use bevy_lsp::{
 };
 use lsp_types::{Range, TextDocumentContentChangeEvent};
 
+type CompletionRequestQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static TextBuffer,
+        Option<&'static LspDocument>,
+        &'static bevy_lsp::ServerCapabilities,
+        &'static mut LspDebounceTimers,
+        &'static LspSettings,
+    ),
+    With<CodeEditor>,
+>;
+
+type HoverRequestQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static TextBuffer,
+        Option<&'static LspDocument>,
+        &'static bevy_lsp::ServerCapabilities,
+        &'static mut LspDebounceTimers,
+        &'static LspSettings,
+    ),
+    With<CodeEditor>,
+>;
+
+type RenameRequestQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static TextBuffer,
+        Option<&'static LspDocument>,
+        &'static LspClient,
+        &'static bevy_lsp::ServerCapabilities,
+        &'static mut LspRenamePopup,
+    ),
+    With<CodeEditor>,
+>;
+
+type SignatureHelpRequestQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static TextBuffer,
+        Option<&'static LspDocument>,
+        &'static LspClient,
+        &'static bevy_lsp::ServerCapabilities,
+        &'static mut LspSignatureHelpPopup,
+    ),
+    With<CodeEditor>,
+>;
+
+type ApplyCompletionQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut bevy_instanced_text_edit::SelectionState,
+        &'static mut bevy_instanced_text_edit::EditHistoryState,
+        &'static mut CursorState,
+        &'static mut TextBuffer,
+        &'static mut LspCompletionPopup,
+        &'static mut TabstopSession,
+    ),
+    With<CodeEditor>,
+>;
+
 /// Queue text edits into the [`LspDidChangeBatcher`] and arm its debounce
 /// timer. The batched flush happens in
 /// [`super::systems::sync_lsp_document`] when the timer expires.
@@ -71,7 +137,11 @@ pub fn listen_text_edit_events(
         } else {
             let new_start_char = buffer.rope.byte_to_char(delta.start_byte);
             let new_end_char = buffer.rope.byte_to_char(delta.new_end_byte);
-            buffer.rope.slice(new_start_char..new_end_char).chars().collect()
+            buffer
+                .rope
+                .slice(new_start_char..new_end_char)
+                .chars()
+                .collect()
         };
         batcher.pending.push(TextDocumentContentChangeEvent {
             range: Some(Range { start, end }),
@@ -91,16 +161,7 @@ pub fn listen_text_edit_events(
 
 pub fn listen_completion_requests(
     mut events: MessageReader<RequestCompletionEvent>,
-    mut query: Query<
-        (
-            &TextBuffer,
-            Option<&LspDocument>,
-            &bevy_lsp::ServerCapabilities,
-            &mut LspDebounceTimers,
-            &LspSettings,
-        ),
-        With<CodeEditor>,
-    >,
+    mut query: CompletionRequestQuery,
 ) {
     let Ok((buffer, lsp_document, caps, mut debounce, settings)) = query.single_mut() else {
         return;
@@ -116,23 +177,16 @@ pub fn listen_completion_requests(
         });
         debounce
             .completion_timer
-            .set_duration(std::time::Duration::from_millis(settings.completion.delay_ms));
+            .set_duration(std::time::Duration::from_millis(
+                settings.completion.delay_ms,
+            ));
         debounce.completion_timer.reset();
     }
 }
 
 pub fn listen_hover_requests(
     mut events: MessageReader<RequestHoverEvent>,
-    mut query: Query<
-        (
-            &TextBuffer,
-            Option<&LspDocument>,
-            &bevy_lsp::ServerCapabilities,
-            &mut LspDebounceTimers,
-            &LspSettings,
-        ),
-        With<CodeEditor>,
-    >,
+    mut query: HoverRequestQuery,
 ) {
     let Ok((buffer, lsp_document, caps, mut debounce, settings)) = query.single_mut() else {
         return;
@@ -155,16 +209,7 @@ pub fn listen_hover_requests(
 
 pub fn listen_rename_requests(
     mut events: MessageReader<RequestRenameEvent>,
-    mut query: Query<
-        (
-            &TextBuffer,
-            Option<&LspDocument>,
-            &LspClient,
-            &bevy_lsp::ServerCapabilities,
-            &mut LspRenamePopup,
-        ),
-        With<CodeEditor>,
-    >,
+    mut query: RenameRequestQuery,
 ) {
     let Ok((buffer, lsp_document, lsp_client, caps, mut rename_state)) = query.single_mut() else {
         return;
@@ -186,18 +231,10 @@ pub fn listen_rename_requests(
 
 pub fn listen_signature_help_requests(
     mut events: MessageReader<RequestSignatureHelpEvent>,
-    mut query: Query<
-        (
-            &TextBuffer,
-            Option<&LspDocument>,
-            &LspClient,
-            &bevy_lsp::ServerCapabilities,
-            &mut LspSignatureHelpPopup,
-        ),
-        With<CodeEditor>,
-    >,
+    mut query: SignatureHelpRequestQuery,
 ) {
-    let Ok((buffer, lsp_document, lsp_client, caps, mut sig_help_state)) = query.single_mut() else {
+    let Ok((buffer, lsp_document, lsp_client, caps, mut sig_help_state)) = query.single_mut()
+    else {
         return;
     };
     let Some(lsp_document) = lsp_document else {
@@ -277,10 +314,7 @@ pub fn drive_completion_resolve(
     popup.resolve_request_id = popup.resolve_request_id.wrapping_add(1);
     let id = popup.resolve_request_id;
     popup.pending_resolve = Some((lsp_item.label.clone(), id));
-    lsp_client.send(LspMessage::ResolveCompletionItem {
-        item: lsp_item,
-        id,
-    });
+    lsp_client.send(LspMessage::ResolveCompletionItem { item: lsp_item, id });
 }
 
 /// Dismiss the completion popup when the cursor moves out of a position
@@ -290,10 +324,7 @@ pub fn drive_completion_resolve(
 /// (clicked elsewhere, typed `;` / `(` / space, hit Backspace past the
 /// anchor) hides the menu immediately.
 pub fn dismiss_completion_on_cursor_move(
-    mut query: Query<
-        (Ref<CursorState>, &TextBuffer, &mut LspCompletionPopup),
-        With<CodeEditor>,
-    >,
+    mut query: Query<(Ref<CursorState>, &TextBuffer, &mut LspCompletionPopup), With<CodeEditor>>,
 ) {
     let Ok((cursor, buffer, mut completion_state)) = query.single_mut() else {
         return;
@@ -319,11 +350,7 @@ pub fn dismiss_completion_on_cursor_move(
 pub fn tick_lsp_debounce_timers(
     time: Res<Time>,
     mut query: Query<
-        (
-            &LspClient,
-            &mut LspDebounceTimers,
-            &mut LspCompletionPopup,
-        ),
+        (&LspClient, &mut LspDebounceTimers, &mut LspCompletionPopup),
         With<CodeEditor>,
     >,
 ) {
@@ -475,26 +502,10 @@ pub fn end_tabstop_session_on_cursor_leave(
 /// from the post-edit rope and start a `TabstopSession`.
 pub fn listen_apply_completion(
     mut events: MessageReader<ApplyCompletionEvent>,
-    mut query: Query<
-        (
-            &mut bevy_instanced_text_edit::SelectionState,
-            &mut bevy_instanced_text_edit::EditHistoryState,
-            &mut CursorState,
-            &mut TextBuffer,
-            &mut LspCompletionPopup,
-            &mut TabstopSession,
-        ),
-        With<CodeEditor>,
-    >,
+    mut query: ApplyCompletionQuery,
 ) {
-    let Ok((
-        mut sel,
-        mut hist,
-        mut cursor_state,
-        mut buffer,
-        mut completion_state,
-        mut session,
-    )) = query.single_mut()
+    let Ok((mut sel, mut hist, mut cursor_state, mut buffer, mut completion_state, mut session)) =
+        query.single_mut()
     else {
         return;
     };
@@ -508,7 +519,10 @@ pub fn listen_apply_completion(
         let cursor_pos = cursor_state.cursor_pos.min(buffer.rope.len_chars());
         let line = buffer.rope.char_to_line(cursor_pos);
         let line_start = buffer.rope.line_to_char(line);
-        let start_pos = completion_state.start_char_index.max(line_start).min(cursor_pos);
+        let start_pos = completion_state
+            .start_char_index
+            .max(line_start)
+            .min(cursor_pos);
 
         // Decide whether the item carries snippet syntax. LSP marks this
         // explicitly via `insert_text_format`; we only treat snippet items
@@ -516,10 +530,11 @@ pub fn listen_apply_completion(
         // completions go through verbatim.
         let parsed = match item {
             UnifiedCompletionItem::Lsp(lsp_item)
-                if lsp_item.insert_text_format
-                    == Some(lsp_types::InsertTextFormat::SNIPPET) =>
+                if lsp_item.insert_text_format == Some(lsp_types::InsertTextFormat::SNIPPET) =>
             {
-                Some(snippet::parse(lsp_item.insert_text.as_deref().unwrap_or(&lsp_item.label)))
+                Some(snippet::parse(
+                    lsp_item.insert_text.as_deref().unwrap_or(&lsp_item.label),
+                ))
             }
             _ => None,
         };

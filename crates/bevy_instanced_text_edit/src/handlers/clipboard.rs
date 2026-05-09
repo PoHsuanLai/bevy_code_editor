@@ -100,7 +100,9 @@ pub fn handle_paste(
         return;
     };
 
-    let (start, end) = sel.primary_range().unwrap_or((cursor.cursor_pos, cursor.cursor_pos));
+    let (start, end) = sel
+        .primary_range()
+        .unwrap_or((cursor.cursor_pos, cursor.cursor_pos));
     let outcome = hist.replace_range(&mut buffer, start, end, &text, EditKind::Paste, true);
     cursor.cursor_pos = outcome.new_cursor_pos;
     sel.apply_primary_cursor(&cursor);

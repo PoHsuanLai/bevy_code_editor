@@ -24,9 +24,8 @@ use bevy_camera::Viewport;
 #[reflect(Component, Default)]
 pub struct EditorCamera;
 use super::{
-    to_bevy_coords_left_aligned, update_cursor_line_highlight,
-    update_gpu_line_numbers, update_indent_guides,
-    update_selection_highlight, EditorSetupSet,
+    to_bevy_coords_left_aligned, update_cursor_line_highlight, update_gpu_line_numbers,
+    update_indent_guides, update_selection_highlight, EditorSetupSet,
 };
 use bevy_instanced_text::gpu::GlyphAtlas;
 
@@ -79,14 +78,12 @@ impl Plugin for EditorUiPlugin {
                 .in_set(super::RenderingSet),
         );
 
-
         // Overlay producers (selection, cursor-line) write into
         // `TextViewOverlays`; they must run before the engine's
         // `update_text_views` paint pass reads them.
         app.add_systems(
             Update,
-            (update_selection_highlight, update_cursor_line_highlight)
-                .in_set(super::RenderingSet),
+            (update_selection_highlight, update_cursor_line_highlight).in_set(super::RenderingSet),
         );
 
         // Indent guides still use Sprite entities — they could be migrated to
@@ -189,10 +186,19 @@ fn update_camera_viewport(
     }
 }
 
+type ViewportLayoutQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut TextViewViewport,
+        &'static FontConfig,
+        &'static UiSettings,
+    ),
+    (With<CodeEditor>, Changed<UiSettings>),
+>;
+
 /// Compute ViewportDimensions layout fields based on UI settings
-fn compute_viewport_layout(
-    mut viewport_query: Query<(&mut TextViewViewport, &FontConfig, &UiSettings), (With<CodeEditor>, Changed<UiSettings>)>,
-) {
+fn compute_viewport_layout(mut viewport_query: ViewportLayoutQuery) {
     for (mut viewport, font, ui) in viewport_query.iter_mut() {
         // Compute gutter width based on line number display
         viewport.gutter_width = if ui.show_line_numbers {

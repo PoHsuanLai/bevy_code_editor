@@ -15,30 +15,36 @@
 //!
 //! Run: `cargo run --example editor_multi`
 
+use bevscode::prelude::*;
 use bevy::prelude::*;
 use bevy_camera::visibility::RenderLayers;
-use bevscode::prelude::*;
 
 const WINDOW_WIDTH: f32 = 1600.0;
 const WINDOW_HEIGHT: f32 = 900.0;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "bevscode — multi-editor".into(),
-                resolution: [WINDOW_WIDTH as u32, WINDOW_HEIGHT as u32].into(),
-                ..default()
-            }),
-            ..default()
-        }).set(bevy::asset::AssetPlugin {
-            file_path: "assets".into(),
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "bevscode — multi-editor".into(),
+                        resolution: [WINDOW_WIDTH as u32, WINDOW_HEIGHT as u32].into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(bevy::asset::AssetPlugin {
+                    file_path: "assets".into(),
+                    ..default()
+                }),
+        )
         // Opt out of the auto-resize behavior so we can size each editor's
         // TextViewViewport ourselves; this also suppresses the plugin's
         // default editor auto-spawn.
-        .insert_resource(ViewportConfig { auto_resize_to_window: false })
+        .insert_resource(ViewportConfig {
+            auto_resize_to_window: false,
+        })
         .add_plugins(CodeEditorPlugins)
         .add_systems(Startup, spawn_two_editors)
         .run();

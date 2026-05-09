@@ -7,6 +7,37 @@ use crate::types::*;
 use bevy::prelude::*;
 use bevy_instanced_text::{CornerRadii, FontConfig, RectOverlay, RowVertical};
 
+type BracketMatchQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static CursorState,
+        &'static TextBuffer,
+        &'static mut BracketMatchState,
+        &'static BracketSettings,
+    ),
+    (
+        With<CodeEditor>,
+        Or<(Changed<CursorState>, Changed<TextBuffer>)>,
+    ),
+>;
+
+type BracketHighlightQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static TextBuffer,
+        &'static BracketMatchState,
+        &'static FoldState,
+        &'static FontConfig,
+        Option<&'static DisplayLayout>,
+        &'static ThemeConfig,
+        &'static BracketSettings,
+        &'static mut TextViewOverlays,
+    ),
+    With<CodeEditor>,
+>;
+
 pub struct BracketPlugin;
 
 impl Plugin for BracketPlugin {
@@ -128,12 +159,7 @@ pub(crate) fn find_opening_bracket(
     None
 }
 
-pub(crate) fn update_bracket_match(
-    mut editor_query: Query<
-        (&CursorState, &TextBuffer, &mut BracketMatchState, &BracketSettings),
-        (With<CodeEditor>, Or<(Changed<CursorState>, Changed<TextBuffer>)>),
-    >,
-) {
+pub(crate) fn update_bracket_match(mut editor_query: BracketMatchQuery) {
     for (cursor, buffer, mut bracket_state, brackets) in editor_query.iter_mut() {
         if !brackets.enabled {
             bracket_state.current_match = None;
@@ -141,25 +167,12 @@ pub(crate) fn update_bracket_match(
         }
 
         let cursor_pos = cursor.cursor_pos.min(buffer.rope.len_chars());
-        bracket_state.current_match = find_matching_bracket(&buffer.rope, cursor_pos, &brackets.pairs);
+        bracket_state.current_match =
+            find_matching_bracket(&buffer.rope, cursor_pos, &brackets.pairs);
     }
 }
 
-pub(crate) fn update_bracket_highlight(
-    mut editor_query: Query<
-        (
-            &TextBuffer,
-            &BracketMatchState,
-            &FoldState,
-            &FontConfig,
-            Option<&DisplayLayout>,
-            &ThemeConfig,
-            &BracketSettings,
-            &mut TextViewOverlays,
-        ),
-        With<CodeEditor>,
-    >,
-) {
+pub(crate) fn update_bracket_highlight(mut editor_query: BracketHighlightQuery) {
     const BORDER: f32 = 2.0;
     const Z: i8 = 2;
 
@@ -207,7 +220,10 @@ pub(crate) fn update_bracket_highlight(
             let (start_row, start_byte_in_row) = layout
                 .and_then(|l| l.buffer_to_display(line_idx as u32, start_byte))
                 .unwrap_or_else(|| {
-                    (fold_state.actual_to_display_line(line_idx) as u32, start_byte)
+                    (
+                        fold_state.actual_to_display_line(line_idx) as u32,
+                        start_byte,
+                    )
                 });
             let (end_row, end_byte_in_row) = layout
                 .and_then(|l| l.buffer_to_display(line_idx as u32, end_byte))

@@ -8,7 +8,6 @@
 
 use bevy::prelude::*;
 
-
 /// When `true`, viewport auto-resizes to window; when `false`, the host
 /// writes directly to each editor's [`crate::text_view::TextViewViewport`]
 /// component.

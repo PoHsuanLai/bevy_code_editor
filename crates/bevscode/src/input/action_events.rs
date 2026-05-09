@@ -23,10 +23,9 @@ pub use bevy_instanced_text_edit::{
     MoveCursorLeftRequested, MoveCursorLineEndRequested, MoveCursorLineStartRequested,
     MoveCursorPageDownRequested, MoveCursorPageUpRequested, MoveCursorRightRequested,
     MoveCursorUpRequested, MoveCursorWordLeftRequested, MoveCursorWordRightRequested,
-    PasteRequested, RedoRequested, SelectAllRequested, SelectDownRequested,
-    SelectLeftRequested, SelectLineEndRequested, SelectLineStartRequested,
-    SelectRightRequested, SelectUpRequested, SelectWordLeftRequested,
-    SelectWordRightRequested, UndoRequested,
+    PasteRequested, RedoRequested, SelectAllRequested, SelectDownRequested, SelectLeftRequested,
+    SelectLineEndRequested, SelectLineStartRequested, SelectRightRequested, SelectUpRequested,
+    SelectWordLeftRequested, SelectWordRightRequested, UndoRequested,
 };
 
 macro_rules! action_event {

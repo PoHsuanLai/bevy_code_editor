@@ -3,12 +3,12 @@
 use std::io::Write;
 use std::sync::Arc;
 
+pub use wezterm_surface::CursorVisibility;
 pub use wezterm_term::color::{ColorAttribute, ColorPalette};
 pub use wezterm_term::{
     Alert, AlertHandler, CellAttributes, Intensity, SemanticType, SemanticZone, Terminal,
     TerminalConfiguration, TerminalSize, Underline,
 };
-pub use wezterm_surface::CursorVisibility;
 
 pub use termwiz::input::{KeyCode, KeyboardEncoding, Modifiers as KeyModifiers};
 

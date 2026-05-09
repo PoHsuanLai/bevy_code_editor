@@ -14,10 +14,7 @@ use bevy::prelude::*;
 pub fn handle_request_completion(
     mut events: MessageReader<RequestCompletionRequested>,
     input_focus: Res<InputFocus>,
-    editor_q: Query<
-        (&CursorState, &crate::text_view::TextBuffer),
-        With<CodeEditor>,
-    >,
+    editor_q: Query<(&CursorState, &crate::text_view::TextBuffer), With<CodeEditor>>,
     mut lsp_q: Query<
         (
             &bevy_lsp::LspClient,

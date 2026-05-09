@@ -47,7 +47,7 @@ use crate::backend;
     TerminalScrollback,
     TerminalScrollFollow,
     crate::cursor::TerminalCursorCell,
-    Pickable,
+    Pickable
 )]
 pub struct BevyTerminal;
 

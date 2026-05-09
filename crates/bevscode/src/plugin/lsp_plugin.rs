@@ -183,7 +183,8 @@ impl Plugin for LspPlugin {
         // when active. Schedule explicitly via system ordering.
         app.add_systems(
             Update,
-            advance_tabstop_session.before(bevy_instanced_text_edit::handlers::edit::handle_insert_tab),
+            advance_tabstop_session
+                .before(bevy_instanced_text_edit::handlers::edit::handle_insert_tab),
         );
     }
 }
@@ -206,17 +207,18 @@ fn sync_completion_settings(
 /// snapshot the rope before mutating, so `listen_text_edit_events` can
 /// build incremental `did_change` payloads with positions in the
 /// negotiated wire encoding.
-fn attach_snapshot_pre_edit_marker(
-    mut commands: Commands,
-    q: Query<
-        Entity,
-        (
-            With<CodeEditor>,
-            With<bevy_lsp::LspDocument>,
-            Without<bevy_instanced_text_edit::SnapshotPreEdit>,
-        ),
-    >,
-) {
+type AttachSnapshotQuery<'w, 's> = Query<
+    'w,
+    's,
+    Entity,
+    (
+        With<CodeEditor>,
+        With<bevy_lsp::LspDocument>,
+        Without<bevy_instanced_text_edit::SnapshotPreEdit>,
+    ),
+>;
+
+fn attach_snapshot_pre_edit_marker(mut commands: Commands, q: AttachSnapshotQuery) {
     for entity in q.iter() {
         commands
             .entity(entity)

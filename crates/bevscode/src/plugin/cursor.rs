@@ -13,6 +13,44 @@ use crate::types::*;
 use bevy::prelude::*;
 use bevy_instanced_text::FontConfig;
 
+type PushCursorOverlaysQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static SelectionState,
+        &'static CursorState,
+        &'static bevy_instanced_text_edit::BlinkPhase,
+        &'static TextBuffer,
+        &'static TextViewViewport,
+        &'static mut TextViewOverlays,
+        &'static FoldState,
+        &'static FontConfig,
+        Option<&'static DisplayLayout>,
+        &'static ThemeConfig,
+        &'static CursorSettings,
+    ),
+    With<CodeEditor>,
+>;
+
+type CursorLineHighlightQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static SelectionState,
+        &'static CursorState,
+        &'static TextBuffer,
+        &'static TextViewViewport,
+        &'static mut TextViewOverlays,
+        &'static FoldState,
+        &'static FontConfig,
+        Option<&'static DisplayLayout>,
+        &'static ThemeConfig,
+        &'static CursorLineSettings,
+    ),
+    With<CodeEditor>,
+>;
+
 pub struct CursorPlugin;
 
 impl Plugin for CursorPlugin {
@@ -78,7 +116,10 @@ impl Plugin for CursorPlugin {
 /// Uses last_cursor_pos_for_blink (separate from last_cursor_pos) to avoid
 /// race conditions with auto_scroll_to_cursor.
 pub(crate) fn track_cursor_movement(
-    mut editor_query: Query<(&mut CursorState, &mut bevy_instanced_text_edit::BlinkPhase), With<CodeEditor>>,
+    mut editor_query: Query<
+        (&mut CursorState, &mut bevy_instanced_text_edit::BlinkPhase),
+        With<CodeEditor>,
+    >,
     time: Res<Time>,
 ) {
     for (mut cursor, mut blink) in editor_query.iter_mut() {
@@ -100,23 +141,7 @@ pub(crate) fn track_cursor_movement(
 /// (identified by `z`: caret = +1, line-highlight = 0, selection = -1)
 /// before pushing fresh ones.
 pub(crate) fn push_cursor_overlays(
-    mut editor_query: Query<
-        (
-            Entity,
-            &SelectionState,
-            &CursorState,
-            &bevy_instanced_text_edit::BlinkPhase,
-            &TextBuffer,
-            &TextViewViewport,
-            &mut TextViewOverlays,
-            &FoldState,
-            &FontConfig,
-            Option<&DisplayLayout>,
-            &ThemeConfig,
-            &CursorSettings,
-        ),
-        With<CodeEditor>,
-    >,
+    mut editor_query: PushCursorOverlaysQuery,
     input_focus: Res<bevy::input_focus::InputFocus>,
     time: Res<Time>,
 ) {
@@ -188,23 +213,7 @@ pub(crate) fn push_cursor_overlays(
         overlays.version = overlays.version.wrapping_add(1);
     }
 }
-pub(crate) fn update_cursor_line_highlight(
-    mut editor_query: Query<
-        (
-            &SelectionState,
-            &CursorState,
-            &TextBuffer,
-            &TextViewViewport,
-            &mut TextViewOverlays,
-            &FoldState,
-            &FontConfig,
-            Option<&DisplayLayout>,
-            &ThemeConfig,
-            &CursorLineSettings,
-        ),
-        With<CodeEditor>,
-    >,
-) {
+pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlightQuery) {
     for (sel, cursor, buffer, vp, mut overlays, fold_state, font, layout, theme, cursor_line) in
         editor_query.iter_mut()
     {

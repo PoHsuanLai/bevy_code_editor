@@ -2,8 +2,8 @@
 
 use bevy::prelude::*;
 
-use crate::types::{CursorState, SelectionState};
 use crate::text_view::TextBuffer;
+use crate::types::{CursorState, SelectionState};
 
 /// Per-editor "go to line" dialog state.
 #[derive(Clone, Debug, Default, Component, Reflect)]
@@ -56,7 +56,11 @@ pub fn goto_line_intercept(
     action: crate::input::keybindings::EditorAction,
     state: &mut GotoLineState,
 ) -> bool {
-    if matches!(action, crate::input::keybindings::EditorAction::ClearSelection) && state.active {
+    if matches!(
+        action,
+        crate::input::keybindings::EditorAction::ClearSelection
+    ) && state.active
+    {
         state.clear();
         return true;
     }
@@ -72,11 +76,21 @@ pub struct FoldState;
 
 #[cfg(not(feature = "tree-sitter"))]
 impl FoldState {
-    pub fn is_line_hidden(&self, _line: usize) -> bool { false }
-    pub fn is_foldable_line(&self, _line: usize) -> bool { false }
-    pub fn toggle_fold_at_line(&mut self, _line: usize) -> bool { false }
-    pub fn actual_to_display_line(&self, line: usize) -> usize { line }
-    pub fn display_to_actual_line(&self, line: usize) -> usize { line }
+    pub fn is_line_hidden(&self, _line: usize) -> bool {
+        false
+    }
+    pub fn is_foldable_line(&self, _line: usize) -> bool {
+        false
+    }
+    pub fn toggle_fold_at_line(&mut self, _line: usize) -> bool {
+        false
+    }
+    pub fn actual_to_display_line(&self, line: usize) -> usize {
+        line
+    }
+    pub fn display_to_actual_line(&self, line: usize) -> usize {
+        line
+    }
 }
 
 /// Represents a foldable region in the code
@@ -441,7 +455,9 @@ mod tests {
     fn check_against_ref(state: &FoldState, total_lines: usize) {
         // Map every visible display row through the new and reference impls;
         // they must agree for every input.
-        let visible = (0..total_lines).filter(|l| !state.is_line_hidden(*l)).count();
+        let visible = (0..total_lines)
+            .filter(|l| !state.is_line_hidden(*l))
+            .count();
         for d in 0..=visible {
             let new = state.display_to_actual_line(d);
             let old = ref_display_to_actual(state, d);

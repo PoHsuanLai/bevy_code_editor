@@ -75,7 +75,7 @@ pub use crate::plugin::{BevyTerminalPlugin, BevyTerminalPlugins};
 pub use crate::types::{
     BevyTerminal, BlockStatus, TerminalBlock, TerminalBlockState, TerminalColorPalette,
     TerminalConfig, TerminalGridSnapshot, TerminalInputMode, TerminalScrollFollow,
-    TerminalScrollback, TerminalShellInfo, TerminalSession,
+    TerminalScrollback, TerminalSession, TerminalShellInfo,
 };
 
 pub mod prelude {

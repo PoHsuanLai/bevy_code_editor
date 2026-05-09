@@ -11,22 +11,26 @@
 //! crate one tier up.
 
 use bevy::prelude::*;
-use bevy_instanced_text_edit::{TextEditor, InstancedTextEditPlugin};
 use bevy_instanced_text::prelude::*;
+use bevy_instanced_text_edit::{InstancedTextEditPlugin, TextEditor};
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "bevy_instanced_text_edit — simple text input".to_string(),
-                resolution: (800u32, 400u32).into(),
-                ..default()
-            }),
-            ..default()
-        }).set(bevy::asset::AssetPlugin {
-            file_path: "assets".into(),
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "bevy_instanced_text_edit — simple text input".to_string(),
+                        resolution: (800u32, 400u32).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(bevy::asset::AssetPlugin {
+                    file_path: "assets".into(),
+                    ..default()
+                }),
+        )
         .add_plugins(InstancedTextPlugins)
         .add_plugins(InstancedTextEditPlugin::default())
         .add_systems(Startup, setup)

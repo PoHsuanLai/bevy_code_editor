@@ -34,21 +34,11 @@ pub struct SnapshotPreEdit;
 /// `last_cursor_pos` drives auto-scroll detection; `last_cursor_pos_for_blink`
 /// is tracked separately to avoid racing with the auto-scroll system, and is
 /// paired with the [`crate::BlinkPhase`] timestamp on the same entity.
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct CursorState {
     pub cursor_pos: usize,
     pub last_cursor_pos: usize,
     pub last_cursor_pos_for_blink: usize,
-}
-
-impl Default for CursorState {
-    fn default() -> Self {
-        Self {
-            cursor_pos: 0,
-            last_cursor_pos: 0,
-            last_cursor_pos_for_blink: 0,
-        }
-    }
 }
 
 #[derive(Component, Default)]
@@ -154,6 +144,6 @@ impl Default for IndentConfig {
     ScrollConfig,
     crate::cursor_settings::CursorSettings,
     crate::cursor_settings::BlinkPhase,
-    crate::interaction::InteractionSettings,
+    crate::interaction::InteractionSettings
 )]
 pub struct TextEditor;

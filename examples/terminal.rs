@@ -4,8 +4,8 @@
 //!
 //! Run with: `cargo run -p bevsterm --example basic_terminal`
 
-use bevy::prelude::*;
 use bevsterm::prelude::*;
+use bevy::prelude::*;
 use bevy_instanced_text::InstancedTextPlugins;
 
 #[cfg(feature = "profile")]
@@ -13,17 +13,21 @@ use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 
 fn main() {
     let mut app = App::new();
-    app.add_plugins(DefaultPlugins.set(WindowPlugin {
-        primary_window: Some(Window {
-            title: "bevsterm — basic".into(),
-            resolution: [960u32, 600u32].into(),
-            ..default()
-        }),
-        ..default()
-    }).set(bevy::asset::AssetPlugin {
-        file_path: "assets".into(),
-        ..default()
-    }))
+    app.add_plugins(
+        DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "bevsterm — basic".into(),
+                    resolution: [960u32, 600u32].into(),
+                    ..default()
+                }),
+                ..default()
+            })
+            .set(bevy::asset::AssetPlugin {
+                file_path: "assets".into(),
+                ..default()
+            }),
+    )
     .add_plugins(InstancedTextPlugins)
     .add_plugins(BevyTerminalPlugin)
     .add_systems(Startup, (setup_camera, spawn_terminal))
@@ -41,11 +45,7 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
 
-fn spawn_terminal(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    windows: Query<&Window>,
-) {
+fn spawn_terminal(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<&Window>) {
     let Ok(window) = windows.single() else {
         return;
     };

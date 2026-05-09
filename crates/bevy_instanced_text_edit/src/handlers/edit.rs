@@ -251,7 +251,8 @@ pub fn delete_word_backward(
     cursor: &mut CursorState,
     buffer: &mut TextBuffer,
 ) {
-    let word_start = crate::cursor_movement::find_word_boundary_left(&buffer.rope, cursor.cursor_pos);
+    let word_start =
+        crate::cursor_movement::find_word_boundary_left(&buffer.rope, cursor.cursor_pos);
     if word_start >= cursor.cursor_pos {
         return;
     }
@@ -274,7 +275,8 @@ pub fn delete_word_forward(
     cursor: &mut CursorState,
     buffer: &mut TextBuffer,
 ) {
-    let word_end = crate::cursor_movement::find_word_boundary_right(&buffer.rope, cursor.cursor_pos);
+    let word_end =
+        crate::cursor_movement::find_word_boundary_right(&buffer.rope, cursor.cursor_pos);
     if word_end <= cursor.cursor_pos {
         return;
     }
@@ -317,16 +319,18 @@ pub fn handle_replace_range(
 }
 
 /// Apply `SetTextRequested` events. Replaces the whole buffer.
-pub fn handle_set_text(
-    mut events: MessageReader<SetTextRequested>,
-    mut q: EditorSetTextQuery,
-) {
+pub fn handle_set_text(mut events: MessageReader<SetTextRequested>, mut q: EditorSetTextQuery) {
     for event in events.read() {
-        let Ok((mut sel, mut hist, mut cursor, mut buffer, mut metrics)) =
-            q.get_mut(event.entity)
+        let Ok((mut sel, mut hist, mut cursor, mut buffer, mut metrics)) = q.get_mut(event.entity)
         else {
             continue;
         };
-        hist.set_text(&mut sel, &mut cursor, &mut buffer, &mut metrics, &event.text);
+        hist.set_text(
+            &mut sel,
+            &mut cursor,
+            &mut buffer,
+            &mut metrics,
+            &event.text,
+        );
     }
 }
