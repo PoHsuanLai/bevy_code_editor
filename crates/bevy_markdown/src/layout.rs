@@ -98,10 +98,14 @@ struct LayoutBuilder<'a> {
 /// span — it can use that to round only the top corners of the first
 /// row and only the bottom corners of the last row, leaving middle
 /// rows sharp so a multi-row panel reads as one rounded rectangle.
+/// `aux` carries overlay-specific scalar data (e.g. outer indent for
+/// blockquote bars); unused builders receive `0.0`.
 struct PendingRect {
     block_idx: usize,
     coverage: RectCoverage,
-    builder: fn(u32, RowPosition, &OverlayContext) -> RectOverlay,
+    builder: fn(u32, RowPosition, &OverlayContext, f32) -> RectOverlay,
+    /// Overlay-specific auxiliary value passed verbatim to `builder`.
+    aux: f32,
 }
 
 /// Context passed to overlay builders at resolution time. Carries the
@@ -274,6 +278,7 @@ impl<'a> LayoutBuilder<'a> {
             block_idx: start,
             coverage: RectCoverage::Span { len },
             builder: blockquote_bar_overlay,
+            aux: 0.0,
         });
     }
 
@@ -327,6 +332,7 @@ impl<'a> LayoutBuilder<'a> {
                 len: lines.len(),
             },
             builder: code_block_overlay,
+            aux: 0.0,
         });
     }
 
@@ -344,6 +350,7 @@ impl<'a> LayoutBuilder<'a> {
             block_idx,
             coverage: RectCoverage::SingleBlock,
             builder: rule_overlay,
+            aux: 0.0,
         });
     }
 
@@ -640,12 +647,13 @@ fn resolve_pending_rects(
             RectCoverage::SingleBlock => p.block_idx,
             RectCoverage::Span { len } => p.block_idx + len.saturating_sub(1),
         };
+        let aux = p.aux;
         for_each_row_in_buffer_span(
             layout,
             p.block_idx as u32,
             last_block as u32,
             |display_row, pos| {
-                out.push((p.builder)(display_row, pos, ctx));
+                out.push((p.builder)(display_row, pos, ctx, aux));
             },
         );
     }
@@ -660,7 +668,7 @@ fn resolve_pending_rects(
 /// with no line-spacing gap between them. `corners_for_row` rounds only
 /// the outer corners — first row's top, last row's bottom — so the
 /// stack of per-row quads reads as a single rounded panel.
-fn code_block_overlay(display_row: u32, pos: RowPosition, ctx: &OverlayContext) -> RectOverlay {
+fn code_block_overlay(display_row: u32, pos: RowPosition, ctx: &OverlayContext, _aux: f32) -> RectOverlay {
     RectOverlay {
         display_row,
         x_range: 0.0..ctx.content_right,
@@ -675,10 +683,14 @@ fn code_block_overlay(display_row: u32, pos: RowPosition, ctx: &OverlayContext) 
 /// fixed pixel width; `FullLeaded` so the bar reads as one continuous
 /// line across multi-paragraph quotes rather than dashing per row.
 /// Sharp corners — the bar reads as a clean rule, not a pill.
-fn blockquote_bar_overlay(display_row: u32, _pos: RowPosition, ctx: &OverlayContext) -> RectOverlay {
+/// `aux` is unused (0.0). The bar sits one `indent_step` to the left of
+/// the text — the renderer adds `line.x_offset` (inner indent), so
+/// `x_range.start = -indent_step` lands at the outer indent level.
+fn blockquote_bar_overlay(display_row: u32, _pos: RowPosition, ctx: &OverlayContext, _aux: f32) -> RectOverlay {
+    let x_start = -ctx.theme.indent_step;
     RectOverlay {
         display_row,
-        x_range: 0.0..ctx.theme.blockquote_bar_width,
+        x_range: x_start..x_start + ctx.theme.blockquote_bar_width,
         vertical: RowVertical::FullLeaded,
         color: ctx.theme.decor.blockquote_bar,
         z: BLOCKQUOTE_BAR_Z,
@@ -688,7 +700,7 @@ fn blockquote_bar_overlay(display_row: u32, _pos: RowPosition, ctx: &OverlayCont
 
 /// Horizontal-rule overlay — a thin band across the row's mid-height,
 /// capped at the content width. Single-row by construction; sharp.
-fn rule_overlay(display_row: u32, _pos: RowPosition, ctx: &OverlayContext) -> RectOverlay {
+fn rule_overlay(display_row: u32, _pos: RowPosition, ctx: &OverlayContext, _aux: f32) -> RectOverlay {
     RectOverlay {
         display_row,
         x_range: 0.0..ctx.content_right,
