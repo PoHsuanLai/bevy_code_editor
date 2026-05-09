@@ -1,10 +1,8 @@
 //! Code folding
 //!
-//! Provides the **data + algorithms** for code folding: `FoldState`,
-//! `FoldRegion`, `FoldKind`, and the detection systems that populate them
-//! (tree-sitter walk on a worker thread, brace-matching fallback when
-//! tree-sitter isn't compiled in). The display layout consumes
-//! `FoldState` to hide folded rows.
+//! Fold-region detection runs as an async task on `AsyncComputeTaskPool`
+//! when the `tree-sitter` feature is enabled. Without tree-sitter, `FoldState`
+//! stays on the entity but `regions` remains empty — no folding is detected.
 //!
 //! No gutter chevron renderer is included. Downstream consumers wanting
 //! `▶`/`▼` indicators read `FoldState` + `ScrollState` + `TextViewViewport`
@@ -126,7 +124,6 @@ pub(crate) fn apply_fold_detect_tasks(
                     fold_state.regions.push(region);
                 }
                 fold_state.content_version = task.tree_version;
-                fold_state.enabled = true;
             }
         }
 
@@ -274,98 +271,16 @@ pub(crate) fn node_to_fold_region(
     })
 }
 
-/// Fallback for when tree-sitter is not enabled
-#[cfg(not(feature = "tree-sitter"))]
-pub(crate) fn detect_foldable_regions(
-    mut editor_query: Query<(&TextBuffer, &mut FoldState), With<CodeEditor>>,
-) {
-    for (buffer, mut fold_state) in editor_query.iter_mut() {
-        // Only update when content changes
-        if fold_state.content_version == buffer.content_version as usize {
-            continue;
-        }
-
-        fold_state.content_version = buffer.content_version as usize;
-
-        // Simple brace-matching based folding as fallback
-        let mut regions: Vec<FoldRegion> = Vec::new();
-        let mut brace_stack: Vec<(usize, usize)> = Vec::new(); // (line, indent_level)
-
-        for line_idx in 0..buffer.rope.len_lines() {
-            let line = buffer.rope.line(line_idx);
-            let line_str: String = line.chars().collect();
-
-            // Calculate indent level
-            let mut indent_level = 0;
-            for c in line_str.chars() {
-                match c {
-                    ' ' => indent_level += 1,
-                    '\t' => indent_level += 4,
-                    _ => break,
-                }
-            }
-            indent_level /= 4;
-
-            // Look for opening braces at end of line
-            let trimmed = line_str.trim_end();
-            if trimmed.ends_with('{') || trimmed.ends_with('[') || trimmed.ends_with('(') {
-                brace_stack.push((line_idx, indent_level));
-            }
-
-            // Look for closing braces at start of line (after whitespace)
-            let trimmed_start = line_str.trim_start();
-            if trimmed_start.starts_with('}')
-                || trimmed_start.starts_with(']')
-                || trimmed_start.starts_with(')')
-            {
-                if let Some((start_line, start_indent)) = brace_stack.pop() {
-                    if line_idx > start_line {
-                        regions.push(FoldRegion {
-                            start_line,
-                            end_line: line_idx,
-                            is_folded: false,
-                            kind: FoldKind::Block,
-                            indent_level: start_indent,
-                        });
-                    }
-                }
-            }
-        }
-
-        // Preserve fold state for existing regions
-        let old_regions = std::mem::take(&mut fold_state.regions);
-        for mut region in regions {
-            if let Some(old) = old_regions
-                .iter()
-                .find(|r| r.start_line == region.start_line && r.end_line == region.end_line)
-            {
-                region.is_folded = old.is_folded;
-            }
-            fold_state.regions.push(region);
-        }
-
-        fold_state.enabled = true;
-    }
-}
-
-// Duplicate imports removed - already imported at top of file
-
 pub struct FoldingPlugin;
 
 impl Plugin for FoldingPlugin {
     fn build(&self, _app: &mut App) {
+        _app.register_type::<crate::types::fold::GotoLineState>()
+            .register_type::<crate::types::fold::FoldState>();
+        #[cfg(feature = "tree-sitter")]
         _app.register_type::<crate::types::fold::FoldKind>()
-            .register_type::<crate::types::fold::FoldRegion>()
-            .register_type::<crate::types::fold::FoldState>()
-            .register_type::<crate::types::fold::GotoLineState>();
+            .register_type::<crate::types::fold::FoldRegion>();
 
-        // With tree-sitter: walk the parse tree off the main thread and
-        // apply the result on completion. The walk is genuinely O(tree
-        // nodes) — for sqlite3.c (~7 MB) it's ~90 ms, which would otherwise
-        // hitch the frame after every parse-completion (e.g. delete-all).
-        //
-        // Without tree-sitter: brace-matching fallback is fast enough to
-        // run synchronously each tick.
         #[cfg(feature = "tree-sitter")]
         _app.add_systems(
             Update,
@@ -375,11 +290,6 @@ impl Plugin for FoldingPlugin {
                     .after(spawn_fold_detect_tasks)
                     .in_set(super::ApplyStateSet),
             ),
-        );
-        #[cfg(not(feature = "tree-sitter"))]
-        _app.add_systems(
-            Update,
-            detect_foldable_regions.in_set(super::ApplyStateSet),
         );
     }
 }

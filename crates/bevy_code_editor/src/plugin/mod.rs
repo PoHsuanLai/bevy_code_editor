@@ -140,7 +140,9 @@ impl Plugin for CodeEditorPlugin {
         // registered here.
         app.add_message::<SaveRequested>();
         app.add_message::<OpenRequested>();
+        #[cfg(feature = "tree-sitter")]
         app.add_message::<crate::types::events::EditorFoldStateChanged>();
+        #[cfg(feature = "tree-sitter")]
         app.register_type::<crate::types::events::EditorFoldStateChanged>();
         #[cfg(feature = "tree-sitter")]
         app.add_message::<crate::types::events::SetLanguageRequested>();
@@ -167,6 +169,7 @@ impl Plugin for CodeEditorPlugin {
         // `bevy_instanced_text_edit::interaction`'s observers (registered by
         // `InstancedTextInteractionPlugin`); the editor adds modifier-click
         // behaviors and the LSP hover trigger on top.
+        #[cfg(feature = "tree-sitter")]
         app.add_observer(crate::input::on_fold_gutter_press);
         app.add_observer(crate::input::on_alt_click);
         #[cfg(feature = "lsp")]
@@ -300,12 +303,6 @@ fn register_handler_systems(app: &mut App) {
             multi_cursor::handle_add_cursor_above,
             multi_cursor::handle_add_cursor_below,
             multi_cursor::handle_clear_secondary_cursors,
-            // Folding (5)
-            folding::handle_toggle_fold,
-            folding::handle_fold,
-            folding::handle_unfold,
-            folding::handle_fold_all,
-            folding::handle_unfold_all,
             // File / dialog (1)
             file::handle_goto_line,
         )
@@ -313,9 +310,21 @@ fn register_handler_systems(app: &mut App) {
             .after(ActionDispatchSet),
     );
 
-    // Emits per-region `EditorFoldStateChanged` events when `is_folded` flips.
-    // Runs after the fold-action handlers so transitions from this frame's
-    // input show up on the bus immediately.
+    #[cfg(feature = "tree-sitter")]
+    app.add_systems(
+        Update,
+        (
+            folding::handle_toggle_fold,
+            folding::handle_fold,
+            folding::handle_unfold,
+            folding::handle_fold_all,
+            folding::handle_unfold_all,
+        )
+            .in_set(InputSet)
+            .after(ActionDispatchSet),
+    );
+
+    #[cfg(feature = "tree-sitter")]
     app.add_systems(
         Update,
         folding::emit_fold_state_changed

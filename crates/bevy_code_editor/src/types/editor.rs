@@ -42,7 +42,6 @@ impl Default for ViewportConfig {
         bevy_instanced_text_edit::TextEditor,
         BracketMatchState,
         crate::types::fold::GotoLineState,
-        crate::types::fold::FoldState,
         crate::settings::ThemeConfig,
         crate::settings::SyntaxTheme,
         crate::settings::UiSettings,
@@ -59,7 +58,6 @@ impl Default for ViewportConfig {
         bevy_instanced_text_edit::TextEditor,
         BracketMatchState,
         crate::types::fold::GotoLineState,
-        crate::types::fold::FoldState,
         crate::settings::ThemeConfig,
         crate::settings::SyntaxTheme,
         crate::settings::DiagnosticTheme,
@@ -86,6 +84,7 @@ impl Default for ViewportConfig {
         crate::lsp_ui::state::TabstopSession,
     )
 )]
+#[require(crate::types::fold::FoldState)]
 pub struct CodeEditor;
 
 /// Marker for a cursor sprite entity. `cursor_index` 0 is the primary cursor;

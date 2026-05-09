@@ -36,8 +36,9 @@
 //! freely without any coupling to the plugin internals:
 //!
 //! - [`crate::types::fold::FoldState`] — which line ranges are currently
-//!   folded. Drive fold/unfold via the [`crate::types::events`] messages or
-//!   listen to [`crate::types::events::EditorFoldStateChanged`] for transitions.
+//!   folded (tree-sitter feature only). Drive fold/unfold via the
+//!   [`crate::types::events`] messages or listen to
+//!   [`crate::types::events::EditorFoldStateChanged`] for transitions.
 //! - [`crate::plugin::syntax_highlighting::EditorSyntaxState`] — the current
 //!   highlight ranges, keyed by capture name. Useful for outline panels, AI
 //!   context extraction, or custom overlays.
@@ -110,6 +111,7 @@ pub mod prelude {
 
     // Editor marker + save/open events.
     pub use crate::types::editor::{CodeEditor, OpenRequested, SaveRequested};
+    #[cfg(feature = "tree-sitter")]
     pub use crate::types::events::EditorFoldStateChanged;
     #[cfg(feature = "tree-sitter")]
     pub use crate::types::events::SetLanguageRequested;

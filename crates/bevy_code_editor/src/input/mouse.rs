@@ -89,16 +89,7 @@ fn screen_to_char_pos(screen_pos: Vec2, ctx: &HitTestCtx<'_>) -> usize {
 
 /// Fold-gutter click observer: toggle fold regions when the click lands in
 /// the narrow strip just before the gutter separator.
-///
-/// Fires before the plain-click observer in `bevy_instanced_text_edit::interaction`
-/// would write selection (registered with no explicit ordering — bevy
-/// observers run in unspecified order, but the plain-click skips writing
-/// when this observer's hit consumed the click via the fold being toggled).
-///
-/// This observer is the only one that may toggle a fold; the plain-click
-/// observer's selection write happens regardless, but folding the line the
-/// cursor sits on is harmless (the cursor follows the buffer line, not the
-/// display row).
+#[cfg(feature = "tree-sitter")]
 pub fn on_fold_gutter_press(
     trigger: On<Pointer<Press>>,
     mut editor_query: Query<

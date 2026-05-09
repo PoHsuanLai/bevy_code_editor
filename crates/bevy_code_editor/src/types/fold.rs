@@ -63,7 +63,24 @@ pub fn goto_line_intercept(
     false
 }
 
+/// Zero-cost stand-in when tree-sitter is disabled: no regions, all queries
+/// return the identity mapping, all predicates return false.
+#[cfg(not(feature = "tree-sitter"))]
+#[derive(Component, Clone, Debug, Default, Reflect)]
+#[reflect(Component, Default, Debug)]
+pub struct FoldState;
+
+#[cfg(not(feature = "tree-sitter"))]
+impl FoldState {
+    pub fn is_line_hidden(&self, _line: usize) -> bool { false }
+    pub fn is_foldable_line(&self, _line: usize) -> bool { false }
+    pub fn toggle_fold_at_line(&mut self, _line: usize) -> bool { false }
+    pub fn actual_to_display_line(&self, line: usize) -> usize { line }
+    pub fn display_to_actual_line(&self, line: usize) -> usize { line }
+}
+
 /// Represents a foldable region in the code
+#[cfg(feature = "tree-sitter")]
 #[derive(Clone, Debug, PartialEq, Eq, Reflect)]
 #[reflect(Debug, PartialEq)]
 pub struct FoldRegion {
@@ -79,6 +96,7 @@ pub struct FoldRegion {
     pub indent_level: usize,
 }
 
+#[cfg(feature = "tree-sitter")]
 impl FoldRegion {
     /// Create a new fold region
     pub fn new(start_line: usize, end_line: usize, kind: FoldKind) -> Self {
@@ -113,6 +131,7 @@ impl FoldRegion {
     }
 }
 
+#[cfg(feature = "tree-sitter")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Reflect)]
 #[reflect(Debug, PartialEq, Hash)]
 pub enum FoldKind {
@@ -127,6 +146,7 @@ pub enum FoldKind {
     Other,
 }
 
+#[cfg(feature = "tree-sitter")]
 impl FoldKind {
     /// Gutter indicator character.
     pub fn indicator(&self) -> char {
@@ -140,6 +160,7 @@ impl FoldKind {
 }
 
 /// Per-editor fold-region state.
+#[cfg(feature = "tree-sitter")]
 #[derive(Component, Clone, Debug, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct FoldState {
@@ -147,20 +168,19 @@ pub struct FoldState {
     pub regions: Vec<FoldRegion>,
     /// Initialized to `usize::MAX` to force detection on first run.
     pub content_version: usize,
-    pub enabled: bool,
 }
 
+#[cfg(feature = "tree-sitter")]
 impl Default for FoldState {
     fn default() -> Self {
         Self {
             regions: Vec::new(),
-            // Use usize::MAX as sentinel to force first detection
             content_version: usize::MAX,
-            enabled: true,
         }
     }
 }
 
+#[cfg(feature = "tree-sitter")]
 impl FoldState {
     /// Create a new empty fold state
     pub fn new() -> Self {
@@ -367,7 +387,7 @@ impl FoldState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "tree-sitter"))]
 mod tests {
     use super::*;
 

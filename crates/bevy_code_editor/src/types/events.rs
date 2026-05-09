@@ -143,6 +143,7 @@ pub struct SetLanguageRequested {
 ///
 /// `start_line` is the region's start line; `is_folded` is the new state.
 /// For bulk operations (`fold_all`/`unfold_all`) an event fires per region.
+#[cfg(feature = "tree-sitter")]
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct EditorFoldStateChanged {

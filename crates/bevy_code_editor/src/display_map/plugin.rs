@@ -22,7 +22,9 @@ use std::collections::{HashMap, HashSet};
 use super::styling::segs_to_runs;
 use crate::plugin::syntax_highlighting::EditorSyntaxState;
 use crate::settings::{IndentationSettings, SyntaxTheme, ThemeConfig, WrappingSettings};
-use crate::types::{CodeEditor, FoldState};
+use crate::types::CodeEditor;
+#[cfg(feature = "tree-sitter")]
+use crate::types::FoldState;
 
 /// System set for sync systems that update the engine's data Components
 /// from editor-domain inputs. Scheduled `.before(LayoutProduceSet)` so the
@@ -63,7 +65,12 @@ impl Plugin for DisplayMapPlugin {
         );
         app.add_systems(
             Update,
-            (produce_hidden_lines, produce_line_styles, sync_layout_wrap)
+            (
+                #[cfg(feature = "tree-sitter")]
+                produce_hidden_lines,
+                produce_line_styles,
+                sync_layout_wrap,
+            )
                 .in_set(LayoutSyncSet),
         );
     }
@@ -84,11 +91,7 @@ pub(crate) fn insert_styling_components(
 }
 
 /// Refresh the `HiddenLines` Component when `FoldState` changes.
-///
-/// Walks `FoldState.regions`, expands each folded region into its hidden
-/// line indices, and writes the resulting set into `HiddenLines`. The
-/// engine's `produce_layouts` then sees the new visibility on its next
-/// call (same frame; `LayoutSyncSet` is `.before(LayoutProduceSet)`).
+#[cfg(feature = "tree-sitter")]
 pub(crate) fn produce_hidden_lines(
     mut editors: Query<
         (&FoldState, &mut HiddenLines),
