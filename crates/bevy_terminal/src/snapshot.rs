@@ -191,9 +191,12 @@ fn anchor_scroll_to_bottom(
     if line_height <= 0.0 {
         return;
     }
-    let content_height = total_lines as f32 * line_height;
     let viewport_height = viewport.height as f32;
-    let max_scroll = (-(content_height - viewport_height + viewport.text_area_top)).min(0.0);
+    let visible_rows = ((viewport_height - viewport.text_area_top) / line_height)
+        .floor()
+        .max(0.0) as usize;
+    let hidden_rows = total_lines.saturating_sub(visible_rows);
+    let max_scroll = -(hidden_rows as f32 * line_height);
     let stick_threshold = line_height;
 
     // If the target moved away from where we last anchored, the user wheeled

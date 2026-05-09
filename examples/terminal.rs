@@ -67,7 +67,7 @@ fn spawn_terminal(
             width: logical_w,
             height: logical_h,
             text_area_left: 12.0,
-            text_area_top: 12.0,
+            text_area_top: 0.0,
             ..default()
         },
     ));

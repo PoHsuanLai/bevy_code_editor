@@ -147,7 +147,7 @@ fn layout_panes(
             width: (window.width() - log_half) as u32,
             height: log_h as u32,
             text_area_left: 12.0,
-            text_area_top: 12.0,
+            text_area_top: 0.0,
             hit_test_position: Vec2::new(log_half + DIVIDER_PX as f32, 0.0),
             ..default()
         },
