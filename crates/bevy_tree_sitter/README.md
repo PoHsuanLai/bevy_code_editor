@@ -70,7 +70,7 @@ fn main() {
 
 `Arc<str>` so emitting one highlight per token doesn't allocate — the same `"keyword"` string is shared across thousands of ranges in a typical file.
 
-The editor's `bevy_code_editor::syntax_highlighting` module is a worked example: it holds a `Theme` HashMap from capture name to `Color` and converts `HighlightRange` runs into engine `StyleRun`s on the fly.
+The editor's `bevscode::syntax_highlighting` module is a worked example: it holds a `Theme` HashMap from capture name to `Color` and converts `HighlightRange` runs into engine `StyleRun`s on the fly.
 
 ## Querying highlights from a tree
 
@@ -120,7 +120,7 @@ For custom languages, `Language::from_grammar(name, ts_language, highlights_quer
 
 ## What's not here
 
-- **Themes.** The crate emits capture names; theming is the consumer's job. `bevy_code_editor` ships a default theme; AI / outline consumers can ignore colors entirely.
+- **Themes.** The crate emits capture names; theming is the consumer's job. `bevscode` ships a default theme; AI / outline consumers can ignore colors entirely.
 - **Buffer storage.** Consumers expose their buffer via `ParseSource`. The crate doesn't own a `Rope` or `String` itself.
 - **Bevy reflection on `Tree` / `Parser` / `Task`.** Tree-sitter's C-binding types don't implement `Reflect`. The capture-name `Arc<str>` strings are reachable via the consumer's own reflected types.
 

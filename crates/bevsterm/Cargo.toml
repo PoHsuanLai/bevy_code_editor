@@ -6,7 +6,7 @@ authors = ["PoHsuanLai"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 description = "Embeddable terminal widget for Bevy. PTY + VT parser via wezterm-term; rendering via bevy_instanced_text; selection and clipboard via bevy_instanced_text_edit."
-repository = "https://github.com/PoHsuanLai/bevy_code_editor"
+repository = "https://github.com/PoHsuanLai/bevscode"
 keywords = ["bevy", "terminal", "pty", "vt100", "wezterm"]
 categories = ["game-development", "command-line-interface"]
 

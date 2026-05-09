@@ -104,7 +104,7 @@ if capabilities.supports_hover() {
 
 ## What's not here
 
-This crate is purely transport + per-document state. UI state (popup visibility, completion filter strings, fuzzy matching, debounce timers) lives in the consumer. The editor's [`bevy_code_editor`](../bevy_code_editor) `lsp_ui` module is a worked example of building popup state on top.
+This crate is purely transport + per-document state. UI state (popup visibility, completion filter strings, fuzzy matching, debounce timers) lives in the consumer. The editor's [`bevscode`](../bevscode) `lsp_ui` module is a worked example of building popup state on top.
 
 ## License
 

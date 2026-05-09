@@ -6,7 +6,7 @@ authors = ["PoHsuanLai"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 description = "High-performance GPU-accelerated code editor plugin for Bevy"
-repository = "https://github.com/PoHsuanLai/bevy_code_editor"
+repository = "https://github.com/PoHsuanLai/bevscode"
 keywords = ["bevy", "editor", "code-editor", "syntax-highlighting"]
 categories = ["game-development", "text-editors"]
 

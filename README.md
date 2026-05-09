@@ -1,4 +1,4 @@
-# bevy_code_editor
+# bevscode
 
 Embeddable text editing and rendering plugins for Bevy. Drop them into any app and they coexist with your existing ECS world.
 

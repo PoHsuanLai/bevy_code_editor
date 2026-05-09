@@ -6,7 +6,7 @@ authors = ["PoHsuanLai"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 description = "Editable text widget for Bevy: pointer interaction, selection, cursor, edit history, undo/redo, clipboard — built on bevy_instanced_text."
-repository = "https://github.com/PoHsuanLai/bevy_code_editor"
+repository = "https://github.com/PoHsuanLai/bevscode"
 keywords = ["bevy", "text", "editor", "input", "selection"]
 categories = ["game-development"]
 

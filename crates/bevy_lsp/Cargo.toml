@@ -6,7 +6,7 @@ authors = ["PoHsuanLai"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 description = "Per-entity Language Server Protocol transport for Bevy: async-lsp over a shared tokio runtime, request/response routing, server-capability querying, per-document URI/version tracking. Just the protocol — UI state (popups, completion filtering, debouncing) lives in the consumer."
-repository = "https://github.com/PoHsuanLai/bevy_code_editor"
+repository = "https://github.com/PoHsuanLai/bevscode"
 keywords = ["bevy", "lsp", "language-server"]
 categories = ["game-development", "development-tools"]
 
