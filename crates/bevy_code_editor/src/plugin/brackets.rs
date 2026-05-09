@@ -2,10 +2,10 @@
 #![allow(dead_code)]
 
 use crate::settings::*;
-use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
+use crate::text_view::{DisplayLayout, TextBuffer, TextViewOverlays};
 use crate::types::*;
 use bevy::prelude::*;
-use bevy_instanced_text::FontConfig;
+use bevy_instanced_text::{CornerRadii, FontConfig, RectOverlay, RowVertical};
 
 pub struct BracketPlugin;
 
@@ -146,216 +146,142 @@ pub(crate) fn update_bracket_match(
 }
 
 pub(crate) fn update_bracket_highlight(
-    mut commands: Commands,
-    editor_query: Query<
+    mut editor_query: Query<
         (
             &TextBuffer,
-            &ScrollState,
-            &TextViewViewport,
             &BracketMatchState,
             &FoldState,
             &FontConfig,
-            Option<&crate::text_view::DisplayLayout>,
+            Option<&DisplayLayout>,
             &ThemeConfig,
             &BracketSettings,
+            &mut TextViewOverlays,
         ),
         With<CodeEditor>,
     >,
-    mut highlight_query: Query<(
-        Entity,
-        &BracketMatchHighlight,
-        &mut Transform,
-        &mut Sprite,
-        &mut Visibility,
-    )>,
 ) {
-    let mut highlights: Vec<_> = highlight_query.iter_mut().collect();
-    let mut entity_index_global: usize = 0;
-    let mut any_match = false;
+    const BORDER: f32 = 2.0;
+    const Z: i8 = 2;
 
-    for (buffer, scroll, viewport, bracket_state, fold_state, font, layout, theme, brackets) in editor_query.iter() {
-    match &bracket_state.current_match {
-        Some(bracket_match) => {
-            any_match = true;
-            let char_width = font.char_width;
-            // Snapshot row geometry once. `RowMetrics` derives world-space
-            // positions using the same anchor math the engine paints with;
-            // every chrome system in the editor reads through it so the
-            // moment `render.rs` changes its convention, every consumer
-            // moves in lockstep.
-            let baseline = layout
-                .map(|l| l.baseline_offset)
-                .unwrap_or(font.font_size * bevy_instanced_text::DEFAULT_BASELINE_OFFSET_RATIO);
-            let metrics = bevy_instanced_text::row_metrics_with_baseline(
-                viewport, scroll, font, baseline,
-            );
-            let use_box_style = matches!(brackets.style, BracketHighlightStyle::Background)
-                || matches!(brackets.style, BracketHighlightStyle::Both);
-            let border_thickness = 2.0; // Default thickness
+    for (buffer, bracket_state, fold_state, font, layout, theme, brackets, mut overlays) in
+        editor_query.iter_mut()
+    {
+        // Drain previous-frame bracket rects (z = 0, reserved for bracket highlights).
+        let had = overlays.rects.iter().any(|r| r.z == Z);
+        overlays.rects.retain(|r| r.z != Z);
 
-            let positions = [
-                bracket_match.cursor_bracket_pos,
-                bracket_match.matching_bracket_pos,
-            ];
+        let Some(bracket_match) = &bracket_state.current_match else {
+            if had {
+                overlays.version = overlays.version.wrapping_add(1);
+            }
+            continue;
+        };
 
-            for (bracket_idx, &bracket_pos) in positions.iter().enumerate() {
-                // BracketMatchState may carry stale positions from a previous
-                // frame's rope (e.g., after the user deletes the whole buffer
-                // before update_bracket_match has run). Guard against
-                // out-of-bounds reads against the live rope.
-                if bracket_pos >= buffer.rope.len_chars() {
-                    continue;
-                }
-                let line_idx = buffer.rope.char_to_line(bracket_pos);
+        let use_box_style = matches!(
+            brackets.style,
+            BracketHighlightStyle::Background | BracketHighlightStyle::Both
+        );
+        let char_width = font.char_width;
 
-                if fold_state.is_line_hidden(line_idx) {
-                    continue;
-                }
+        let mut pushed = 0usize;
+        for &bracket_pos in &[
+            bracket_match.cursor_bracket_pos,
+            bracket_match.matching_bracket_pos,
+        ] {
+            if bracket_pos >= buffer.rope.len_chars() {
+                continue;
+            }
+            let line_idx = buffer.rope.char_to_line(bracket_pos);
+            if fold_state.is_line_hidden(line_idx) {
+                continue;
+            }
 
-                let line_start = buffer.rope.line_to_char(line_idx);
-                let col_idx = bracket_pos - line_start;
+            let line_start = buffer.rope.line_to_char(line_idx);
+            let col_idx = bracket_pos - line_start;
+            let line = buffer.rope.line(line_idx);
+            let col_clamped = col_idx.min(line.len_chars());
+            let next_col = (col_idx + 1).min(line.len_chars());
+            let start_byte = line.slice(..col_clamped).len_bytes();
+            let end_byte = line.slice(..next_col).len_bytes();
 
-                // Pixel x of the bracket glyph and its visual width. With wrap
-                // on, the bracket might be on a soft-wrap continuation row, so
-                // resolve (display_row, byte_in_row) via the layout. Falls
-                // back to fold-state + char_width math when off-viewport.
-                let line = buffer.rope.line(line_idx);
-                let col_clamped = col_idx.min(line.len_chars());
-                let next_col = (col_idx + 1).min(line.len_chars());
-                let start_byte = line.slice(..col_clamped).len_bytes();
-                let end_byte = line.slice(..next_col).len_bytes();
-                let (start_row, start_byte_in_row) = layout
-                    .and_then(|l| l.buffer_to_display(line_idx as u32, start_byte))
-                    .unwrap_or_else(|| (fold_state.actual_to_display_line(line_idx) as u32, start_byte));
-                let (end_row, end_byte_in_row) = layout
-                    .and_then(|l| l.buffer_to_display(line_idx as u32, end_byte))
-                    .unwrap_or((start_row, end_byte));
-                let display_row = start_row as usize;
-                let glyph_x = layout
-                    .and_then(|l| l.x_at_byte(start_row, start_byte_in_row))
-                    .unwrap_or(col_idx as f32 * char_width);
-                // If the bracket happens to be the last glyph before a soft
-                // break, end_row may differ — use start-row width as the
-                // fallback.
-                let glyph_width = if start_row == end_row {
-                    layout
-                        .and_then(|l| {
-                            let s = l.x_at_byte(start_row, start_byte_in_row)?;
-                            let e = l.x_at_byte(end_row, end_byte_in_row)?;
-                            Some((e - s).max(0.0))
-                        })
-                        .unwrap_or(char_width)
-                } else {
-                    char_width
-                };
+            let (start_row, start_byte_in_row) = layout
+                .and_then(|l| l.buffer_to_display(line_idx as u32, start_byte))
+                .unwrap_or_else(|| {
+                    (fold_state.actual_to_display_line(line_idx) as u32, start_byte)
+                });
+            let (end_row, end_byte_in_row) = layout
+                .and_then(|l| l.buffer_to_display(line_idx as u32, end_byte))
+                .unwrap_or((start_row, end_byte));
 
-                // Anchor to the row's *glyph band* (cap-to-descender),
-                // not the leaded box — that's what selection highlights
-                // align with, so brackets visually sit with the text.
-                let band = metrics.row_glyph_band(display_row as u32);
-                let band_height = band.height();
-                let band_center_y = (band.min.y + band.max.y) * 0.5;
-                let cell_left = metrics.cell_world_pos_at_x(display_row as u32, glyph_x).x;
-                let base_x = cell_left + glyph_width / 2.0;
+            let glyph_x = layout
+                .and_then(|l| l.x_at_byte(start_row, start_byte_in_row))
+                .unwrap_or(col_idx as f32 * char_width);
+            let glyph_width = if start_row == end_row {
+                layout
+                    .and_then(|l| {
+                        let s = l.x_at_byte(start_row, start_byte_in_row)?;
+                        let e = l.x_at_byte(end_row, end_byte_in_row)?;
+                        Some((e - s).max(0.0))
+                    })
+                    .unwrap_or(char_width)
+            } else {
+                char_width
+            };
 
-                if use_box_style {
-                    // Box style: 4 thin edges around the glyph cell.
-                    let edges = [
-                        // (dx, dy from band center, width, height)
-                        (
-                            0.0,
-                            band_height / 2.0 - border_thickness / 2.0,
-                            glyph_width,
-                            border_thickness,
-                        ), // top
-                        (
-                            0.0,
-                            -band_height / 2.0 + border_thickness / 2.0,
-                            glyph_width,
-                            border_thickness,
-                        ), // bottom
-                        (
-                            -glyph_width / 2.0 + border_thickness / 2.0,
-                            0.0,
-                            border_thickness,
-                            band_height,
-                        ), // left
-                        (
-                            glyph_width / 2.0 - border_thickness / 2.0,
-                            0.0,
-                            border_thickness,
-                            band_height,
-                        ), // right
-                    ];
+            let x0 = glyph_x;
+            let x1 = glyph_x + glyph_width;
+            let color = theme.bracket_match;
 
-                    for (edge_idx, (dx, dy, w, h)) in edges.iter().enumerate() {
-                        let translation = Vec3::new(base_x + dx, band_center_y + dy, 0.4);
-                        let size = Vec2::new(*w, *h);
-
-                        if entity_index_global < highlights.len() {
-                            let (_, _, ref mut transform, ref mut sprite, ref mut visibility) =
-                                &mut highlights[entity_index_global];
-                            transform.translation = translation;
-                            sprite.custom_size = Some(size);
-                            sprite.color = theme.bracket_match;
-                            **visibility = Visibility::Visible;
-                        } else {
-                            commands.spawn((
-                                Sprite {
-                                    color: theme.bracket_match,
-                                    custom_size: Some(size),
-                                    ..default()
-                                },
-                                Transform::from_translation(translation),
-                                BracketMatchHighlight,
-                                Name::new(format!("BracketHighlight_{}_{}", bracket_idx, edge_idx)),
-                                Visibility::Visible,
-                            ));
-                        }
-                        entity_index_global += 1;
-                    }
-                } else {
-                    // Filled style: single sprite over the glyph cell.
-                    let translation = Vec3::new(base_x, band_center_y, 0.4);
-                    let size = Vec2::new(glyph_width, band_height);
-
-                    if entity_index_global < highlights.len() {
-                        let (_, _, ref mut transform, ref mut sprite, ref mut visibility) =
-                            &mut highlights[entity_index_global];
-                        transform.translation = translation;
-                        sprite.custom_size = Some(size);
-                        sprite.color = theme.bracket_match;
-                        **visibility = Visibility::Visible;
-                    } else {
-                        commands.spawn((
-                            Sprite {
-                                color: theme.bracket_match,
-                                custom_size: Some(size),
-                                ..default()
-                            },
-                            Transform::from_translation(translation),
-                            BracketMatchHighlight,
-                            Name::new(format!("BracketHighlight_{}", bracket_idx)),
-                            Visibility::Visible,
-                        ));
-                    }
-                    entity_index_global += 1;
-                }
+            if use_box_style {
+                // 4 thin edges: top, bottom, left, right
+                overlays.rects.push(RectOverlay {
+                    display_row: start_row,
+                    x_range: x0..x1,
+                    vertical: RowVertical::TopBand { thickness: BORDER },
+                    color,
+                    z: Z,
+                    corners: CornerRadii::ZERO,
+                });
+                overlays.rects.push(RectOverlay {
+                    display_row: start_row,
+                    x_range: x0..x1,
+                    vertical: RowVertical::BottomBand { thickness: BORDER },
+                    color,
+                    z: Z,
+                    corners: CornerRadii::ZERO,
+                });
+                overlays.rects.push(RectOverlay {
+                    display_row: start_row,
+                    x_range: x0..x0 + BORDER,
+                    vertical: RowVertical::Full,
+                    color,
+                    z: Z,
+                    corners: CornerRadii::ZERO,
+                });
+                overlays.rects.push(RectOverlay {
+                    display_row: start_row,
+                    x_range: x1 - BORDER..x1,
+                    vertical: RowVertical::Full,
+                    color,
+                    z: Z,
+                    corners: CornerRadii::ZERO,
+                });
+                pushed += 4;
+            } else {
+                overlays.rects.push(RectOverlay {
+                    display_row: start_row,
+                    x_range: x0..x1,
+                    vertical: RowVertical::Full,
+                    color,
+                    z: Z,
+                    corners: CornerRadii::ZERO,
+                });
+                pushed += 1;
             }
         }
-        None => {}
-    }
-    }
 
-    // After processing all editors, hide any leftover highlights
-    if any_match {
-        for i in entity_index_global..highlights.len() {
-            let (_, _, _, _, ref mut visibility) = &mut highlights[i];
-            **visibility = Visibility::Hidden;
-        }
-    } else {
-        for (_, _, _, _, ref mut visibility) in highlights.iter_mut() {
-            **visibility = Visibility::Hidden;
+        if pushed > 0 || had {
+            overlays.version = overlays.version.wrapping_add(1);
         }
     }
 }
