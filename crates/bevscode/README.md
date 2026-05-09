@@ -1,8 +1,6 @@
 # bevscode
 
-A code editor as a Bevy plugin, layered on top of [`bevy_instanced_text`](../bevy_instanced_text) (rendering) and [`bevy_instanced_text_edit`](../bevy_instanced_text_edit) (editable-text widget).
-
-This crate adds the IDE-specific extras: multi-cursor, syntax-highlight adapter (over [`bevy_tree_sitter`](../bevy_tree_sitter)), LSP UI adapter (over [`bevy_lsp`](../bevy_lsp)), folding, bracket matching, scrollbar, line numbers, gutter, goto-line dialog. The cursor / selection / edit history / undo / clipboard machinery lives one tier down in `bevy_instanced_text_edit` and is shared with simpler hosts (chat boxes, search fields).
+A code editor plugin for Bevy. Provides IDE features: multi-cursor, syntax highlighting (via [`bevy_tree_sitter`](../bevy_tree_sitter)), LSP UI (via [`bevy_lsp`](../bevy_lsp)), folding, bracket matching, scrollbar, line numbers, and gutter.
 
 ## Hello-world
 

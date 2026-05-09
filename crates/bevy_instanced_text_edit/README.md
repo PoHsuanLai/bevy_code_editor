@@ -1,14 +1,6 @@
 # bevy_instanced_text_edit
 
-Editable text widget for Bevy: pointer interaction (scroll, drag-select, copy) on top of [`bevy_instanced_text`](../bevy_instanced_text) `TextView` entities, plus the editable-text core (cursor, selection, edit history, undo/redo, clipboard, typed-character handling).
-
-This is the middle layer in a three-tier stack:
-
-- [`bevy_instanced_text`](../bevy_instanced_text) — GPU rendering primitives.
-- **`bevy_instanced_text_edit`** — interaction + editable text widget (this crate).
-- [`bevscode`](../bevscode) — IDE features (multi-cursor, folding, brackets, line numbers, LSP UI, syntax highlighting).
-
-A search box, chat composer, or URL bar uses `InstancedTextEditPlugin` and gets a working editable text field without dragging in the IDE features.
+Editable text widget for Bevy: pointer interaction (scroll, drag-select, copy) on `TextView` entities, plus cursor, selection, edit history, undo/redo, clipboard, and typed-character handling.
 
 ## Plugins
 

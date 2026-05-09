@@ -1,8 +1,6 @@
 # bevy_code_editor
 
-A GPU-accelerated text rendering engine for Bevy, plus a code editor built on top of it.
-
-This started as a code editor and grew into the underlying primitives. The workspace is now split into a hermetic engine plus several peer crates a host can compose:
+A workspace of composable Bevy plugins for GPU-accelerated text rendering, editing, and IDE tooling. Pick the crates you need:
 
 | Crate | What it does | Depends on |
 |---|---|---|
@@ -22,12 +20,10 @@ use bevscode::prelude::*;
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, CodeEditorPlugin::standalone()))
+        .add_plugins((DefaultPlugins, CodeEditorPlugins))
         .run();
 }
 ```
-
-`CodeEditorPlugin::standalone()` is a `PluginGroup` that bundles the engine, interaction, the editor, and a default UI plugin (line numbers, separator, camera). One line of code, working editor.
 
 If you want **a chat box, log viewer, terminal, or anything that just renders styled text**:
 
@@ -86,8 +82,8 @@ The plugins are explicit and additive — no auto-add of unrelated machinery. Mi
 // Engine + interaction + editor (build it up explicitly)
 .add_plugins((InstancedTextPlugins, InstancedTextInteractionPlugin, CodeEditorPlugin))
 
-// All of the above plus default UI + camera (one-line)
-.add_plugins(CodeEditorPlugin::standalone())
+// All of the above plus default UI + camera
+.add_plugins(CodeEditorPlugins)
 ```
 
 LSP and tree-sitter are gated by feature flags on `bevscode`:
