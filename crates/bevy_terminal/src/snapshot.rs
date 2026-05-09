@@ -257,7 +257,7 @@ fn shape_phys_line(
                 Intensity::Normal => None,
             },
             italic: attrs.italic(),
-            font_family: None,
+            font: None,
             decoration: if !matches!(attrs.underline(), VtUnderline::None) {
                 Some(bevy_instanced_text::TextDecoration::Underline)
             } else if attrs.strikethrough() {

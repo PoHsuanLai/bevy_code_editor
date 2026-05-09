@@ -11,6 +11,8 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+use bevy::text::Font;
+use bevy::asset::Handle;
 use bevy_instanced_text::{
     for_each_row_in_buffer_span, Block as EBlock, BlockLayoutConfig, DisplayLayout, RectOverlay,
     RowPosition, RowVertical, StyleRun, TextDecoration,
@@ -37,6 +39,8 @@ pub struct MarkdownLayoutConfig {
     pub baseline_offset: f32,
     /// Soft-wrap budget in characters. `None` ⇒ no wrap.
     pub wrap_chars: Option<usize>,
+    /// Font used for inline code and fenced code blocks. `None` = same as body font.
+    pub code_font: Option<Handle<Font>>,
 }
 
 impl MarkdownLayoutConfig {
@@ -57,6 +61,7 @@ impl MarkdownLayoutConfig {
             char_width,
             baseline_offset,
             wrap_chars,
+            code_font: None,
         }
     }
 }
@@ -227,7 +232,7 @@ impl<'a> LayoutBuilder<'a> {
                 corner_radius: 0.0,
                 font_weight: Some(self.cfg.theme.heading_weight),
                 italic: false,
-                font_family: None,
+                font: None,
                 decoration: None,
                 link: None,
             });
@@ -315,7 +320,7 @@ impl<'a> LayoutBuilder<'a> {
         let last = lines.len().saturating_sub(1);
         let start = self.blocks.len();
         for (i, line) in lines.iter().enumerate() {
-            let mut block = code_block_line(*line, fg, indent);
+            let mut block = code_block_line(*line, fg, indent, self.cfg.code_font.clone());
             // Padding is per-block: only the first row pays padding_top,
             // only the last row pays padding_bottom. Between rows, no
             // gap so the per-row overlay paints a continuous panel.
@@ -396,16 +401,10 @@ impl<'a> LayoutBuilder<'a> {
         } else {
             self.cfg.theme.body_fg
         };
-        buf.push_run(s, fg, None, 0.0, state, self.cfg.theme.strong_weight);
+        buf.push_run(s, fg, None, 0.0, state, self.cfg.theme.strong_weight, None);
     }
 
     fn inline_code(&self, s: &str, buf: &mut InlineBuffer, state: &InlineState) {
-        // Trim leading/trailing whitespace so the bg chip ends at the
-        // last non-space character. pulldown-cmark already strips one
-        // space per side when both sides have one (CommonMark spec),
-        // but inline code can still legitimately end with a trailing
-        // space in some inputs — those are usually unintentional and
-        // make the chip read as right-padded.
         let decor = &self.cfg.theme.decor;
         buf.push_run(
             s.trim(),
@@ -414,6 +413,7 @@ impl<'a> LayoutBuilder<'a> {
             decor.inline_code_corner_radius,
             state,
             self.cfg.theme.strong_weight,
+            self.cfg.code_font.clone(),
         );
     }
 
@@ -493,6 +493,7 @@ impl InlineBuffer {
         corner_radius: f32,
         state: &InlineState,
         strong_weight: u16,
+        font: Option<Handle<Font>>,
     ) {
         let start = self.text.len();
         self.text.push_str(s);
@@ -509,7 +510,7 @@ impl InlineBuffer {
             corner_radius,
             font_weight: state.weight(strong_weight),
             italic: state.italic,
-            font_family: None,
+            font,
             decoration: state.decoration(),
             link: state.link.clone(),
         });
@@ -608,7 +609,7 @@ fn resolve_link_spans(layout: &DisplayLayout, pending: &[PendingLink]) -> Vec<Li
 }
 
 /// Build a single line of a fenced code block (no decoration applied yet).
-fn code_block_line(line: &str, fg: bevy::prelude::Color, indent: f32) -> EBlock {
+fn code_block_line(line: &str, fg: bevy::prelude::Color, indent: f32, font: Option<Handle<Font>>) -> EBlock {
     let len = line.len();
     EBlock::new(line.to_string())
         .with_indent(indent)
@@ -621,7 +622,7 @@ fn code_block_line(line: &str, fg: bevy::prelude::Color, indent: f32) -> EBlock 
             corner_radius: 0.0,
             font_weight: None,
             italic: false,
-            font_family: None,
+            font,
             decoration: None,
             link: None,
         }])
@@ -733,7 +734,7 @@ fn prepend_marker(block: &mut EBlock, marker: &str, body_fg: bevy::prelude::Colo
         corner_radius: 0.0,
         font_weight: None,
         italic: false,
-        font_family: None,
+        font: None,
         decoration: None,
         link: None,
     });

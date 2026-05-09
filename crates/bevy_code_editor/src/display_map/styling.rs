@@ -31,7 +31,7 @@ pub(crate) fn segs_to_runs(segs: &[LineSegment]) -> Vec<RunWithText> {
                 corner_radius: s.corner_radius,
                 font_weight: None,
                 italic: false,
-                font_family: None,
+                font: None,
                 decoration: None,
                 link: None,
             },

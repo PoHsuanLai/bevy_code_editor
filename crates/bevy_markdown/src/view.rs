@@ -1,6 +1,7 @@
 //! Per-entity components for a markdown viewer.
 
 use bevy::prelude::*;
+use bevy::text::Font;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -31,6 +32,12 @@ impl Default for MarkdownDoc {
         }
     }
 }
+
+/// Optional code font for inline code and fenced code blocks. Add this
+/// component alongside `MarkdownDoc` to use a different font for code runs.
+/// When absent, code renders with the entity's body `FontConfig` font.
+#[derive(Component, Clone, Debug)]
+pub struct MarkdownCodeFont(pub Handle<Font>);
 
 /// Side-channel mapping link byte ranges back to their URL. The renderer
 /// doesn't read this — it's exposed for click-handler systems that want

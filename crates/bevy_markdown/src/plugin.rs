@@ -25,7 +25,7 @@ use bevy_instanced_text::{
 use crate::layout::{layout_markdown, MarkdownLayoutConfig};
 use crate::parse::parse_markdown;
 use crate::theme::MarkdownTheme;
-use crate::view::{MarkdownDoc, MarkdownLinks};
+use crate::view::{MarkdownCodeFont, MarkdownDoc, MarkdownLinks};
 
 /// Cached pre-scroll layout. The rebuild system writes this; the scroll
 /// system reads it and produces the per-frame `DisplayLayout`. Stored
@@ -69,6 +69,7 @@ fn rebuild_markdown_layout(
             &MarkdownTheme,
             &FontConfig,
             &TextViewViewport,
+            Option<&MarkdownCodeFont>,
             Option<&mut TextBuffer>,
             Option<&mut ContentMetrics>,
         ),
@@ -77,18 +78,20 @@ fn rebuild_markdown_layout(
             Changed<MarkdownTheme>,
             Changed<FontConfig>,
             Changed<TextViewViewport>,
+            Changed<MarkdownCodeFont>,
         )>,
     >,
 ) {
-    for (entity, doc, theme, font, viewport, buffer, metrics) in q.iter_mut() {
+    for (entity, doc, theme, font, viewport, code_font, buffer, metrics) in q.iter_mut() {
         let blocks = parse_markdown(&doc.source);
-        let cfg = MarkdownLayoutConfig::from_metrics(
+        let mut cfg = MarkdownLayoutConfig::from_metrics(
             theme.clone(),
             font.line_height,
             font.char_width,
             font.font_size * 0.32,
             Some(content_width_px(viewport)),
         );
+        cfg.code_font = code_font.map(|c| c.0.clone());
         let (layout, base_overlays, links) = layout_markdown(&blocks, &cfg);
 
         // Sync the rope so selection / copy reads the rendered text.

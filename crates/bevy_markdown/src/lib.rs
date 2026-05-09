@@ -57,11 +57,11 @@ pub use layout::layout_markdown;
 pub use parse::{parse_markdown, Block as MdBlock, Inline as MdInline};
 pub use plugin::MarkdownViewerPlugin;
 pub use theme::MarkdownTheme;
-pub use view::{MarkdownDoc, MarkdownLinks};
+pub use view::{MarkdownCodeFont, MarkdownDoc, MarkdownLinks};
 
 pub mod prelude {
     //! Common types for embedding a markdown viewer.
     pub use crate::plugin::MarkdownViewerPlugin;
     pub use crate::theme::MarkdownTheme;
-    pub use crate::view::{MarkdownDoc, MarkdownLinks};
+    pub use crate::view::{MarkdownCodeFont, MarkdownDoc, MarkdownLinks};
 }

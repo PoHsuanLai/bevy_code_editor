@@ -8,7 +8,7 @@
 
 use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
-use bevy_markdown::{MarkdownDoc, MarkdownViewerPlugin};
+use bevy_markdown::{MarkdownCodeFont, MarkdownDoc, MarkdownViewerPlugin};
 use bevy_instanced_text::{
     ContentMetrics, DisplayLayout, FontConfig, FontSynthesis, ScrollState, TextBuffer,
     InstancedTextPlugins, TextView, TextViewViewport,
@@ -83,22 +83,18 @@ fn setup_viewer(
         return;
     };
 
-    let regular: Handle<bevy::text::Font> = asset_server.load("fonts/CourierNew-Regular.ttf");
-    let bold: Handle<bevy::text::Font> = asset_server.load("fonts/CourierNew-Bold.ttf");
-    let italic: Handle<bevy::text::Font> = asset_server.load("fonts/CourierNew-Italic.ttf");
-    let bold_italic: Handle<bevy::text::Font> = asset_server.load("fonts/CourierNew-BoldItalic.ttf");
+    // Body font: FiraMono for readable prose
+    let body_regular: Handle<bevy::text::Font> = asset_server.load("fonts/FiraMono-Regular.ttf");
+    let body_bold: Handle<bevy::text::Font> = asset_server.load("fonts/FiraMono-Medium.ttf");
+
+    // Code font: Courier New for inline code and fenced code blocks
+    let code_regular: Handle<bevy::text::Font> = asset_server.load("fonts/CourierNew-Regular.ttf");
 
     let font = FontConfig::from_size(16.0)
-        .with_font(regular)
-        .with_bold_font(bold)
-        .with_italic_font(italic)
-        .with_bold_italic_font(bold_italic)
+        .with_font(body_regular)
+        .with_bold_font(body_bold)
         .with_font_synthesis(FontSynthesis::default());
 
-    // `Camera2d` operates in logical pixels by default, so the viewport
-    // dimensions need to match the window's logical size — not the
-    // physical size. Using physical pixels here doubles the wrap
-    // budget on retina displays and makes long lines run off-screen.
     let logical_w = window.width() as u32;
     let logical_h = window.height() as u32;
 
@@ -116,6 +112,7 @@ fn setup_viewer(
         },
         font,
         MarkdownDoc::new(SAMPLE),
+        MarkdownCodeFont(code_regular),
         DisplayLayout::default(),
     ));
 }
