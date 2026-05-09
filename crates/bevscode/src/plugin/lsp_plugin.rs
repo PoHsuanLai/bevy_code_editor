@@ -56,13 +56,13 @@ use crate::types::CodeEditor;
 /// # Example
 /// ```no_run
 /// use bevy::prelude::*;
-/// use bevy_code_editor::prelude::*;
+/// use bevscode::prelude::*;
 /// use bevy_lsp::LspPlugin as LspTransportPlugin;
 ///
 /// App::new()
 ///     .add_plugins(CodeEditorPlugin)
 ///     .add_plugins(LspTransportPlugin)              // transport
-///     .add_plugins(bevy_code_editor::plugin::LspPlugin)  // editor adapter
+///     .add_plugins(bevscode::plugin::LspPlugin)  // editor adapter
 ///     .run();
 /// ```
 pub struct LspPlugin;

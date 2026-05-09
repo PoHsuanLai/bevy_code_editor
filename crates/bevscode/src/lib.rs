@@ -13,8 +13,9 @@
 //!
 //! ```rust,no_run
 //! # use bevy::prelude::*;
-//! # use bevy_code_editor::prelude::*;
+//! # use bevscode::prelude::*;
 //! # use bevy_instanced_text::FontConfig;
+//! # fn setup(mut commands: Commands) {
 //! // Minimal — auto-sizes to window, default theme and keybindings.
 //! commands.spawn(CodeEditor);
 //!
@@ -24,6 +25,7 @@
 //!     FontConfig::from_size(18.0),
 //!     ThemeConfig { background: bevy::color::palettes::css::DARK_SLATE_GRAY.into(), ..default() },
 //! ));
+//! # }
 //! ```
 //!
 //! All settings are per-entity components (see [`settings`]): two editors in
@@ -54,7 +56,7 @@
 //!
 //! ```rust,no_run
 //! use bevy::prelude::*;
-//! use bevy_code_editor::prelude::*;
+//! use bevscode::prelude::*;
 //!
 //! App::new()
 //!     .add_plugins(DefaultPlugins)
@@ -97,7 +99,7 @@ pub mod prelude {
     //! handful of file/save events + scroll config that hosts touch
     //! day-to-day. Lower-level types (display map points, fold/wrap state,
     //! shaped lines, history) live on the crate path
-    //! (`bevy_code_editor::types::*`, `::display_map::*`, etc.) for hosts
+    //! (`bevscode::types::*`, `::display_map::*`, etc.) for hosts
     //! that need them.
 
     // Engine surface — InstancedTextPlugins, InstancedTextPlugin, TextView,

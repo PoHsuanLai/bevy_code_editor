@@ -96,7 +96,7 @@ pub struct EditorSetupSet;
 ///
 /// ```rust,no_run
 /// # use bevy::prelude::*;
-/// # use bevy_code_editor::prelude::*;
+/// # use bevscode::prelude::*;
 /// App::new()
 ///     .add_plugins(DefaultPlugins)
 ///     .add_plugins(CodeEditorPlugins)
