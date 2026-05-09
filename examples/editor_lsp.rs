@@ -6,7 +6,7 @@
 //! depend on egui/armas — the renderer wiring lives entirely here in the
 //! example so applications can copy/adapt it.
 //!
-//! The data-components produced by `bevy_code_editor::plugin::LspPlugin` are
+//! The data-components produced by `bevscode::plugin::LspPlugin` are
 //! the host-renderer-agnostic API; this example reads `bevy_lsp` state through
 //! the editor's `lsp_ui` re-exports and turns it into egui frames each frame.
 //!
@@ -16,19 +16,19 @@
 use armas::prelude::*;
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
-use bevy_code_editor::lsp_ui::components::{
+use bevscode::lsp_ui::components::{
     DocumentHighlightData, InlayHintData, InlayHintKind, LspUiVisual,
 };
-use bevy_code_editor::lsp_ui::state::{
+use bevscode::lsp_ui::state::{
     LspCodeActionsPopup, LspCompletionPopup, LspHoverPopup, LspRenamePopup, LspSignatureHelpPopup,
 };
-use bevy_code_editor::prelude::*;
+use bevscode::prelude::*;
 use bevy_instanced_text::FontConfig;
-use bevy_code_editor::text_view::TextViewViewport;
-use bevy_code_editor::types::{CodeEditor, CursorState};
+use bevscode::text_view::TextViewViewport;
+use bevscode::types::{CodeEditor, CursorState};
 use bevy_egui::{egui, EguiContexts};
 use bevy_lsp::{LspClient, LspDocument, LspMessage};
-use bevy_markdown::{MarkdownDoc, MarkdownLinks, MarkdownViewerPlugin};
+use bevsmd::{MarkdownDoc, MarkdownLinks, MarkdownViewerPlugin};
 use bevy_instanced_text::{ContentMetrics, DisplayLayout, ScrollState, TextBuffer, TextView};
 #[cfg(feature = "tree-sitter")]
 use bevy_tree_sitter::Language;
@@ -637,7 +637,7 @@ fn render_hover_egui(
     if !hover_state.visible || hover_state.content.is_empty() {
         return;
     }
-    // Markdown hovers route through the bevy_markdown viewer instead.
+    // Markdown hovers route through the bevsmd viewer instead.
     if hover_state.kind == lsp_types::MarkupKind::Markdown {
         return;
     }
@@ -698,7 +698,7 @@ fn render_hover_egui(
 
 /// Marker for the markdown hover popup entity. Carries the popup's
 /// background sprite + the bundle of components that drive the
-/// `bevy_markdown` viewer (parses + relayouts on `Changed<MarkdownDoc>`).
+/// `bevsmd` viewer (parses + relayouts on `Changed<MarkdownDoc>`).
 #[derive(Component)]
 struct MarkdownHoverPopup;
 
@@ -1274,7 +1274,7 @@ fn display_lsp_info(query: Query<&LspClient, (With<CodeEditor>, Changed<LspClien
 /// the gap by watching for content changes and firing completion at the cursor.
 fn auto_request_completion(
     editor_query: Query<(&CursorState, Ref<TextBuffer>), With<CodeEditor>>,
-    mut writer: MessageWriter<bevy_code_editor::types::events::RequestCompletionEvent>,
+    mut writer: MessageWriter<bevscode::types::events::RequestCompletionEvent>,
 ) {
     let Ok((cursor, buffer)) = editor_query.single() else {
         return;
@@ -1291,5 +1291,5 @@ fn auto_request_completion(
     if cursor_pos == 0 {
         return;
     }
-    writer.write(bevy_code_editor::types::events::RequestCompletionEvent::new(cursor_pos));
+    writer.write(bevscode::types::events::RequestCompletionEvent::new(cursor_pos));
 }

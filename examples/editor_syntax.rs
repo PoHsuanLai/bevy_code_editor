@@ -4,7 +4,7 @@
 //! This example highlights Rust code using the tree-sitter-rust grammar.
 
 use bevy::prelude::*;
-use bevy_code_editor::prelude::*;
+use bevscode::prelude::*;
 #[cfg(feature = "tree-sitter")]
 use bevy_tree_sitter::Language;
 
@@ -39,12 +39,12 @@ fn debug_toggles(
         &mut Visibility,
         (
             With<bevy_instanced_text::view::render::GlyphBatchComponent>,
-            Without<bevy_code_editor::plugin::gpu_line_numbers::GpuLineNumbersBatch>,
+            Without<bevscode::plugin::gpu_line_numbers::GpuLineNumbersBatch>,
         ),
     >,
     mut line_batches: Query<
         &mut Visibility,
-        With<bevy_code_editor::plugin::gpu_line_numbers::GpuLineNumbersBatch>,
+        With<bevscode::plugin::gpu_line_numbers::GpuLineNumbersBatch>,
     >,
     all_batches: Query<(
         Entity,

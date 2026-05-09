@@ -9,8 +9,8 @@
 
 use bevy::prelude::*;
 use bevy_camera::visibility::RenderLayers;
-use bevy_code_editor::prelude::*;
-use bevy_terminal::prelude::*;
+use bevscode::prelude::*;
+use bevsterm::prelude::*;
 
 const DIVIDER_PX: u32 = 1;
 
@@ -18,7 +18,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "bevy_terminal — editor + terminal".into(),
+                title: "bevsterm — editor + terminal".into(),
                 resolution: [1280u32, 720u32].into(),
                 ..default()
             }),

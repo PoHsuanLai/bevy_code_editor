@@ -2,10 +2,10 @@
 //! window. Type into it; resize it; drag-select; Cmd+C / Cmd+V (or
 //! Ctrl+Shift+C / Ctrl+Shift+V on Linux/Windows).
 //!
-//! Run with: `cargo run -p bevy_terminal --example basic_terminal`
+//! Run with: `cargo run -p bevsterm --example basic_terminal`
 
 use bevy::prelude::*;
-use bevy_terminal::prelude::*;
+use bevsterm::prelude::*;
 use bevy_instanced_text::InstancedTextPlugins;
 
 #[cfg(feature = "profile")]
@@ -15,7 +15,7 @@ fn main() {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
-            title: "bevy_terminal — basic".into(),
+            title: "bevsterm — basic".into(),
             resolution: [960u32, 600u32].into(),
             ..default()
         }),

@@ -4,7 +4,7 @@
 
 use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
-use bevy_markdown::prelude::*;
+use bevsmd::prelude::*;
 
 const SCROLL_SPEED: f32 = 40.0;
 
@@ -19,7 +19,7 @@ faces (or synthesizes them when no matching face is loaded).
 - **Bold** and *italic*, plus ***both at once***
 - Inline `code` chips with a tinted background
 - ~~Strikethrough~~ via GFM
-- [External links](https://github.com/PoHsuanLai/bevy_code_editor) in a \
+- [External links](https://github.com/PoHsuanLai/bevscode) in a \
   distinct color
 - Soft-wrapping at the viewport width
 
@@ -44,7 +44,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "bevy_markdown — basic demo".to_string(),
+                title: "bevsmd — basic demo".to_string(),
                 resolution: (900, 700).into(),
                 ..default()
             }),

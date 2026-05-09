@@ -2,6 +2,8 @@
 .claude
 CLAUDE.md
 .DS_Store
+/rust_out
+/tracy/
 
 /zed
 /vscode

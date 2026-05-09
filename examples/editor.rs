@@ -1,6 +1,6 @@
 //! Basic code editor example
 //!
-//! Demonstrates the bevy_code_editor plugin with built-in input handling.
+//! Demonstrates the bevscode plugin with built-in input handling.
 //!
 //! The plugin automatically handles:
 //! - Text input (typing characters)
@@ -15,7 +15,7 @@
 
 use bevy::prelude::*;
 use bevy::window::{CursorIcon, SystemCursorIcon};
-use bevy_code_editor::prelude::*;
+use bevscode::prelude::*;
 
 fn main() {
     App::new()
@@ -50,12 +50,12 @@ fn debug_toggles(
         &mut Visibility,
         (
             With<bevy_instanced_text::view::render::GlyphBatchComponent>,
-            Without<bevy_code_editor::plugin::gpu_line_numbers::GpuLineNumbersBatch>,
+            Without<bevscode::plugin::gpu_line_numbers::GpuLineNumbersBatch>,
         ),
     >,
     mut line_batches: Query<
         &mut Visibility,
-        With<bevy_code_editor::plugin::gpu_line_numbers::GpuLineNumbersBatch>,
+        With<bevscode::plugin::gpu_line_numbers::GpuLineNumbersBatch>,
     >,
     all_batches: Query<(
         Entity,

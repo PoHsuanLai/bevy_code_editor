@@ -1,5 +1,5 @@
 [package]
-name = "bevy_code_editor"
+name = "bevscode"
 version = "0.1.0"
 edition = "2021"
 authors = ["PoHsuanLai"]

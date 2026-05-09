@@ -1,5 +1,5 @@
 [package]
-name = "bevy_terminal"
+name = "bevsterm"
 version = "0.1.0"
 edition = "2021"
 authors = ["PoHsuanLai"]
@@ -49,7 +49,7 @@ libc = "0.2"
 
 [dev-dependencies]
 bevy = { version = "0.18", features = ["bevy_window", "bevy_winit"] }
-bevy_code_editor = { path = "../bevy_code_editor" }
+bevscode = { path = "../bevscode" }
 
 [features]
 default = ["arboard"]

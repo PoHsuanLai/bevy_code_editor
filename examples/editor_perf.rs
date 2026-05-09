@@ -5,7 +5,7 @@
 
 use bevy::prelude::*;
 use bevy::window::{CursorIcon, SystemCursorIcon};
-use bevy_code_editor::prelude::*;
+use bevscode::prelude::*;
 
 #[cfg(feature = "tree-sitter")]
 use bevy_tree_sitter::Language;

@@ -17,7 +17,7 @@
 
 use bevy::prelude::*;
 use bevy_camera::visibility::RenderLayers;
-use bevy_code_editor::prelude::*;
+use bevscode::prelude::*;
 
 const WINDOW_WIDTH: f32 = 1600.0;
 const WINDOW_HEIGHT: f32 = 900.0;
@@ -26,7 +26,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "bevy_code_editor — multi-editor".into(),
+                title: "bevscode — multi-editor".into(),
                 resolution: [WINDOW_WIDTH as u32, WINDOW_HEIGHT as u32].into(),
                 ..default()
             }),

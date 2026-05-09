@@ -509,6 +509,61 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "bevscode"
+version = "0.1.0"
+dependencies = [
+ "arboard",
+ "bevy",
+ "bevy_camera",
+ "bevy_instanced_text",
+ "bevy_instanced_text_edit",
+ "bevy_lsp",
+ "bevy_tree_sitter",
+ "bytemuck",
+ "cosmic-text 0.12.1",
+ "fuzzy-matcher",
+ "leafwing-input-manager",
+ "lsp-types",
+ "ropey",
+ "serde",
+ "serde_json",
+ "swash 0.1.19",
+]
+
+[[package]]
+name = "bevsmd"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_instanced_text",
+ "bevy_tree_sitter",
+ "pulldown-cmark",
+ "ropey",
+ "tree-sitter-c",
+ "tree-sitter-rust",
+]
+
+[[package]]
+name = "bevsterm"
+version = "0.1.0"
+dependencies = [
+ "bevscode",
+ "bevy",
+ "bevy_instanced_text",
+ "bevy_instanced_text_edit",
+ "crossbeam-channel",
+ "leafwing-input-manager",
+ "libc",
+ "parking_lot",
+ "portable-pty",
+ "ropey",
+ "serde",
+ "termwiz",
+ "wezterm-surface",
+ "wezterm-term",
+]
+
+[[package]]
 name = "bevy"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -740,28 +795,6 @@ dependencies = [
  "smallvec",
  "thiserror 2.0.17",
  "wgpu-types",
-]
-
-[[package]]
-name = "bevy_code_editor"
-version = "0.1.0"
-dependencies = [
- "arboard",
- "bevy",
- "bevy_camera",
- "bevy_instanced_text",
- "bevy_instanced_text_edit",
- "bevy_lsp",
- "bevy_tree_sitter",
- "bytemuck",
- "cosmic-text 0.12.1",
- "fuzzy-matcher",
- "leafwing-input-manager",
- "lsp-types",
- "ropey",
- "serde",
- "serde_json",
- "swash 0.1.19",
 ]
 
 [[package]]
@@ -1327,19 +1360,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bevy_markdown"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_instanced_text",
- "bevy_tree_sitter",
- "pulldown-cmark",
- "ropey",
- "tree-sitter-c",
- "tree-sitter-rust",
-]
-
-[[package]]
 name = "bevy_math"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1755,26 +1775,6 @@ dependencies = [
  "futures-lite",
  "heapless",
  "pin-project",
-]
-
-[[package]]
-name = "bevy_terminal"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_code_editor",
- "bevy_instanced_text",
- "bevy_instanced_text_edit",
- "crossbeam-channel",
- "leafwing-input-manager",
- "libc",
- "parking_lot",
- "portable-pty",
- "ropey",
- "serde",
- "termwiz",
- "wezterm-surface",
- "wezterm-term",
 ]
 
 [[package]]
@@ -2972,15 +2972,15 @@ name = "examples"
 version = "0.0.0"
 dependencies = [
  "armas",
+ "bevscode",
+ "bevsmd",
+ "bevsterm",
  "bevy",
  "bevy_camera",
- "bevy_code_editor",
  "bevy_egui",
  "bevy_instanced_text",
  "bevy_instanced_text_edit",
  "bevy_lsp",
- "bevy_markdown",
- "bevy_terminal",
  "bevy_tree_sitter",
  "lsp-types",
  "tree-sitter-c",

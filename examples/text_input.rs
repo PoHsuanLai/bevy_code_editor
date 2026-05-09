@@ -1,5 +1,5 @@
 //! Minimal editable text field — proves `bevy_instanced_text_edit` works
-//! standalone, without `bevy_code_editor`'s IDE features.
+//! standalone, without `bevscode`'s IDE features.
 //!
 //! Spawns one [`TextEditor`] entity with the engine's GPU rendering, plus
 //! [`InstancedTextEditPlugin`] which gives you typed-character insertion, cursor
