@@ -1,8 +1,10 @@
 # bevscode
 
-A code editor plugin for Bevy. Provides IDE features: multi-cursor, syntax highlighting (via [`bevy_tree_sitter`](../bevy_tree_sitter)), LSP UI (via [`bevy_lsp`](../bevy_lsp)), folding, bracket matching, scrollbar, line numbers, and gutter.
+Embeddable code editor for Bevy. Spawn `CodeEditor` into any app — a game, a dev tool, a split-pane UI — and it runs as a normal ECS entity alongside your existing world.
 
-## Hello-world
+IDE features: multi-cursor, syntax highlighting (via [`bevy_tree_sitter`](../bevy_tree_sitter)), LSP UI (via [`bevy_lsp`](../bevy_lsp)), folding, bracket matching, scrollbar, line numbers, and gutter.
+
+## Quick start
 
 ```rust
 use bevy::prelude::*;
@@ -11,32 +13,32 @@ use bevscode::prelude::*;
 fn main() {
     App::new()
         .add_plugins((DefaultPlugins, CodeEditorPlugins))
-        // The host spawns its own Camera2d — see any of this crate's
-        // examples for the standard six-line setup_camera system.
+        .add_systems(Startup, spawn_editor)
         .run();
+}
+
+fn spawn_editor(mut commands: Commands) {
+    commands.spawn((
+        CodeEditor,
+        TextViewViewport { rect: Rect::new(0.0, 0.0, 800.0, 600.0), ..default() },
+    ));
 }
 ```
 
-`CodeEditorPlugins` is the full bundle: GPU text engine, interaction layer, the editor's IDE wiring, and the editor UI (line numbers, scrollbar, selection/cursor overlays). One plugin group, one line. The bare `CodeEditorPlugin` is the editor logic on its own — for hosts that compose with their own engine / UI plugins.
+## Embedding in a larger app
 
-## Embedded in a larger app
-
-Drop `CodeEditorPlugins` into an existing app. Disable individual plugins your host already brings in:
+Drop `CodeEditorPlugins` into any existing app. Disable sub-plugins your host already provides:
 
 ```rust
 App::new()
-    .add_plugins((
-        DefaultPlugins,
-        MyGamePlugin,
-        CodeEditorPlugins.build().disable::<EditorUiPlugin>(),
-    ))
+    .add_plugins((DefaultPlugins, MyGamePlugin, CodeEditorPlugins.build().disable::<EditorUiPlugin>()))
     .add_systems(Startup, |mut commands: Commands| {
-        commands.spawn(CodeEditor::default());
+        commands.spawn(CodeEditor);
     })
     .run();
 ```
 
-Spawning is one component, like `Text2d` — `#[require(...)]` cascades the supporting components (`CursorState`, `SelectionState`, `EditHistoryState`, `FoldState`, `BracketMatchState`, plus engine-side `TextView` / `FontConfig` / `DisplayLayout`). Override anything by passing extra components in the bundle:
+Override components at spawn time:
 
 ```rust
 commands.spawn((
@@ -46,91 +48,81 @@ commands.spawn((
 ));
 ```
 
+## Reading editor state
+
+All state is plain ECS — query it from any system:
+
+```rust
+fn status_bar(
+    editors: Query<(&TextBuffer, &CursorState, &FoldState), With<CodeEditor>>,
+) {
+    for (buffer, cursor, folds) in &editors {
+        // line count, cursor row/col, folded ranges — all plain components
+    }
+}
+```
+
+File save/open events are public — the editor emits them, your app handles them:
+
+```rust
+fn handle_save(mut events: EventReader<SaveRequested>, q: Query<&TextBuffer>) {
+    for SaveRequested { entity, path } in events.read() {
+        if let Ok(buf) = q.get(*entity) {
+            std::fs::write(path, buf.rope.to_string()).unwrap();
+        }
+    }
+}
+```
+
+## Multiple editors
+
+```rust
+fn spawn_two(mut commands: Commands) {
+    commands.spawn((CodeEditor, TextViewViewport { rect: Rect::new(0.0, 0.0, 800.0, 600.0), ..default() }));
+    commands.spawn((CodeEditor, TextViewViewport { rect: Rect::new(800.0, 0.0, 1600.0, 600.0), ..default() }));
+}
+```
+
+`bevy_picking` routes mouse to whichever editor is hovered. `bevy_input_focus` routes keyboard to whichever was clicked last. Each editor has its own font, scroll, fold state, syntax tree, and LSP client.
+
 ## Architecture
 
 ```
 EditorAction (leafwing-input-manager)
     ↓
-dispatch_action_events (one big match → 46 typed *Requested events)
+dispatch_action_events → typed *Requested events (one per action)
     ↓
-per-action handler systems (cursor_move, selection, edit, clipboard,
-                            multi_cursor, folding, file, lsp)
+handler systems (cursor_move, selection, edit, clipboard, multi_cursor, folding, file, lsp)
     ↓
-buffer (rope) + cursor / selection state
+TextBuffer (rope) + CursorState / SelectionState / FoldState / …
     ↓
-display_map: produce_layouts (engine system) reads HiddenLines +
-             LineStyles plain-data Components → DisplayLayout
+display_map: HiddenLines + LineStyles → DisplayLayout
     ↓
-InstancedTextPlugin: render_layout → GlyphInstance → instanced GPU draw
-```
-
-Three places worth knowing about for hosts:
-
-- **`input/dispatch.rs`** — leafwing `EditorAction` poll fans out into typed `*Requested` events. Per-action handler systems consume those events. Hosts that want to override behavior can send the events themselves, or run a system between the dispatcher and a specific handler that intercepts them.
-- **`display_map/plugin.rs`** — producer systems `produce_hidden_lines` (writes `HiddenLines` from `FoldState`) and `produce_line_styles` (writes `LineStyles` from `EditorSyntaxState` for the visible buffer-line window). Both run in `LayoutSyncSet`, before the engine's `LayoutProduceSet`. Helpers in `display_map/styling.rs` convert the editor's `LineSegment` shape into the engine's `RunWithText`.
-- **`lsp_ui/`** (feature `lsp`) — observes `bevy_lsp::LspResponse` messages, drives completion / hover popup state, renders. Popup nav (Up / Down / Enter / Tab / Escape) intercepts the corresponding `*Requested` events when the popup is visible.
-
-## Two editors at once
-
-```rust
-fn spawn_two(mut commands: Commands) {
-    commands.spawn((
-        CodeEditor,
-        TextViewViewport { rect: Rect::new(0.0, 0.0, 800.0, 600.0), .. },
-    ));
-    commands.spawn((
-        CodeEditor,
-        TextViewViewport { rect: Rect::new(800.0, 0.0, 1600.0, 600.0), .. },
-    ));
-}
-```
-
-`bevy_picking` routes mouse to whichever editor is hovered. `bevy_input_focus` routes keyboard to whichever was clicked last. Each editor has its own font, scroll, fold state, syntax tree, LSP client. See `examples/multi_editor.rs`.
-
-## Feature flags
-
-- `tree-sitter` (default) — pulls in `bevy_tree_sitter` + the syntax-highlight adapter (`syntax/`).
-- `lsp` — pulls in `bevy_lsp` + the LSP UI adapter (`lsp_ui/`).
-- `clipboard` (default) — system clipboard via `arboard` (always-on; pulled into `bevy_instanced_text_edit`).
-
-Minimal build (no syntax highlighting, no LSP):
-
-```bash
-cargo build -p bevscode --no-default-features
+InstancedTextPlugin: GlyphInstance → instanced GPU draw
 ```
 
 ## Customizing key bindings
 
-Spawn an `EditorInputManager` with your own `InputMap<EditorAction>` *before* `PostStartup`; the plugin's default input manager is gated on no existing one being present.
-
 ```rust
 fn setup_keys(mut commands: Commands) {
-    let mut input_map = InputMap::<EditorAction>::default();
-    input_map.insert(EditorAction::SaveFile, KeyCode::F2);
-    commands.spawn(EditorInputManager::with(input_map));
+    let mut map = InputMap::<EditorAction>::default();
+    map.insert(EditorAction::SaveFile, KeyCode::F2);
+    commands.spawn(EditorInputManager::with(map));
 }
-
 App::new()
     .add_plugins(CodeEditorPlugins)
     .add_systems(PreStartup, setup_keys)
     .run();
 ```
 
-## File save / open
+## Feature flags
 
-`SaveRequested { entity, path }` and `OpenRequested { entity, path }` are public events emitted by the `EditorAction::SaveFile` / `OpenFile` actions. The editor doesn't read or write files itself — host the file dialog in your app.
+- `tree-sitter` (default) — syntax highlighting via `bevy_tree_sitter`
+- `lsp` — language server integration via `bevy_lsp`
+- `clipboard` (default) — system clipboard via `arboard`
 
-```rust
-fn handle_save(
-    mut events: MessageReader<SaveRequested>,
-    q: Query<&TextBuffer>,
-) {
-    for SaveRequested { entity, path } in events.read() {
-        if let Ok(buffer) = q.get(*entity) {
-            std::fs::write(path, buffer.rope.to_string()).unwrap();
-        }
-    }
-}
+```bash
+cargo build -p bevscode --no-default-features
 ```
 
 ## Examples

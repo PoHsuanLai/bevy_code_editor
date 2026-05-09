@@ -1,7 +1,6 @@
 # bevsterm
 
-Embeddable terminal widget for Bevy. Spawn `BevyTerminal`, get a working
-shell.
+Embeddable PTY-backed terminal for Bevy. Spawn `BevyTerminal` into any app and it runs as a normal ECS entity — a game HUD, a dev tool, a split-pane layout alongside an editor.
 
 ```rust
 use bevy::prelude::*;
@@ -10,9 +9,7 @@ use bevy_instanced_text::InstancedTextPlugins;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugins(InstancedTextPlugins)
-        .add_plugins(BevyTerminalPlugin)
+        .add_plugins((DefaultPlugins, InstancedTextPlugins, BevyTerminalPlugin))
         .add_systems(Startup, |mut commands: Commands| {
             commands.spawn(BevyTerminal);
         })
@@ -22,58 +19,58 @@ fn main() {
 
 ## What you get
 
-- **Real PTY** via `alacritty_terminal` — the user's `$SHELL` runs in the
-  background; output streams to the cell grid; resize delivers `SIGWINCH`.
-- **VT100/VT220 + xterm extensions** — alt-screen apps (`vim`, `htop`,
-  `less`), arrow keys, function keys, mouse reporting, kitty keyboard.
-- **256-color + truecolor** rendering through `bevy_instanced_text`.
-- **Drag-select with multi-mode** (single / double / triple click + Alt
-  drag) thanks to the lifted `SelectionMode` in `bevy_instanced_text_edit`.
-- **Cmd+C / Cmd+V** (or **Ctrl+Shift+C / Ctrl+Shift+V** on Linux/Windows)
-  copy and bracketed-paste.
-- **Per-entity theme** via `TerminalThemeConfig` — 16-slot ANSI palette
-  + block-background colors; render-side colors come from the engine's
-  `RenderTheme`.
+- **Real PTY** — the user's `$SHELL` runs in the background; output streams to the cell grid; resize delivers `SIGWINCH`.
+- **VT100/VT220 + xterm extensions** — alt-screen apps (`vim`, `htop`, `less`), arrow keys, function keys, mouse reporting, kitty keyboard.
+- **256-color + truecolor** rendering via `bevy_instanced_text`.
+- **Drag-select** (single / double / triple click + Alt drag).
+- **Cmd+C / Cmd+V** (or **Ctrl+Shift+C / Ctrl+Shift+V** on Linux/Windows).
+- **Per-entity theme** via `TerminalThemeConfig` — 16-slot ANSI palette + block-background colors.
+
+## Reading terminal state
+
+The plugin writes these components every frame — query them from any system, no special API:
+
+```rust
+fn my_tab_bar(terminals: Query<(&TerminalShellInfo, &TerminalGridSnapshot), With<BevyTerminal>>) {
+    for (info, grid) in &terminals {
+        // info.title, info.cwd — from OSC 0/1/2/7
+        // grid.cols, grid.rows, grid.cursor_row, grid.cursor_col
+    }
+}
+```
+
+| Component | What it holds |
+|---|---|
+| `TerminalGridSnapshot` | Grid dimensions and cursor position. |
+| `TerminalShellInfo` | Title and CWD from OSC 0/1/2/7. |
+| `TerminalBlockState` | OSC 133 command blocks: command, output row range, exit code. |
+| `TerminalScrollFollow` | Whether the view is pinned to the bottom. |
+| `TerminalColorPalette` | The 16 ANSI colors — mutate to retheme at runtime. |
 
 ## ECS shape
 
-`BevyTerminal` is a marker; `#[require]` cascades the rest:
+`BevyTerminal` is a marker; `#[require]` cascades the rest automatically:
 
 | Component | Purpose |
 |---|---|
-| `TerminalSession` | `Arc<FairMutex<Term>>` + `Notifier` (PTY write side). |
-| `TerminalEventChannel` | crossbeam receiver from the alacritty event-loop thread. |
-| `TerminalGridSnapshot` | Cell-grid metadata (cols, rows, cursor). |
-| `TerminalShellInfo` | Title + cwd from OSC 0/1/2/7. |
-| `TerminalInputMode` | Mirror of `TermMode` flags (cursor-key app, alt-screen, mouse). |
-| `TerminalBlockState` | Reserved for OSC 133 command blocks (deferred). |
+| `TerminalSession` | PTY session handle (write side). |
+| `TerminalEventChannel` | crossbeam receiver from the PTY event-loop thread. |
 | `TerminalThemeConfig` | 16-color ANSI palette + block bgs. |
 | `TerminalScrollback` | Max scrollback lines. |
-| `TerminalCursorBlink` | Phase-reset state for the caret. |
-| (engine substrate) | `TextView`, `TextBuffer`, `ScrollState`, `LineStyles`, … |
-| (text_editor) | `SelectionState`, `EditTheme`, `ScrollConfig`. |
+| `TerminalCursorBlink` | Caret blink phase state. |
 
 ## Messages
 
-- **Outbound:** `TerminalReady`, `TerminalExited`, `TerminalTitleChanged`,
-  `TerminalBellRang`, `TerminalCwdChanged`, `TerminalBlockFinished`.
-- **Inbound:** `TerminalWriteBytes`, `TerminalRunCommand`,
-  `TerminalResize`, `TerminalScrollTo`, `TerminalClear`,
-  `TerminalCopySelection`, `TerminalPaste`.
-
-All registered with `add_message::<T>()` and `register_type::<T>()`.
+- **Outbound:** `TerminalReady`, `TerminalExited`, `TerminalTitleChanged`, `TerminalBellRang`, `TerminalCwdChanged`, `TerminalBlockFinished`.
+- **Inbound:** `TerminalWriteBytes`, `TerminalRunCommand`, `TerminalResize`, `TerminalScrollTo`, `TerminalClear`, `TerminalCopySelection`, `TerminalPaste`.
 
 ## System sets
 
 ```
-TerminalPtyDrainSet     ← drain crossbeam receiver, mirror term mode
+TerminalPtyDrainSet     ← drain PTY receiver, mirror term mode
 TerminalApplyStateSet   ← clipboard handlers, viewport-driven resize
-TerminalSnapshotSet     ← Term grid → LineStyles + GridSnapshot + caret
-                          (engine's LayoutProduceSet runs after this)
+TerminalSnapshotSet     ← grid → LineStyles + GridSnapshot + caret
 ```
-
-Keyboard input is an observer on `FocusedInput<KeyboardInput>`, not a
-system, so it doesn't sit in a set.
 
 ## Examples
 
@@ -82,8 +79,11 @@ system, so it doesn't sit in a set.
 
 ## Roadmap
 
-- OSC 133 command blocks (Warp-style framing) — needs a parallel
-  `vte::Parser` tee'd off the PTY byte stream; deferred for v1.
-- Shell integration scripts (`bash`/`zsh`/`fish`/`pwsh`) for OSC 133.
+- OSC 133 command blocks (Warp-style framing).
+- Shell integration scripts (`bash`/`zsh`/`fish`/`pwsh`).
 - Sixel / iTerm2 inline images.
 - Multi-line search inside scrollback.
+
+## License
+
+MIT OR Apache-2.0
