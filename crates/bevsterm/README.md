@@ -1,17 +1,17 @@
-# bevy_terminal
+# bevsterm
 
 Embeddable terminal widget for Bevy. Spawn `BevyTerminal`, get a working
 shell.
 
 ```rust
 use bevy::prelude::*;
-use bevy_terminal::prelude::*;
-use bevy_text_engine::TextEnginePlugins;
+use bevsterm::prelude::*;
+use bevy_instanced_text::InstancedTextPlugins;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(TextEnginePlugins)
+        .add_plugins(InstancedTextPlugins)
         .add_plugins(BevyTerminalPlugin)
         .add_systems(Startup, |mut commands: Commands| {
             commands.spawn(BevyTerminal);
@@ -26,9 +26,9 @@ fn main() {
   background; output streams to the cell grid; resize delivers `SIGWINCH`.
 - **VT100/VT220 + xterm extensions** — alt-screen apps (`vim`, `htop`,
   `less`), arrow keys, function keys, mouse reporting, kitty keyboard.
-- **256-color + truecolor** rendering through `bevy_text_engine`.
+- **256-color + truecolor** rendering through `bevy_instanced_text`.
 - **Drag-select with multi-mode** (single / double / triple click + Alt
-  drag) thanks to the lifted `SelectionMode` in `bevy_text_editor`.
+  drag) thanks to the lifted `SelectionMode` in `bevy_instanced_text_edit`.
 - **Cmd+C / Cmd+V** (or **Ctrl+Shift+C / Ctrl+Shift+V** on Linux/Windows)
   copy and bracketed-paste.
 - **Per-entity theme** via `TerminalThemeConfig` — 16-slot ANSI palette

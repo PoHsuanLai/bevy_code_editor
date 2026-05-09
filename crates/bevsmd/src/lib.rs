@@ -10,7 +10,7 @@
 //!
 //! ```rust,no_run
 //! use bevy::prelude::*;
-//! use bevy_markdown::prelude::*;
+//! use bevsmd::prelude::*;
 //!
 //! App::new()
 //!     .add_plugins(DefaultPlugins)

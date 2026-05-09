@@ -1,14 +1,14 @@
-# bevy_code_editor
+# bevscode
 
-A code editor as a Bevy plugin, layered on top of [`bevy_text_engine`](../bevy_text_engine) (rendering) and [`bevy_text_editor`](../bevy_text_editor) (editable-text widget).
+A code editor as a Bevy plugin, layered on top of [`bevy_instanced_text`](../bevy_instanced_text) (rendering) and [`bevy_instanced_text_edit`](../bevy_instanced_text_edit) (editable-text widget).
 
-This crate adds the IDE-specific extras: multi-cursor, syntax-highlight adapter (over [`bevy_tree_sitter`](../bevy_tree_sitter)), LSP UI adapter (over [`bevy_lsp`](../bevy_lsp)), folding, bracket matching, scrollbar, line numbers, gutter, goto-line dialog. The cursor / selection / edit history / undo / clipboard machinery lives one tier down in `bevy_text_editor` and is shared with simpler hosts (chat boxes, search fields).
+This crate adds the IDE-specific extras: multi-cursor, syntax-highlight adapter (over [`bevy_tree_sitter`](../bevy_tree_sitter)), LSP UI adapter (over [`bevy_lsp`](../bevy_lsp)), folding, bracket matching, scrollbar, line numbers, gutter, goto-line dialog. The cursor / selection / edit history / undo / clipboard machinery lives one tier down in `bevy_instanced_text_edit` and is shared with simpler hosts (chat boxes, search fields).
 
 ## Hello-world
 
 ```rust
 use bevy::prelude::*;
-use bevy_code_editor::prelude::*;
+use bevscode::prelude::*;
 
 fn main() {
     App::new()
@@ -63,7 +63,7 @@ buffer (rope) + cursor / selection state
 display_map: produce_layouts (engine system) reads HiddenLines +
              LineStyles plain-data Components → DisplayLayout
     ↓
-TextEnginePlugin: render_layout → GlyphInstance → instanced GPU draw
+InstancedTextPlugin: render_layout → GlyphInstance → instanced GPU draw
 ```
 
 Three places worth knowing about for hosts:
@@ -93,12 +93,12 @@ fn spawn_two(mut commands: Commands) {
 
 - `tree-sitter` (default) — pulls in `bevy_tree_sitter` + the syntax-highlight adapter (`syntax/`).
 - `lsp` — pulls in `bevy_lsp` + the LSP UI adapter (`lsp_ui/`).
-- `clipboard` (default) — system clipboard via `arboard` (always-on; pulled into `bevy_text_editor`).
+- `clipboard` (default) — system clipboard via `arboard` (always-on; pulled into `bevy_instanced_text_edit`).
 
 Minimal build (no syntax highlighting, no LSP):
 
 ```bash
-cargo build -p bevy_code_editor --no-default-features
+cargo build -p bevscode --no-default-features
 ```
 
 ## Customizing key bindings

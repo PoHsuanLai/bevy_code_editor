@@ -10,7 +10,7 @@
 //!
 //! ```rust,no_run
 //! # use bevy::prelude::*;
-//! # use bevy_terminal::prelude::*;
+//! # use bevsterm::prelude::*;
 //! // Default shell ($SHELL / powershell.exe), default size, default theme.
 //! commands.spawn(BevyTerminal);
 //!
@@ -44,7 +44,7 @@
 //!
 //! ```rust,no_run
 //! use bevy::prelude::*;
-//! use bevy_terminal::prelude::*;
+//! use bevsterm::prelude::*;
 //!
 //! App::new()
 //!     .add_plugins(DefaultPlugins)

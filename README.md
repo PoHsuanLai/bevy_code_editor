@@ -6,11 +6,11 @@ This started as a code editor and grew into the underlying primitives. The works
 
 | Crate | What it does | Depends on |
 |---|---|---|
-| **`bevy_text_engine`** | GPU glyph atlas, instanced rendering, soft-wrap layout producer, overlays | bevy + cosmic-text + swash |
-| **`bevy_text_editor`** | Editable text widget: pointer interaction + cursor / selection / edit history / undo / clipboard for `TextView` entities | `bevy_text_engine` + bevy_picking + bevy_input_focus |
+| **`bevy_instanced_text`** | GPU glyph atlas, instanced rendering, soft-wrap layout producer, overlays | bevy + cosmic-text + swash |
+| **`bevy_instanced_text_edit`** | Editable text widget: pointer interaction + cursor / selection / edit history / undo / clipboard for `TextView` entities | `bevy_instanced_text` + bevy_picking + bevy_input_focus |
 | **`bevy_tree_sitter`** | Tree-sitter parser + incremental highlights, text-rendering-agnostic | bevy + tree-sitter |
 | **`bevy_lsp`** | Async LSP transport (async-lsp on a shared tokio runtime), per-document Components, position helpers | bevy + async-lsp + lsp-types |
-| **`bevy_code_editor`** | The code-editor consumer: IDE features (multi-cursor, folding, brackets, syntax adapter, LSP UI, scrollbar, line numbers) on top of `bevy_text_editor` | all of the above |
+| **`bevscode`** | The code-editor consumer: IDE features (multi-cursor, folding, brackets, syntax adapter, LSP UI, scrollbar, line numbers) on top of `bevy_instanced_text_edit` | all of the above |
 
 ## What you get
 
@@ -18,7 +18,7 @@ If you want **a code editor in your Bevy app**:
 
 ```rust
 use bevy::prelude::*;
-use bevy_code_editor::prelude::*;
+use bevscode::prelude::*;
 
 fn main() {
     App::new()
@@ -33,11 +33,11 @@ If you want **a chat box, log viewer, terminal, or anything that just renders st
 
 ```rust
 use bevy::prelude::*;
-use bevy_text_engine::prelude::*;
+use bevy_instanced_text::prelude::*;
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, TextEnginePlugins))
+        .add_plugins((DefaultPlugins, InstancedTextPlugins))
         .add_systems(Startup, spawn_panel)
         .run();
 }
@@ -68,7 +68,7 @@ cargo run --example tree-sitter
 # LSP integration (rust-analyzer)
 cargo run --example lsp --features lsp
 
-# Engine-only demo, no editor — proves TextEnginePlugins works alone
+# Engine-only demo, no editor — proves InstancedTextPlugins works alone
 cargo run --example text_view_demo
 ```
 
@@ -78,19 +78,19 @@ The plugins are explicit and additive — no auto-add of unrelated machinery. Mi
 
 ```rust
 // Just the rendering engine
-.add_plugins(TextEnginePlugins)
+.add_plugins(InstancedTextPlugins)
 
 // Engine + pointer/keyboard interaction
-.add_plugins((TextEnginePlugins, TextInteractionPlugin))
+.add_plugins((InstancedTextPlugins, InstancedTextInteractionPlugin))
 
 // Engine + interaction + editor (build it up explicitly)
-.add_plugins((TextEnginePlugins, TextInteractionPlugin, CodeEditorPlugin))
+.add_plugins((InstancedTextPlugins, InstancedTextInteractionPlugin, CodeEditorPlugin))
 
 // All of the above plus default UI + camera (one-line)
 .add_plugins(CodeEditorPlugin::standalone())
 ```
 
-LSP and tree-sitter are gated by feature flags on `bevy_code_editor`:
+LSP and tree-sitter are gated by feature flags on `bevscode`:
 
 - `tree-sitter` (default) — pulls in `bevy_tree_sitter` + a syntax-highlighting adapter.
 - `lsp` — pulls in `bevy_lsp` + the editor's LSP UI.
@@ -111,7 +111,7 @@ let font: Handle<bevy::text::Font> = asset_server.load("fonts/JetBrainsMono.ttf"
 // In bevy_text:
 commands.spawn((Text2d::new("hello"), TextFont { font: font.clone(), ..default() }));
 
-// In bevy_text_engine:
+// In bevy_instanced_text:
 commands.spawn((TextView, FontConfig::from_size(16.0).with_font(font)));
 ```
 
@@ -119,7 +119,7 @@ Same handle, single asset load, asset hot-reload works for both.
 
 ## Feature flags
 
-`bevy_code_editor` features:
+`bevscode` features:
 
 - `tree-sitter` (default) — syntax highlighting via `bevy_tree_sitter`
 - `lsp` — language server integration via `bevy_lsp`
@@ -127,7 +127,7 @@ Same handle, single asset load, asset hot-reload works for both.
 Minimal build (no syntax highlighting, no LSP):
 
 ```bash
-cargo build -p bevy_code_editor --no-default-features
+cargo build -p bevscode --no-default-features
 ```
 
 ## License

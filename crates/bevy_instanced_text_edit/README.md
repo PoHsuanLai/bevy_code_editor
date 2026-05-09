@@ -1,21 +1,21 @@
-# bevy_text_editor
+# bevy_instanced_text_edit
 
-Editable text widget for Bevy: pointer interaction (scroll, drag-select, copy) on top of [`bevy_text_engine`](../bevy_text_engine) `TextView` entities, plus the editable-text core (cursor, selection, edit history, undo/redo, clipboard, typed-character handling).
+Editable text widget for Bevy: pointer interaction (scroll, drag-select, copy) on top of [`bevy_instanced_text`](../bevy_instanced_text) `TextView` entities, plus the editable-text core (cursor, selection, edit history, undo/redo, clipboard, typed-character handling).
 
 This is the middle layer in a three-tier stack:
 
-- [`bevy_text_engine`](../bevy_text_engine) — GPU rendering primitives.
-- **`bevy_text_editor`** — interaction + editable text widget (this crate).
-- [`bevy_code_editor`](../bevy_code_editor) — IDE features (multi-cursor, folding, brackets, line numbers, LSP UI, syntax highlighting).
+- [`bevy_instanced_text`](../bevy_instanced_text) — GPU rendering primitives.
+- **`bevy_instanced_text_edit`** — interaction + editable text widget (this crate).
+- [`bevscode`](../bevscode) — IDE features (multi-cursor, folding, brackets, line numbers, LSP UI, syntax highlighting).
 
-A search box, chat composer, or URL bar uses `TextEditorPlugin` and gets a working editable text field without dragging in the IDE features.
+A search box, chat composer, or URL bar uses `InstancedTextEditPlugin` and gets a working editable text field without dragging in the IDE features.
 
 ## Plugins
 
 The crate ships two composable plugins:
 
-- **`TextInteractionPlugin`** — read-only interaction: pointer scroll, click + drag selection, Cmd/Ctrl+C copy. Pair with `TextEnginePlugins` for a selectable, scrollable view.
-- **`TextEditorPlugin`** — adds typed-character insertion, edit history, undo/redo, cut, paste. Spawning a `TextEditor` entity gives you a working editable text field. Pulls in `TextInteractionPlugin` automatically.
+- **`InstancedTextInteractionPlugin`** — read-only interaction: pointer scroll, click + drag selection, Cmd/Ctrl+C copy. Pair with `InstancedTextPlugins` for a selectable, scrollable view.
+- **`InstancedTextEditPlugin`** — adds typed-character insertion, edit history, undo/redo, cut, paste. Spawning a `TextEditor` entity gives you a working editable text field. Pulls in `InstancedTextInteractionPlugin` automatically.
 
 The plugin idempotently adds `bevy_picking::DefaultPickingPlugins` and `bevy_input_focus::InputDispatchPlugin` if the host hasn't already.
 
@@ -31,12 +31,12 @@ Observer-driven, not polling-system-driven:
 
 ```rust
 use bevy::prelude::*;
-use bevy_text_engine::prelude::*;
-use bevy_text_editor::TextInteractionPlugin;
+use bevy_instanced_text::prelude::*;
+use bevy_instanced_text_edit::InstancedTextInteractionPlugin;
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, TextEnginePlugins, TextInteractionPlugin))
+        .add_plugins((DefaultPlugins, InstancedTextPlugins, InstancedTextInteractionPlugin))
         .run();
 }
 ```
@@ -45,12 +45,12 @@ fn main() {
 
 ```rust
 use bevy::prelude::*;
-use bevy_text_engine::prelude::*;
-use bevy_text_editor::{TextEditor, TextEditorPlugin};
+use bevy_instanced_text::prelude::*;
+use bevy_instanced_text_edit::{TextEditor, InstancedTextEditPlugin};
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, TextEnginePlugins, TextEditorPlugin))
+        .add_plugins((DefaultPlugins, InstancedTextPlugins, InstancedTextEditPlugin))
         .add_systems(Startup, |mut commands: Commands| {
             commands.spawn(TextEditor);
         })
