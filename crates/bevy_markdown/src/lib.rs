@@ -2,20 +2,32 @@
 //!
 //! Parses a Markdown string via [pulldown-cmark](https://docs.rs/pulldown-cmark)
 //! and renders it as a scrollable, selectable text view. Designed to be
-//! embedded inside any Bevy application — spawn a [`MarkdownDoc`] and the
-//! plugin manages the layout and rendering. The host is not required to know
-//! anything about the rendering pipeline.
+//! embedded inside any Bevy application — spawn a [`MarkdownViewerBundle`] and
+//! the plugin manages the layout and rendering. No knowledge of the rendering
+//! layer is required.
 //!
-//! ## Spawning a viewer
+//! ## Quick start
 //!
 //! ```rust,no_run
-//! # use bevy::prelude::*;
-//! # use bevy_markdown::MarkdownDoc;
-//! commands.spawn(MarkdownDoc::new("# Hello\n\nSome *markdown*."));
+//! use bevy::prelude::*;
+//! use bevy_markdown::prelude::*;
+//!
+//! App::new()
+//!     .add_plugins(DefaultPlugins)
+//!     .add_plugins(MarkdownViewerPlugins)
+//!     .add_systems(Startup, |mut commands: Commands| {
+//!         commands.spawn(MarkdownViewerBundle {
+//!             doc: MarkdownDoc::new("# Hello\n\nA *markdown* viewer."),
+//!             ..default()
+//!         });
+//!     })
+//!     .run();
 //! ```
 //!
-//! Appearance is controlled via [`MarkdownTheme`], a component on the
-//! `MarkdownDoc` entity. Override at spawn time or mutate at runtime.
+//! ## Appearance
+//!
+//! Controlled via [`MarkdownTheme`], a component cascaded automatically onto
+//! every [`MarkdownDoc`] entity. Override at spawn time or mutate at runtime.
 //!
 //! Supported CommonMark: headings, bold, italic, inline code, fenced code
 //! blocks, blockquotes, unordered/ordered lists, horizontal rules, and links.
@@ -25,27 +37,6 @@
 //! - **[`MarkdownLinks`]** — all links in the document with their display text
 //!   and href. The plugin does not navigate links; hosts query this component
 //!   and handle clicks however fits their app.
-//!
-//! Scroll and text selection come from the underlying rendering layer. The
-//! viewer is intentionally read-only — there is no cursor, edit history, or
-//! keyboard input.
-//!
-//! ## Quick start
-//!
-//! ```rust,no_run
-//! use bevy::prelude::*;
-//! use bevy_instanced_text::InstancedTextPlugins;
-//! use bevy_markdown::prelude::*;
-//!
-//! App::new()
-//!     .add_plugins(DefaultPlugins)
-//!     .add_plugins(InstancedTextPlugins)
-//!     .add_plugins(MarkdownViewerPlugin)
-//!     .add_systems(Startup, |mut commands: Commands| {
-//!         commands.spawn(MarkdownDoc::new("# Hello\n\nA *markdown* viewer."));
-//!     })
-//!     .run();
-//! ```
 
 pub mod layout;
 pub mod parse;
@@ -53,15 +44,23 @@ pub mod plugin;
 pub mod theme;
 pub mod view;
 
-pub use layout::layout_markdown;
-pub use parse::{parse_markdown, Block as MdBlock, Inline as MdInline};
-pub use plugin::MarkdownViewerPlugin;
-pub use theme::MarkdownTheme;
+pub use plugin::{
+    MarkdownFont, MarkdownViewerBundle, MarkdownViewerPlugin, MarkdownViewerPlugins,
+    MarkdownViewport,
+};
+pub use theme::{BlockDecorTheme, MarkdownTheme};
 pub use view::{MarkdownCodeFont, MarkdownDoc, MarkdownLinks};
+
+// Re-exported so hosts never need to import from the rendering layer directly.
+pub use bevy_instanced_text::{DisplayLayout, ScrollState};
 
 pub mod prelude {
     //! Common types for embedding a markdown viewer.
-    pub use crate::plugin::MarkdownViewerPlugin;
-    pub use crate::theme::MarkdownTheme;
+    pub use crate::plugin::{
+        MarkdownFont, MarkdownViewerBundle, MarkdownViewerPlugin, MarkdownViewerPlugins,
+        MarkdownViewport,
+    };
+    pub use crate::theme::{BlockDecorTheme, MarkdownTheme};
     pub use crate::view::{MarkdownCodeFont, MarkdownDoc, MarkdownLinks};
+    pub use bevy_instanced_text::{DisplayLayout, ScrollState};
 }

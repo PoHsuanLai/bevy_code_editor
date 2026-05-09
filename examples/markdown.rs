@@ -1,27 +1,18 @@
 //! Basic markdown viewer demo. Renders a sample document covering all
 //! supported features: headings, bold/italic, inline code, fenced code
 //! blocks, lists, blockquotes, links, and a horizontal rule.
-//!
-//! Drop a bold/italic font face into `examples/assets/fonts/` to see the renderer
-//! pick the real face — without one, the engine synthesizes via stroke
-//! doubling (bold) and skew (italic).
 
 use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
-use bevy_markdown::{MarkdownCodeFont, MarkdownDoc, MarkdownViewerPlugin};
-use bevy_instanced_text::{
-    ContentMetrics, DisplayLayout, FontConfig, FontSynthesis, ScrollState, TextBuffer,
-    InstancedTextPlugins, TextView, TextViewViewport,
-};
+use bevy_markdown::prelude::*;
 
 const SCROLL_SPEED: f32 = 40.0;
 
 const SAMPLE: &str = "\
 # Markdown Viewer
 
-A *markdown* viewer for Bevy. Built on **`bevy_instanced_text`**, it renders \
-rich text with real bold and italic faces (or synthesizes them when no \
-matching face is loaded).
+A *markdown* viewer for Bevy. Renders rich text with real bold and italic
+faces (or synthesizes them when no matching face is loaded).
 
 ## Features
 
@@ -35,39 +26,37 @@ matching face is loaded).
 ### Code blocks
 
 ```rust
-fn render(layout: &DisplayLayout) -> Vec<GlyphInstance> {
-    layout.lines.iter().flat_map(emit).collect()
+fn greet(name: &str) {
+    println!(\"Hello, {name}!\");
 }
 ```
 
 ### Blockquote
 
 > A quoted paragraph. The renderer applies a thin border so the block \
-> visually separates from surrounding body text. Selection still hits \
-> the rendered text underneath.
+> visually separates from surrounding body text.
 
 ---
 
 That's the whole demo.\n";
 
 fn main() {
-    let mut app = App::new();
-    app.add_plugins(DefaultPlugins.set(WindowPlugin {
-        primary_window: Some(Window {
-            title: "bevy_markdown — basic demo".to_string(),
-            resolution: (900, 700).into(),
+    App::new()
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "bevy_markdown — basic demo".to_string(),
+                resolution: (900, 700).into(),
+                ..default()
+            }),
             ..default()
-        }),
-        ..default()
-    }).set(bevy::asset::AssetPlugin {
-        file_path: "assets".into(),
-        ..default()
-    }))
-    .add_plugins(InstancedTextPlugins)
-    .add_plugins(MarkdownViewerPlugin)
-    .add_systems(Startup, (setup_camera, setup_viewer))
-    .add_systems(Update, handle_scroll)
-    .run();
+        }).set(bevy::asset::AssetPlugin {
+            file_path: "assets".into(),
+            ..default()
+        }))
+        .add_plugins(MarkdownViewerPlugins)
+        .add_systems(Startup, (setup_camera, setup_viewer))
+        .add_systems(Update, handle_scroll)
+        .run();
 }
 
 fn setup_camera(mut commands: Commands) {
@@ -79,60 +68,38 @@ fn setup_viewer(
     asset_server: Res<AssetServer>,
     windows: Query<&Window>,
 ) {
-    let Ok(window) = windows.single() else {
-        return;
-    };
+    let Ok(window) = windows.single() else { return };
 
-    // Body font: FiraMono for readable prose
-    let body_regular: Handle<bevy::text::Font> = asset_server.load("fonts/FiraMono-Regular.ttf");
-    let body_bold: Handle<bevy::text::Font> = asset_server.load("fonts/FiraMono-Medium.ttf");
+    let font = MarkdownFont::from_size(16.0)
+        .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
+        .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
 
-    // Code font: Courier New for inline code and fenced code blocks
-    let code_regular: Handle<bevy::text::Font> = asset_server.load("fonts/CourierNew-Regular.ttf");
-
-    let font = FontConfig::from_size(16.0)
-        .with_font(body_regular)
-        .with_bold_font(body_bold)
-        .with_font_synthesis(FontSynthesis::default());
-
-    let logical_w = window.width() as u32;
-    let logical_h = window.height() as u32;
+    let code_font = asset_server.load("fonts/CourierNew-Regular.ttf");
 
     commands.spawn((
-        TextView,
-        TextBuffer::default(),
-        ScrollState::default(),
-        ContentMetrics::default(),
-        TextViewViewport {
-            width: logical_w,
-            height: logical_h,
-            text_area_left: 24.0,
-            text_area_top: 24.0,
+        MarkdownViewerBundle {
+            doc: MarkdownDoc::new(SAMPLE),
+            viewport: MarkdownViewport {
+                width: window.width() as u32,
+                height: window.height() as u32,
+                text_area_left: 24.0,
+                text_area_top: 24.0,
+                ..default()
+            },
+            font,
             ..default()
         },
-        font,
-        MarkdownDoc::new(SAMPLE),
-        MarkdownCodeFont(code_regular),
-        DisplayLayout::default(),
+        MarkdownCodeFont(code_font),
     ));
 }
 
-/// Mouse-wheel scroll, clamped to the laid-out content height.
-///
-/// `target_scroll_offset` is negative going down (matches the editor's
-/// convention). The lower bound is `-(content_height - viewport_height)`
-/// so the last row stays visible at maximum scroll; the upper bound is 0
-/// so the first row stays at the top.
 fn handle_scroll(
-    mut text_views: Query<(&mut ScrollState, &TextViewViewport, &DisplayLayout), With<TextView>>,
+    mut scroll_state: Query<(&mut ScrollState, &MarkdownViewport, &DisplayLayout)>,
     mut mouse_wheel: MessageReader<bevy::input::mouse::MouseWheel>,
 ) {
     for event in mouse_wheel.read() {
-        for (mut scroll, viewport, layout) in text_views.iter_mut() {
+        for (mut scroll, viewport, layout) in scroll_state.iter_mut() {
             scroll.target_scroll_offset += event.y * SCROLL_SPEED;
-            // Content height = (last row's bottom) - (first row's top),
-            // computed from the live layout's shifted y_top values. The
-            // shift cancels out so this is invariant to scroll.
             let content_h = match (layout.lines.first(), layout.lines.last()) {
                 (Some(first), Some(last)) => {
                     last.y_top + last.line_height.unwrap_or(layout.line_height) - first.y_top

@@ -1,50 +1,35 @@
-//! `MarkdownViewerPlugin` — owns the parse-on-change and scroll-on-change
-//! systems for entities carrying a `MarkdownDoc`.
-//!
-//! Two systems run in `Update`:
-//!
-//! - `rebuild_markdown_layout`: re-parses + re-lays out the document when
-//!   the source text, font config, viewport, or theme changes. Stashes the
-//!   pre-scroll layout on the entity as a `BaseMarkdownLayout` component.
-//! - `apply_markdown_scroll`: shifts the cached layout's `y_top` values by
-//!   `scroll_offset + text_area_top` whenever the entity's
-//!   `ScrollState.scroll_offset` (or viewport offsets) change. Cheap —
-//!   clones the `Arc<Vec<ShapedLine>>` and rewrites only `y_top`.
-//!
-//! The split keeps scrolling cheap: parse + flatten happen once; per-frame
-//! scroll just rewrites floats.
+//! Plugin and supporting types for the markdown viewer.
 
 use std::sync::Arc;
 
+use bevy::app::PluginGroupBuilder;
 use bevy::prelude::*;
 use bevy_instanced_text::{
     ContentMetrics, DisplayLayout, FontConfig, RectOverlay, ScrollState, ShapedLine, TextBuffer,
     TextView, TextViewOverlays, TextViewViewport,
 };
 
+/// Size and scroll geometry for a markdown viewer entity.
+pub type MarkdownViewport = TextViewViewport;
+
+/// Font path, size, and line-height for a markdown viewer entity.
+pub type MarkdownFont = FontConfig;
+
 use crate::layout::{layout_markdown, MarkdownLayoutConfig};
 use crate::parse::parse_markdown;
 use crate::theme::MarkdownTheme;
 use crate::view::{MarkdownCodeFont, MarkdownDoc, MarkdownLinks};
 
-/// Cached pre-scroll layout. The rebuild system writes this; the scroll
-/// system reads it and produces the per-frame `DisplayLayout`. Stored
-/// separately so re-laying out doesn't churn the actual `DisplayLayout`
-/// Arc seen by the renderer when scroll changes.
-///
-/// Also caches the row-anchored decoration overlays (`base_overlays`)
-/// alongside the layout. The scroll system copies these into a
-/// `TextViewOverlays` component each frame; the renderer picks them up
-/// via the same anchor mechanism used for selection / cursors, so
-/// scrolling shifts decorations naturally with their host rows.
+/// Cached pre-scroll layout — written by the rebuild system, read by the
+/// scroll system. Not part of the public API.
 #[derive(Component, Clone)]
-pub struct BaseMarkdownLayout {
-    pub layout: DisplayLayout,
-    pub base_overlays: Vec<RectOverlay>,
+pub(crate) struct BaseMarkdownLayout {
+    pub(crate) layout: DisplayLayout,
+    pub(crate) base_overlays: Vec<RectOverlay>,
 }
 
-/// Adds the markdown rebuild + scroll systems. Pair with `InstancedTextPlugins`
-/// for rendering.
+/// Adds the markdown parse-on-change and scroll systems to the app.
+/// Use [`MarkdownViewerPlugins`] to also pull in the rendering layer.
 pub struct MarkdownViewerPlugin;
 
 impl Plugin for MarkdownViewerPlugin {
@@ -56,9 +41,21 @@ impl Plugin for MarkdownViewerPlugin {
     }
 }
 
-/// Re-parses the markdown source + rebuilds the engine block list when
-/// the doc, font, viewport, or theme changes. Writes a `BaseMarkdownLayout`
-/// on the entity (the un-scrolled layout) which the scroll system reads.
+/// Full plugin bundle for embedding a markdown viewer. Adds the rendering
+/// layer plus [`MarkdownViewerPlugin`]. Use this unless you are already
+/// managing the rendering plugins yourself.
+pub struct MarkdownViewerPlugins;
+
+impl bevy::app::PluginGroup for MarkdownViewerPlugins {
+    fn build(self) -> PluginGroupBuilder {
+        PluginGroupBuilder::start::<Self>()
+            .add(bevy_instanced_text::gpu::GlyphAtlasPlugin)
+            .add(bevy_instanced_text::gpu::InstancedTextRenderPlugin)
+            .add(bevy_instanced_text::view::plugin::InstancedTextPlugin)
+            .add(MarkdownViewerPlugin)
+    }
+}
+
 #[allow(clippy::type_complexity)]
 fn rebuild_markdown_layout(
     mut commands: Commands,
@@ -123,15 +120,6 @@ fn rebuild_markdown_layout(
     }
 }
 
-/// Produce the per-frame `DisplayLayout` by adding the entity's vertical
-/// scroll offset + `text_area_top` to each row's `y_top`. Also re-emits
-/// the row-anchored decoration overlays — anchored by `display_row`, the
-/// renderer resolves their Y from the (now-shifted) `y_top` at paint
-/// time, so we just copy them verbatim.
-///
-/// Runs on every frame the scroll or the base layout changed; cheap
-/// because rows are re-emitted with only their `y_top` shifted (Vec
-/// allocation, no shaping or restyling).
 #[allow(clippy::type_complexity)]
 fn apply_markdown_scroll(
     mut commands: Commands,
@@ -161,9 +149,6 @@ fn apply_markdown_scroll(
     }
 }
 
-/// Clone a `DisplayLayout` and shift each row's `y_top` by `delta`. The
-/// row data (`text`, `runs`, `shape`) is reused as-is since `Vec<ShapedLine>`
-/// is wrapped in an Arc; we allocate a new Vec only on the float column.
 fn shift_layout_y(base: &DisplayLayout, delta: f32) -> DisplayLayout {
     let lines: Vec<ShapedLine> = base
         .lines
@@ -198,10 +183,6 @@ fn shift_layout_y(base: &DisplayLayout, delta: f32) -> DisplayLayout {
     }
 }
 
-/// Pixel budget for soft-wrap. Mirrors the renderer's content area:
-/// `viewport.width - left_margin - right_margin`, where the right
-/// margin matches `text_area_left` (the renderer's `push_block_decorations`
-/// uses the same convention).
 fn content_width_px(viewport: &TextViewViewport) -> f32 {
     let left = if viewport.gutter_width > 0.0 {
         viewport.text_area_left.max(viewport.gutter_width)
@@ -212,21 +193,29 @@ fn content_width_px(viewport: &TextViewViewport) -> f32 {
     (viewport.width as f32 - left - right_margin).max(80.0)
 }
 
-/// Components a markdown viewer entity needs alongside `MarkdownDoc`.
-/// Spawn this bundle to get the engine's scroll/selection/copy behavior
-/// for free.
+/// Everything a markdown viewer entity needs. Spawn this and the plugin manages the rest.
+///
+/// ```rust,no_run
+/// # use bevy::prelude::*;
+/// # use bevy_markdown::prelude::*;
+/// # fn setup(mut commands: Commands) {
+/// commands.spawn(MarkdownViewerBundle {
+///     doc: MarkdownDoc::new("# Hello"),
+///     viewport: MarkdownViewport { width: 800, height: 600, ..default() },
+///     font: MarkdownFont::from_size(16.0),
+///     ..default()
+/// });
+/// # }
+/// ```
 #[derive(Bundle, Default)]
 pub struct MarkdownViewerBundle {
     pub view: TextView,
     pub buffer: TextBuffer,
     pub scroll: ScrollState,
     pub metrics: ContentMetrics,
-    pub viewport: TextViewViewport,
-    pub font: FontConfig,
+    pub viewport: MarkdownViewport,
+    pub font: MarkdownFont,
     pub doc: MarkdownDoc,
-    /// Filled in by `rebuild_markdown_layout` on first frame; spawn with
-    /// `DisplayLayout::default()` so the engine's render skip-on-unchanged
-    /// gate sees a layout immediately.
     pub layout: DisplayLayout,
     pub overlays: TextViewOverlays,
     pub links: MarkdownLinks,

@@ -5,12 +5,9 @@ use bevy::text::Font;
 use std::ops::Range;
 use std::sync::Arc;
 
-/// Source markdown text. The plugin watches `Changed<MarkdownDoc>` and
-/// rebuilds the entity's `DisplayLayout` on edit. Spawn alongside the
-/// usual text-engine bundle (`TextView`, `TextBuffer`, `ScrollState`,
-/// `ContentMetrics`, `FontConfig`, `TextViewViewport`) — the plugin fills the rest.
-/// `MarkdownTheme` cascades automatically (defaults to dark); override it
-/// at spawn for per-viewer styling.
+/// Source markdown text. The plugin rebuilds the layout whenever this changes.
+/// Spawn as part of [`crate::plugin::MarkdownViewerBundle`] — the plugin fills the rest.
+/// [`crate::theme::MarkdownTheme`] cascades automatically (defaults to dark).
 #[derive(Component, Clone, Debug)]
 #[require(crate::theme::MarkdownTheme)]
 pub struct MarkdownDoc {
@@ -34,17 +31,16 @@ impl Default for MarkdownDoc {
 }
 
 /// Optional code font for inline code and fenced code blocks. Add this
-/// component alongside `MarkdownDoc` to use a different font for code runs.
-/// When absent, code renders with the entity's body `FontConfig` font.
+/// component alongside [`MarkdownDoc`] to use a different font for code runs.
+/// When absent, code renders with the body font from [`crate::plugin::MarkdownFont`].
 #[derive(Component, Clone, Debug)]
 pub struct MarkdownCodeFont(pub Handle<Font>);
 
-/// Side-channel mapping link byte ranges back to their URL. The renderer
-/// doesn't read this — it's exposed for click-handler systems that want
-/// to dispatch on `(display_row, byte_range_within_row)` from a hit test.
+/// All links in the rendered document. Updated by the plugin whenever the
+/// layout rebuilds. Query this to handle link clicks — the plugin does not
+/// navigate links.
 ///
-/// Keys index into the `DisplayLayout`'s rendered text after layout +
-/// soft-wrap; resolving back to source markdown is the host's job.
+/// Each span carries the display row, byte range within that row, and the URL.
 #[derive(Component, Clone, Default, Debug)]
 pub struct MarkdownLinks {
     pub spans: Vec<LinkSpan>,
@@ -52,9 +48,7 @@ pub struct MarkdownLinks {
 
 #[derive(Clone, Debug)]
 pub struct LinkSpan {
-    /// `display_row` in the entity's `DisplayLayout`.
     pub display_row: u32,
-    /// Byte range within that row's `text`.
     pub byte_range: Range<usize>,
     pub url: Arc<str>,
 }

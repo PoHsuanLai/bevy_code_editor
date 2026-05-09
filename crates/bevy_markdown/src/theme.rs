@@ -1,9 +1,7 @@
-//! Markdown-specific styling. Decorative chrome (code chips, blockquote
-//! bars, rules) is delegated to [`bevy_instanced_text::BlockDecorTheme`] so
-//! terminals, log viewers, and other consumers can share it.
+//! Markdown-specific styling.
 
 use bevy::prelude::*;
-use bevy_instanced_text::BlockDecorTheme;
+pub use bevy_instanced_text::BlockDecorTheme;
 
 /// Syntax highlight color palette for fenced code blocks.
 ///
@@ -67,9 +65,8 @@ impl SyntaxPalette {
 }
 
 /// Markdown-specific palette: text colors, heading scales, indentation,
-/// and per-element padding. Generic block chrome (inline-code chip,
-/// fenced-code background, blockquote bar, rule color) lives in
-/// [`MarkdownTheme::decor`] as a [`BlockDecorTheme`].
+/// and per-element padding. Block chrome (inline-code chip, fenced-code
+/// background, blockquote bar, rule color) lives in [`MarkdownTheme::decor`].
 ///
 /// Per-entity Component: cascaded onto every `MarkdownDoc` via `#[require]`
 /// so the simple case (one viewer) needs no extra spawn boilerplate. Hosts
