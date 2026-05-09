@@ -1247,7 +1247,7 @@ fn setup_editor(
 
     lsp_client.send(LspMessage::Initialize {
         root_uri: root_uri.clone(),
-        capabilities,
+        capabilities: Box::new(capabilities),
     });
 
     lsp_client.send(LspMessage::Initialized);

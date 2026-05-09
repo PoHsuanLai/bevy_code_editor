@@ -9,6 +9,9 @@ description = "Embeddable terminal widget for Bevy. PTY + VT parser via wezterm-
 repository = "https://github.com/PoHsuanLai/bevscode"
 keywords = ["bevy", "terminal", "pty", "vt100", "wezterm"]
 categories = ["game-development", "command-line-interface"]
+# wezterm-term and wezterm-surface are not published to crates.io (wezterm/wezterm#6663).
+# Remove this once they are available as versioned crates.
+publish = false
 
 [dependencies]
 bevy_instanced_text = { path = "../bevy_instanced_text" }

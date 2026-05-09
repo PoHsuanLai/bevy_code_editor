@@ -1,5 +1,12 @@
 # bevsterm
 
+> **Not yet published to crates.io.**
+> `bevsterm` depends on `wezterm-term` and `wezterm-surface`, which are only available as git
+> dependencies (not published to crates.io). crates.io does not allow git deps, so this crate
+> cannot be published until the wezterm project publishes those crates.
+> Tracked upstream at [wezterm/wezterm#6663](https://github.com/wezterm/wezterm/issues/6663).
+> This restriction will be lifted as soon as `wezterm-term` is available on crates.io.
+
 Embeddable PTY-backed terminal for Bevy. Spawn `BevyTerminal` into any app and it runs as a normal ECS entity.
 
 ## Quick start
