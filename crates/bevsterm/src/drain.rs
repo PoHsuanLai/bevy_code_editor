@@ -37,11 +37,9 @@ pub fn drain_pty_events(
                 backend::Alert::Bell => {
                     bell_w.write(TerminalBellRang { entity });
                 }
-                backend::Alert::WindowTitleChanged(title) => {
-                    if shell.title != title {
-                        shell.title = title.clone();
-                        title_w.write(TerminalTitleChanged { entity, title });
-                    }
+                backend::Alert::WindowTitleChanged(title) if shell.title != title => {
+                    shell.title = title.clone();
+                    title_w.write(TerminalTitleChanged { entity, title });
                 }
                 backend::Alert::CurrentWorkingDirectoryChanged => {
                     let term = session.terminal.lock();

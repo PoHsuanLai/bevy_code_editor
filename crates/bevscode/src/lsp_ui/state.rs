@@ -231,7 +231,7 @@ impl LspCompletionPopup {
         };
 
         // Sort LSP items by score (higher is better)
-        lsp_scored.sort_by(|a, b| b.1.cmp(&a.1));
+        lsp_scored.sort_by_key(|b| std::cmp::Reverse(b.1));
 
         // Decide whether to merge buffer-word completions based on the mode.
         let include_words = match self.words_mode {
@@ -260,7 +260,7 @@ impl LspCompletionPopup {
             };
 
         // Sort word items by score
-        word_scored.sort_by(|a, b| b.1.cmp(&a.1));
+        word_scored.sort_by_key(|b| std::cmp::Reverse(b.1));
 
         // Combine: LSP items first, then word completions
         let mut result: Vec<UnifiedCompletionItem> =
