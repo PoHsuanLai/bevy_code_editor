@@ -5,7 +5,6 @@ use std::io::Read;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
-use bevy::input_focus::InputFocus;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 use bevy_instanced_text::{FontConfig, TextViewViewport};
@@ -54,7 +53,6 @@ pub fn open_pending_sessions(
     windows: Query<&bevy::window::Window, With<bevy::window::PrimaryWindow>>,
     mut commands: Commands,
     mut registry: ResMut<TerminalEventLoopRegistry>,
-    mut input_focus: ResMut<InputFocus>,
     mut ready_w: MessageWriter<TerminalReady>,
     mut failed_w: MessageWriter<TerminalSpawnFailed>,
 ) {
@@ -80,9 +78,6 @@ pub fn open_pending_sessions(
             Ok((session, channel, reader_handle)) => {
                 registry.handles.insert(entity, reader_handle);
                 commands.entity(entity).insert((session, channel));
-                if input_focus.get().is_none() {
-                    input_focus.set(entity);
-                }
                 ready_w.write(TerminalReady { entity, cols, rows });
             }
             Err(err) => {
