@@ -11,6 +11,7 @@
 //! ```rust,no_run
 //! # use bevy::prelude::*;
 //! # use bevsterm::prelude::*;
+//! # fn setup(mut commands: Commands) {
 //! // Default shell ($SHELL / powershell.exe), default size, default theme.
 //! commands.spawn(BevyTerminal);
 //!
@@ -20,6 +21,7 @@
 //!     cwd: Some("/work".into()),
 //!     ..default()
 //! }));
+//! # }
 //! ```
 //!
 //! ## State the host can read

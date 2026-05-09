@@ -52,7 +52,7 @@
 //!     .add_systems(Startup, |mut commands: Commands| {
 //!         commands.spawn((
 //!             bevy_instanced_text_edit::TextEditor,
-//!             TextBuffer::from_str("edit me"),
+//!             TextBuffer::with_text("edit me"),
 //!             TextViewViewport::default(),
 //!             FontConfig::default(),
 //!         ));
