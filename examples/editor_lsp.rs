@@ -42,6 +42,9 @@ fn main() {
             ..default()
         }),
         ..default()
+    }).set(bevy::asset::AssetPlugin {
+        file_path: "assets".into(),
+        ..default()
     }));
 
     // EguiPlugin must be added BEFORE editor plugins so contexts are available
@@ -1178,12 +1181,18 @@ fn render_rename_egui(
 fn setup_editor(
     mut commands: Commands,
     mut editor_query: Query<(Entity, &mut LspClient), With<CodeEditor>>,
+    asset_server: Res<AssetServer>,
     runtime: Res<bevy_lsp::bevy_tokio_tasks::TokioTasksRuntime>,
     mut set_text_writer: MessageWriter<bevy_instanced_text_edit::SetTextRequested>,
 ) {
     let Ok((editor_entity, mut lsp_client)) = editor_query.single_mut() else {
         return;
     };
+
+    let font = FontConfig::from_size(14.0)
+        .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
+        .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
+    commands.entity(editor_entity).insert(font);
 
     let example_file_path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("editor_lsp.rs");

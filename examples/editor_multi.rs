@@ -32,6 +32,9 @@ fn main() {
                 ..default()
             }),
             ..default()
+        }).set(bevy::asset::AssetPlugin {
+            file_path: "assets".into(),
+            ..default()
         }))
         .add_plugins(CodeEditorPlugins)
         .add_systems(Startup, (despawn_default_editor, spawn_two_editors).chain())
@@ -51,10 +54,15 @@ fn despawn_default_editor(
 
 fn spawn_two_editors(
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
     mut input_focus: ResMut<bevy::input_focus::InputFocus>,
 ) {
     // Two cameras, one per editor, with non-overlapping viewport rects so
     // each occupies half of the window.
+    let font = bevy_instanced_text::FontConfig::from_size(14.0)
+        .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
+        .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
+
     let left_layer = RenderLayers::layer(0);
     let right_layer = RenderLayers::layer(1);
 
@@ -90,6 +98,7 @@ fn spawn_two_editors(
     let left = commands
         .spawn((
             CodeEditor,
+            font.clone(),
             TextViewViewport {
                 width: PANEL_WIDTH,
                 height: WINDOW_HEIGHT,
@@ -103,6 +112,7 @@ fn spawn_two_editors(
     let right = commands
         .spawn((
             CodeEditor,
+            font,
             TextViewViewport {
                 width: PANEL_WIDTH,
                 height: WINDOW_HEIGHT,

@@ -99,6 +99,9 @@ fn main() {
                 ..default()
             }),
             ..default()
+        }).set(bevy::asset::AssetPlugin {
+            file_path: "assets".into(),
+            ..default()
         }))
         .insert_resource(EditorPanel::default())
         .add_plugins(CodeEditorPlugins)
@@ -139,6 +142,7 @@ fn setup_camera(mut commands: Commands) {
 fn setup(
     mut commands: Commands,
     mut editor_query: Query<(Entity, &mut TextViewViewport), With<CodeEditor>>,
+    asset_server: Res<AssetServer>,
     panel: Res<EditorPanel>,
     mut input_focus: ResMut<bevy::input_focus::InputFocus>,
     mut set_text_writer: MessageWriter<bevy_instanced_text_edit::SetTextRequested>,
@@ -146,6 +150,11 @@ fn setup(
     let Ok((entity, mut viewport)) = editor_query.single_mut() else {
         return;
     };
+
+    let font = bevy_instanced_text::FontConfig::from_size(14.0)
+        .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
+        .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
+    commands.entity(entity).insert(font);
 
     // Set initial viewport position (left/top of panel in window coords).
     // The TextView entity's `Transform` is now the layout origin — the
