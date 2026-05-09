@@ -195,7 +195,7 @@ impl<'a> LayoutBuilder<'a> {
             Block::Paragraph(inlines) => self.emit_paragraph(inlines, depth, is_last),
             Block::BlockQuote(inner) => self.emit_blockquote(inner, depth),
             Block::List { ordered, start, items } => self.emit_list(*ordered, *start, items, depth),
-            Block::CodeBlock { text, .. } => self.emit_code_block(text, depth),
+            Block::CodeBlock { text, lang } => self.emit_code_block(text, lang.as_deref(), depth),
             Block::Rule => self.emit_rule(depth),
         }
     }
@@ -233,7 +233,7 @@ impl<'a> LayoutBuilder<'a> {
                 font_weight: Some(self.cfg.theme.heading_weight),
                 italic: false,
                 font: None,
-                decoration: None,
+                decoration: TextDecoration::empty(),
                 link: None,
             });
         }
@@ -311,16 +311,53 @@ impl<'a> LayoutBuilder<'a> {
         }
     }
 
-    fn emit_code_block(&mut self, text: &str, depth: u32) {
+    #[allow(unused_variables)]
+    fn emit_code_block(&mut self, text: &str, lang: Option<&str>, depth: u32) {
         let pad = self.cfg.theme.code_block_padding;
         let fg = self.cfg.theme.decor.code_block_fg;
-        let indent = self.indent_px(depth);
+        let indent = self.indent_px(depth) + self.cfg.theme.code_block_indent;
 
         let lines: Vec<&str> = text.split('\n').collect();
         let last = lines.len().saturating_sub(1);
         let start = self.blocks.len();
+
+        #[cfg(feature = "tree-sitter")]
+        let highlight_runs = syntax_highlight_code(text, lang, &self.cfg.theme.syntax);
+        #[cfg(not(feature = "tree-sitter"))]
+        let highlight_runs: Vec<Vec<StyleRun>> = Vec::new();
+
         for (i, line) in lines.iter().enumerate() {
-            let mut block = code_block_line(*line, fg, indent, self.cfg.code_font.clone());
+            let runs = if !highlight_runs.is_empty() {
+                let mut r = highlight_runs.get(i).cloned().unwrap_or_default();
+                // Inject the code font handle into every highlighted run.
+                if let Some(ref font_handle) = self.cfg.code_font {
+                    for run in &mut r {
+                        run.font = Some(font_handle.clone());
+                    }
+                }
+                r
+            } else {
+                vec![StyleRun {
+                    byte_range: 0..line.len(),
+                    fg,
+                    bg: None,
+                    font_scale: 0.0,
+                    skew: 0.0,
+                    corner_radius: 0.0,
+                    font_weight: None,
+                    italic: false,
+                    font: self.cfg.code_font.clone(),
+                    decoration: TextDecoration::empty(),
+                    link: None,
+                }]
+            };
+            let mut block = if runs.is_empty() || line.is_empty() {
+                code_block_line(*line, fg, indent, self.cfg.code_font.clone())
+            } else {
+                EBlock::new(line.to_string())
+                    .with_indent(indent)
+                    .with_runs(runs)
+            };
             // Padding is per-block: only the first row pays padding_top,
             // only the last row pays padding_bottom. Between rows, no
             // gap so the per-row overlay paints a continuous panel.
@@ -337,7 +374,9 @@ impl<'a> LayoutBuilder<'a> {
                 len: lines.len(),
             },
             builder: code_block_overlay,
-            aux: 0.0,
+            // Pass the horizontal indent so the overlay extends left of the
+            // text by that amount, giving visible left breathing room.
+            aux: self.cfg.theme.code_block_indent,
         });
     }
 
@@ -406,8 +445,11 @@ impl<'a> LayoutBuilder<'a> {
 
     fn inline_code(&self, s: &str, buf: &mut InlineBuffer, state: &InlineState) {
         let decor = &self.cfg.theme.decor;
+        // Pad with a hair-space on each side so the background chip has
+        // breathing room and the text doesn't touch the rounded corners.
+        let padded = format!(" {} ", s.trim());
         buf.push_run(
-            s.trim(),
+            &padded,
             decor.inline_code_fg,
             Some(decor.inline_code_bg),
             decor.inline_code_corner_radius,
@@ -570,14 +612,11 @@ impl InlineState {
         }
     }
 
-    fn decoration(&self) -> Option<TextDecoration> {
-        if self.strike {
-            Some(TextDecoration::Strikethrough)
-        } else if self.link_active {
-            Some(TextDecoration::Underline)
-        } else {
-            None
-        }
+    fn decoration(&self) -> TextDecoration {
+        let mut d = TextDecoration::empty();
+        if self.strike { d |= TextDecoration::STRIKETHROUGH; }
+        if self.link_active { d |= TextDecoration::UNDERLINE; }
+        d
     }
 }
 
@@ -623,7 +662,7 @@ fn code_block_line(line: &str, fg: bevy::prelude::Color, indent: f32, font: Opti
             font_weight: None,
             italic: false,
             font,
-            decoration: None,
+            decoration: TextDecoration::empty(),
             link: None,
         }])
 }
@@ -669,10 +708,13 @@ fn resolve_pending_rects(
 /// with no line-spacing gap between them. `corners_for_row` rounds only
 /// the outer corners — first row's top, last row's bottom — so the
 /// stack of per-row quads reads as a single rounded panel.
-fn code_block_overlay(display_row: u32, pos: RowPosition, ctx: &OverlayContext, _aux: f32) -> RectOverlay {
+/// `aux` carries the horizontal text indent (px). The overlay extends that
+/// many pixels to the left of the text, giving visible left breathing room
+/// inside the code-block panel.
+fn code_block_overlay(display_row: u32, pos: RowPosition, ctx: &OverlayContext, aux: f32) -> RectOverlay {
     RectOverlay {
         display_row,
-        x_range: 0.0..ctx.content_right,
+        x_range: -aux..ctx.content_right,
         vertical: RowVertical::FullLeaded,
         color: ctx.theme.decor.code_block_bg,
         z: DECORATION_Z,
@@ -735,7 +777,7 @@ fn prepend_marker(block: &mut EBlock, marker: &str, body_fg: bevy::prelude::Colo
         font_weight: None,
         italic: false,
         font: None,
-        decoration: None,
+        decoration: TextDecoration::empty(),
         link: None,
     });
     for r in block.runs.drain(..) {
@@ -746,4 +788,109 @@ fn prepend_marker(block: &mut EBlock, marker: &str, body_fg: bevy::prelude::Colo
     }
     block.text = new_text;
     block.runs = new_runs;
+}
+
+/// Run tree-sitter highlighting on a fenced code block and return one
+/// `Vec<StyleRun>` per source line. Returns an empty Vec when the language
+/// is unknown or parsing fails, signaling the caller to use the plain-text
+/// fallback.
+#[cfg(feature = "tree-sitter")]
+fn syntax_highlight_code(
+    text: &str,
+    lang: Option<&str>,
+    palette: &crate::theme::SyntaxPalette,
+) -> Vec<Vec<StyleRun>> {
+    use bevy_tree_sitter::{SyntaxProvider, TreeSitterProvider};
+
+    let (grammar, query_src): (bevy_tree_sitter::ts::Language, &str) = match lang {
+        Some("rust") | Some("rs") => (
+            tree_sitter_rust::LANGUAGE.into(),
+            tree_sitter_rust::HIGHLIGHTS_QUERY,
+        ),
+        Some("c") => (
+            tree_sitter_c::LANGUAGE.into(),
+            tree_sitter_c::HIGHLIGHT_QUERY,
+        ),
+        _ => return Vec::new(),
+    };
+
+    let mut provider = TreeSitterProvider::new();
+    if provider.set_query(query_src, grammar).is_err() {
+        return Vec::new();
+    }
+
+    // Parse the full text so the provider has a cached tree.
+    let rope = ropey::Rope::from_str(text);
+    provider.update_tree(&rope);
+
+    if !provider.is_available() {
+        return Vec::new();
+    }
+
+    let num_lines = text.lines().count();
+    let highlight_ranges = provider.highlight_range(text, 0, num_lines, 0);
+
+    // Convert HighlightRange per line → StyleRun per line.
+    let lines: Vec<&str> = text.split('\n').collect();
+    let default_fg = palette.default;
+
+    // Pre-compute the byte offset at which each line starts in the full text.
+    let mut line_starts = Vec::with_capacity(lines.len());
+    let mut off = 0usize;
+    for line in &lines {
+        line_starts.push(off);
+        off += line.len() + 1; // +1 for the '\n' separator
+    }
+
+    lines.iter().enumerate().map(|(i, line)| {
+        let line_ranges = highlight_ranges.get(i).map(|v| v.as_slice()).unwrap_or(&[]);
+        let line_len = line.len();
+        let line_byte_start = line_starts[i];
+        let mut runs: Vec<StyleRun> = Vec::new();
+        let mut cursor_pos = 0usize;
+
+        for hr in line_ranges {
+            // hr.byte_range is document-absolute; convert to line-relative.
+            let abs_start = hr.byte_range.start;
+            let abs_end = hr.byte_range.end;
+
+            let rel_start = abs_start.saturating_sub(line_byte_start);
+            let rel_end = (abs_end - line_byte_start).min(line_len);
+
+            if rel_start >= rel_end || rel_start < cursor_pos {
+                continue;
+            }
+
+            // Gap before this capture → default color.
+            if cursor_pos < rel_start {
+                runs.push(plain_run(cursor_pos..rel_start, default_fg));
+            }
+            runs.push(plain_run(rel_start..rel_end, palette.color_for(&hr.capture_name)));
+            cursor_pos = rel_end;
+        }
+
+        // Remaining tail.
+        if cursor_pos < line_len {
+            runs.push(plain_run(cursor_pos..line_len, default_fg));
+        }
+
+        runs
+    }).collect()
+}
+
+#[cfg(feature = "tree-sitter")]
+fn plain_run(byte_range: std::ops::Range<usize>, fg: bevy::prelude::Color) -> StyleRun {
+    StyleRun {
+        byte_range,
+        fg,
+        bg: None,
+        font_scale: 0.0,
+        skew: 0.0,
+        corner_radius: 0.0,
+        font_weight: None,
+        italic: false,
+        font: None,
+        decoration: TextDecoration::empty(),
+        link: None,
+    }
 }

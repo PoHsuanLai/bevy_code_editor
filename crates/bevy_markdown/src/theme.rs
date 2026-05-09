@@ -5,6 +5,67 @@
 use bevy::prelude::*;
 use bevy_instanced_text::BlockDecorTheme;
 
+/// Syntax highlight color palette for fenced code blocks.
+///
+/// Maps tree-sitter capture categories to colors. Mirrors
+/// `bevy_code_editor::SyntaxTheme` but lives here so `bevy_markdown` doesn't
+/// depend on the editor crate.
+#[derive(Clone, Debug)]
+pub struct SyntaxPalette {
+    pub keyword: Color,
+    pub function: Color,
+    pub type_name: Color,
+    pub variable: Color,
+    pub constant: Color,
+    pub string: Color,
+    pub comment: Color,
+    pub operator: Color,
+    pub punctuation: Color,
+    pub property: Color,
+    pub escape: Color,
+    pub default: Color,
+}
+
+impl Default for SyntaxPalette {
+    fn default() -> Self {
+        Self {
+            keyword:     Color::srgb(0.847, 0.486, 0.659),
+            function:    Color::srgb(0.863, 0.863, 0.549),
+            type_name:   Color::srgb(0.298, 0.686, 0.914),
+            variable:    Color::srgb(0.608, 0.788, 0.933),
+            constant:    Color::srgb(0.298, 0.686, 0.914),
+            string:      Color::srgb(0.808, 0.616, 0.502),
+            comment:     Color::srgb(0.384, 0.514, 0.376),
+            operator:    Color::srgb(0.827, 0.827, 0.827),
+            punctuation: Color::srgb(0.827, 0.827, 0.827),
+            property:    Color::srgb(0.608, 0.788, 0.933),
+            escape:      Color::srgb(0.863, 0.863, 0.549),
+            default:     Color::srgb(0.90, 0.90, 0.92),
+        }
+    }
+}
+
+impl SyntaxPalette {
+    pub fn color_for(&self, capture: &str) -> Color {
+        let base = capture.split('.').next().unwrap_or(capture);
+        match base {
+            "keyword" | "conditional" | "repeat" | "exception" => self.keyword,
+            "function" | "method" => self.function,
+            "type" | "class" | "interface" | "struct" | "enum" | "namespace" | "module" => self.type_name,
+            "variable" | "parameter" | "field" => self.variable,
+            "constant" | "boolean" | "number" | "float" => self.constant,
+            "string" | "character" => self.string,
+            "comment" | "note" | "warning" | "danger" => self.comment,
+            "operator" => self.operator,
+            "punctuation" | "delimiter" | "bracket" | "special" => self.punctuation,
+            "property" | "attribute" | "tag" | "decorator" => self.property,
+            "constructor" | "label" => self.type_name,
+            "escape" | "embedded" | "include" | "preproc" => self.escape,
+            _ => self.default,
+        }
+    }
+}
+
 /// Markdown-specific palette: text colors, heading scales, indentation,
 /// and per-element padding. Generic block chrome (inline-code chip,
 /// fenced-code background, blockquote bar, rule color) lives in
@@ -33,8 +94,10 @@ pub struct MarkdownTheme {
     pub heading_scale: [f32; 6],
     pub link_fg: Color,
     pub decor: BlockDecorTheme,
-    /// Padding (px) inside fenced code blocks.
+    /// Vertical padding (px) inside fenced code blocks (top and bottom).
     pub code_block_padding: f32,
+    /// Horizontal text indent (px) inside fenced code blocks (left gutter breathing room).
+    pub code_block_indent: f32,
     /// Horizontal indent (px) per nesting level for lists / blockquotes.
     pub indent_step: f32,
     pub heading_padding_top: f32,
@@ -54,6 +117,9 @@ pub struct MarkdownTheme {
     pub rule_thickness: f32,
     /// Padding (px) above and below `---` rules.
     pub rule_padding: f32,
+    /// Syntax highlight colors for fenced code blocks (used when the
+    /// `tree-sitter` feature is enabled; ignored otherwise).
+    pub syntax: SyntaxPalette,
 }
 
 impl Default for MarkdownTheme {
@@ -71,7 +137,8 @@ impl Default for MarkdownTheme {
             heading_scale: [2.0, 1.6, 1.3, 1.15, 1.05, 1.0],
             link_fg: Color::srgb(0.45, 0.72, 1.0),
             decor: BlockDecorTheme::default(),
-            code_block_padding: 8.0,
+            code_block_padding: 16.0,
+            code_block_indent: 24.0,
             indent_step: 24.0,
             heading_padding_top: 12.0,
             heading_padding_bottom: 6.0,
@@ -81,6 +148,7 @@ impl Default for MarkdownTheme {
             blockquote_bar_width: 4.0,
             rule_thickness: 1.0,
             rule_padding: 8.0,
+            syntax: SyntaxPalette::default(),
         }
     }
 }

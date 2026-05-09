@@ -26,5 +26,13 @@ bevy_instanced_text = { path = "../bevy_instanced_text" }
 pulldown-cmark = { version = "0.12", default-features = false }
 ropey = "1.6"
 
+# Optional tree-sitter syntax highlighting for fenced code blocks.
+bevy_tree_sitter = { path = "../bevy_tree_sitter", optional = true }
+tree-sitter-rust = { version = "0.23", optional = true }
+tree-sitter-c = { version = "0.23", optional = true }
+
+[features]
+tree-sitter = ["dep:bevy_tree_sitter", "dep:tree-sitter-rust", "dep:tree-sitter-c"]
+
 [dev-dependencies]
 bevy = { version = "0.18", features = ["bevy_window", "bevy_winit", "default_font"] }
