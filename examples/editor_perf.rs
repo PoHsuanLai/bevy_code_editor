@@ -67,7 +67,7 @@ fn setup_editor(
 
     input_focus.set(entity);
 
-    let file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/sqlite3.c");
+    let file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/sqlite3.c");
     let content = match std::fs::read_to_string(&file_path) {
         Ok(content) => {
             println!("Loaded {} with {} lines", file_path.display(), content.lines().count());
@@ -75,7 +75,7 @@ fn setup_editor(
         }
         Err(e) => {
             eprintln!("Failed to load {}: {}", file_path.display(), e);
-            format!("// Failed to load sqlite3.c: {}\n// Make sure examples/sqlite3.c exists", e)
+            format!("// Failed to load sqlite3.c: {}\n// Make sure assets/sqlite3.c exists", e)
         }
     };
 

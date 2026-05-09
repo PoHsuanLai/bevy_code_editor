@@ -83,16 +83,16 @@ fn setup_viewer(
         return;
     };
 
-    let regular: Handle<bevy::text::Font> = asset_server.load("fonts/FiraMono-Regular.ttf");
-    let medium: Handle<bevy::text::Font> = asset_server.load("fonts/FiraMono-Medium.ttf");
+    let regular: Handle<bevy::text::Font> = asset_server.load("fonts/CourierNew-Regular.ttf");
+    let bold: Handle<bevy::text::Font> = asset_server.load("fonts/CourierNew-Bold.ttf");
+    let italic: Handle<bevy::text::Font> = asset_server.load("fonts/CourierNew-Italic.ttf");
+    let bold_italic: Handle<bevy::text::Font> = asset_server.load("fonts/CourierNew-BoldItalic.ttf");
 
-    // Use the Medium face as a stand-in "bold" if a real Bold isn't
-    // bundled. The renderer treats `font_weight >= 600` as bold; with
-    // no bold slot loaded, synthesis kicks in (faux bold via stroke
-    // doubling). With a Medium loaded as bold, the actual face renders.
     let font = FontConfig::from_size(16.0)
         .with_font(regular)
-        .with_bold_font(medium)
+        .with_bold_font(bold)
+        .with_italic_font(italic)
+        .with_bold_italic_font(bold_italic)
         .with_font_synthesis(FontSynthesis::default());
 
     // `Camera2d` operates in logical pixels by default, so the viewport
