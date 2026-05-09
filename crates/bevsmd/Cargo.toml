@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["PoHsuanLai"]
 license = "MIT OR Apache-2.0"
+readme = "README.md"
 description = "Read-only markdown viewer plugin for Bevy. Parses CommonMark with pulldown-cmark and renders rich text (headings, bold, italic, code blocks, lists, links) via bevy_instanced_text."
 repository = "https://github.com/PoHsuanLai/bevy_code_editor"
 keywords = ["bevy", "markdown", "text", "rendering", "viewer"]

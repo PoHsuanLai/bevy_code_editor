@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["PoHsuanLai"]
 license = "MIT OR Apache-2.0"
+readme = "README.md"
 description = "High-performance GPU-accelerated code editor plugin for Bevy"
 repository = "https://github.com/PoHsuanLai/bevy_code_editor"
 keywords = ["bevy", "editor", "code-editor", "syntax-highlighting"]
