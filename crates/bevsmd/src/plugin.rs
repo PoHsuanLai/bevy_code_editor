@@ -192,7 +192,7 @@ fn content_width_px(viewport: &TextViewViewport) -> f32 {
 ///
 /// ```rust,no_run
 /// # use bevy::prelude::*;
-/// # use bevy_markdown::prelude::*;
+/// # use bevsmd::prelude::*;
 /// # fn setup(mut commands: Commands) {
 /// commands.spawn(MarkdownViewerBundle {
 ///     doc: MarkdownDoc::new("# Hello"),
