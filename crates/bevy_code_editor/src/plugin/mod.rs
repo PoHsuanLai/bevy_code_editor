@@ -363,9 +363,16 @@ fn register_handler_systems(app: &mut App) {
     );
 }
 
-/// Spawn the default editor entity. `CodeEditor`'s `#[require]` cascade
-/// pulls in every supporting component.
-pub(crate) fn spawn_editor_entity(mut commands: Commands) {
+/// Spawn a default editor when the host hasn't opted into manual layout.
+/// Multi-pane hosts set `ViewportConfig { auto_resize_to_window: false }`
+/// and spawn their own `CodeEditor` entities; in that mode this no-ops.
+pub(crate) fn spawn_editor_entity(
+    mut commands: Commands,
+    config: Res<crate::types::editor::ViewportConfig>,
+) {
+    if !config.auto_resize_to_window {
+        return;
+    }
     commands.spawn((CodeEditor, Name::new("CodeEditor")));
 }
 

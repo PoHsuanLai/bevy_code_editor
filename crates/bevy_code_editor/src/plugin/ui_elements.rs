@@ -300,6 +300,7 @@ pub(crate) fn update_indent_guides(
             Option<&DisplayLayout>,
             &UiSettings,
             &IndentationSettings,
+            Option<&bevy_camera::visibility::RenderLayers>,
         ),
         With<CodeEditor>,
     >,
@@ -309,7 +310,7 @@ pub(crate) fn update_indent_guides(
     let mut existing_guides: Vec<_> = guide_query.iter_mut().collect();
     let mut entity_index = 0;
 
-    for (buffer, scroll, vp, fold_state, font, theme, layout, ui, indentation) in editor_query.iter() {
+    for (buffer, scroll, vp, fold_state, font, theme, layout, ui, indentation, render_layers) in editor_query.iter() {
         if !ui.show_indent_guides {
             continue;
         }
@@ -420,15 +421,21 @@ pub(crate) fn update_indent_guides(
 
             if entity_index < existing_guides.len() {
                 // Reuse existing entity
-                let (_, ref mut transform, ref mut visibility, ref mut guide) =
+                let (entity, ref mut transform, ref mut visibility, ref mut guide) =
                     &mut existing_guides[entity_index];
                 transform.translation = translation;
                 guide.level = *level;
                 guide.line_index = *display_row;
                 **visibility = Visibility::Visible;
+                // Re-route to the current editor's layer (pool is shared across editors).
+                let mut cmds = commands.entity(*entity);
+                match render_layers {
+                    Some(layers) => { cmds.insert(layers.clone()); }
+                    None => { cmds.remove::<bevy_camera::visibility::RenderLayers>(); }
+                }
             } else {
                 // Spawn new guide entity
-                commands.spawn((
+                let mut cmds = commands.spawn((
                     Sprite {
                         color: theme.indent_guide,
                         custom_size: Some(Vec2::new(1.0, line_height)),
@@ -442,6 +449,9 @@ pub(crate) fn update_indent_guides(
                     Name::new(format!("IndentGuide_{}_{}", display_row, level)),
                     Visibility::Visible,
                 ));
+                if let Some(layers) = render_layers {
+                    cmds.insert(layers.clone());
+                }
             }
 
             entity_index += 1;

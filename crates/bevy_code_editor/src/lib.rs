@@ -110,7 +110,7 @@ pub mod prelude {
     pub use crate::plugin::{CodeEditorPlugin, CodeEditorPlugins, EditorCamera, EditorUiPlugin};
 
     // Editor marker + save/open events.
-    pub use crate::types::editor::{CodeEditor, OpenRequested, SaveRequested};
+    pub use crate::types::editor::{CodeEditor, OpenRequested, SaveRequested, ViewportConfig};
     #[cfg(feature = "tree-sitter")]
     pub use crate::types::events::EditorFoldStateChanged;
     #[cfg(feature = "tree-sitter")]

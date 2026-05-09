@@ -102,6 +102,7 @@ pub(crate) fn track_cursor_movement(
 pub(crate) fn push_cursor_overlays(
     mut editor_query: Query<
         (
+            Entity,
             &SelectionState,
             &CursorState,
             &bevy_instanced_text_edit::BlinkPhase,
@@ -116,9 +117,11 @@ pub(crate) fn push_cursor_overlays(
         ),
         With<CodeEditor>,
     >,
+    input_focus: Res<bevy::input_focus::InputFocus>,
     time: Res<Time>,
 ) {
     for (
+        entity,
         sel,
         cursor,
         blink,
@@ -132,17 +135,20 @@ pub(crate) fn push_cursor_overlays(
         cursor_settings,
     ) in editor_query.iter_mut()
     {
+        let focused = input_focus.get() == Some(entity);
         // Drain any caret rects from the previous frame. We mark them with
         // `z = +1` so we can identify them; selection rects use `z = -1` and
         // line-highlight uses `z = 0`.
         overlays.rects.retain(|r| r.z != 1);
 
-        if !bevy_instanced_text_edit::cursor_blink_visible(
-            cursor_settings.blink_rate,
-            cursor_settings.blink_pause_secs,
-            time.elapsed_secs_f64(),
-            blink.last_change_secs,
-        ) {
+        if !focused
+            || !bevy_instanced_text_edit::cursor_blink_visible(
+                cursor_settings.blink_rate,
+                cursor_settings.blink_pause_secs,
+                time.elapsed_secs_f64(),
+                blink.last_change_secs,
+            )
+        {
             overlays.version = overlays.version.wrapping_add(1);
             continue;
         }

@@ -33,6 +33,7 @@ use crate::backend;
     bevy_instanced_text::RenderTheme,
     bevy_instanced_text::BlockDecorTheme,
     bevy_instanced_text_edit::SelectionState,
+    bevy_instanced_text_edit::TextViewDragState,
     bevy_instanced_text_edit::EditTheme,
     bevy_instanced_text_edit::CursorSettings,
     bevy_instanced_text_edit::BlinkPhase,

@@ -4,6 +4,7 @@
 //! editor. Drains z=1 caret rects from prior frames before pushing fresh
 //! ones (same convention the editor uses).
 
+use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy_instanced_text_edit::{caret_overlay, cursor_blink_visible, BlinkPhase, CursorSettings, EditTheme};
 use bevy_instanced_text::{FontConfig, TextViewOverlays};
@@ -38,7 +39,9 @@ pub fn track_cursor_blink(
 /// Push the caret rect into the engine's overlays.
 pub fn push_terminal_caret(
     time: Res<Time>,
+    input_focus: Res<InputFocus>,
     mut q: Query<(
+        Entity,
         &TerminalGridSnapshot,
         &BlinkPhase,
         &FontConfig,
@@ -47,11 +50,12 @@ pub fn push_terminal_caret(
         &mut TextViewOverlays,
     )>,
 ) {
-    for (snapshot, blink, font, theme, cursor_settings, mut overlays) in q.iter_mut() {
+    for (entity, snapshot, blink, font, theme, cursor_settings, mut overlays) in q.iter_mut() {
         // Drain previous-frame caret (z=1) — same convention as the editor.
         overlays.rects.retain(|r| r.z != 1);
 
-        if snapshot.cursor_hidden {
+        let focused = input_focus.get() == Some(entity);
+        if !focused || snapshot.cursor_hidden {
             overlays.version = overlays.version.wrapping_add(1);
             continue;
         }

@@ -1,12 +1,18 @@
 //! Side-by-side: a `CodeEditor` on the left, a `BevyTerminal` on the
-//! right. Both share the engine's atlas + render pipeline; click into
-//! either to focus it.
+//! right, separated by a thin 1-px divider.
 //!
-//! Run with: `cargo run -p bevy_terminal --example editor_and_terminal`
+//! Each pane gets its own `Camera2d` with a `viewport` rect so they
+//! occupy non-overlapping halves of the window. `RenderLayers` keeps
+//! each view's draw calls routed to the correct camera.
+//!
+//! Run with: `cargo run --example terminal_editor`
 
 use bevy::prelude::*;
+use bevy_camera::visibility::RenderLayers;
 use bevy_code_editor::prelude::*;
 use bevy_terminal::prelude::*;
+
+const DIVIDER_PX: u32 = 1;
 
 fn main() {
     App::new()
@@ -21,64 +27,131 @@ fn main() {
             file_path: "assets".into(),
             ..default()
         }))
+        .insert_resource(ViewportConfig { auto_resize_to_window: false })
         .add_plugins(CodeEditorPlugins)
         .add_plugins(BevyTerminalPlugin)
-        .add_systems(Startup, (setup_camera, layout_panes))
+        .add_systems(Startup, layout_panes)
         .run();
-}
-
-fn setup_camera(mut commands: Commands) {
-    commands.spawn((
-        Camera2d,
-        Camera {
-            clear_color: ClearColorConfig::Custom(ThemeConfig::default().background),
-            ..default()
-        },
-    ));
 }
 
 fn layout_panes(
     asset_server: Res<AssetServer>,
     windows: Query<&Window>,
-    mut editors: Query<(Entity, &mut TextViewViewport), (With<CodeEditor>, Without<BevyTerminal>)>,
+    mut input_focus: ResMut<bevy::input_focus::InputFocus>,
     mut commands: Commands,
 ) {
-    let Ok(window) = windows.single() else {
-        return;
-    };
-    let logical_w = window.width() as u32;
-    let logical_h = window.height() as u32;
-    let half_w = logical_w / 2;
+    let Ok(window) = windows.single() else { return };
+    // Physical pixels for camera viewport rects.
+    let scale = window.scale_factor();
+    let phys_w = (window.width() * scale) as u32;
+    let phys_h = (window.height() * scale) as u32;
+    let phys_divider = (DIVIDER_PX as f32 * scale) as u32;
+    let phys_half = (phys_w - phys_divider) / 2;
 
-    let regular: Handle<bevy::text::Font> = asset_server.load("fonts/FiraMono-Regular.ttf");
-    let bold: Handle<bevy::text::Font> = asset_server.load("fonts/FiraMono-Medium.ttf");
+    // Logical dimensions fed to TextViewViewport (viewport uses logical pixels).
+    let log_half = phys_half as f32 / scale;
+    let log_h = window.height();
+
+    let bg = ThemeConfig::default().background;
+    let editor_layer = RenderLayers::layer(0);
+    let terminal_layer = RenderLayers::layer(1);
+
     let font = FontConfig::from_size(14.0)
-        .with_font(regular)
-        .with_bold_font(bold);
+        .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
+        .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
 
-    // Editor occupies the left half.
-    if let Ok((editor_entity, mut viewport)) = editors.single_mut() {
-        commands.entity(editor_entity).insert(font.clone());
-        viewport.width = half_w;
-        viewport.height = logical_h;
-        viewport.hit_test_position = Vec2::ZERO;
-    }
+    // Left camera → editor.
+    commands.spawn((
+        Camera2d,
+        Camera {
+            order: 0,
+            clear_color: ClearColorConfig::Custom(bg),
+            viewport: Some(bevy::camera::Viewport {
+                physical_position: UVec2::new(0, 0),
+                physical_size: UVec2::new(phys_half, phys_h),
+                ..default()
+            }),
+            ..default()
+        },
+        editor_layer.clone(),
+        Name::new("EditorCamera"),
+    ));
 
-    // Terminal entity for the right half.
+    // Right camera → terminal.
+    commands.spawn((
+        Camera2d,
+        Camera {
+            order: 1,
+            clear_color: ClearColorConfig::Custom(bg),
+            viewport: Some(bevy::camera::Viewport {
+                physical_position: UVec2::new(phys_half + phys_divider, 0),
+                physical_size: UVec2::new(phys_w - phys_half - phys_divider, phys_h),
+                ..default()
+            }),
+            ..default()
+        },
+        terminal_layer.clone(),
+        Name::new("TerminalCamera"),
+    ));
 
+    // 1-px divider drawn in NDC by a thin Sprite on its own layer.
+    // We place it in the default camera (layer 0) at the window center.
+    let divider_layer = RenderLayers::layer(2);
+    commands.spawn((
+        Camera2d,
+        Camera {
+            order: 2,
+            clear_color: ClearColorConfig::None,
+            ..default()
+        },
+        divider_layer.clone(),
+        Name::new("DividerCamera"),
+    ));
+    let divider_color = Color::srgba(0.3, 0.3, 0.3, 1.0);
+    commands.spawn((
+        Sprite {
+            color: divider_color,
+            custom_size: Some(Vec2::new(DIVIDER_PX as f32, window.height())),
+            ..default()
+        },
+        Transform::from_xyz(
+            // half_w − window_half puts the divider at the left/right boundary.
+            log_half - window.width() / 2.0,
+            0.0,
+            0.0,
+        ),
+        divider_layer,
+        Name::new("PaneDivider"),
+    ));
+
+    // Editor — left pane.
+    let editor = commands.spawn((
+        CodeEditor,
+        font.clone(),
+        TextViewViewport {
+            width: log_half as u32,
+            height: log_h as u32,
+            hit_test_position: Vec2::new(0.0, 0.0),
+            ..default()
+        },
+        editor_layer,
+        Name::new("Editor"),
+    )).id();
+    input_focus.set(editor);
+
+    // Terminal — right pane.
     commands.spawn((
         BevyTerminal,
         font,
         TextViewViewport {
-            width: logical_w - half_w,
-            height: logical_h,
+            width: (window.width() - log_half) as u32,
+            height: log_h as u32,
             text_area_left: 12.0,
             text_area_top: 12.0,
-            // Anchor the terminal's hit-test area to the right half so
-            // pointer events route correctly even though both views
-            // render through the same Camera2d.
-            hit_test_position: Vec2::new(half_w as f32, 0.0),
+            hit_test_position: Vec2::new(log_half + DIVIDER_PX as f32, 0.0),
             ..default()
         },
+        terminal_layer,
+        Name::new("Terminal"),
     ));
 }

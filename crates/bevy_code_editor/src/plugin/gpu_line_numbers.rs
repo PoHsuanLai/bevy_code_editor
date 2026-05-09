@@ -40,6 +40,7 @@ pub(crate) fn update_gpu_line_numbers(
             &ThemeConfig,
             &UiSettings,
             &PerformanceSettings,
+            Option<&bevy_camera::visibility::RenderLayers>,
         ),
         With<CodeEditor>,
     >,
@@ -48,7 +49,7 @@ pub(crate) fn update_gpu_line_numbers(
     fonts: Res<Assets<bevy::text::Font>>,
     batch_query: Query<(Entity, &GpuLineNumbersBatch)>,
 ) {
-    for (editor_entity, sel, buffer, scroll, viewport, fold_state, font, theme, ui, performance) in editor_query.iter() {
+    for (editor_entity, sel, buffer, scroll, viewport, fold_state, font, theme, ui, performance, render_layers) in editor_query.iter() {
     // Hide if line numbers are disabled for this editor
     if !ui.show_line_numbers {
         for (entity, batch) in batch_query.iter() {
@@ -259,17 +260,24 @@ pub(crate) fn update_gpu_line_numbers(
         continue;
     }
 
+    // Resolve the editor's render layer to a single index for the GPU pipeline's
+    // own filtering, and clone the component onto the batch so Bevy's
+    // visibility system also routes it correctly.
+    let layer_index = render_layers.and_then(|l| {
+        (0u8..=31)
+            .find(|&i| l.intersects(&bevy_camera::visibility::RenderLayers::layer(i as usize)))
+    });
+
     // Update or create batch entity for this editor
     if let Some((entity, _)) = batch_query
         .iter()
         .find(|(_, b)| b.editor == editor_entity)
     {
-        commands
-            .entity(entity)
-            .insert(GlyphBatchComponent {
+        let mut cmds = commands.entity(entity);
+        cmds.insert(GlyphBatchComponent {
                 instances,
                 atlas_texture: atlas.texture.clone(),
-                render_layer: None,
+                render_layer: layer_index,
             })
             .insert(GpuLineNumbersBatch {
                 editor: editor_entity,
@@ -279,16 +287,15 @@ pub(crate) fn update_gpu_line_numbers(
                 built_at_height: viewport.height,
             })
             .insert(Visibility::Visible);
+        if let Some(layers) = render_layers {
+            cmds.insert(layers.clone());
+        }
     } else {
-        // Parent under the editor entity so the editor's `Transform`
-        // cascades. The unit-quad `Mesh2d` is required by the
-        // `Mesh2dPipeline` view extraction so this batch gets a per-
-        // entity `world_from_local` mesh bind group.
-        commands.spawn((
+        let mut entity_cmds = commands.spawn((
             GlyphBatchComponent {
                 instances,
                 atlas_texture: atlas.texture.clone(),
-                render_layer: None,
+                render_layer: layer_index,
             },
             Transform::default(),
             GlobalTransform::default(),
@@ -304,6 +311,9 @@ pub(crate) fn update_gpu_line_numbers(
             InheritedVisibility::default(),
             ViewVisibility::default(),
         ));
+        if let Some(layers) = render_layers {
+            entity_cmds.insert(layers.clone());
+        }
     }
     }
 }

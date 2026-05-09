@@ -258,9 +258,17 @@ fn detect_viewport_resize(
 /// Setup UI entities (line numbers, cursor, separator) for each `CodeEditor`.
 fn setup_editor_ui(
     mut commands: Commands,
-    editor_query: Query<(&TextViewViewport, &ThemeConfig, &UiSettings), With<CodeEditor>>,
+    editor_query: Query<
+        (
+            &TextViewViewport,
+            &ThemeConfig,
+            &UiSettings,
+            Option<&bevy_camera::visibility::RenderLayers>,
+        ),
+        With<CodeEditor>,
+    >,
 ) {
-    for (viewport, theme, ui) in editor_query.iter() {
+    for (viewport, theme, ui, render_layers) in editor_query.iter() {
         let viewport_width = viewport.width as f32;
         let viewport_height = viewport.height as f32;
 
@@ -269,7 +277,7 @@ fn setup_editor_ui(
 
         // Spawn separator line (only if enabled)
         if ui.show_separator {
-            commands.spawn((
+            let mut cmds = commands.spawn((
                 Sprite {
                     color: theme.separator,
                     custom_size: Some(Vec2::new(1.0, viewport_height)),
@@ -285,6 +293,9 @@ fn setup_editor_ui(
                 Separator,
                 Name::new("Separator"),
             ));
+            if let Some(layers) = render_layers {
+                cmds.insert(layers.clone());
+            }
         }
 
         // Cursor carets are pushed into TextViewOverlays each frame by
