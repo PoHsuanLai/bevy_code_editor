@@ -258,12 +258,11 @@ fn shape_phys_line(
             },
             italic: attrs.italic(),
             font: None,
-            decoration: if !matches!(attrs.underline(), VtUnderline::None) {
-                Some(bevy_instanced_text::TextDecoration::Underline)
-            } else if attrs.strikethrough() {
-                Some(bevy_instanced_text::TextDecoration::Strikethrough)
-            } else {
-                None
+            decoration: {
+                let mut d = bevy_instanced_text::TextDecoration::empty();
+                if !matches!(attrs.underline(), VtUnderline::None) { d |= bevy_instanced_text::TextDecoration::UNDERLINE; }
+                if attrs.strikethrough() { d |= bevy_instanced_text::TextDecoration::STRIKETHROUGH; }
+                d
             },
             link: None,
         };

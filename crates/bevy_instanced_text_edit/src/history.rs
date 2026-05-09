@@ -188,9 +188,9 @@ impl EditHistory {
         if let Some(tx) = self.current_transaction.take() {
             if !tx.is_empty() {
                 self.undo_stack.push(tx);
-                // Trim history if needed
-                while self.undo_stack.len() > self.max_history_size {
-                    self.undo_stack.remove(0);
+                if self.undo_stack.len() > self.max_history_size {
+                    let excess = self.undo_stack.len() - self.max_history_size;
+                    self.undo_stack.drain(..excess);
                 }
             }
         }
@@ -216,9 +216,9 @@ impl EditHistory {
     /// Push a transaction to the undo stack (used when redoing)
     pub fn push_undo(&mut self, transaction: EditTransaction) {
         self.undo_stack.push(transaction);
-        // Trim history if needed
-        while self.undo_stack.len() > self.max_history_size {
-            self.undo_stack.remove(0);
+        if self.undo_stack.len() > self.max_history_size {
+            let excess = self.undo_stack.len() - self.max_history_size;
+            self.undo_stack.drain(..excess);
         }
     }
 

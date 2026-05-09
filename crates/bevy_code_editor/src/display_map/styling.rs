@@ -6,7 +6,7 @@
 //! per-line slice through `segs_to_runs` before stuffing it into a
 //! [`bevy_instanced_text::LineStyles`] map.
 
-use bevy_instanced_text::{RunWithText, StyleRun};
+use bevy_instanced_text::{RunWithText, StyleRun, TextDecoration};
 
 use crate::types::LineSegment;
 
@@ -32,7 +32,7 @@ pub(crate) fn segs_to_runs(segs: &[LineSegment]) -> Vec<RunWithText> {
                 font_weight: None,
                 italic: false,
                 font: None,
-                decoration: None,
+                decoration: TextDecoration::empty(),
                 link: None,
             },
         })
