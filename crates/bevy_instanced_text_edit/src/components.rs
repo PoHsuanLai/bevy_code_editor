@@ -39,6 +39,7 @@ pub struct ScrollConfig {
     pub speed: f32,
     /// Smooth-scroll easing toward `target_scroll_offset`.
     pub smooth: bool,
+    pub smooth_scroll_duration: f32,
 }
 
 impl Default for ScrollConfig {
@@ -46,6 +47,7 @@ impl Default for ScrollConfig {
         Self {
             speed: 3.0,
             smooth: true,
+            smooth_scroll_duration: 0.125,
         }
     }
 }

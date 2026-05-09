@@ -482,8 +482,6 @@ pub(crate) fn should_auto_scroll(
     false
 }
 
-/// Auto-scroll viewport to keep cursor visible
-/// Writes to target_scroll_offset, not scroll_offset (applied by animate_smooth_scroll)
 pub(crate) fn auto_scroll_to_cursor(
     mut editor_query: Query<
         (

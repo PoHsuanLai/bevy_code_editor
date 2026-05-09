@@ -66,13 +66,13 @@ impl Plugin for InstancedTextInteractionPlugin {
     }
 }
 
-/// Snap `scroll_offset` to `target_scroll_offset` for entities whose
-/// `ScrollConfig` has `smooth = false`. Runs before engine animation; for
-/// smooth entities this is a no-op (we leave the gap for the engine to ease).
 fn apply_instant_scroll(
     mut q: Query<(&mut bevy_instanced_text::ScrollState, &ScrollConfig)>,
 ) {
     for (mut scroll, cfg) in q.iter_mut() {
+        if (scroll.smooth_scroll_duration - cfg.smooth_scroll_duration).abs() > f32::EPSILON {
+            scroll.smooth_scroll_duration = cfg.smooth_scroll_duration;
+        }
         if cfg.smooth {
             continue;
         }
