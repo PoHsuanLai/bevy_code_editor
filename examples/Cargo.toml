@@ -39,7 +39,7 @@ tree-sitter-rust = "0.23"
 tree-sitter-c = "0.23"
 
 # Used by editor_lsp.
-bevy_egui = { version = "0.39", optional = true }
+bevy_egui = { version = "0.39", features = ["picking"], optional = true }
 armas = { git = "https://github.com/PoHsuanLai/Armas.git", default-features = false, features = ["basic"], optional = true }
 lsp-types = { version = "0.95", optional = true }
 

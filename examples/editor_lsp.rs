@@ -14,6 +14,9 @@
 //! `PATH` (`rustup component add rust-analyzer`).
 
 use armas::prelude::*;
+use armas::components::{CardVariant};
+use bevscode::lsp_ui::state::UnifiedCompletionItem;
+use egui::Color32;
 use bevscode::lsp_ui::components::{
     DocumentHighlightData, InlayHintData, InlayHintKind, LspUiVisual,
 };
@@ -21,14 +24,13 @@ use bevscode::lsp_ui::state::{
     LspCodeActionsPopup, LspCompletionPopup, LspHoverPopup, LspRenamePopup, LspSignatureHelpPopup,
 };
 use bevscode::prelude::*;
-use bevscode::text_view::TextViewViewport;
+use bevscode::text_view::TextViewport;
 use bevscode::types::{CodeEditor, CursorState};
 use bevsmd::{MarkdownDoc, MarkdownLinks, MarkdownViewerPlugin};
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use bevy_egui::{egui, EguiContexts};
-use bevy_instanced_text::FontConfig;
-use bevy_instanced_text::{ContentMetrics, DisplayLayout, ScrollState, TextBuffer, TextView};
+use bevy_instanced_text::{ContentMetrics, DisplayLayout, ScrollState, TextBuffer, TextColor, TextFont, TextView};
 use bevy_lsp::{LspClient, LspDocument, LspMessage};
 #[cfg(feature = "tree-sitter")]
 use bevy_tree_sitter::Language;
@@ -76,7 +78,7 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn((
         Camera2d,
         Camera {
-            clear_color: ClearColorConfig::Custom(ThemeConfig::default().background),
+            clear_color: ClearColorConfig::Custom(EditorTheme::default().background),
             ..default()
         },
     ));
@@ -199,7 +201,7 @@ fn render_inlay_hints(
     // even when the data is unchanged. See `render_document_highlights`
     // for the same pattern.
     hint_query: Query<(Entity, &InlayHintData)>,
-    editors: Query<(Entity, &FontConfig), With<CodeEditor>>,
+    editors: Query<(Entity, &TextFont), With<CodeEditor>>,
     metrics: bevy_instanced_text::RowMetricsParam,
     theme: Res<InlineDecorationsTheme>,
 ) {
@@ -276,7 +278,7 @@ fn render_document_highlights(
     highlight_query: Query<&DocumentHighlightData>,
     mut editors: Query<
         (
-            &FontConfig,
+            &TextFont,
             &DisplayLayout,
             &mut bevy_instanced_text::TextViewOverlays,
         ),
@@ -420,7 +422,7 @@ fn position_popup(
     popup_height: f32,
     line_height: f32,
     viewport_offset: &LspEguiViewportOffset,
-    viewport: &TextViewViewport,
+    viewport: &TextViewport,
     prefer_above: bool,
 ) -> egui::Pos2 {
     let vp_left = viewport_offset.screen_offset.x;
@@ -428,8 +430,12 @@ fn position_popup(
     let vp_right = vp_left + viewport.width as f32;
     let vp_bottom = vp_top + viewport.height as f32;
 
-    let below_y = cursor_y + line_height;
-    let above_y = cursor_y - popup_height;
+    // Overlap the popup with the cursor row by half a line so there's no
+    // gap between the text and the egui area. Without this, moving the
+    // mouse downward into the popup crosses dead space that triggers
+    // Pointer<Out> on the editor entity and dismisses the popup.
+    let below_y = cursor_y + line_height * 0.5;
+    let above_y = cursor_y - popup_height + line_height * 0.5;
 
     let y = if prefer_above {
         if above_y >= vp_top {
@@ -452,12 +458,53 @@ fn position_popup(
     egui::pos2(x, y)
 }
 
+/// Render a colored letter badge for an LSP completion item kind.
+///
+/// Uses armas `Badge` with an ASCII letter and a per-kind color so the icon
+/// always renders correctly regardless of font coverage. The special Unicode
+/// math glyphs that `kind_icon()` returns (ƒ, 𝑥, ○, …) are absent from
+/// egui's bundled font and show as replacement squares.
+fn kind_badge(item: &UnifiedCompletionItem, ui: &mut egui::Ui, size: f32) {
+    use lsp_types::CompletionItemKind;
+    let (letter, color) = match item {
+        UnifiedCompletionItem::Lsp(i) => match i.kind {
+            Some(CompletionItemKind::FUNCTION) | Some(CompletionItemKind::METHOD) => {
+                ("f", Color32::from_rgb(0x61, 0xAF, 0xEF))
+            }
+            Some(CompletionItemKind::VARIABLE) => ("v", Color32::from_rgb(0xE0, 0x6C, 0x75)),
+            Some(CompletionItemKind::CLASS) | Some(CompletionItemKind::STRUCT) => {
+                ("S", Color32::from_rgb(0xE5, 0xC0, 0x7B))
+            }
+            Some(CompletionItemKind::INTERFACE) => ("I", Color32::from_rgb(0x56, 0xB6, 0xC2)),
+            Some(CompletionItemKind::MODULE) => ("M", Color32::from_rgb(0x98, 0xC3, 0x79)),
+            Some(CompletionItemKind::PROPERTY) | Some(CompletionItemKind::FIELD) => {
+                ("p", Color32::from_rgb(0xAB, 0xB2, 0xBF))
+            }
+            Some(CompletionItemKind::CONSTANT) => ("c", Color32::from_rgb(0xD1, 0x9A, 0x66)),
+            Some(CompletionItemKind::ENUM) => ("E", Color32::from_rgb(0xC6, 0x78, 0xDD)),
+            Some(CompletionItemKind::ENUM_MEMBER) => ("e", Color32::from_rgb(0xC6, 0x78, 0xDD)),
+            Some(CompletionItemKind::KEYWORD) => ("k", Color32::from_rgb(0xC6, 0x78, 0xDD)),
+            Some(CompletionItemKind::SNIPPET) => ("~", Color32::from_rgb(0x56, 0xB6, 0xC2)),
+            Some(CompletionItemKind::TYPE_PARAMETER) => {
+                ("T", Color32::from_rgb(0xE5, 0xC0, 0x7B))
+            }
+            _ => ("·", Color32::from_rgb(0x80, 0x80, 0x80)),
+        },
+        UnifiedCompletionItem::Word(_) => ("w", Color32::from_rgb(0x80, 0x80, 0x80)),
+    };
+    Badge::new(letter)
+        .color(color)
+        .size(size * 0.8)
+        .corner_radius(3.0)
+        .show(ui);
+}
+
 /// Render the completion popup as an egui overlay using armas styling.
 fn render_completion_egui(
     mut contexts: EguiContexts,
-    query: Query<(Entity, &LspCompletionPopup, &CursorState, &FontConfig), With<CodeEditor>>,
+    query: Query<(Entity, &LspCompletionPopup, &CursorState, &TextFont), With<CodeEditor>>,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Single<&TextViewViewport, With<CodeEditor>>,
+    viewport: Single<&TextViewport, With<CodeEditor>>,
     anchors: bevy_instanced_text::BufferAnchorParam,
 ) {
     let Ok((editor, completion_state, cursor_state, font)) = query.single() else {
@@ -512,15 +559,12 @@ fn render_completion_egui(
         .fixed_pos(pos)
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
-            egui::Frame::NONE
-                .fill(theme.card())
-                .stroke(egui::Stroke::new(1.0, theme.border()))
-                .corner_radius(egui::CornerRadius::same(theme.spacing.corner_radius))
-                .inner_margin(egui::Margin::same(4))
+            Card::new()
+                .variant(CardVariant::Outlined)
+                .inner_margin(4.0)
+                .width(popup_width)
+                .max_height(popup_height)
                 .show(ui, |ui| {
-                    ui.set_width(popup_width);
-                    ui.set_max_height(popup_height);
-
                     let scroll_offset = completion_state.scroll_offset;
                     let visible_items = filtered_items.iter().skip(scroll_offset).take(max_visible);
 
@@ -531,7 +575,7 @@ fn render_completion_egui(
                         let bg = if is_selected {
                             theme.accent()
                         } else {
-                            egui::Color32::TRANSPARENT
+                            Color32::TRANSPARENT
                         };
 
                         let text_color = if is_selected {
@@ -555,11 +599,7 @@ fn render_completion_egui(
                             .show(ui, |ui| {
                                 ui.set_width(popup_width - 8.0);
                                 ui.horizontal(|ui| {
-                                    ui.label(
-                                        egui::RichText::new(item.kind_icon())
-                                            .color(detail_color)
-                                            .size(font.font_size * 0.9),
-                                    );
+                                    kind_badge(item, ui, font.font_size);
 
                                     ui.label(
                                         egui::RichText::new(item.label())
@@ -607,14 +647,12 @@ fn render_completion_egui(
             .fixed_pos(docs_pos)
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
-                egui::Frame::NONE
-                    .fill(theme.card())
-                    .stroke(egui::Stroke::new(1.0, theme.border()))
-                    .corner_radius(egui::CornerRadius::same(theme.spacing.corner_radius))
-                    .inner_margin(egui::Margin::same(8))
+                Card::new()
+                    .variant(CardVariant::Outlined)
+                    .inner_margin(8.0)
+                    .width(360.0)
+                    .max_height(popup_height)
                     .show(ui, |ui| {
-                        ui.set_width(360.0);
-                        ui.set_max_height(popup_height);
                         egui::ScrollArea::vertical().show(ui, |ui| {
                             ui.label(
                                 egui::RichText::new(docs)
@@ -635,9 +673,9 @@ fn render_completion_egui(
 /// to gain from involving the markdown renderer.
 fn render_hover_egui(
     mut contexts: EguiContexts,
-    query: Query<(Entity, &LspHoverPopup, &LspCompletionPopup, &FontConfig), With<CodeEditor>>,
+    query: Query<(Entity, &LspHoverPopup, &LspCompletionPopup, &TextFont), With<CodeEditor>>,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Single<&TextViewViewport, With<CodeEditor>>,
+    viewport: Single<&TextViewport, With<CodeEditor>>,
     anchors: bevy_instanced_text::BufferAnchorParam,
 ) {
     let Ok((editor, hover_state, completion_state, font)) = query.single() else {
@@ -689,18 +727,19 @@ fn render_hover_egui(
         .fixed_pos(pos)
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
-            egui::Frame::NONE
-                .fill(theme.card())
-                .stroke(egui::Stroke::new(1.0, theme.border()))
-                .corner_radius(egui::CornerRadius::same(theme.spacing.corner_radius))
-                .inner_margin(egui::Margin::same(10))
+            Card::new()
+                .variant(CardVariant::Outlined)
+                .inner_margin(10.0)
+                .width(500.0)
+                .max_height(300.0)
                 .show(ui, |ui| {
-                    ui.set_max_width(500.0);
-                    ui.label(
-                        egui::RichText::new(&hover_state.content)
-                            .color(theme.card_foreground())
-                            .size(font.font_size * 0.9),
-                    );
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(&hover_state.content)
+                                .color(theme.card_foreground())
+                                .size(font.font_size * 0.9),
+                        );
+                    });
                 });
         });
 }
@@ -722,9 +761,9 @@ struct MarkdownHoverPopup;
 /// short-circuit when the format isn't theirs.
 fn render_hover_markdown(
     mut commands: Commands,
-    editors: Query<(Entity, &LspHoverPopup, &FontConfig), With<CodeEditor>>,
+    editors: Query<(Entity, &LspHoverPopup, &TextFont), With<CodeEditor>>,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Single<&TextViewViewport, With<CodeEditor>>,
+    viewport: Single<&TextViewport, With<CodeEditor>>,
     anchors: bevy_instanced_text::BufferAnchorParam,
     existing: Query<Entity, With<MarkdownHoverPopup>>,
 ) {
@@ -763,7 +802,7 @@ fn render_hover_markdown(
         *viewport,
     );
 
-    let viewport_for_layout = TextViewViewport {
+    let viewport_for_layout = TextViewport {
         width: popup_width as u32,
         height: popup_height as u32,
         text_area_left: 12.0,
@@ -814,7 +853,7 @@ fn render_hover_markdown(
 /// path's heuristic: line count × line_height plus some chrome. Real
 /// height after layout may differ; the sprite background is sized
 /// from this estimate and clipping is left to the popup's max width.
-fn estimate_markdown_popup_height(content: &str, font: &FontConfig) -> f32 {
+fn estimate_markdown_popup_height(content: &str, font: &TextFont) -> f32 {
     let line_count = content.lines().count().max(1) as f32;
     // Headings + code blocks inflate height — pad generously.
     (line_count * font.line_height * 1.2 + 40.0).clamp(64.0, 480.0)
@@ -831,7 +870,7 @@ fn position_popup_world(
     popup_width: f32,
     popup_height: f32,
     line_height: f32,
-    viewport: &TextViewViewport,
+    viewport: &TextViewport,
 ) -> Vec2 {
     let half_w = viewport.width as f32 * 0.5;
     let half_h = viewport.height as f32 * 0.5;
@@ -862,9 +901,9 @@ fn position_popup_world(
 /// Render the signature help popup as an egui overlay.
 fn render_signature_help_egui(
     mut contexts: EguiContexts,
-    query: Query<(Entity, &LspSignatureHelpPopup, &CursorState, &FontConfig), With<CodeEditor>>,
+    query: Query<(Entity, &LspSignatureHelpPopup, &CursorState, &TextFont), With<CodeEditor>>,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Single<&TextViewViewport, With<CodeEditor>>,
+    viewport: Single<&TextViewport, With<CodeEditor>>,
     anchors: bevy_instanced_text::BufferAnchorParam,
 ) {
     let Ok((editor, sig_state, cursor_state, font)) = query.single() else {
@@ -922,13 +961,13 @@ fn render_signature_help_egui(
         .fixed_pos(pos)
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
-            egui::Frame::NONE
-                .fill(theme.card())
-                .stroke(egui::Stroke::new(1.0, theme.border()))
-                .corner_radius(egui::CornerRadius::same(theme.spacing.corner_radius))
-                .inner_margin(egui::Margin::same(8))
+            Card::new()
+                .variant(CardVariant::Outlined)
+                .inner_margin(8.0)
+                .max_height(120.0)
                 .show(ui, |ui| {
-                    ui.horizontal(|ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
                         let label = &signature.label;
                         let text_size = font.font_size * 0.9;
 
@@ -979,6 +1018,7 @@ fn render_signature_help_egui(
                             );
                         }
                     });
+                    });
                 });
         });
 }
@@ -986,9 +1026,9 @@ fn render_signature_help_egui(
 /// Render the code actions popup as an egui overlay.
 fn render_code_actions_egui(
     mut contexts: EguiContexts,
-    query: Query<(Entity, &LspCodeActionsPopup, &CursorState, &FontConfig), With<CodeEditor>>,
+    query: Query<(Entity, &LspCodeActionsPopup, &CursorState, &TextFont), With<CodeEditor>>,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Single<&TextViewViewport, With<CodeEditor>>,
+    viewport: Single<&TextViewport, With<CodeEditor>>,
     anchors: bevy_instanced_text::BufferAnchorParam,
 ) {
     let Ok((editor, action_state, cursor_state, font)) = query.single() else {
@@ -1028,12 +1068,12 @@ fn render_code_actions_egui(
         .fixed_pos(pos)
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
-            egui::Frame::NONE
-                .fill(theme.card())
-                .stroke(egui::Stroke::new(1.0, theme.border()))
-                .corner_radius(egui::CornerRadius::same(theme.spacing.corner_radius))
-                .inner_margin(egui::Margin::same(4))
+            Card::new()
+                .variant(CardVariant::Outlined)
+                .inner_margin(4.0)
+                .max_height(popup_height.min(300.0))
                 .show(ui, |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
                     for (i, action) in action_state.actions.iter().take(10).enumerate() {
                         let is_selected = i == action_state.selected_index;
 
@@ -1083,6 +1123,7 @@ fn render_code_actions_egui(
                                 });
                             });
                     }
+                    });
                 });
         });
 }
@@ -1096,12 +1137,12 @@ fn render_rename_egui(
             &mut LspRenamePopup,
             &LspClient,
             Option<&LspDocument>,
-            &FontConfig,
+            &TextFont,
         ),
         With<CodeEditor>,
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Single<&TextViewViewport, With<CodeEditor>>,
+    viewport: Single<&TextViewport, With<CodeEditor>>,
     anchors: bevy_instanced_text::BufferAnchorParam,
 ) {
     let Ok((editor, mut rename_state, lsp_client, lsp_document, font)) = query.single_mut() else {
@@ -1149,11 +1190,10 @@ fn render_rename_egui(
         .fixed_pos(pos)
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
-            egui::Frame::NONE
-                .fill(theme.card())
-                .stroke(egui::Stroke::new(2.0, theme.ring()))
-                .corner_radius(egui::CornerRadius::same(theme.spacing.corner_radius_small))
-                .inner_margin(egui::Margin::symmetric(6, 3))
+            Card::new()
+                .variant(CardVariant::Outlined)
+                .stroke(theme.ring())
+                .inner_margin(6.0)
                 .show(ui, |ui| {
                     let response = ui.add(
                         egui::TextEdit::singleline(&mut rename_state.new_name)
@@ -1196,7 +1236,7 @@ fn setup_editor(
         return;
     };
 
-    let font = FontConfig::from_size(14.0)
+    let font = TextFont::from_font_size(14.0)
         .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
         .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
     commands.entity(editor_entity).insert(font);
@@ -1278,11 +1318,11 @@ fn display_lsp_info(query: Query<&LspClient, (With<CodeEditor>, Changed<LspClien
 
 /// Auto-trigger completion requests after typing.
 ///
-/// The input system doesn't emit RequestCompletionEvent yet, so this bridges
+/// The input system doesn't emit CompletionRequested yet, so this bridges
 /// the gap by watching for content changes and firing completion at the cursor.
 fn auto_request_completion(
     editor_query: Query<(&CursorState, Ref<TextBuffer>), With<CodeEditor>>,
-    mut writer: MessageWriter<bevscode::types::events::RequestCompletionEvent>,
+    mut writer: MessageWriter<bevscode::types::events::CompletionRequested>,
 ) {
     let Ok((cursor, buffer)) = editor_query.single() else {
         return;
@@ -1299,7 +1339,7 @@ fn auto_request_completion(
     if cursor_pos == 0 {
         return;
     }
-    writer.write(bevscode::types::events::RequestCompletionEvent::new(
+    writer.write(bevscode::types::events::CompletionRequested::new(
         cursor_pos,
     ));
 }
