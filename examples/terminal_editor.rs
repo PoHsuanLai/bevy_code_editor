@@ -12,6 +12,8 @@ use bevsterm::prelude::*;
 use bevy::prelude::*;
 use bevy_camera::visibility::RenderLayers;
 use bevy_instanced_text::TextFont;
+#[cfg(feature = "tree-sitter")]
+use bevy_tree_sitter::Language;
 
 const DIVIDER_PX: u32 = 1;
 
@@ -38,6 +40,7 @@ fn main() {
         .add_plugins(CodeEditorPlugins)
         .add_plugins(BevyTerminalPlugin)
         .add_systems(Startup, layout_panes)
+        .add_systems(PostStartup, setup_editor_content)
         .run();
 }
 
@@ -162,5 +165,50 @@ fn layout_panes(
         },
         terminal_layer,
         Name::new("Terminal"),
+    ));
+}
+
+fn setup_editor_content(
+    mut commands: Commands,
+    editor_query: Query<Entity, With<CodeEditor>>,
+    mut set_text_writer: MessageWriter<bevy_instanced_text_edit::SetTextRequested>,
+) {
+    let Ok(entity) = editor_query.single() else {
+        return;
+    };
+
+    let text = r#"use bevy::prelude::*;
+
+fn main() {
+    App::new()
+        .add_plugins(DefaultPlugins)
+        .add_systems(Startup, setup)
+        .run();
+}
+
+fn setup(mut commands: Commands) {
+    commands.spawn(Camera2d);
+
+    commands.spawn((
+        Text::new("Hello, Bevy!"),
+        TextFont {
+            font_size: 64.0,
+            ..default()
+        },
+        TextColor(Color::WHITE),
+    ));
+}
+"#;
+
+    set_text_writer.write(bevy_instanced_text_edit::SetTextRequested {
+        entity,
+        text: text.to_string(),
+    });
+
+    #[cfg(feature = "tree-sitter")]
+    commands.entity(entity).insert(Language::from_grammar(
+        "rust",
+        tree_sitter_rust::LANGUAGE.into(),
+        tree_sitter_rust::HIGHLIGHTS_QUERY,
     ));
 }

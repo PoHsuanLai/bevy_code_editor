@@ -9,6 +9,7 @@
 use bevy::input::keyboard::{KeyCode, KeyboardInput};
 use bevy::input::ButtonState;
 use bevy::input_focus::{FocusedInput, InputFocus};
+use bevy::input::mouse::MouseScrollUnit;
 use bevy::picking::events::{Drag, Pointer, Press, Release, Scroll};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
@@ -238,15 +239,24 @@ pub fn on_pointer_scroll(trigger: On<Pointer<Scroll>>, mut views: ScrollQuery) {
     let default_scroll = ScrollConfig::default();
     let scroll_cfg = scroll_cfg.unwrap_or(&default_scroll);
 
+    let unit = trigger.event().unit;
     let dx = trigger.event().x;
     let dy = trigger.event().y;
+
+    // `MouseScrollUnit::Line` — dy is in logical lines (mouse wheel, typically ±1 per notch).
+    // `MouseScrollUnit::Pixel` — dy is already in physical pixels (trackpad); multiply only by
+    // the user speed scalar, not line_height again.
+    let (v_delta_per_dy, h_delta_per_dx) = match unit {
+        MouseScrollUnit::Line => (font.line_height * scroll_cfg.speed, font.char_width * scroll_cfg.speed),
+        MouseScrollUnit::Pixel => (scroll_cfg.speed, scroll_cfg.speed),
+    };
 
     // Horizontal scroll — only when content overflows.
     if dx.abs() > 0.0 {
         let viewport_width = viewport.width as f32;
         let available_text_width = viewport_width - viewport.text_area_left;
         if metrics.max_content_width > available_text_width {
-            let scroll_delta = dx * font.char_width * scroll_cfg.speed;
+            let scroll_delta = dx * h_delta_per_dx;
             let max_h = (metrics.max_content_width - available_text_width).max(0.0);
             if scroll_cfg.smooth {
                 scroll.target_horizontal_scroll_offset =
@@ -260,7 +270,7 @@ pub fn on_pointer_scroll(trigger: On<Pointer<Scroll>>, mut views: ScrollQuery) {
 
     // Vertical scroll.
     if dy.abs() > 0.0 {
-        let scroll_delta = dy * font.line_height * scroll_cfg.speed;
+        let scroll_delta = dy * v_delta_per_dy;
         let line_count = buffer.rope.len_lines();
         let content_height = line_count as f32 * font.line_height;
         let viewport_height = viewport.height as f32;
