@@ -1,5 +1,10 @@
 # bevscode
 
+[![crates.io](https://img.shields.io/crates/v/bevscode.svg)](https://crates.io/crates/bevscode)
+[![docs.rs](https://docs.rs/bevscode/badge.svg)](https://docs.rs/bevscode)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/PoHsuanLai/bevscode/blob/main/LICENSE-MIT)
+[![Bevy](https://img.shields.io/badge/Bevy-0.18-blue)](https://bevyengine.org)
+
 Embeddable code editor for Bevy. Spawn `CodeEditor` into any app and it runs as a normal ECS entity.
 
 ![Demo](https://raw.githubusercontent.com/PoHsuanLai/bevscode/main/assets/demo.gif)
@@ -60,6 +65,12 @@ commands.spawn((CodeEditor, FontConfig::from_size(18.0), TextBuffer::with_text("
 - `tree-sitter` (default) — syntax highlighting
 - `lsp` — language server integration
 - `clipboard` (default) — system clipboard
+
+## Bevy compatibility
+
+| `bevscode` | Bevy |
+|---|---|
+| 0.1 | 0.18 |
 
 ## License
 

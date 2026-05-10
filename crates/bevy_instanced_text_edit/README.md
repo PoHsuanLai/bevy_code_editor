@@ -1,5 +1,10 @@
 # bevy_instanced_text_edit
 
+[![crates.io](https://img.shields.io/crates/v/bevy_instanced_text_edit.svg)](https://crates.io/crates/bevy_instanced_text_edit)
+[![docs.rs](https://docs.rs/bevy_instanced_text_edit/badge.svg)](https://docs.rs/bevy_instanced_text_edit)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/PoHsuanLai/bevscode/blob/main/LICENSE-MIT)
+[![Bevy](https://img.shields.io/badge/Bevy-0.18-blue)](https://bevyengine.org)
+
 Editable text widget for Bevy. Adds pointer interaction, cursor, selection, edit history, undo/redo, and clipboard to `TextView` entities.
 
 ## Quick start
@@ -33,6 +38,12 @@ fn cursor_pos(editors: Query<(&CursorState, &SelectionState), With<TextEditor>>)
     for (cursor, selection) in &editors { /* row, col, selection range */ }
 }
 ```
+
+## Bevy compatibility
+
+| `bevy_instanced_text_edit` | Bevy |
+|---|---|
+| 0.1 | 0.18 |
 
 ## License
 

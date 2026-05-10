@@ -1,5 +1,10 @@
 # bevy_lsp
 
+[![crates.io](https://img.shields.io/crates/v/bevy_lsp.svg)](https://crates.io/crates/bevy_lsp)
+[![docs.rs](https://docs.rs/bevy_lsp/badge.svg)](https://docs.rs/bevy_lsp)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/PoHsuanLai/bevscode/blob/main/LICENSE-MIT)
+[![Bevy](https://img.shields.io/badge/Bevy-0.18-blue)](https://bevyengine.org)
+
 Per-entity Language Server Protocol transport for Bevy. Just the protocol — no popups, no completion filtering, no debouncing, no UI state.
 
 What this crate is for: editors, debugger UIs, hot-reload tooling, AI panels asking an LSP for completions, code-search consumers. Anything that wants to talk JSON-RPC to a language server.
@@ -105,6 +110,12 @@ if capabilities.supports_hover() {
 ## What's not here
 
 This crate is purely transport + per-document state. UI state (popup visibility, completion filter strings, fuzzy matching, debounce timers) lives in the consumer. The editor's [`bevscode`](../bevscode) `lsp_ui` module is a worked example of building popup state on top.
+
+## Bevy compatibility
+
+| `bevy_lsp` | Bevy |
+|---|---|
+| 0.1 | 0.18 |
 
 ## License
 

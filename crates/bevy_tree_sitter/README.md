@@ -1,5 +1,10 @@
 # bevy_tree_sitter
 
+[![crates.io](https://img.shields.io/crates/v/bevy_tree_sitter.svg)](https://crates.io/crates/bevy_tree_sitter)
+[![docs.rs](https://docs.rs/bevy_tree_sitter/badge.svg)](https://docs.rs/bevy_tree_sitter)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/PoHsuanLai/bevscode/blob/main/LICENSE-MIT)
+[![Bevy](https://img.shields.io/badge/Bevy-0.18-blue)](https://bevyengine.org)
+
 Component-driven tree-sitter integration for Bevy. Returns capture names, not colors.
 
 What this crate is for: code editors mapping captures to a theme, code-outline panels, AI agents reasoning about syntactic structure, structural search tools, log viewers highlighting stack traces — anything that wants tree-sitter parsing without dragging in a renderer.
@@ -127,6 +132,12 @@ For custom languages, `Language::from_grammar(name, ts_language, highlights_quer
 ## Re-export
 
 The crate re-exports the underlying `tree-sitter` crate as `bevy_tree_sitter::ts` so consumers can name `ts::Tree`, `ts::InputEdit`, etc. without taking a direct dep on the C-binding crate.
+
+## Bevy compatibility
+
+| `bevy_tree_sitter` | Bevy |
+|---|---|
+| 0.1 | 0.18 |
 
 ## License
 
