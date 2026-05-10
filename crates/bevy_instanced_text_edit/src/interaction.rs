@@ -7,9 +7,9 @@
 //! focus dispatch handle entity routing for us.
 
 use bevy::input::keyboard::{KeyCode, KeyboardInput};
+use bevy::input::mouse::MouseScrollUnit;
 use bevy::input::ButtonState;
 use bevy::input_focus::{FocusedInput, InputFocus};
-use bevy::input::mouse::MouseScrollUnit;
 use bevy::picking::events::{Drag, Pointer, Press, Release, Scroll};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
@@ -247,7 +247,10 @@ pub fn on_pointer_scroll(trigger: On<Pointer<Scroll>>, mut views: ScrollQuery) {
     // `MouseScrollUnit::Pixel` — dy is already in physical pixels (trackpad); multiply only by
     // the user speed scalar, not line_height again.
     let (v_delta_per_dy, h_delta_per_dx) = match unit {
-        MouseScrollUnit::Line => (font.line_height * scroll_cfg.speed, font.char_width * scroll_cfg.speed),
+        MouseScrollUnit::Line => (
+            font.line_height * scroll_cfg.speed,
+            font.char_width * scroll_cfg.speed,
+        ),
         MouseScrollUnit::Pixel => (scroll_cfg.speed, scroll_cfg.speed),
     };
 
