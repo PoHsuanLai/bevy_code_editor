@@ -16,7 +16,7 @@ use crate::backend;
 /// Spawn this on an entity to make it a terminal; the `#[require]`
 /// cascade brings in rendering substrate, selection state, terminal
 /// state, theme, and `Pickable` for mouse routing. PTY + child shell
-/// open lazily once `TextViewViewport` and `FontConfig` produce a
+/// open lazily once `TextViewport` and `TextFont` produce a
 /// non-zero (cols, rows), so the shell never renders a stale 80×24
 /// frame. Configure shell / argv / env / cwd via [`TerminalConfig`].
 #[derive(Component, Default, Reflect)]
@@ -26,15 +26,17 @@ use crate::backend;
     bevy_instanced_text::TextBuffer,
     bevy_instanced_text::ScrollState,
     bevy_instanced_text::ContentMetrics,
-    bevy_instanced_text::TextViewViewport,
-    bevy_instanced_text::FontConfig,
+    bevy_instanced_text::TextViewport,
+    bevy_instanced_text::TextFont,
     bevy_instanced_text::LineStyles,
     bevy_instanced_text::HiddenLines,
-    bevy_instanced_text::RenderTheme,
+    bevy_instanced_text::TextColor,
+    bevy_instanced_text::TextBackgroundColor,
     bevy_instanced_text::BlockDecorTheme,
     bevy_instanced_text_edit::SelectionState,
     bevy_instanced_text_edit::TextViewDragState,
-    bevy_instanced_text_edit::EditTheme,
+    bevy_instanced_text_edit::TextCursorColor,
+    bevy_instanced_text_edit::TextSelectionColor,
     bevy_instanced_text_edit::CursorSettings,
     bevy_instanced_text_edit::BlinkPhase,
     bevy_instanced_text_edit::InteractionSettings,
@@ -185,7 +187,7 @@ pub enum BlockStatus {
 
 /// Per-terminal theme: ANSI 16-color palette.
 ///
-/// Pure rendering colors come from `bevy_instanced_text::RenderTheme`
+/// Pure rendering colors come from `bevy_instanced_text::TextColor`
 /// (background, foreground); cursor + selection colors from
 /// `bevy_instanced_text_edit::EditTheme`. This component carries the
 /// terminal-specific 16 ANSI colors used by the grid snapshot.

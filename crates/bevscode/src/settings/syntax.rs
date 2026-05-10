@@ -11,10 +11,10 @@ use serde::{Deserialize, Serialize};
 ///
 /// Cascaded onto every `CodeEditor` entity via `#[require]` when the
 /// `tree-sitter` feature is enabled. Override individual fields at spawn
-/// time or mutate via `Query<&mut SyntaxTheme, With<CodeEditor>>`.
+/// time or mutate via `Query<&mut SyntaxColors, With<CodeEditor>>`.
 #[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
 #[reflect(Component, Default, Debug)]
-pub struct SyntaxTheme {
+pub struct SyntaxColors {
     pub keyword: Color,
     pub function: Color,
     pub method: Color,
@@ -34,7 +34,7 @@ pub struct SyntaxTheme {
     pub embedded: Color,
 }
 
-impl Default for SyntaxTheme {
+impl Default for SyntaxColors {
     fn default() -> Self {
         Self {
             keyword: Color::srgb(0.847, 0.486, 0.659),

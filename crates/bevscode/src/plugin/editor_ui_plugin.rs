@@ -12,10 +12,10 @@
 //! querying the editor state directly.
 
 use bevy::prelude::*;
-use bevy_instanced_text::FontConfig;
+use bevy_instanced_text::TextFont;
 
 use crate::settings::*;
-use crate::text_view::TextViewViewport;
+use crate::text_view::TextViewport;
 use crate::types::{CodeEditor, Separator, ViewportConfig};
 use bevy_camera::Viewport;
 
@@ -51,7 +51,7 @@ impl Plugin for EditorUiPlugin {
 
         // Update viewport when window resizes (if auto_resize_to_window is true)
         // Auto-resize when ViewportConfig.auto_resize_to_window is true.
-        // Otherwise hosts write directly to each editor's TextViewViewport.
+        // Otherwise hosts write directly to each editor's TextViewport.
         app.add_systems(Update, detect_viewport_resize);
 
         // Update separator position when viewport changes
@@ -113,7 +113,7 @@ impl Plugin for EditorUiPlugin {
         app.add_systems(
             Update,
             update_camera_viewport
-                .run_if(|query: Query<(), Changed<TextViewViewport>>| !query.is_empty())
+                .run_if(|query: Query<(), Changed<TextViewport>>| !query.is_empty())
                 .in_set(super::ApplyStateSet),
         );
     }
@@ -123,7 +123,7 @@ impl Plugin for EditorUiPlugin {
 /// This is essential when auto_resize_to_window is false (e.g., resizable panel mode)
 fn update_camera_viewport(
     config: Res<ViewportConfig>,
-    viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
+    viewport_query: Query<&TextViewport, With<CodeEditor>>,
     windows: Query<&Window>,
     mut camera_query: Query<(&mut Camera, &mut Transform), With<EditorCamera>>,
 ) {
@@ -190,11 +190,11 @@ type ViewportLayoutQuery<'w, 's> = Query<
     'w,
     's,
     (
-        &'static mut TextViewViewport,
-        &'static FontConfig,
-        &'static UiSettings,
+        &'static mut TextViewport,
+        &'static TextFont,
+        &'static EditorUi,
     ),
-    (With<CodeEditor>, Changed<UiSettings>),
+    (With<CodeEditor>, Changed<EditorUi>),
 >;
 
 /// Compute ViewportDimensions layout fields based on UI settings
@@ -219,7 +219,7 @@ fn compute_viewport_layout(mut viewport_query: ViewportLayoutQuery) {
 
 /// Initialize viewport dimensions from the actual window size
 fn init_viewport_from_window(
-    mut viewport_query: Query<&mut TextViewViewport, With<CodeEditor>>,
+    mut viewport_query: Query<&mut TextViewport, With<CodeEditor>>,
     config: Res<ViewportConfig>,
     windows: Query<&Window>,
 ) {
@@ -239,7 +239,7 @@ fn init_viewport_from_window(
 /// Detect viewport resize and update dimensions
 fn detect_viewport_resize(
     config: Res<ViewportConfig>,
-    mut viewport_query: Query<&mut TextViewViewport, With<CodeEditor>>,
+    mut viewport_query: Query<&mut TextViewport, With<CodeEditor>>,
     windows: Query<&Window>,
 ) {
     // Only auto-resize when enabled
@@ -266,9 +266,9 @@ fn setup_editor_ui(
     mut commands: Commands,
     editor_query: Query<
         (
-            &TextViewViewport,
-            &ThemeConfig,
-            &UiSettings,
+            &TextViewport,
+            &EditorTheme,
+            &EditorUi,
             Option<&bevy_camera::visibility::RenderLayers>,
         ),
         With<CodeEditor>,
@@ -309,14 +309,14 @@ fn setup_editor_ui(
     }
 }
 
-/// Run condition: returns true when the TextViewViewport component has changed
-fn viewport_changed(query: Query<(), Changed<TextViewViewport>>) -> bool {
+/// Run condition: returns true when the TextViewport component has changed
+fn viewport_changed(query: Query<(), Changed<TextViewport>>) -> bool {
     !query.is_empty()
 }
 
 /// Update separator SIZE and POSITION when viewport changes
 fn update_separator_on_resize(
-    viewport_query: Query<&TextViewViewport, With<CodeEditor>>,
+    viewport_query: Query<&TextViewport, With<CodeEditor>>,
     mut separator_query: Query<(&mut Sprite, &mut Transform), With<Separator>>,
 ) {
     // Use the first viewport found; with multiple editors a follow-up will key
@@ -343,11 +343,11 @@ fn update_separator_on_resize(
     }
 }
 
-/// Update each editor's `FontConfig.char_width` to match the actual rasterized
+/// Update each editor's `TextFont.char_width` to match the actual rasterized
 /// glyph advance for its `size`. Per-entity so multiple editors with different
 /// font sizes each get accurate metrics.
 fn update_font_metrics(
-    mut editors: Query<&mut FontConfig, With<CodeEditor>>,
+    mut editors: Query<&mut TextFont, With<CodeEditor>>,
     mut atlas: ResMut<GlyphAtlas>,
     fonts: Res<Assets<bevy::text::Font>>,
 ) {

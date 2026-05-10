@@ -5,13 +5,13 @@
 //! lives inside `push_cursor_overlays` itself — no separate `animate_cursor`
 //! system.
 
-use crate::settings::{CursorLineSettings, CursorSettings, ThemeConfig};
+use crate::settings::{CursorLine, CursorSettings, EditorTheme};
 use crate::text_view::{
-    DisplayLayout, RectOverlay, RowVertical, TextBuffer, TextViewOverlays, TextViewViewport,
+    DisplayLayout, RectOverlay, RowVertical, TextBuffer, TextViewOverlays, TextViewport,
 };
 use crate::types::*;
 use bevy::prelude::*;
-use bevy_instanced_text::FontConfig;
+use bevy_instanced_text::TextFont;
 
 type PushCursorOverlaysQuery<'w, 's> = Query<
     'w,
@@ -22,12 +22,12 @@ type PushCursorOverlaysQuery<'w, 's> = Query<
         &'static CursorState,
         &'static bevy_instanced_text_edit::BlinkPhase,
         &'static TextBuffer,
-        &'static TextViewViewport,
+        &'static TextViewport,
         &'static mut TextViewOverlays,
         &'static FoldState,
-        &'static FontConfig,
+        &'static TextFont,
         Option<&'static DisplayLayout>,
-        &'static ThemeConfig,
+        &'static EditorTheme,
         &'static CursorSettings,
     ),
     With<CodeEditor>,
@@ -40,13 +40,13 @@ type CursorLineHighlightQuery<'w, 's> = Query<
         &'static SelectionState,
         &'static CursorState,
         &'static TextBuffer,
-        &'static TextViewViewport,
+        &'static TextViewport,
         &'static mut TextViewOverlays,
         &'static FoldState,
-        &'static FontConfig,
+        &'static TextFont,
         Option<&'static DisplayLayout>,
-        &'static ThemeConfig,
-        &'static CursorLineSettings,
+        &'static EditorTheme,
+        &'static CursorLine,
     ),
     With<CodeEditor>,
 >;
@@ -59,25 +59,25 @@ impl Plugin for CursorPlugin {
         // Resource / Message types here. Internal state Components carrying
         // cosmic-text / tree-sitter / lsp_types fields stay non-reflectable
         // and are documented at their definition sites.
-        app.register_type::<crate::types::events::ApplyCompletionEvent>()
+        app.register_type::<crate::types::events::CompletionApplied>()
             .register_type::<BracketMatch>()
             .register_type::<BracketMatchHighlight>()
             .register_type::<BracketMatchState>()
             .register_type::<CodeEditor>()
-            .register_type::<crate::types::events::DismissCompletionEvent>()
+            .register_type::<crate::types::events::CompletionDismissed>()
             .register_type::<EditorCursor>()
             .register_type::<IndentGuide>()
             .register_type::<KeyRepeatState>()
             .register_type::<LineNumbers>()
             .register_type::<OpenRequested>()
-            .register_type::<crate::types::events::RequestCompletionEvent>()
-            .register_type::<crate::types::events::RequestHoverEvent>()
-            .register_type::<crate::types::events::RequestRenameEvent>()
-            .register_type::<crate::types::events::RequestSignatureHelpEvent>()
+            .register_type::<crate::types::events::CompletionRequested>()
+            .register_type::<crate::types::events::HoverRequested>()
+            .register_type::<crate::types::events::RenameRequested>()
+            .register_type::<crate::types::events::SignatureHelpRequested>()
             .register_type::<SaveRequested>()
             .register_type::<SelectionHighlight>()
             .register_type::<Separator>()
-            .register_type::<crate::types::events::TextEditEvent>()
+            .register_type::<crate::types::events::TextEdited>()
             .register_type::<ViewportConfig>()
             .register_type::<crate::input::EditorAction>()
             .register_type::<super::editor_ui_plugin::EditorCamera>()
@@ -85,22 +85,22 @@ impl Plugin for CursorPlugin {
 
         // Settings resources.
         app.register_type::<crate::settings::BracketHighlightStyle>()
-            .register_type::<crate::settings::BracketSettings>()
-            .register_type::<crate::settings::CursorLineSettings>()
+            .register_type::<crate::settings::BracketConfig>()
+            .register_type::<crate::settings::CursorLine>()
             .register_type::<crate::settings::CursorLineStyle>()
             .register_type::<crate::settings::CursorSettings>()
             .register_type::<crate::settings::CursorStyle>()
-            .register_type::<crate::settings::IndentationSettings>()
+            .register_type::<crate::settings::Indentation>()
             .register_type::<crate::settings::KeyRepeatSettings>()
-            .register_type::<crate::settings::PerformanceSettings>()
-            .register_type::<crate::settings::SyntaxTheme>()
-            .register_type::<crate::settings::ThemeConfig>()
-            .register_type::<crate::settings::UiSettings>()
+            .register_type::<crate::settings::Performance>()
+            .register_type::<crate::settings::SyntaxColors>()
+            .register_type::<crate::settings::EditorTheme>()
+            .register_type::<crate::settings::EditorUi>()
             .register_type::<crate::settings::WhitespaceMode>()
-            .register_type::<crate::settings::WrappingSettings>();
+            .register_type::<crate::settings::Wrapping>();
 
         #[cfg(feature = "lsp")]
-        app.register_type::<crate::settings::LspSettings>();
+        app.register_type::<crate::settings::LspConfig>();
 
         app.add_systems(Update, track_cursor_movement.in_set(super::ApplyStateSet));
 

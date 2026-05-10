@@ -7,14 +7,14 @@
 //! ```rust,ignore
 //! commands.spawn((
 //!     CodeEditor,
-//!     UiSettings { show_line_numbers: false, ..default() },
-//!     IndentationSettings { use_spaces: false, tab_width: 2, ..default() },
+//!     EditorUi { show_line_numbers: false, ..default() },
+//!     Indentation { use_spaces: false, tab_width: 2, ..default() },
 //! ));
 //! ```
 //!
-//! Or mutate at runtime via `Query<&mut UiSettings, With<CodeEditor>>`.
+//! Or mutate at runtime via `Query<&mut EditorUi, With<CodeEditor>>`.
 //!
-//! `ThemeConfig` and `SyntaxTheme` follow the same pattern and are defined
+//! `EditorTheme` and `SyntaxColors` follow the same pattern and are defined
 //! in `core` and `syntax` respectively.
 
 mod core;

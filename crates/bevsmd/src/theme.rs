@@ -6,7 +6,7 @@ pub use bevy_instanced_text::BlockDecorTheme;
 /// Syntax highlight color palette for fenced code blocks.
 ///
 /// Maps tree-sitter capture categories to colors. Mirrors
-/// `bevy_code_editor::SyntaxTheme` but lives here so `bevy_markdown` doesn't
+/// `bevy_code_editor::SyntaxColors` but lives here so `bevy_markdown` doesn't
 /// depend on the editor crate.
 #[derive(Clone, Debug)]
 pub struct SyntaxPalette {

@@ -2,15 +2,15 @@
 //!
 //! Theme is a per-entity Component, not a global Resource: multi-editor
 //! apps can run a dark editor next to a light one without splitting state.
-//! Bevy's `#[require]` cascade attaches `ThemeConfig::default()` to every
+//! Bevy's `#[require]` cascade attaches `EditorTheme::default()` to every
 //! `CodeEditor` entity, so spawning works without specifying colors.
 //!
 //! For different colors, override at spawn time
-//! (`(CodeEditor, ThemeConfig { background: ..., ..default() })`) or
-//! mutate the Component at runtime via `Query<&mut ThemeConfig, With<CodeEditor>>`.
+//! (`(CodeEditor, EditorTheme { background: ..., ..default() })`) or
+//! mutate the Component at runtime via `Query<&mut EditorTheme, With<CodeEditor>>`.
 //!
-//! Syntax-coloring lives on a sibling `SyntaxTheme` Component (cfg
-//! `tree-sitter`); LSP diagnostic colors on `DiagnosticTheme` (cfg `lsp`).
+//! Syntax-coloring lives on a sibling `SyntaxColors` Component (cfg
+//! `tree-sitter`); LSP diagnostic colors on `DiagnosticColors` (cfg `lsp`).
 //! Both are also `#[require]`d by `CodeEditor` so they default in.
 
 use bevy::prelude::*;
@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 /// Per-entity editor color palette.
 #[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
 #[reflect(Component, Default, Debug)]
-pub struct ThemeConfig {
+pub struct EditorTheme {
     pub background: Color,
     pub foreground: Color,
     pub cursor: Color,
@@ -33,7 +33,7 @@ pub struct ThemeConfig {
     pub bracket_match: Color,
 }
 
-impl Default for ThemeConfig {
+impl Default for EditorTheme {
     fn default() -> Self {
         Self {
             background: Color::srgb(0.117, 0.117, 0.117),
@@ -54,7 +54,7 @@ impl Default for ThemeConfig {
 #[cfg(feature = "lsp")]
 #[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
 #[reflect(Component, Default, Debug)]
-pub struct DiagnosticTheme {
+pub struct DiagnosticColors {
     pub error: Color,
     pub warning: Color,
     pub info: Color,
@@ -62,7 +62,7 @@ pub struct DiagnosticTheme {
 }
 
 #[cfg(feature = "lsp")]
-impl Default for DiagnosticTheme {
+impl Default for DiagnosticColors {
     fn default() -> Self {
         Self {
             error: Color::srgb(0.976, 0.298, 0.298),

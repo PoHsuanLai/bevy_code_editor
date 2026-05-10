@@ -127,7 +127,8 @@ impl Plugin for InstancedTextEditPlugin {
         app.register_type::<IndentConfig>();
         app.register_type::<OnEdit>();
         app.register_type::<SnapshotPreEdit>();
-        app.register_type::<crate::theme::EditTheme>();
+        app.register_type::<crate::theme::TextCursorColor>();
+        app.register_type::<crate::theme::TextSelectionColor>();
         app.register_type::<crate::cursor_settings::CursorSettings>();
         app.register_type::<crate::cursor_settings::CursorStyle>();
         app.register_type::<crate::editing_events::CursorMoved>();

@@ -4,7 +4,7 @@
 //! timing) live in `bevy_instanced_text_edit`; the terminal needs them too. We
 //! re-export them here so `crate::settings::*` callers don't notice.
 //!
-//! `CursorLineSettings` (the editor's VSCode-style line-highlight band)
+//! `CursorLine` (the editor's VSCode-style line-highlight band)
 //! stays here — it's editor chrome, not a text-widget primitive.
 
 use bevy::prelude::*;
@@ -15,7 +15,7 @@ pub use bevy_instanced_text_edit::{CursorSettings, CursorStyle};
 /// Per-editor VSCode-style cursor-line highlighting.
 #[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
 #[reflect(Component, Default, Debug)]
-pub struct CursorLineSettings {
+pub struct CursorLine {
     pub enabled: bool,
     pub style: CursorLineStyle,
     pub border_width: f32,
@@ -41,7 +41,7 @@ pub enum CursorLineStyle {
     Both,
 }
 
-impl Default for CursorLineSettings {
+impl Default for CursorLine {
     fn default() -> Self {
         Self {
             enabled: true,

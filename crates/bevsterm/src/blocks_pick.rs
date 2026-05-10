@@ -2,7 +2,7 @@
 //! against `TerminalBlockState` and emit `TerminalBlockSelected`.
 
 use bevy::prelude::*;
-use bevy_instanced_text::{DisplayLayout, ScrollState, TextViewViewport};
+use bevy_instanced_text::{DisplayLayout, ScrollState, TextViewport};
 
 use crate::messages::TerminalBlockSelected;
 use crate::types::TerminalBlockState;
@@ -13,7 +13,7 @@ pub fn on_terminal_block_press(
         &TerminalBlockState,
         &DisplayLayout,
         &ScrollState,
-        &TextViewViewport,
+        &TextViewport,
     )>,
     mut selected_w: MessageWriter<TerminalBlockSelected>,
 ) {

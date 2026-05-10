@@ -7,6 +7,8 @@
 
 Embeddable text editing and rendering plugins for Bevy. Drop them into any app and they coexist with your existing ECS world.
 
+**Scope:** this is a component library, not a standalone IDE. It gives you a capable code-editing widget you can embed inside a Bevy application — window management, project trees, debugger UIs, and similar IDE-level concerns are outside its scope.
+
 | Crate | What it does |
 |---|---|
 | **`bevy_instanced_text`** | GPU-instanced text rendering: glyph atlas, soft-wrap layout, overlays. |

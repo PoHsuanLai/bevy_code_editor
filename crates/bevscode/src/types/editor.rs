@@ -9,7 +9,7 @@
 use bevy::prelude::*;
 
 /// When `true`, viewport auto-resizes to window; when `false`, the host
-/// writes directly to each editor's [`crate::text_view::TextViewViewport`]
+/// writes directly to each editor's [`crate::text_view::TextViewport`]
 /// component.
 #[derive(Resource, Clone, Copy, Debug, Reflect)]
 #[reflect(Resource, Default, Debug)]
@@ -41,14 +41,14 @@ impl Default for ViewportConfig {
         bevy_instanced_text_edit::TextEditor,
         BracketMatchState,
         crate::types::fold::GotoLineState,
-        crate::settings::ThemeConfig,
-        crate::settings::SyntaxTheme,
-        crate::settings::UiSettings,
-        crate::settings::IndentationSettings,
-        crate::settings::BracketSettings,
-        crate::settings::CursorLineSettings,
-        crate::settings::PerformanceSettings,
-        crate::settings::WrappingSettings,
+        crate::settings::EditorTheme,
+        crate::settings::SyntaxColors,
+        crate::settings::EditorUi,
+        crate::settings::Indentation,
+        crate::settings::BracketConfig,
+        crate::settings::CursorLine,
+        crate::settings::Performance,
+        crate::settings::Wrapping,
     )
 )]
 #[cfg_attr(
@@ -57,16 +57,16 @@ impl Default for ViewportConfig {
         bevy_instanced_text_edit::TextEditor,
         BracketMatchState,
         crate::types::fold::GotoLineState,
-        crate::settings::ThemeConfig,
-        crate::settings::SyntaxTheme,
-        crate::settings::DiagnosticTheme,
-        crate::settings::UiSettings,
-        crate::settings::IndentationSettings,
-        crate::settings::BracketSettings,
-        crate::settings::CursorLineSettings,
-        crate::settings::PerformanceSettings,
-        crate::settings::WrappingSettings,
-        crate::settings::LspSettings,
+        crate::settings::EditorTheme,
+        crate::settings::SyntaxColors,
+        crate::settings::DiagnosticColors,
+        crate::settings::EditorUi,
+        crate::settings::Indentation,
+        crate::settings::BracketConfig,
+        crate::settings::CursorLine,
+        crate::settings::Performance,
+        crate::settings::Wrapping,
+        crate::settings::LspConfig,
         // LSP-side state. `LspDocument` is NOT in this cascade because it
         // requires a URI which the host must supply.
         bevy_lsp::LspClient,

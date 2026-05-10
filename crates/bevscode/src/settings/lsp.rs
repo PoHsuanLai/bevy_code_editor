@@ -6,12 +6,12 @@ use serde::{Deserialize, Serialize};
 /// Per-editor LSP settings: debounce timers, completion/hover UI behavior.
 #[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
 #[reflect(Component, Default, Debug)]
-pub struct LspSettings {
+pub struct LspConfig {
     /// Auto-completion settings
-    pub completion: CompletionSettings,
+    pub completion: CompletionConfig,
 
     /// Hover information settings
-    pub hover: HoverSettings,
+    pub hover: HoverConfig,
 
     /// Debounce before requesting `textDocument/documentHighlight` after
     /// the cursor stops moving. Wired into `request_document_highlights`.
@@ -28,11 +28,11 @@ pub struct LspSettings {
     pub full_document_sync: bool,
 }
 
-impl Default for LspSettings {
+impl Default for LspConfig {
     fn default() -> Self {
         Self {
-            completion: CompletionSettings::default(),
-            hover: HoverSettings::default(),
+            completion: CompletionConfig::default(),
+            hover: HoverConfig::default(),
             highlight_delay_ms: 100,
             did_change_delay_ms: 150,
             full_document_sync: false,
@@ -59,7 +59,7 @@ pub enum WordsCompletionMode {
 /// Auto-completion settings
 #[derive(Clone, Debug, Serialize, Deserialize, Reflect)]
 #[reflect(Default, Debug)]
-pub struct CompletionSettings {
+pub struct CompletionConfig {
     /// Enable auto-completion
     pub enabled: bool,
 
@@ -97,7 +97,7 @@ pub struct CompletionSettings {
 /// Hover information settings
 #[derive(Clone, Debug, Serialize, Deserialize, Reflect)]
 #[reflect(Default, Debug)]
-pub struct HoverSettings {
+pub struct HoverConfig {
     /// Enable hover information
     pub enabled: bool,
 
@@ -120,7 +120,7 @@ pub struct HoverSettings {
     pub border_width: f32,
 }
 
-impl Default for CompletionSettings {
+impl Default for CompletionConfig {
     fn default() -> Self {
         Self {
             enabled: true,
@@ -138,7 +138,7 @@ impl Default for CompletionSettings {
     }
 }
 
-impl Default for HoverSettings {
+impl Default for HoverConfig {
     fn default() -> Self {
         Self {
             enabled: true,

@@ -5,15 +5,15 @@ use std::sync::Arc;
 use bevy::app::PluginGroupBuilder;
 use bevy::prelude::*;
 use bevy_instanced_text::{
-    ContentMetrics, DisplayLayout, FontConfig, RectOverlay, ScrollState, ShapedLine, TextBuffer,
-    TextView, TextViewOverlays, TextViewViewport,
+    ContentMetrics, DisplayLayout, TextFont, RectOverlay, ScrollState, ShapedLine, TextBuffer,
+    TextView, TextViewOverlays, TextViewport,
 };
 
 /// Size and scroll geometry for a markdown viewer entity.
-pub type MarkdownViewport = TextViewViewport;
+pub type MarkdownViewport = TextViewport;
 
 /// Font path, size, and line-height for a markdown viewer entity.
-pub type MarkdownFont = FontConfig;
+pub type MarkdownFont = TextFont;
 
 use crate::layout::{layout_markdown, MarkdownLayoutConfig};
 use crate::parse::parse_markdown;
@@ -64,8 +64,8 @@ fn rebuild_markdown_layout(
             Entity,
             &MarkdownDoc,
             &MarkdownTheme,
-            &FontConfig,
-            &TextViewViewport,
+            &TextFont,
+            &TextViewport,
             Option<&MarkdownCodeFont>,
             Option<&mut TextBuffer>,
             Option<&mut ContentMetrics>,
@@ -73,8 +73,8 @@ fn rebuild_markdown_layout(
         Or<(
             Changed<MarkdownDoc>,
             Changed<MarkdownTheme>,
-            Changed<FontConfig>,
-            Changed<TextViewViewport>,
+            Changed<TextFont>,
+            Changed<TextViewport>,
             Changed<MarkdownCodeFont>,
         )>,
     >,
@@ -124,10 +124,10 @@ fn rebuild_markdown_layout(
 fn apply_markdown_scroll(
     mut commands: Commands,
     q: Query<
-        (Entity, &ScrollState, &TextViewViewport, &BaseMarkdownLayout),
+        (Entity, &ScrollState, &TextViewport, &BaseMarkdownLayout),
         Or<(
             Changed<ScrollState>,
-            Changed<TextViewViewport>,
+            Changed<TextViewport>,
             Changed<BaseMarkdownLayout>,
         )>,
     >,
@@ -178,7 +178,7 @@ fn shift_layout_y(base: &DisplayLayout, delta: f32) -> DisplayLayout {
     }
 }
 
-fn content_width_px(viewport: &TextViewViewport) -> f32 {
+fn content_width_px(viewport: &TextViewport) -> f32 {
     let left = if viewport.gutter_width > 0.0 {
         viewport.text_area_left.max(viewport.gutter_width)
     } else {
@@ -197,7 +197,7 @@ fn content_width_px(viewport: &TextViewViewport) -> f32 {
 /// commands.spawn(MarkdownViewerBundle {
 ///     doc: MarkdownDoc::new("# Hello"),
 ///     viewport: MarkdownViewport { width: 800, height: 600, ..default() },
-///     font: MarkdownFont::from_size(16.0),
+///     font: MarkdownFont::from_font_size(16.0),
 ///     ..default()
 /// });
 /// # }

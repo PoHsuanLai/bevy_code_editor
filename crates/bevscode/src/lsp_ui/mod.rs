@@ -15,7 +15,7 @@
 //! - [`sync`] — systems that translate the popup-state Components into the
 //!   render-data Components above.
 //! - [`event_listeners`] — systems that translate editor events
-//!   ([`crate::types::events::TextEditEvent`], request events) into LSP
+//!   ([`crate::types::events::TextEdited`], request events) into LSP
 //!   `LspMessage` sends through the entity's [`bevy_lsp::LspClient`].
 //! - [`systems`] — `process_lsp_messages` (drain `LspResponse`s into editor
 //!   state) plus a few capability-aware request fanouts (inlay hints,

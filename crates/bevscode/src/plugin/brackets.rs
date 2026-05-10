@@ -5,7 +5,7 @@ use crate::settings::*;
 use crate::text_view::{DisplayLayout, TextBuffer, TextViewOverlays};
 use crate::types::*;
 use bevy::prelude::*;
-use bevy_instanced_text::{CornerRadii, FontConfig, RectOverlay, RowVertical};
+use bevy_instanced_text::{CornerRadii, TextFont, RectOverlay, RowVertical};
 
 type BracketMatchQuery<'w, 's> = Query<
     'w,
@@ -14,7 +14,7 @@ type BracketMatchQuery<'w, 's> = Query<
         &'static CursorState,
         &'static TextBuffer,
         &'static mut BracketMatchState,
-        &'static BracketSettings,
+        &'static BracketConfig,
     ),
     (
         With<CodeEditor>,
@@ -29,10 +29,10 @@ type BracketHighlightQuery<'w, 's> = Query<
         &'static TextBuffer,
         &'static BracketMatchState,
         &'static FoldState,
-        &'static FontConfig,
+        &'static TextFont,
         Option<&'static DisplayLayout>,
-        &'static ThemeConfig,
-        &'static BracketSettings,
+        &'static EditorTheme,
+        &'static BracketConfig,
         &'static mut TextViewOverlays,
     ),
     With<CodeEditor>,

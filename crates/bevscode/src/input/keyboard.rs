@@ -17,9 +17,9 @@ use super::actions::{
     get_closing_bracket, get_closing_quote, insert_closing_char, should_skip_auto_close,
 };
 use super::editor_ops::move_cursor;
-use crate::settings::BracketSettings;
+use crate::settings::BracketConfig;
 #[cfg(feature = "lsp")]
-use crate::settings::LspSettings;
+use crate::settings::LspConfig;
 use crate::types::*;
 use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
 use bevy::input_focus::FocusedInput;
@@ -49,7 +49,7 @@ type KeyboardLspQuery<'w, 's> = Query<
         &'static mut crate::lsp_ui::state::LspCompletionPopup,
         &'static mut crate::lsp_ui::state::LspRenamePopup,
         Option<&'static crate::plugin::syntax_highlighting::EditorSyntaxState>,
-        &'static LspSettings,
+        &'static LspConfig,
     ),
     With<CodeEditor>,
 >;
@@ -67,7 +67,7 @@ pub fn on_focused_keyboard(
             &mut EditHistoryState,
             &mut CursorState,
             &mut crate::text_view::TextBuffer,
-            &BracketSettings,
+            &BracketConfig,
         ),
         With<CodeEditor>,
     >,
@@ -199,8 +199,8 @@ fn insert_typed_char(
     hist: &mut EditHistoryState,
     cursor: &mut CursorState,
     buffer: &mut crate::text_view::TextBuffer,
-    brackets: &BracketSettings,
-    #[cfg(feature = "lsp")] lsp: &LspSettings,
+    brackets: &BracketConfig,
+    #[cfg(feature = "lsp")] lsp: &LspConfig,
     #[cfg(feature = "lsp")] lsp_client: &bevy_lsp::LspClient,
     #[cfg(feature = "lsp")] capabilities: &bevy_lsp::ServerCapabilities,
     #[cfg(feature = "lsp")] completion_state: &mut crate::lsp_ui::state::LspCompletionPopup,

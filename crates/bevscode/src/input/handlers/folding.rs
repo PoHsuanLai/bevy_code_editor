@@ -1,11 +1,11 @@
 //! Code-folding handlers — ToggleFold, Fold, Unfold, FoldAll, UnfoldAll,
 //! plus the change-detection system that fans `is_folded` transitions
-//! onto the message bus as `EditorFoldStateChanged`.
+//! onto the message bus as `FoldStateChanged`.
 
 use std::collections::HashMap;
 
 use crate::input::action_events::*;
-use crate::types::events::EditorFoldStateChanged;
+use crate::types::events::FoldStateChanged;
 use crate::types::*;
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
@@ -98,7 +98,7 @@ pub fn handle_unfold_all(
     fold_state.unfold_all();
 }
 
-/// Watches `Changed<FoldState>` and emits one `EditorFoldStateChanged` per
+/// Watches `Changed<FoldState>` and emits one `FoldStateChanged` per
 /// region whose `is_folded` flipped since the last frame. The fold-region
 /// detector bumps `content_version` (re-parse) without changing fold flags;
 /// without per-region diffing hosts would see a flood of false positives on
@@ -114,7 +114,7 @@ type FoldStateChangedQuery<'w, 's> =
 
 pub fn emit_fold_state_changed(
     q: FoldStateChangedQuery,
-    mut writer: MessageWriter<EditorFoldStateChanged>,
+    mut writer: MessageWriter<FoldStateChanged>,
     mut last_known: Local<HashMap<(Entity, usize), bool>>,
     mut last_fingerprint: Local<HashMap<Entity, u64>>,
 ) {
@@ -144,7 +144,7 @@ pub fn emit_fold_state_changed(
             seen.insert(key, region.is_folded);
             let prev = last_known.get(&key).copied();
             if prev != Some(region.is_folded) {
-                writer.write(EditorFoldStateChanged {
+                writer.write(FoldStateChanged {
                     entity,
                     start_line: region.start_line,
                     is_folded: region.is_folded,

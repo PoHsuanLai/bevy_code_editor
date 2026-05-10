@@ -70,7 +70,7 @@ fn setup_camera(mut commands: Commands) {
 fn setup_viewer(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<&Window>) {
     let Ok(window) = windows.single() else { return };
 
-    let font = MarkdownFont::from_size(16.0)
+    let font = MarkdownFont::from_font_size(16.0)
         .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
         .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
 

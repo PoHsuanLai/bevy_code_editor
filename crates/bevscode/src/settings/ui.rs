@@ -4,10 +4,10 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// Per-editor UI visual settings. Layout dimensions are computed from these
-/// and written into the editor's `TextViewViewport` each frame.
+/// and written into the editor's `TextViewport` each frame.
 #[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
 #[reflect(Component, Default, Debug)]
-pub struct UiSettings {
+pub struct EditorUi {
     pub show_line_numbers: bool,
     /// Vim-style relative line numbers.
     pub relative_line_numbers: bool,
@@ -36,7 +36,7 @@ pub enum WhitespaceMode {
     All,
 }
 
-impl Default for UiSettings {
+impl Default for EditorUi {
     fn default() -> Self {
         Self {
             show_line_numbers: true,
@@ -57,7 +57,7 @@ impl Default for UiSettings {
 /// Per-editor indentation rules: spaces vs tabs, width, and auto-indent on newline.
 #[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
 #[reflect(Component, Default, Debug)]
-pub struct IndentationSettings {
+pub struct Indentation {
     pub use_spaces: bool,
     pub tab_width: usize,
     /// Alias of `tab_width` for compatibility.
@@ -65,7 +65,7 @@ pub struct IndentationSettings {
     pub auto_indent: bool,
 }
 
-impl Default for IndentationSettings {
+impl Default for Indentation {
     fn default() -> Self {
         Self {
             use_spaces: true,
@@ -79,7 +79,7 @@ impl Default for IndentationSettings {
 /// Per-editor bracket matching and auto-close settings.
 #[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
 #[reflect(Component, Default, Debug)]
-pub struct BracketSettings {
+pub struct BracketConfig {
     pub enabled: bool,
     pub style: BracketHighlightStyle,
     pub auto_close: bool,
@@ -99,7 +99,7 @@ pub enum BracketHighlightStyle {
     Both,
 }
 
-impl Default for BracketSettings {
+impl Default for BracketConfig {
     fn default() -> Self {
         Self {
             enabled: true,

@@ -7,7 +7,7 @@ use std::thread::JoinHandle;
 
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
-use bevy_instanced_text::{FontConfig, TextViewViewport};
+use bevy_instanced_text::{TextFont, TextViewport};
 use parking_lot::Mutex;
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, PtySize};
 
@@ -43,8 +43,8 @@ pub fn open_pending_sessions(
     pending: Query<
         (
             Entity,
-            &TextViewViewport,
-            &FontConfig,
+            &TextViewport,
+            &TextFont,
             Option<&TerminalConfig>,
             Option<&TerminalScrollback>,
         ),

@@ -6,9 +6,9 @@
 
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy_instanced_text::{FontConfig, TextViewOverlays};
+use bevy_instanced_text::{TextFont, TextViewOverlays};
 use bevy_instanced_text_edit::{
-    caret_overlay, cursor_blink_visible, BlinkPhase, CursorSettings, EditTheme,
+    caret_overlay, cursor_blink_visible, BlinkPhase, CursorSettings, TextCursorColor,
 };
 
 use crate::types::TerminalGridSnapshot;
@@ -50,8 +50,8 @@ pub fn push_terminal_caret(
         Entity,
         &TerminalGridSnapshot,
         &BlinkPhase,
-        &FontConfig,
-        &EditTheme,
+        &TextFont,
+        &TextCursorColor,
         &CursorSettings,
         &mut TextViewOverlays,
     )>,
@@ -80,7 +80,7 @@ pub fn push_terminal_caret(
             snapshot.cursor_row,
             x_left,
             cursor_settings,
-            theme.cursor,
+            **theme,
         ));
         overlays.version = overlays.version.wrapping_add(1);
     }

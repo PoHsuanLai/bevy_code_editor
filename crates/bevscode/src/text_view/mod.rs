@@ -2,7 +2,7 @@
 //!
 //! The generic primitives (`TextView`, `DisplayLayout`, `ShapedLine`,
 //! `StyleRun`, `RectOverlay`, `TextBuffer`, `ScrollState`, `ContentMetrics`,
-//! `TextViewViewport`, `render_layout`, `InstancedTextPlugin`,
+//! `TextViewport`, `render_layout`, `InstancedTextPlugin`,
 //! `InstancedTextPlugins`, …) live in [`bevy_instanced_text`] and are re-exported
 //! here so existing `use bevy_code_editor::text_view::…;` paths keep resolving.
 //!
@@ -20,7 +20,7 @@ pub use bevy_instanced_text::view::{
     layout, overlay, render, snapshot, state, viewport, ContentMetrics, DisplayLayout,
     GlyphBatchComponent, GlyphInstance, RectOverlay, RowVertical, ScrollState, ShapedLine,
     StyleRun, TextBuffer, TextView, TextViewBatch, TextViewBatchEntity, TextViewOverlays,
-    TextViewRenderSet, TextViewViewport, ViewportOrigin,
+    TextViewRenderSet, TextViewport, ViewportOrigin,
 };
 
 pub use bevy_instanced_text::view::snapshot::trivial_layout;

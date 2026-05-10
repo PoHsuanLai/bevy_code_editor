@@ -12,6 +12,7 @@
 
 use bevy::prelude::*;
 use bevy_instanced_text::prelude::*;
+use bevy_instanced_text::TextFont;
 use bevy_instanced_text_edit::{InstancedTextEditPlugin, TextEditor};
 
 fn main() {
@@ -42,7 +43,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     commands.spawn((
         TextEditor,
-        FontConfig::from_size(20.0)
+        TextFont::from_font_size(20.0)
             .with_line_height_multiplier(1.4)
             .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
             .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf")),

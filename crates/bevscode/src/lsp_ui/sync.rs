@@ -17,7 +17,7 @@ use bevy::prelude::*;
 use crate::settings::*;
 use crate::text_view::TextBuffer;
 use crate::types::{CodeEditor, CursorState};
-use bevy_instanced_text::FontConfig;
+use bevy_instanced_text::TextFont;
 
 use super::components::*;
 use super::state::{
@@ -43,8 +43,8 @@ pub fn sync_completion_popup(
             &LspCompletionPopup,
             &CursorState,
             &TextBuffer,
-            &FontConfig,
-            &LspSettings,
+            &TextFont,
+            &LspConfig,
         ),
         With<CodeEditor>,
     >,
@@ -134,7 +134,7 @@ pub fn sync_completion_popup(
 /// Sync hover state to marker entity
 pub fn sync_hover_popup(
     mut commands: Commands,
-    query: Query<(&LspHoverPopup, &TextBuffer, &FontConfig), With<CodeEditor>>,
+    query: Query<(&LspHoverPopup, &TextBuffer, &TextFont), With<CodeEditor>>,
     existing: Query<Entity, With<HoverPopupData>>,
 ) {
     let Ok((hover_state, buffer, font)) = query.single() else {
@@ -198,7 +198,7 @@ pub fn sync_signature_help_popup(
             &LspSignatureHelpPopup,
             &CursorState,
             &TextBuffer,
-            &FontConfig,
+            &TextFont,
         ),
         With<CodeEditor>,
     >,
@@ -282,7 +282,7 @@ pub fn sync_signature_help_popup(
 /// Sync code action state to marker entity
 pub fn sync_code_actions_popup(
     mut commands: Commands,
-    query: Query<(&LspCodeActionsPopup, &CursorState, &TextBuffer, &FontConfig), With<CodeEditor>>,
+    query: Query<(&LspCodeActionsPopup, &CursorState, &TextBuffer, &TextFont), With<CodeEditor>>,
     existing: Query<Entity, With<CodeActionsPopupData>>,
 ) {
     let Ok((action_state, cursor_state, buffer, font)) = query.single() else {
@@ -368,7 +368,7 @@ pub fn sync_code_actions_popup(
 /// Sync rename state to marker entity
 pub fn sync_rename_input(
     mut commands: Commands,
-    query: Query<(&LspRenamePopup, &FontConfig), With<CodeEditor>>,
+    query: Query<(&LspRenamePopup, &TextFont), With<CodeEditor>>,
     existing: Query<Entity, With<RenameInputData>>,
 ) {
     let Ok((rename_state, font)) = query.single() else {

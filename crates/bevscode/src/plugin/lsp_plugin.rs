@@ -6,7 +6,7 @@
 //! `examples/lsp.rs` for an `egui` + `armas` reference renderer.
 //!
 //! What this plugin *does* do:
-//! - Register editor-only events (input requests like `RequestCompletionEvent`,
+//! - Register editor-only events (input requests like `CompletionRequested`,
 //!   output events like `NavigateToFileEvent`, `MultipleLocationsEvent`,
 //!   `WorkspaceEditEvent`).
 //! - Drive `process_lsp_messages` (translates `LspResponse` → editor effects:
@@ -41,7 +41,7 @@ use crate::lsp_ui::systems::{
     on_lsp_signature_help, request_document_highlights, request_inlay_hints, sync_lsp_document,
     MultipleLocationsEvent, NavigateToFileEvent, WorkspaceEditEvent,
 };
-use crate::settings::LspSettings;
+use crate::settings::LspConfig;
 use crate::types::CodeEditor;
 
 /// LSP adapter plugin: bridges editor events to LSP requests, drains LSP
@@ -99,12 +99,12 @@ impl Plugin for LspPlugin {
         // These are intentionally *editor-side*: they're the host's vocabulary
         // for "I want a completion at this cursor position", which the listener
         // systems below translate into bevy_lsp::LspMessage variants.
-        app.add_message::<crate::types::events::RequestCompletionEvent>();
-        app.add_message::<crate::types::events::RequestHoverEvent>();
-        app.add_message::<crate::types::events::RequestRenameEvent>();
-        app.add_message::<crate::types::events::RequestSignatureHelpEvent>();
-        app.add_message::<crate::types::events::DismissCompletionEvent>();
-        app.add_message::<crate::types::events::ApplyCompletionEvent>();
+        app.add_message::<crate::types::events::CompletionRequested>();
+        app.add_message::<crate::types::events::HoverRequested>();
+        app.add_message::<crate::types::events::RenameRequested>();
+        app.add_message::<crate::types::events::SignatureHelpRequested>();
+        app.add_message::<crate::types::events::CompletionDismissed>();
+        app.add_message::<crate::types::events::CompletionApplied>();
 
         // Core LSP-driven systems. These query each editor entity for both
         // editor state (CursorState, TextBuffer) and per-editor LSP
@@ -189,10 +189,10 @@ impl Plugin for LspPlugin {
     }
 }
 
-/// Mirror each editor's `LspSettings::completion::words_mode` onto its
+/// Mirror each editor's `LspConfig::completion::words_mode` onto its
 /// `LspCompletionPopup` so the popup can gate filtering without re-reading settings.
 fn sync_completion_settings(
-    mut query: Query<(&LspSettings, &mut LspCompletionPopup), With<CodeEditor>>,
+    mut query: Query<(&LspConfig, &mut LspCompletionPopup), With<CodeEditor>>,
 ) {
     for (settings, mut popup) in &mut query {
         let target = settings.completion.words_mode;

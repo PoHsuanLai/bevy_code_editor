@@ -3,11 +3,11 @@
 use crate::settings::*;
 use crate::text_view::{
     DisplayLayout, RectOverlay, RowVertical, ScrollState, TextBuffer, TextViewOverlays,
-    TextViewViewport,
+    TextViewport,
 };
 use crate::types::*;
 use bevy::prelude::*;
-use bevy_instanced_text::{visible_buffer_range, FontConfig, HiddenLines, LayoutWrap};
+use bevy_instanced_text::{visible_buffer_range, TextFont, HiddenLines, LayoutWrap};
 
 type IndentGuidesQuery<'w, 's> = Query<
     'w,
@@ -15,13 +15,13 @@ type IndentGuidesQuery<'w, 's> = Query<
     (
         &'static TextBuffer,
         &'static ScrollState,
-        &'static TextViewViewport,
+        &'static TextViewport,
         &'static FoldState,
-        &'static FontConfig,
-        &'static ThemeConfig,
+        &'static TextFont,
+        &'static EditorTheme,
         Option<&'static DisplayLayout>,
-        &'static UiSettings,
-        &'static IndentationSettings,
+        &'static EditorUi,
+        &'static Indentation,
         Option<&'static bevy_camera::visibility::RenderLayers>,
     ),
     With<CodeEditor>,
@@ -35,8 +35,8 @@ type AutoScrollQuery<'w, 's> = Query<
         &'static mut ScrollState,
         &'static crate::text_view::ContentMetrics,
         &'static mut CursorState,
-        &'static TextViewViewport,
-        &'static FontConfig,
+        &'static TextViewport,
+        &'static TextFont,
     ),
     With<CodeEditor>,
 >;
@@ -61,16 +61,16 @@ pub(crate) fn update_selection_highlight(
         (
             Entity,
             &TextBuffer,
-            &TextViewViewport,
+            &TextViewport,
             &ScrollState,
             &SelectionState,
             &mut TextViewOverlays,
             &FoldState,
-            &FontConfig,
+            &TextFont,
             Option<&DisplayLayout>,
             Option<&HiddenLines>,
             Option<&LayoutWrap>,
-            &ThemeConfig,
+            &EditorTheme,
         ),
         With<CodeEditor>,
     >,
@@ -81,11 +81,11 @@ pub(crate) fn update_selection_highlight(
             Or<(
                 Changed<SelectionState>,
                 Changed<ScrollState>,
-                Changed<TextViewViewport>,
+                Changed<TextViewport>,
                 Changed<TextBuffer>,
                 Changed<FoldState>,
-                Changed<FontConfig>,
-                Changed<ThemeConfig>,
+                Changed<TextFont>,
+                Changed<EditorTheme>,
             )>,
         ),
     >,

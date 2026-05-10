@@ -139,7 +139,7 @@ pub struct LspCompletionPopup {
     /// typing identifier chars (extending this prefix) and the previous
     /// response was complete, we refilter locally instead of re-querying.
     pub initial_query: String,
-    /// Mirror of `LspSettings::completion::words_mode`, kept on the
+    /// Mirror of `LspConfig::completion::words_mode`, kept on the
     /// component so `filtered_items` doesn't need access to the resource.
     /// Synced once per frame in `sync_completion_settings`.
     pub words_mode: WordsCompletionMode,
@@ -565,12 +565,12 @@ pub struct PendingLspRequest {
 #[derive(Component)]
 pub struct LspDebounceTimers {
     /// Completion: armed by `listen_completion_requests` from
-    /// `LspSettings::completion::delay_ms`.
+    /// `LspConfig::completion::delay_ms`.
     pub completion_timer: Timer,
     pub pending_completion: Option<PendingLspRequest>,
 
     /// Hover: armed by `listen_hover_requests` from
-    /// `LspSettings::hover::delay_ms`.
+    /// `LspConfig::hover::delay_ms`.
     pub hover_timer: Timer,
     pub pending_hover: Option<PendingLspRequest>,
 }
@@ -578,7 +578,7 @@ pub struct LspDebounceTimers {
 impl Default for LspDebounceTimers {
     fn default() -> Self {
         // Durations are placeholders — the request-arming code re-sets each
-        // timer's duration from `LspSettings` before resetting it, so what
+        // timer's duration from `LspConfig` before resetting it, so what
         // matters here is that the timer starts in a `finished()` state.
         let t = |secs: f32| {
             let mut timer = Timer::from_seconds(secs, TimerMode::Once);
@@ -601,7 +601,7 @@ impl Default for LspDebounceTimers {
 /// accumulated batch in a single notification when the timer expires.
 /// Mirrors the debounced approach used by Zed / VS Code / Helix: typing
 /// bursts collapse into one server reparse, but trailing edits still
-/// reach the server within `LspSettings::did_change_delay_ms`.
+/// reach the server within `LspConfig::did_change_delay_ms`.
 ///
 /// `LspDocument` owns `uri` and `version`; this Component owns the
 /// pending payload + cadence.
@@ -611,7 +611,7 @@ pub struct LspDidChangeBatcher {
     pub pending: Vec<TextDocumentContentChangeEvent>,
     /// When set, the next flush sends a full-document sync instead of
     /// the accumulated incremental batch. Set on first edit without a
-    /// pre-edit rope snapshot, or when `LspSettings::full_document_sync`
+    /// pre-edit rope snapshot, or when `LspConfig::full_document_sync`
     /// is on. Cleared after every flush.
     pub force_full_doc: bool,
     /// Debounce timer; reset on every queued edit, fires when typing pauses.
@@ -620,7 +620,7 @@ pub struct LspDidChangeBatcher {
 
 impl Default for LspDidChangeBatcher {
     fn default() -> Self {
-        // Duration overwritten on first edit from `LspSettings::did_change_delay_ms`.
+        // Duration overwritten on first edit from `LspConfig::did_change_delay_ms`.
         Self {
             pending: Vec::new(),
             force_full_doc: false,

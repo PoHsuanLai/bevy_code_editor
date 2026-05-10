@@ -7,7 +7,7 @@
 //! [`bevy_instanced_text::HiddenLines`] / [`bevy_instanced_text::LineStyles`] /
 //! [`bevy_instanced_text::LayoutWrap`] Components on each `CodeEditor` entity
 //! and refreshes them from `FoldState`, the per-entity `EditorSyntaxState`,
-//! `WrappingSettings`, etc. via producer systems in [`plugin::LayoutSyncSet`].
+//! `Wrapping`, etc. via producer systems in [`plugin::LayoutSyncSet`].
 //! The engine's `produce_layouts` reads those Components on each layout pass.
 //!
 //! Cursor/selection systems map buffer positions to display rows via

@@ -343,7 +343,7 @@ type DispatchLspQuery<'w, 's> = Query<
         Option<&'static mut bevy_lsp::LspDocument>,
         &'static mut crate::lsp_ui::state::LspCompletionPopup,
         &'static crate::lsp_ui::state::LspRenamePopup,
-        &'static crate::settings::LspSettings,
+        &'static crate::settings::LspConfig,
     ),
     With<CodeEditor>,
 >;

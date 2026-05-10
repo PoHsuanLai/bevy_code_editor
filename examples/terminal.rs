@@ -6,7 +6,7 @@
 
 use bevsterm::prelude::*;
 use bevy::prelude::*;
-use bevy_instanced_text::InstancedTextPlugins;
+use bevy_instanced_text::{InstancedTextPlugins, TextFont};
 
 #[cfg(feature = "profile")]
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
@@ -53,7 +53,7 @@ fn spawn_terminal(mut commands: Commands, asset_server: Res<AssetServer>, window
     let regular: Handle<bevy::text::Font> = asset_server.load("fonts/FiraMono-Regular.ttf");
     let bold: Handle<bevy::text::Font> = asset_server.load("fonts/FiraMono-Medium.ttf");
 
-    let font = FontConfig::from_size(14.0)
+    let font = TextFont::from_font_size(14.0)
         .with_font(regular)
         .with_bold_font(bold);
 
@@ -63,7 +63,7 @@ fn spawn_terminal(mut commands: Commands, asset_server: Res<AssetServer>, window
     commands.spawn((
         BevyTerminal,
         font,
-        TextViewViewport {
+        TextViewport {
             width: logical_w,
             height: logical_h,
             text_area_left: 12.0,
@@ -78,7 +78,7 @@ fn spawn_terminal(mut commands: Commands, asset_server: Res<AssetServer>, window
 fn log_events(
     mut ready: MessageReader<TerminalReady>,
     mut titles: MessageReader<TerminalTitleChanged>,
-    mut bells: MessageReader<TerminalBellRang>,
+    mut bells: MessageReader<TerminalBell>,
     mut exits: MessageReader<TerminalExited>,
     mut cwd: MessageReader<TerminalCwdChanged>,
     mut finished: MessageReader<TerminalBlockFinished>,

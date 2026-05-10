@@ -19,14 +19,14 @@
 //! `screen_to_char_pos` helper so editors with active fold regions see the
 //! click land on the right buffer line.
 
-use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
+use crate::text_view::{ScrollState, TextBuffer, TextViewport};
 use crate::types::*;
 #[cfg(feature = "lsp")]
 use bevy::picking::events::Move;
 use bevy::picking::events::{Pointer, Press};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
-use bevy_instanced_text::{DisplayLayout, FontConfig};
+use bevy_instanced_text::{DisplayLayout, TextFont};
 use ropey::Rope;
 
 type AltClickQuery<'w, 's> = Query<
@@ -37,9 +37,9 @@ type AltClickQuery<'w, 's> = Query<
         &'static mut CursorState,
         &'static TextBuffer,
         &'static ScrollState,
-        &'static TextViewViewport,
+        &'static TextViewport,
         &'static FoldState,
-        &'static FontConfig,
+        &'static TextFont,
         Option<&'static DisplayLayout>,
     ),
     With<CodeEditor>,
@@ -52,9 +52,9 @@ type CtrlClickQuery<'w, 's> = Query<
     (
         &'static TextBuffer,
         &'static ScrollState,
-        &'static TextViewViewport,
+        &'static TextViewport,
         &'static FoldState,
-        &'static FontConfig,
+        &'static TextFont,
         Option<&'static DisplayLayout>,
     ),
     With<CodeEditor>,
@@ -67,11 +67,11 @@ type HoverMoveQuery<'w, 's> = Query<
     (
         &'static TextBuffer,
         &'static ScrollState,
-        &'static TextViewViewport,
+        &'static TextViewport,
         &'static FoldState,
-        &'static FontConfig,
+        &'static TextFont,
         Option<&'static DisplayLayout>,
-        &'static crate::settings::LspSettings,
+        &'static crate::settings::LspConfig,
     ),
     With<CodeEditor>,
 >;
@@ -85,8 +85,8 @@ use bevy_lsp::LspMessage;
 struct HitTestCtx<'a> {
     rope: &'a Rope,
     layout: Option<&'a DisplayLayout>,
-    font: &'a FontConfig,
-    viewport: &'a TextViewViewport,
+    font: &'a TextFont,
+    viewport: &'a TextViewport,
     fold_state: &'a FoldState,
     current_scroll_offset: f32,
 }
@@ -139,7 +139,7 @@ fn screen_to_char_pos(screen_pos: Vec2, ctx: &HitTestCtx<'_>) -> usize {
 pub fn on_fold_gutter_press(
     trigger: On<Pointer<Press>>,
     mut editor_query: Query<
-        (&ScrollState, &TextViewViewport, &mut FoldState, &FontConfig),
+        (&ScrollState, &TextViewport, &mut FoldState, &TextFont),
         With<CodeEditor>,
     >,
 ) {

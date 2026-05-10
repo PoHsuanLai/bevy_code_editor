@@ -55,7 +55,7 @@ impl Plugin for BevyTerminalPlugin {
             .register_type::<TerminalScrollFollow>()
             .register_type::<TerminalExited>()
             .register_type::<TerminalTitleChanged>()
-            .register_type::<TerminalBellRang>()
+            .register_type::<TerminalBell>()
             .register_type::<TerminalReady>()
             .register_type::<TerminalSpawnFailed>()
             .register_type::<TerminalCwdChanged>()
@@ -79,7 +79,7 @@ impl Plugin for BevyTerminalPlugin {
         // Message buses.
         app.add_message::<TerminalExited>()
             .add_message::<TerminalTitleChanged>()
-            .add_message::<TerminalBellRang>()
+            .add_message::<TerminalBell>()
             .add_message::<TerminalReady>()
             .add_message::<TerminalSpawnFailed>()
             .add_message::<TerminalCwdChanged>()
@@ -102,8 +102,9 @@ impl Plugin for BevyTerminalPlugin {
         app.init_resource::<TerminalEventLoopRegistry>();
         app.register_type::<bevy_instanced_text_edit::CursorSettings>();
         app.register_type::<bevy_instanced_text_edit::CursorStyle>();
-        app.register_type::<bevy_instanced_text::RenderTheme>();
-        app.register_type::<bevy_instanced_text_edit::EditTheme>();
+        app.register_type::<bevy_instanced_text::TextColor>();
+        app.register_type::<bevy_instanced_text_edit::TextCursorColor>();
+        app.register_type::<bevy_instanced_text_edit::TextSelectionColor>();
 
         app.configure_sets(
             Update,

@@ -12,17 +12,17 @@
 //!   domain state changes. They run in [`LayoutSyncSet`], scheduled
 //!   `.before(LayoutProduceSet)`.
 
-use crate::types::events::TextEditEvent;
+use crate::types::events::TextEdited;
 use bevy::prelude::*;
 use bevy_instanced_text::{
-    visible_buffer_range, FontConfig, HiddenLines, LayoutProduceSet, LayoutWrap, LineStyles,
-    RunWithText, ScrollState, TextBuffer, TextViewViewport,
+    visible_buffer_range, TextFont, HiddenLines, LayoutProduceSet, LayoutWrap, LineStyles,
+    RunWithText, ScrollState, TextBuffer, TextViewport,
 };
 use std::collections::{HashMap, HashSet};
 
 use super::styling::segs_to_runs;
 use crate::plugin::syntax_highlighting::EditorSyntaxState;
-use crate::settings::{IndentationSettings, SyntaxTheme, ThemeConfig, WrappingSettings};
+use crate::settings::{Indentation, SyntaxColors, EditorTheme, Wrapping};
 use crate::types::CodeEditor;
 #[cfg(feature = "tree-sitter")]
 use crate::types::FoldState;
@@ -138,14 +138,14 @@ pub(crate) fn produce_line_styles(
             Entity,
             &TextBuffer,
             &ScrollState,
-            &TextViewViewport,
-            &FontConfig,
+            &TextViewport,
+            &TextFont,
             Option<&LayoutWrap>,
             Option<&HiddenLines>,
             &mut EditorSyntaxState,
             &mut LineStyles,
-            &ThemeConfig,
-            &SyntaxTheme,
+            &EditorTheme,
+            &SyntaxColors,
         ),
         With<CodeEditor>,
     >,
@@ -162,10 +162,10 @@ pub(crate) fn produce_line_styles(
             With<CodeEditor>,
             Or<(
                 Changed<ScrollState>,
-                Changed<TextViewViewport>,
+                Changed<TextViewport>,
                 Changed<HiddenLines>,
-                Changed<ThemeConfig>,
-                Changed<SyntaxTheme>,
+                Changed<EditorTheme>,
+                Changed<SyntaxColors>,
             )>,
         ),
     >,
@@ -185,14 +185,14 @@ pub(crate) fn produce_line_styles(
             With<CodeEditor>,
             Or<(
                 Changed<ScrollState>,
-                Changed<TextViewViewport>,
+                Changed<TextViewport>,
                 Changed<HiddenLines>,
-                Changed<ThemeConfig>,
-                Changed<SyntaxTheme>,
+                Changed<EditorTheme>,
+                Changed<SyntaxColors>,
             )>,
         ),
     >,
-    mut edit_events: MessageReader<TextEditEvent>,
+    mut edit_events: MessageReader<TextEdited>,
     // Per-entity dirty line range from the last edit. None = full rebuild needed.
     mut dirty_lines: Local<HashMap<Entity, Option<(u32, u32)>>>,
 ) {
@@ -200,7 +200,7 @@ pub(crate) fn produce_line_styles(
     // Collect edit events: record the changed line range per entity.
     // Multiple edits in one frame are unioned. `None` means full rebuild.
     for event in edit_events.read() {
-        // TextEditEvent is not entity-keyed in its current form — it's broadcast.
+        // TextEdited is not entity-keyed in its current form — it's broadcast.
         // We can only use the row range; apply to all editors that changed.
         let start_row = event.delta.start_position.row;
         let end_row = event.delta.new_end_position.row;
@@ -365,15 +365,15 @@ pub(crate) fn produce_line_styles(
     }
 }
 
-/// Refresh `LayoutWrap` from `WrappingSettings` + `IndentationSettings`.
+/// Refresh `LayoutWrap` from `Wrapping` + `Indentation`.
 pub(crate) fn sync_layout_wrap(
     mut editors: Query<
         (
-            &TextViewViewport,
-            &FontConfig,
+            &TextViewport,
+            &TextFont,
             &mut LayoutWrap,
-            &WrappingSettings,
-            &IndentationSettings,
+            &Wrapping,
+            &Indentation,
         ),
         With<CodeEditor>,
     >,

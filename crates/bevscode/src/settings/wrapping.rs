@@ -7,14 +7,14 @@ use serde::{Deserialize, Serialize};
 /// `wrap_column` to a fixed column count, or leave it `None` to wrap at the viewport edge.
 #[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
 #[reflect(Component, Default, Debug)]
-pub struct WrappingSettings {
+pub struct Wrapping {
     pub enabled: bool,
     /// `None` = wrap at viewport width.
     pub wrap_column: Option<usize>,
     pub indent_wrapped_lines: bool,
 }
 
-impl Default for WrappingSettings {
+impl Default for Wrapping {
     fn default() -> Self {
         Self {
             enabled: false,

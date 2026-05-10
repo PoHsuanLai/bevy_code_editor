@@ -63,8 +63,8 @@ pub fn apply_completion(
         if start <= end {
             writer.write(bevy_instanced_text_edit::ReplaceRangeRequested {
                 entity,
-                start_char: start,
-                end_char: end,
+                start,
+                end,
                 text: item.insert_text().to_string(),
                 kind: bevy_instanced_text_edit::EditKind::Other,
                 record_history: true,

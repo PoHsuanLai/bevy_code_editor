@@ -3,7 +3,7 @@
 //! same conversion.
 
 use bevy::prelude::*;
-use bevy_instanced_text::{FontConfig, TextViewViewport};
+use bevy_instanced_text::{TextFont, TextViewport};
 use portable_pty::PtySize;
 
 use crate::backend;
@@ -15,7 +15,7 @@ pub const MIN_ROWS: u16 = 1;
 /// Convert a viewport + font into a (cols, rows) cell count, or `None`
 /// if the viewport hasn't been laid out yet (zero-area). Caller decides
 /// what to do with sub-`MIN_*` results.
-pub fn cells_from_viewport(viewport: &TextViewViewport, font: &FontConfig) -> Option<(u16, u16)> {
+pub fn cells_from_viewport(viewport: &TextViewport, font: &TextFont) -> Option<(u16, u16)> {
     let usable_w = (viewport.width as f32 - viewport.text_area_left).max(0.0);
     let usable_h = (viewport.height as f32 - viewport.text_area_top).max(0.0);
     if usable_w <= 0.0 || usable_h <= 0.0 || font.char_width <= 0.0 || font.line_height <= 0.0 {
@@ -29,8 +29,8 @@ pub fn cells_from_viewport(viewport: &TextViewViewport, font: &FontConfig) -> Op
 #[allow(clippy::type_complexity)]
 pub fn sync_terminal_size(
     mut q: Query<
-        (&TextViewViewport, &FontConfig, &mut TerminalSession),
-        Or<(Changed<TextViewViewport>, Changed<FontConfig>)>,
+        (&TextViewport, &TextFont, &mut TerminalSession),
+        Or<(Changed<TextViewport>, Changed<TextFont>)>,
     >,
     windows: Query<&bevy::window::Window, With<bevy::window::PrimaryWindow>>,
 ) {

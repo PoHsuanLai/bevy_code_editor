@@ -63,17 +63,13 @@ editing_event!(CopyRequested, CutRequested, PasteRequested);
 // Undo / redo (2)
 editing_event!(UndoRequested, RedoRequested);
 
-/// Replace `[start_char..end_char]` with `text` on a specific editor entity.
-/// The single payloaded edit primitive for ECS-driven mutation: LSP, completion,
-/// formatting, AI suggestions, refactoring tools etc. emit this and let
-/// `bevy_instanced_text_edit` route it through `EditHistoryState::replace_range` so
-/// history, anchors, content_version, and `OnEdit` all stay correct.
+/// Replace `[start..end]` (char offsets) with `text` on a specific editor entity.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct ReplaceRangeRequested {
     pub entity: Entity,
-    pub start_char: usize,
-    pub end_char: usize,
+    pub start: usize,
+    pub end: usize,
     pub text: String,
     pub kind: crate::history::EditKind,
     pub record_history: bool,

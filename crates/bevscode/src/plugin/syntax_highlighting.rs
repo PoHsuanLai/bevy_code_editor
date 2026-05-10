@@ -216,7 +216,7 @@ impl EditorSyntaxState {
         start_line: usize,
         end_line: usize,
         start_byte: usize,
-        theme: &crate::settings::SyntaxTheme,
+        theme: &crate::settings::SyntaxColors,
         default_color: Color,
     ) -> Vec<Vec<LineSegment>> {
         let mut guard = self.inner.write().unwrap();
@@ -237,7 +237,7 @@ impl EditorSyntaxState {
         _start_line: usize,
         _end_line: usize,
         _start_byte: usize,
-        _theme: &crate::settings::SyntaxTheme,
+        _theme: &crate::settings::SyntaxColors,
         default_color: Color,
     ) -> Vec<Vec<LineSegment>> {
         plain_text_segments(text, default_color)
@@ -272,7 +272,7 @@ fn plain_text_segments(text: &str, default_color: Color) -> Vec<Vec<LineSegment>
 }
 
 /// Translate per-line `HighlightRange`s back into `LineSegment`s, mapping
-/// capture names through the editor's `SyntaxTheme`.
+/// capture names through the editor's `SyntaxColors`.
 ///
 /// `start_byte` is the document byte offset of `text` — `HighlightRange`
 /// byte ranges are document-absolute, so we subtract `start_byte` to index
@@ -282,7 +282,7 @@ fn ranges_to_segments(
     text: &str,
     start_byte: usize,
     per_line: &[Vec<HighlightRange>],
-    theme: &crate::settings::SyntaxTheme,
+    theme: &crate::settings::SyntaxColors,
     default_color: Color,
 ) -> Vec<Vec<LineSegment>> {
     let mut out: Vec<Vec<LineSegment>> =
@@ -574,7 +574,7 @@ pub(crate) fn mirror_syntax_tree_to_provider(mut editor_query: MirrorSyntaxTreeQ
 #[cfg(feature = "tree-sitter")]
 /// Apply edits synchronously to the cached tree (tree interpolation).
 ///
-/// Reads [`crate::types::events::TextEditEvent`] (emitted by the
+/// Reads [`crate::types::events::TextEdited`] (emitted by the
 /// `on_edit_invalidate_caches` observer). Routes through
 /// [`bevy_tree_sitter::ParseSource::apply_edit`] on the editor's
 /// `ParseSourceComp` — the editor's impl forwards to the per-entity
@@ -590,7 +590,7 @@ fn record_edits_for_incremental_parsing(
         ),
         With<CodeEditor>,
     >,
-    mut events: MessageReader<crate::types::events::TextEditEvent>,
+    mut events: MessageReader<crate::types::events::TextEdited>,
 ) {
     let collected_events: Vec<_> = events.read().cloned().collect();
     for (parse_source, mut syntax_tree, syntax_state) in editor_query.iter_mut() {
@@ -662,8 +662,8 @@ pub struct SyntaxPlugin;
 
 impl Plugin for SyntaxPlugin {
     fn build(&self, app: &mut App) {
-        // TextEditEvent is editor-wide: LSP and other plugins listen for it.
-        app.add_message::<crate::types::events::TextEditEvent>();
+        // TextEdited is editor-wide: LSP and other plugins listen for it.
+        app.add_message::<crate::types::events::TextEdited>();
 
         // Always attach `EditorSyntaxState` to each editor entity — the
         // styling plumbing needs an Arc to share regardless of whether
@@ -692,7 +692,7 @@ impl Plugin for SyntaxPlugin {
             //   1. react_language_changed: install provider
             //   2. sync_editor_parse_source: mirror buffer.rope into the parse-source snapshot
             //   3. record_edits_for_incremental_parsing: tree.edit() + sync re-parse,
-            //      reading TextEditEvent emitted by the on_edit_invalidate_caches observer
+            //      reading TextEdited emitted by the on_edit_invalidate_caches observer
             //   4. parse_dirty (ParseSet): async re-parse with the synced rope
             // Steps 2 and 3 must be ordered: 3 reads the rope mirror via
             // ParseSourceComp::apply_edit, so 2 must mirror the post-edit

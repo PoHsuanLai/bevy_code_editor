@@ -14,7 +14,7 @@
 //! ```rust,no_run
 //! # use bevy::prelude::*;
 //! # use bevscode::prelude::*;
-//! # use bevy_instanced_text::FontConfig;
+//! # use bevy_instanced_text::TextFont;
 //! # fn setup(mut commands: Commands) {
 //! // Minimal — auto-sizes to window, default theme and keybindings.
 //! commands.spawn(CodeEditor);
@@ -22,8 +22,8 @@
 //! // With overrides.
 //! commands.spawn((
 //!     CodeEditor,
-//!     FontConfig::from_size(18.0),
-//!     ThemeConfig { background: bevy::color::palettes::css::DARK_SLATE_GRAY.into(), ..default() },
+//!     TextFont::from_font_size(18.0),
+//!     EditorTheme { background: bevy::color::palettes::css::DARK_SLATE_GRAY.into(), ..default() },
 //! ));
 //! # }
 //! ```
@@ -40,7 +40,7 @@
 //! - [`crate::types::fold::FoldState`] — which line ranges are currently
 //!   folded (tree-sitter feature only). Drive fold/unfold via the
 //!   [`crate::types::events`] messages or listen to
-//!   [`crate::types::events::EditorFoldStateChanged`] for transitions.
+//!   [`crate::types::events::FoldStateChanged`] for transitions.
 //! - [`crate::plugin::syntax_highlighting::EditorSyntaxState`] — the current
 //!   highlight ranges, keyed by capture name. Useful for outline panels, AI
 //!   context extraction, or custom overlays.
@@ -90,8 +90,8 @@ pub mod lsp_ui;
 pub mod prelude {
     //! Convenient re-exports for common editor usage.
     //!
-    //! Engine-side primitives (`TextView`, `FontConfig`, `DisplayLayout`,
-    //! `TextBuffer`, `ScrollState`, `ContentMetrics`, `TextViewViewport`,
+    //! Engine-side primitives (`TextView`, `TextFont`, `DisplayLayout`,
+    //! `TextBuffer`, `ScrollState`, `ContentMetrics`, `TextViewport`,
     //! `InstancedTextPlugin`, `InstancedTextPlugins`) come in via
     //! `bevy_instanced_text::prelude::*`. The
     //! editor adds: the editor plugin (+ `standalone()`'s plugin group), the
@@ -103,8 +103,8 @@ pub mod prelude {
     //! that need them.
 
     // Engine surface — InstancedTextPlugins, InstancedTextPlugin, TextView,
-    // FontConfig, DisplayLayout, TextBuffer, ScrollState, ContentMetrics,
-    // TextViewViewport.
+    // TextFont, DisplayLayout, TextBuffer, ScrollState, ContentMetrics,
+    // TextViewport.
     pub use bevy_instanced_text::prelude::*;
 
     // Editor plugin + its standalone PluginGroup, and the interaction +
@@ -114,7 +114,7 @@ pub mod prelude {
     // Editor marker + save/open events.
     pub use crate::types::editor::{CodeEditor, OpenRequested, SaveRequested, ViewportConfig};
     #[cfg(feature = "tree-sitter")]
-    pub use crate::types::events::EditorFoldStateChanged;
+    pub use crate::types::events::FoldStateChanged;
     #[cfg(feature = "tree-sitter")]
     pub use crate::types::events::SetLanguageRequested;
 
@@ -129,6 +129,6 @@ pub mod prelude {
     pub use crate::types::{Selection, SelectionCollection};
 
     // Theme — hosts that match the editor's clear color in their own
-    // Camera2d setup grab `ThemeConfig::default().background`.
-    pub use crate::settings::ThemeConfig;
+    // Camera2d setup grab `EditorTheme::default().background`.
+    pub use crate::settings::EditorTheme;
 }

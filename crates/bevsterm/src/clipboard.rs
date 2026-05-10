@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy_instanced_text::{FontConfig, ScrollState, TextBuffer};
+use bevy_instanced_text::{TextFont, ScrollState, TextBuffer};
 use bevy_instanced_text_edit::{copy_selection, ClipboardResource, SelectionState};
 use portable_pty::PtySize;
 
@@ -101,7 +101,7 @@ pub fn handle_resize(
 /// where they jumped to as new output arrives.
 pub fn handle_scroll_to(
     mut events: MessageReader<TerminalScrollTo>,
-    mut q: Query<(&mut ScrollState, &mut TerminalScrollFollow, &FontConfig)>,
+    mut q: Query<(&mut ScrollState, &mut TerminalScrollFollow, &TextFont)>,
 ) {
     for ev in events.read() {
         let Ok((mut scroll, mut follow, font)) = q.get_mut(ev.entity) else {

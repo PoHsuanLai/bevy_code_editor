@@ -1,24 +1,37 @@
 //! Per-entity edit-affordance colors: the caret and the selection band.
-//!
-//! Lives here (not in `bevy_instanced_text`) because cursors and selections
-//! are editing concepts. Pure rendering colors (background, foreground)
-//! live on `bevy_instanced_text::RenderTheme`; line numbers, brackets,
-//! indent guides, etc. live on the editor crate.
 
 use bevy::prelude::*;
 
-#[derive(Component, Clone, Debug, Reflect)]
+/// Caret color.
+#[derive(Component, Clone, Copy, Debug, Reflect, Deref, DerefMut)]
 #[reflect(Component, Default, Debug)]
-pub struct EditTheme {
-    pub cursor: Color,
-    pub selection_background: Color,
+pub struct TextCursorColor(pub Color);
+
+impl Default for TextCursorColor {
+    fn default() -> Self {
+        Self(Color::srgb(0.933, 0.933, 0.933))
+    }
 }
 
-impl Default for EditTheme {
+impl<T: Into<Color>> From<T> for TextCursorColor {
+    fn from(color: T) -> Self {
+        Self(color.into())
+    }
+}
+
+/// Selection highlight background color.
+#[derive(Component, Clone, Copy, Debug, Reflect, Deref, DerefMut)]
+#[reflect(Component, Default, Debug)]
+pub struct TextSelectionColor(pub Color);
+
+impl Default for TextSelectionColor {
     fn default() -> Self {
-        Self {
-            cursor: Color::srgb(0.933, 0.933, 0.933),
-            selection_background: Color::srgba(0.231, 0.373, 0.604, 0.4),
-        }
+        Self(Color::srgba(0.231, 0.373, 0.604, 0.4))
+    }
+}
+
+impl<T: Into<Color>> From<T> for TextSelectionColor {
+    fn from(color: T) -> Self {
+        Self(color.into())
     }
 }

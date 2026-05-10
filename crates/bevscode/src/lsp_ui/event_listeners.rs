@@ -15,11 +15,11 @@ use super::state::{
     LspSignatureHelpPopup, PendingLspRequest, SessionTabstop, TabstopSession,
     UnifiedCompletionItem,
 };
-use crate::settings::LspSettings;
+use crate::settings::LspConfig;
 use crate::text_view::TextBuffer;
 use crate::types::events::{
-    ApplyCompletionEvent, DismissCompletionEvent, RequestCompletionEvent, RequestHoverEvent,
-    RequestRenameEvent, RequestSignatureHelpEvent, TextEditEvent,
+    CompletionApplied, CompletionDismissed, CompletionRequested, HoverRequested,
+    RenameRequested, SignatureHelpRequested, TextEdited,
 };
 use crate::types::{CodeEditor, CursorState};
 use bevy::prelude::*;
@@ -36,7 +36,7 @@ type CompletionRequestQuery<'w, 's> = Query<
         Option<&'static LspDocument>,
         &'static bevy_lsp::ServerCapabilities,
         &'static mut LspDebounceTimers,
-        &'static LspSettings,
+        &'static LspConfig,
     ),
     With<CodeEditor>,
 >;
@@ -49,7 +49,7 @@ type HoverRequestQuery<'w, 's> = Query<
         Option<&'static LspDocument>,
         &'static bevy_lsp::ServerCapabilities,
         &'static mut LspDebounceTimers,
-        &'static LspSettings,
+        &'static LspConfig,
     ),
     With<CodeEditor>,
 >;
@@ -102,16 +102,16 @@ type ApplyCompletionQuery<'w, 's> = Query<
 /// carries a pre-edit rope snapshot (the editor entity has
 /// [`bevy_instanced_text_edit::SnapshotPreEdit`]); otherwise the next flush
 /// promotes to a full-document sync. The spec guarantees full-doc is
-/// always valid, and `LspSettings::full_document_sync` forces this path
+/// always valid, and `LspConfig::full_document_sync` forces this path
 /// for recovery.
 pub fn listen_text_edit_events(
-    mut events: MessageReader<TextEditEvent>,
+    mut events: MessageReader<TextEdited>,
     mut query: Query<
         (
             &TextBuffer,
             &bevy_lsp::ServerCapabilities,
             &mut LspDidChangeBatcher,
-            &LspSettings,
+            &LspConfig,
         ),
         With<CodeEditor>,
     >,
@@ -160,7 +160,7 @@ pub fn listen_text_edit_events(
 }
 
 pub fn listen_completion_requests(
-    mut events: MessageReader<RequestCompletionEvent>,
+    mut events: MessageReader<CompletionRequested>,
     mut query: CompletionRequestQuery,
 ) {
     let Ok((buffer, lsp_document, caps, mut debounce, settings)) = query.single_mut() else {
@@ -185,7 +185,7 @@ pub fn listen_completion_requests(
 }
 
 pub fn listen_hover_requests(
-    mut events: MessageReader<RequestHoverEvent>,
+    mut events: MessageReader<HoverRequested>,
     mut query: HoverRequestQuery,
 ) {
     let Ok((buffer, lsp_document, caps, mut debounce, settings)) = query.single_mut() else {
@@ -208,7 +208,7 @@ pub fn listen_hover_requests(
 }
 
 pub fn listen_rename_requests(
-    mut events: MessageReader<RequestRenameEvent>,
+    mut events: MessageReader<RenameRequested>,
     mut query: RenameRequestQuery,
 ) {
     let Ok((buffer, lsp_document, lsp_client, caps, mut rename_state)) = query.single_mut() else {
@@ -230,7 +230,7 @@ pub fn listen_rename_requests(
 }
 
 pub fn listen_signature_help_requests(
-    mut events: MessageReader<RequestSignatureHelpEvent>,
+    mut events: MessageReader<SignatureHelpRequested>,
     mut query: SignatureHelpRequestQuery,
 ) {
     let Ok((buffer, lsp_document, lsp_client, caps, mut sig_help_state)) = query.single_mut()
@@ -252,7 +252,7 @@ pub fn listen_signature_help_requests(
 }
 
 pub fn listen_dismiss_completion(
-    mut events: MessageReader<DismissCompletionEvent>,
+    mut events: MessageReader<CompletionDismissed>,
     mut query: Query<&mut LspCompletionPopup, With<CodeEditor>>,
 ) {
     let Ok(mut completion_state) = query.single_mut() else {
@@ -495,13 +495,13 @@ pub fn end_tabstop_session_on_cursor_leave(
     }
 }
 
-/// Listens to ApplyCompletionEvent. Applies the edit synchronously via
+/// Listens to CompletionApplied. Applies the edit synchronously via
 /// `EditHistoryState::replace_range` (rather than emitting
 /// `ReplaceRangeRequested`) so that, when the inserted item carries
 /// snippet syntax, we can immediately create anchors for the tabstops
 /// from the post-edit rope and start a `TabstopSession`.
 pub fn listen_apply_completion(
-    mut events: MessageReader<ApplyCompletionEvent>,
+    mut events: MessageReader<CompletionApplied>,
     mut query: ApplyCompletionQuery,
 ) {
     let Ok((mut sel, mut hist, mut cursor_state, mut buffer, mut completion_state, mut session)) =
@@ -560,7 +560,7 @@ pub fn listen_apply_completion(
                 // LSP semantics: walk in ascending id, with `0` (final
                 // stop) at the end.
                 stops_sorted.sort_by_key(|t| if t.id == 0 { u32::MAX } else { t.id });
-                let inserted_start = outcome.start_char;
+                let inserted_start = outcome.start;
                 let mut session_stops = Vec::with_capacity(stops_sorted.len());
                 for stop in stops_sorted {
                     let abs_start = inserted_start + stop.start;

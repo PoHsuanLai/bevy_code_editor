@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use bevy::prelude::*;
 use bevy_instanced_text::{
-    FontConfig, LineStyles, RenderTheme, RunWithText, ScrollState, StyleRun, TextBuffer,
-    TextViewViewport,
+    LineStyles, RunWithText, ScrollState, StyleRun, TextBackgroundColor, TextBuffer, TextColor,
+    TextFont, TextViewport,
 };
 use ropey::Rope;
 use wezterm_surface::SequenceNo;
@@ -61,11 +61,12 @@ type SnapshotQuery<'w, 's> = Query<
         Entity,
         &'static TerminalSession,
         &'static mut TextBuffer,
-        &'static TextViewViewport,
-        &'static FontConfig,
+        &'static TextViewport,
+        &'static TextFont,
         &'static mut ScrollState,
         &'static TerminalColorPalette,
-        &'static RenderTheme,
+        &'static TextColor,
+        &'static TextBackgroundColor,
         &'static mut LineStyles,
         &'static mut TerminalGridSnapshot,
         &'static mut TerminalScrollFollow,
@@ -82,7 +83,8 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         font,
         mut scroll,
         palette,
-        render,
+        fg_color,
+        bg_color,
         mut line_styles,
         mut snapshot,
         mut follow,
@@ -130,7 +132,7 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
                 return;
             }
 
-            let (line_text, runs) = shape_phys_line(line, cols, palette, render);
+            let (line_text, runs) = shape_phys_line(line, cols, palette, fg_color, bg_color);
             text.push_str(&line_text);
             text.push('\n');
             by_line.insert(phys_y as u32, runs.clone());
@@ -180,8 +182,8 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
 /// where `0` = top of buffer and `max_scroll` (the most-negative value) = bottom.
 fn anchor_scroll_to_bottom(
     scroll: &mut ScrollState,
-    viewport: &TextViewViewport,
-    font: &FontConfig,
+    viewport: &TextViewport,
+    font: &TextFont,
     total_lines: usize,
     follow: &mut TerminalScrollFollow,
 ) {
@@ -227,7 +229,8 @@ fn shape_phys_line(
     line: &VtLine,
     cols: usize,
     palette: &TerminalColorPalette,
-    render: &RenderTheme,
+    fg: &TextColor,
+    bg: &TextBackgroundColor,
 ) -> (String, Vec<RunWithText>) {
     let mut line_text = String::with_capacity(cols);
     let mut runs: Vec<RunWithText> = Vec::new();
@@ -239,16 +242,16 @@ fn shape_phys_line(
         line_text.push(ch);
 
         let attrs = cell.attrs();
-        let fg = resolve_color(attrs.foreground(), palette, render, true);
-        let bg = match attrs.background() {
+        let fg_color = resolve_color(attrs.foreground(), palette, fg, bg, true);
+        let bg_color = match attrs.background() {
             ColorAttribute::Default => None,
-            other => Some(resolve_color(other, palette, render, false)),
+            other => Some(resolve_color(other, palette, fg, bg, false)),
         };
 
         let run_proto = StyleRun {
             byte_range: 0..0,
-            fg,
-            bg,
+            fg: fg_color,
+            bg: bg_color,
             font_scale: 1.0,
             skew: 0.0,
             corner_radius: 0.0,
@@ -308,15 +311,16 @@ fn rope_text_differs(rope: &Rope, candidate: &Rope) -> bool {
 fn resolve_color(
     color: ColorAttribute,
     palette: &TerminalColorPalette,
-    render: &RenderTheme,
+    fg: &TextColor,
+    bg: &TextBackgroundColor,
     is_fg: bool,
 ) -> Color {
     match color {
         ColorAttribute::Default => {
             if is_fg {
-                render.foreground
+                **fg
             } else {
-                render.background
+                **bg
             }
         }
         ColorAttribute::PaletteIndex(idx) => {

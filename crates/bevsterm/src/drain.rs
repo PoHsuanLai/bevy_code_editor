@@ -21,7 +21,7 @@ pub fn drain_pty_events(
         &mut TerminalGridSnapshot,
     )>,
     mut title_w: MessageWriter<TerminalTitleChanged>,
-    mut bell_w: MessageWriter<TerminalBellRang>,
+    mut bell_w: MessageWriter<TerminalBell>,
     mut cwd_w: MessageWriter<TerminalCwdChanged>,
 ) {
     for (entity, channel, session, mut shell, mut mode, mut snapshot) in q.iter_mut() {
@@ -35,7 +35,7 @@ pub fn drain_pty_events(
         while let Ok(alert) = channel.alerts.try_recv() {
             match alert {
                 backend::Alert::Bell => {
-                    bell_w.write(TerminalBellRang { entity });
+                    bell_w.write(TerminalBell { entity });
                 }
                 backend::Alert::WindowTitleChanged(title) if shell.title != title => {
                     shell.title = title.clone();

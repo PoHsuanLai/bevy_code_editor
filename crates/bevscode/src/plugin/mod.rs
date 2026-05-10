@@ -141,9 +141,9 @@ impl Plugin for CodeEditorPlugin {
         app.add_message::<SaveRequested>();
         app.add_message::<OpenRequested>();
         #[cfg(feature = "tree-sitter")]
-        app.add_message::<crate::types::events::EditorFoldStateChanged>();
+        app.add_message::<crate::types::events::FoldStateChanged>();
         #[cfg(feature = "tree-sitter")]
-        app.register_type::<crate::types::events::EditorFoldStateChanged>();
+        app.register_type::<crate::types::events::FoldStateChanged>();
         #[cfg(feature = "tree-sitter")]
         app.add_message::<crate::types::events::SetLanguageRequested>();
         register_ide_action_events(app);
@@ -192,7 +192,7 @@ impl Plugin for CodeEditorPlugin {
         // `bevy_instanced_text_edit` fires `OnEdit` triggers per editor entity after
         // every edit op. The editor crate observes those triggers to drive
         // incremental tree-sitter reparse and LSP `did_change` via the
-        // `TextEditEvent` bus.
+        // `TextEdited` bus.
         app.add_observer(crate::input::on_edit_invalidate_caches);
 
         // Auto-scroll-to-cursor sets target_scroll_offset; the actual

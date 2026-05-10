@@ -40,7 +40,7 @@ fn main() {
                 }),
         )
         // Opt out of the auto-resize behavior so we can size each editor's
-        // TextViewViewport ourselves; this also suppresses the plugin's
+        // TextViewport ourselves; this also suppresses the plugin's
         // default editor auto-spawn.
         .insert_resource(ViewportConfig {
             auto_resize_to_window: false,
@@ -57,7 +57,7 @@ fn spawn_two_editors(
     mut input_focus: ResMut<bevy::input_focus::InputFocus>,
 ) {
     let Ok(window) = windows.single() else { return };
-    // Camera::viewport rects are in physical pixels; TextViewViewport is in logical pixels.
+    // Camera::viewport rects are in physical pixels; TextViewport is in logical pixels.
     let scale = window.scale_factor();
     let phys_w = (window.width() * scale) as u32;
     let phys_h = (window.height() * scale) as u32;
@@ -65,7 +65,7 @@ fn spawn_two_editors(
     let log_half = phys_half as f32 / scale;
     let log_h = window.height();
 
-    let font = bevy_instanced_text::FontConfig::from_size(14.0)
+    let font = bevy_instanced_text::TextFont::from_font_size(14.0)
         .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
         .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
 
@@ -105,7 +105,7 @@ fn spawn_two_editors(
         .spawn((
             CodeEditor,
             font.clone(),
-            TextViewViewport {
+            TextViewport {
                 width: log_half as u32,
                 height: log_h as u32,
                 hit_test_position: Vec2::new(0.0, 0.0),
@@ -119,7 +119,7 @@ fn spawn_two_editors(
         .spawn((
             CodeEditor,
             font,
-            TextViewViewport {
+            TextViewport {
                 width: (window.width() - log_half) as u32,
                 height: log_h as u32,
                 hit_test_position: Vec2::new(log_half, 0.0),

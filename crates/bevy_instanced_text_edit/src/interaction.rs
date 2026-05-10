@@ -15,7 +15,7 @@ use bevy::prelude::*;
 use ropey::Rope;
 
 use bevy_instanced_text::{
-    ContentMetrics, DisplayLayout, FontConfig, ScrollState, TextBuffer, TextView, TextViewViewport,
+    ContentMetrics, DisplayLayout, TextFont, ScrollState, TextBuffer, TextView, TextViewport,
 };
 
 use crate::components::{ScrollConfig, TextViewDragState};
@@ -28,8 +28,8 @@ type ScrollQuery<'w, 's> = Query<
         &'static TextBuffer,
         &'static mut ScrollState,
         &'static ContentMetrics,
-        &'static TextViewViewport,
-        &'static FontConfig,
+        &'static TextViewport,
+        &'static TextFont,
         Option<&'static ScrollConfig>,
     ),
     With<TextView>,
@@ -42,8 +42,8 @@ type PressQuery<'w, 's> = Query<
         &'static mut TextViewDragState,
         &'static TextBuffer,
         &'static ScrollState,
-        &'static TextViewViewport,
-        &'static FontConfig,
+        &'static TextViewport,
+        &'static TextFont,
         Option<&'static DisplayLayout>,
         Option<&'static mut SelectionState>,
         Option<&'static mut CursorState>,
@@ -59,8 +59,8 @@ type DragQuery<'w, 's> = Query<
         &'static mut TextViewDragState,
         &'static TextBuffer,
         &'static ScrollState,
-        &'static TextViewViewport,
-        &'static FontConfig,
+        &'static TextViewport,
+        &'static TextFont,
         Option<&'static DisplayLayout>,
         Option<&'static mut SelectionState>,
         Option<&'static mut CursorState>,
@@ -86,8 +86,8 @@ pub fn screen_to_char_pos(
     rope: &Rope,
     layout: Option<&DisplayLayout>,
     current_scroll_offset: f32,
-    font: &FontConfig,
-    viewport: &TextViewViewport,
+    font: &TextFont,
+    viewport: &TextViewport,
     scroll_offset_override: Option<f32>,
 ) -> usize {
     let relative_x = screen_pos.x - viewport.text_area_left;

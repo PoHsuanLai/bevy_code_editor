@@ -9,7 +9,7 @@
 use crate::input::actions;
 use crate::input::keybindings::EditorAction;
 use crate::lsp_ui::state::LspCompletionPopup;
-use crate::settings::LspSettings;
+use crate::settings::LspConfig;
 use crate::text_view::TextBuffer;
 use crate::types::{CodeEditor, CursorState};
 use bevy::ecs::world::Mut;
@@ -41,7 +41,7 @@ pub fn completion_popup_intercept(
         ),
         With<CodeEditor>,
     >,
-    lsp_settings: &LspSettings,
+    lsp_settings: &LspConfig,
     replace_writer: &mut MessageWriter<bevy_instanced_text_edit::ReplaceRangeRequested>,
 ) -> bool {
     let filtered_count = completion_state.filtered_items().len();

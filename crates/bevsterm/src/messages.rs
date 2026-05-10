@@ -40,7 +40,7 @@ pub struct TerminalTitleChanged {
 
 /// BEL (`\a`) ringing.
 #[derive(Message, Clone, Debug, Reflect)]
-pub struct TerminalBellRang {
+pub struct TerminalBell {
     pub entity: Entity,
 }
 

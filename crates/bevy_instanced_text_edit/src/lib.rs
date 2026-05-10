@@ -30,7 +30,7 @@
 //!
 //! - **[`TextEditor`]** — marker that opts an entity into editable-text
 //!   handling. Cascades [`CursorState`], [`SelectionState`],
-//!   [`EditHistoryState`], and [`EditTheme`].
+//!   [`EditHistoryState`], [`TextCursorColor`], and [`TextSelectionColor`].
 //! - **[`CursorState`]** — cursor position as a rope char offset.
 //! - **[`SelectionState`]** — multi-cursor selection ranges.
 //! - **[`EditHistoryState`]** — undo/redo stack.
@@ -52,9 +52,9 @@
 //!     .add_systems(Startup, |mut commands: Commands| {
 //!         commands.spawn((
 //!             bevy_instanced_text_edit::TextEditor,
-//!             TextBuffer::with_text("edit me"),
-//!             TextViewViewport::default(),
-//!             FontConfig::default(),
+//!             TextBuffer::new("edit me"),
+//!             TextViewport::default(),
+//!             TextFont::default(),
 //!         ));
 //!     })
 //!     .run();
@@ -98,4 +98,4 @@ pub use state::{
     CursorState, EditDelta, EditHistoryState, EditPoint, IndentConfig, OnEdit, SelectionState,
     SnapshotPreEdit, TextEditor,
 };
-pub use theme::EditTheme;
+pub use theme::{TextCursorColor, TextSelectionColor};

@@ -12,14 +12,14 @@ use bevy::prelude::*;
 /// into LSP positions in the server's negotiated encoding.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
-pub struct TextEditEvent {
+pub struct TextEdited {
     pub delta: bevy_instanced_text_edit::EditDelta,
     pub content_version: u64,
     #[reflect(ignore)]
     pub pre_edit_rope: Option<ropey::Rope>,
 }
 
-impl TextEditEvent {
+impl TextEdited {
     pub fn new(delta: bevy_instanced_text_edit::EditDelta, content_version: u64) -> Self {
         Self {
             delta,
@@ -54,11 +54,11 @@ impl TextEditEvent {
 /// Fired when user presses Ctrl+Space or types a trigger character.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
-pub struct RequestCompletionEvent {
+pub struct CompletionRequested {
     pub cursor_char: usize,
 }
 
-impl RequestCompletionEvent {
+impl CompletionRequested {
     pub fn new(cursor_char: usize) -> Self {
         Self { cursor_char }
     }
@@ -67,11 +67,11 @@ impl RequestCompletionEvent {
 /// Fired when user hovers over a symbol.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
-pub struct RequestHoverEvent {
+pub struct HoverRequested {
     pub cursor_char: usize,
 }
 
-impl RequestHoverEvent {
+impl HoverRequested {
     pub fn new(cursor_char: usize) -> Self {
         Self { cursor_char }
     }
@@ -80,11 +80,11 @@ impl RequestHoverEvent {
 /// Fired when user initiates a rename (F2).
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
-pub struct RequestRenameEvent {
+pub struct RenameRequested {
     pub cursor_char: usize,
 }
 
-impl RequestRenameEvent {
+impl RenameRequested {
     pub fn new(cursor_char: usize) -> Self {
         Self { cursor_char }
     }
@@ -93,11 +93,11 @@ impl RequestRenameEvent {
 /// Fired when user types '(' or ','.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
-pub struct RequestSignatureHelpEvent {
+pub struct SignatureHelpRequested {
     pub cursor_char: usize,
 }
 
-impl RequestSignatureHelpEvent {
+impl SignatureHelpRequested {
     pub fn new(cursor_char: usize) -> Self {
         Self { cursor_char }
     }
@@ -106,16 +106,16 @@ impl RequestSignatureHelpEvent {
 /// Fired to close the completion popup without applying any item.
 #[derive(Message, Clone, Debug, Default, Reflect)]
 #[reflect(Clone, Debug, Default)]
-pub struct DismissCompletionEvent;
+pub struct CompletionDismissed;
 
 /// Fired to apply the completion item at `item_index` in the popup list.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
-pub struct ApplyCompletionEvent {
+pub struct CompletionApplied {
     pub item_index: usize,
 }
 
-impl ApplyCompletionEvent {
+impl CompletionApplied {
     pub fn new(item_index: usize) -> Self {
         Self { item_index }
     }
@@ -146,7 +146,7 @@ pub struct SetLanguageRequested {
 #[cfg(feature = "tree-sitter")]
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
-pub struct EditorFoldStateChanged {
+pub struct FoldStateChanged {
     pub entity: Entity,
     pub start_line: usize,
     pub is_folded: bool,

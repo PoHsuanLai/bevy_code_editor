@@ -116,7 +116,7 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn((
         Camera2d,
         Camera {
-            clear_color: ClearColorConfig::Custom(ThemeConfig::default().background),
+            clear_color: ClearColorConfig::Custom(EditorTheme::default().background),
             ..default()
         },
     ));
@@ -133,7 +133,7 @@ fn setup_editor(
         return;
     };
 
-    let font = bevy_instanced_text::FontConfig::from_size(14.0)
+    let font = bevy_instanced_text::TextFont::from_font_size(14.0)
         .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
         .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
     commands.entity(entity).insert(font);
@@ -197,7 +197,7 @@ if __name__ == "__main__":
 }
 
 fn update_cursor_icon(
-    editor_query: Query<(Entity, &TextViewViewport), With<CodeEditor>>,
+    editor_query: Query<(Entity, &TextViewport), With<CodeEditor>>,
     input_focus: Res<bevy::input_focus::InputFocus>,
     mut commands: Commands,
     windows: Query<(Entity, &Window), With<Window>>,

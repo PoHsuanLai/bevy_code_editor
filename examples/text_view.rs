@@ -12,6 +12,7 @@
 use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
 use bevy_instanced_text::prelude::*;
+use bevy_instanced_text::TextFont;
 use bevy_instanced_text::view::snapshot::{trivial_layout, StyleRun};
 
 fn main() {
@@ -181,7 +182,7 @@ fn setup_text_view(
             full_text.push('\n');
         }
     }
-    let buffer = TextBuffer::with_text(&full_text);
+    let buffer = TextBuffer::new(&full_text);
     let scroll = ScrollState::default();
     let metrics = ContentMetrics::default();
 
@@ -198,7 +199,7 @@ fn setup_text_view(
         Color::srgb(0.85, 0.85, 0.85),
     );
 
-    let font = FontConfig::from_size(16.0)
+    let font = TextFont::from_font_size(16.0)
         .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
         .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
 
@@ -208,7 +209,7 @@ fn setup_text_view(
         scroll,
         metrics,
         font,
-        TextViewViewport {
+        TextViewport {
             width: window.resolution.width() as u32,
             height: window.resolution.height() as u32,
             text_area_left: 16.0,

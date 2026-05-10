@@ -305,13 +305,13 @@ pub fn handle_replace_range(
         };
         let outcome = hist.replace_range(
             &mut buffer,
-            event.start_char,
-            event.end_char,
+            event.start,
+            event.end,
             &event.text,
             event.kind,
             event.record_history,
         );
-        if cursor.cursor_pos >= event.start_char {
+        if cursor.cursor_pos >= event.start {
             cursor.cursor_pos = outcome.new_cursor_pos;
             sel.apply_primary_cursor(&cursor);
         }

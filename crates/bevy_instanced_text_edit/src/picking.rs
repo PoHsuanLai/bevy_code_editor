@@ -1,7 +1,7 @@
 //! Custom `bevy_picking` backend for [`TextView`] entities.
 //!
 //! Hit-tests pointer locations against each `TextView`'s
-//! [`TextViewViewport`] rect (using the screen-space `hit_test_position` +
+//! [`TextViewport`] rect (using the screen-space `hit_test_position` +
 //! `width`/`height`). Emits one `PointerHits` per pointer per frame
 //! containing every text view under that pointer.
 //!
@@ -18,7 +18,7 @@ use bevy::picking::pointer::{PointerId, PointerLocation};
 use bevy::picking::Pickable;
 use bevy::prelude::*;
 
-use bevy_instanced_text::{TextView, TextViewViewport};
+use bevy_instanced_text::{TextView, TextViewport};
 
 /// Picking-backend system: produce `PointerHits` for `TextView` entities.
 ///
@@ -26,7 +26,7 @@ use bevy_instanced_text::{TextView, TextViewViewport};
 /// `PickingSystems::Backend` (PreUpdate).
 pub fn text_view_picking_backend(
     pointers: Query<(&PointerId, &PointerLocation)>,
-    text_views: Query<(Entity, &TextViewViewport, Option<&Pickable>), With<TextView>>,
+    text_views: Query<(Entity, &TextViewport, Option<&Pickable>), With<TextView>>,
     mut output: MessageWriter<PointerHits>,
 ) {
     for (pointer_id, pointer_location) in pointers.iter() {

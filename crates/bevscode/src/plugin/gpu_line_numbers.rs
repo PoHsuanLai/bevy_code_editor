@@ -4,11 +4,11 @@
 
 use crate::settings::*;
 use crate::text_view::render::{GlyphBatchComponent, GlyphInstance};
-use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
+use crate::text_view::{ScrollState, TextBuffer, TextViewport};
 use crate::types::*;
 use bevy::prelude::*;
 use bevy_instanced_text::gpu::GlyphAtlas;
-use bevy_instanced_text::FontConfig;
+use bevy_instanced_text::TextFont;
 
 /// Marker component for the GPU line numbers batch entity
 #[derive(Component, Reflect)]
@@ -33,12 +33,12 @@ type GpuLineNumbersQuery<'w, 's> = Query<
         &'static SelectionState,
         &'static TextBuffer,
         &'static ScrollState,
-        &'static TextViewViewport,
+        &'static TextViewport,
         Ref<'static, FoldState>,
-        &'static FontConfig,
-        &'static ThemeConfig,
-        &'static UiSettings,
-        &'static PerformanceSettings,
+        &'static TextFont,
+        &'static EditorTheme,
+        &'static EditorUi,
+        &'static Performance,
         Option<&'static bevy_camera::visibility::RenderLayers>,
     ),
     With<CodeEditor>,

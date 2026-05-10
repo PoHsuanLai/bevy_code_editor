@@ -10,6 +10,7 @@
 use bevscode::prelude::*;
 use bevsterm::prelude::*;
 use bevy::prelude::*;
+use bevy_instanced_text::TextFont;
 use bevy_camera::visibility::RenderLayers;
 
 const DIVIDER_PX: u32 = 1;
@@ -54,15 +55,15 @@ fn layout_panes(
     let phys_divider = (DIVIDER_PX as f32 * scale) as u32;
     let phys_half = (phys_w - phys_divider) / 2;
 
-    // Logical dimensions fed to TextViewViewport (viewport uses logical pixels).
+    // Logical dimensions fed to TextViewport (viewport uses logical pixels).
     let log_half = phys_half as f32 / scale;
     let log_h = window.height();
 
-    let bg = ThemeConfig::default().background;
+    let bg = EditorTheme::default().background;
     let editor_layer = RenderLayers::layer(0);
     let terminal_layer = RenderLayers::layer(1);
 
-    let font = FontConfig::from_size(14.0)
+    let font = TextFont::from_font_size(14.0)
         .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
         .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
 
@@ -135,7 +136,7 @@ fn layout_panes(
         .spawn((
             CodeEditor,
             font.clone(),
-            TextViewViewport {
+            TextViewport {
                 width: log_half as u32,
                 height: log_h as u32,
                 hit_test_position: Vec2::new(0.0, 0.0),
@@ -151,7 +152,7 @@ fn layout_panes(
     commands.spawn((
         BevyTerminal,
         font,
-        TextViewViewport {
+        TextViewport {
             width: (window.width() - log_half) as u32,
             height: log_h as u32,
             text_area_left: 12.0,

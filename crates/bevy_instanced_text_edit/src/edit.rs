@@ -30,7 +30,7 @@ pub fn point_at_byte(rope: &Rope, byte_offset: usize) -> EditPoint {
 /// editor wants to "follow" the edit lands at `new_cursor_pos`.
 #[derive(Clone, Debug)]
 pub struct EditOutcome {
-    pub start_char: usize,
+    pub start: usize,
     pub new_cursor_pos: usize,
 }
 
@@ -116,7 +116,7 @@ impl EditHistoryState {
         });
 
         EditOutcome {
-            start_char: start,
+            start,
             new_cursor_pos,
         }
     }

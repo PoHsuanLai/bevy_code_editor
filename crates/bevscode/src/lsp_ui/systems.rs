@@ -8,9 +8,9 @@
 use bevy::prelude::*;
 use lsp_types::*;
 
-use crate::text_view::{ScrollState, TextBuffer, TextViewViewport};
+use crate::text_view::{ScrollState, TextBuffer, TextViewport};
 use crate::types::{CodeEditor, CursorState};
-use bevy_instanced_text::FontConfig;
+use bevy_instanced_text::TextFont;
 
 use super::state::{
     LspCodeActionsPopup, LspCompletionPopup, LspDidChangeBatcher, LspDocumentHighlights,
@@ -47,10 +47,10 @@ type RequestInlayHintsQuery<'w, 's> = Query<
         &'static ServerCapabilities,
         Ref<'static, TextBuffer>,
         Ref<'static, ScrollState>,
-        Ref<'static, TextViewViewport>,
+        Ref<'static, TextViewport>,
         Option<&'static LspDocument>,
         &'static mut LspInlayHints,
-        &'static FontConfig,
+        &'static TextFont,
     ),
     With<CodeEditor>,
 >;
@@ -65,7 +65,7 @@ type RequestDocumentHighlightsQuery<'w, 's> = Query<
         &'static TextBuffer,
         Option<&'static LspDocument>,
         &'static mut LspDocumentHighlights,
-        &'static crate::settings::LspSettings,
+        &'static crate::settings::LspConfig,
     ),
     With<CodeEditor>,
 >;
@@ -533,8 +533,8 @@ fn apply_text_edits(
 
         writer.write(bevy_instanced_text_edit::ReplaceRangeRequested {
             entity,
-            start_char: start_pos,
-            end_char: end_pos,
+            start: start_pos,
+            end: end_pos,
             text: edit.new_text,
             kind: bevy_instanced_text_edit::EditKind::Other,
             record_history: true,
@@ -548,7 +548,7 @@ fn apply_text_edits(
 /// the timer; this system ticks the timer and, on expiry, sends one
 /// `textDocument/didChange` carrying the whole batch (or a full-document
 /// sync if any queued edit lacked a pre-edit rope snapshot or
-/// `LspSettings::full_document_sync` is on).
+/// `LspConfig::full_document_sync` is on).
 pub fn sync_lsp_document(
     time: Res<Time>,
     mut query: Query<
@@ -736,7 +736,7 @@ pub fn execute_code_action(lsp_client: &LspClient, action: &CodeActionOrCommand)
 /// new position. Highlights all occurrences of the symbol under cursor
 /// (the IDE feature where clicking on a name highlights every other use
 /// in the same file). Debounce delay comes from
-/// `LspSettings::highlight_delay_ms`.
+/// `LspConfig::highlight_delay_ms`.
 pub fn request_document_highlights(time: Res<Time>, mut query: RequestDocumentHighlightsQuery) {
     let Ok((
         lsp_client,

@@ -3,7 +3,7 @@
 //! `bevy_tree_sitter` emits structural `HighlightRange`s keyed by capture
 //! name (e.g. `"keyword"`, `"function.method"`). The editor's renderer wants
 //! `Color`s — this module bridges the two using the editor-side
-//! `SyntaxTheme`. Theme hot-swap is a free side effect: callers re-run
+//! `SyntaxColors`. Theme hot-swap is a free side effect: callers re-run
 //! `map_highlight_color` on the read path, no cache invalidation needed.
 
 use bevy::prelude::*;
@@ -13,7 +13,7 @@ use bevy::prelude::*;
 /// to `default_color`.
 pub fn map_highlight_color(
     highlight_type: Option<&str>,
-    syntax_theme: &crate::settings::SyntaxTheme,
+    syntax_theme: &crate::settings::SyntaxColors,
     default_color: Color,
 ) -> Color {
     let hl_type = match highlight_type {
