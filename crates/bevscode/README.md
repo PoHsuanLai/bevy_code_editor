@@ -2,6 +2,8 @@
 
 Embeddable code editor for Bevy. Spawn `CodeEditor` into any app and it runs as a normal ECS entity.
 
+**Scope:** `bevscode` is a widget, not a standalone IDE. Window management, project trees, debugger UIs, and similar IDE-level concerns are left to the host application.
+
 ## Quick start
 
 ```rust

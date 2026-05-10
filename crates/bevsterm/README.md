@@ -9,6 +9,8 @@
 
 Embeddable PTY-backed terminal for Bevy. Spawn `BevyTerminal` into any app and it runs as a normal ECS entity.
 
+**Scope:** `bevsterm` is a widget, not a standalone terminal emulator application. Shell session management, tabs, and window chrome are left to the host application.
+
 ## Quick start
 
 ```rust
