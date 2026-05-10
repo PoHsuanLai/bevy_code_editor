@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy_instanced_text::{TextFont, ScrollState, TextBuffer};
+use bevy_instanced_text::{ScrollState, TextBuffer, TextFont};
 use bevy_instanced_text_edit::{copy_selection, ClipboardResource, SelectionState};
 use portable_pty::PtySize;
 

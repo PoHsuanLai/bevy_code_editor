@@ -12,8 +12,8 @@
 use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
 use bevy_instanced_text::prelude::*;
-use bevy_instanced_text::TextFont;
 use bevy_instanced_text::view::snapshot::{trivial_layout, StyleRun};
+use bevy_instanced_text::TextFont;
 
 fn main() {
     let mut app = App::new();

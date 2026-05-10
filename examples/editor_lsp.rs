@@ -13,13 +13,12 @@
 //! Run: `cargo run --example lsp --features lsp`. Requires `rust-analyzer` on
 //! `PATH` (`rustup component add rust-analyzer`).
 
+use armas::components::CardVariant;
 use armas::prelude::*;
-use armas::components::{CardVariant};
-use bevscode::lsp_ui::state::UnifiedCompletionItem;
-use egui::Color32;
 use bevscode::lsp_ui::components::{
     DocumentHighlightData, InlayHintData, InlayHintKind, LspUiVisual,
 };
+use bevscode::lsp_ui::state::UnifiedCompletionItem;
 use bevscode::lsp_ui::state::{
     LspCodeActionsPopup, LspCompletionPopup, LspHoverPopup, LspRenamePopup, LspSignatureHelpPopup,
 };
@@ -30,10 +29,13 @@ use bevsmd::{MarkdownDoc, MarkdownLinks, MarkdownViewerPlugin};
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use bevy_egui::{egui, EguiContexts};
-use bevy_instanced_text::{ContentMetrics, DisplayLayout, ScrollState, TextBuffer, TextColor, TextFont, TextView};
+use bevy_instanced_text::{
+    ContentMetrics, DisplayLayout, ScrollState, TextBuffer, TextColor, TextFont, TextView,
+};
 use bevy_lsp::{LspClient, LspDocument, LspMessage};
 #[cfg(feature = "tree-sitter")]
 use bevy_tree_sitter::Language;
+use egui::Color32;
 
 fn main() {
     let mut app = App::new();
@@ -485,9 +487,7 @@ fn kind_badge(item: &UnifiedCompletionItem, ui: &mut egui::Ui, size: f32) {
             Some(CompletionItemKind::ENUM_MEMBER) => ("e", Color32::from_rgb(0xC6, 0x78, 0xDD)),
             Some(CompletionItemKind::KEYWORD) => ("k", Color32::from_rgb(0xC6, 0x78, 0xDD)),
             Some(CompletionItemKind::SNIPPET) => ("~", Color32::from_rgb(0x56, 0xB6, 0xC2)),
-            Some(CompletionItemKind::TYPE_PARAMETER) => {
-                ("T", Color32::from_rgb(0xE5, 0xC0, 0x7B))
-            }
+            Some(CompletionItemKind::TYPE_PARAMETER) => ("T", Color32::from_rgb(0xE5, 0xC0, 0x7B)),
             _ => ("·", Color32::from_rgb(0x80, 0x80, 0x80)),
         },
         UnifiedCompletionItem::Word(_) => ("w", Color32::from_rgb(0x80, 0x80, 0x80)),
@@ -967,57 +967,57 @@ fn render_signature_help_egui(
                 .max_height(120.0)
                 .show(ui, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        let label = &signature.label;
-                        let text_size = font.font_size * 0.9;
+                        ui.horizontal_wrapped(|ui| {
+                            let label = &signature.label;
+                            let text_size = font.font_size * 0.9;
 
-                        if let Some((start, end)) = active_param_range {
-                            let before = label.get(..start).unwrap_or(label);
-                            let active = label.get(start..end).unwrap_or("");
-                            let after = label.get(end..).unwrap_or("");
+                            if let Some((start, end)) = active_param_range {
+                                let before = label.get(..start).unwrap_or(label);
+                                let active = label.get(start..end).unwrap_or("");
+                                let after = label.get(end..).unwrap_or("");
 
-                            if !before.is_empty() {
+                                if !before.is_empty() {
+                                    ui.label(
+                                        egui::RichText::new(before)
+                                            .color(theme.muted_foreground())
+                                            .size(text_size),
+                                    );
+                                }
+                                if !active.is_empty() {
+                                    ui.label(
+                                        egui::RichText::new(active)
+                                            .color(theme.card_foreground())
+                                            .strong()
+                                            .size(text_size),
+                                    );
+                                }
+                                if !after.is_empty() {
+                                    ui.label(
+                                        egui::RichText::new(after)
+                                            .color(theme.muted_foreground())
+                                            .size(text_size),
+                                    );
+                                }
+                            } else {
                                 ui.label(
-                                    egui::RichText::new(before)
-                                        .color(theme.muted_foreground())
-                                        .size(text_size),
-                                );
-                            }
-                            if !active.is_empty() {
-                                ui.label(
-                                    egui::RichText::new(active)
+                                    egui::RichText::new(label)
                                         .color(theme.card_foreground())
-                                        .strong()
                                         .size(text_size),
                                 );
                             }
-                            if !after.is_empty() {
-                                ui.label(
-                                    egui::RichText::new(after)
-                                        .color(theme.muted_foreground())
-                                        .size(text_size),
-                                );
-                            }
-                        } else {
-                            ui.label(
-                                egui::RichText::new(label)
-                                    .color(theme.card_foreground())
-                                    .size(text_size),
-                            );
-                        }
 
-                        if sig_state.signatures.len() > 1 {
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "{}/{}",
-                                    sig_state.active_signature + 1,
-                                    sig_state.signatures.len()
-                                ))
-                                .color(theme.muted_foreground())
-                                .size(font.font_size * 0.75),
-                            );
-                        }
-                    });
+                            if sig_state.signatures.len() > 1 {
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "{}/{}",
+                                        sig_state.active_signature + 1,
+                                        sig_state.signatures.len()
+                                    ))
+                                    .color(theme.muted_foreground())
+                                    .size(font.font_size * 0.75),
+                                );
+                            }
+                        });
                     });
                 });
         });
@@ -1074,55 +1074,57 @@ fn render_code_actions_egui(
                 .max_height(popup_height.min(300.0))
                 .show(ui, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                    for (i, action) in action_state.actions.iter().take(10).enumerate() {
-                        let is_selected = i == action_state.selected_index;
+                        for (i, action) in action_state.actions.iter().take(10).enumerate() {
+                            let is_selected = i == action_state.selected_index;
 
-                        let bg = if is_selected {
-                            theme.accent()
-                        } else {
-                            egui::Color32::TRANSPARENT
-                        };
-                        let text_color = if is_selected {
-                            theme.accent_foreground()
-                        } else {
-                            theme.foreground()
-                        };
+                            let bg = if is_selected {
+                                theme.accent()
+                            } else {
+                                egui::Color32::TRANSPARENT
+                            };
+                            let text_color = if is_selected {
+                                theme.accent_foreground()
+                            } else {
+                                theme.foreground()
+                            };
 
-                        let (icon, title) = match action {
-                            bevy_lsp::CodeActionOrCommand::Action(a) => {
-                                let icon = match &a.kind {
-                                    Some(kind) if kind.as_str().starts_with("quickfix") => "W",
-                                    Some(kind) if kind.as_str().starts_with("refactor") => "R",
-                                    Some(kind) if kind.as_str().starts_with("source") => "S",
-                                    _ => "A",
-                                };
-                                (icon, a.title.as_str())
-                            }
-                            bevy_lsp::CodeActionOrCommand::Command(c) => ("C", c.title.as_str()),
-                        };
+                            let (icon, title) = match action {
+                                bevy_lsp::CodeActionOrCommand::Action(a) => {
+                                    let icon = match &a.kind {
+                                        Some(kind) if kind.as_str().starts_with("quickfix") => "W",
+                                        Some(kind) if kind.as_str().starts_with("refactor") => "R",
+                                        Some(kind) if kind.as_str().starts_with("source") => "S",
+                                        _ => "A",
+                                    };
+                                    (icon, a.title.as_str())
+                                }
+                                bevy_lsp::CodeActionOrCommand::Command(c) => {
+                                    ("C", c.title.as_str())
+                                }
+                            };
 
-                        egui::Frame::NONE
-                            .fill(bg)
-                            .corner_radius(egui::CornerRadius::same(
-                                theme.spacing.corner_radius_small,
-                            ))
-                            .inner_margin(egui::Margin::symmetric(8, 2))
-                            .show(ui, |ui| {
-                                ui.set_height(item_height);
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        egui::RichText::new(icon)
-                                            .color(theme.muted_foreground())
-                                            .size(font.font_size * 0.85),
-                                    );
-                                    ui.label(
-                                        egui::RichText::new(title)
-                                            .color(text_color)
-                                            .size(font.font_size),
-                                    );
+                            egui::Frame::NONE
+                                .fill(bg)
+                                .corner_radius(egui::CornerRadius::same(
+                                    theme.spacing.corner_radius_small,
+                                ))
+                                .inner_margin(egui::Margin::symmetric(8, 2))
+                                .show(ui, |ui| {
+                                    ui.set_height(item_height);
+                                    ui.horizontal(|ui| {
+                                        ui.label(
+                                            egui::RichText::new(icon)
+                                                .color(theme.muted_foreground())
+                                                .size(font.font_size * 0.85),
+                                        );
+                                        ui.label(
+                                            egui::RichText::new(title)
+                                                .color(text_color)
+                                                .size(font.font_size),
+                                        );
+                                    });
                                 });
-                            });
-                    }
+                        }
                     });
                 });
         });

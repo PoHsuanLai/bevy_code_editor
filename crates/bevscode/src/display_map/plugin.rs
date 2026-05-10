@@ -15,14 +15,14 @@
 use crate::types::events::TextEdited;
 use bevy::prelude::*;
 use bevy_instanced_text::{
-    visible_buffer_range, TextFont, HiddenLines, LayoutProduceSet, LayoutWrap, LineStyles,
-    RunWithText, ScrollState, TextBuffer, TextViewport,
+    visible_buffer_range, HiddenLines, LayoutProduceSet, LayoutWrap, LineStyles, RunWithText,
+    ScrollState, TextBuffer, TextFont, TextViewport,
 };
 use std::collections::{HashMap, HashSet};
 
 use super::styling::segs_to_runs;
 use crate::plugin::syntax_highlighting::EditorSyntaxState;
-use crate::settings::{Indentation, SyntaxColors, EditorTheme, Wrapping};
+use crate::settings::{EditorTheme, Indentation, SyntaxColors, Wrapping};
 use crate::types::CodeEditor;
 #[cfg(feature = "tree-sitter")]
 use crate::types::FoldState;

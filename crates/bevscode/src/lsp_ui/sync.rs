@@ -193,15 +193,7 @@ pub fn sync_hover_popup(
 /// Sync signature help state to marker entity
 pub fn sync_signature_help_popup(
     mut commands: Commands,
-    query: Query<
-        (
-            &LspSignatureHelpPopup,
-            &CursorState,
-            &TextBuffer,
-            &TextFont,
-        ),
-        With<CodeEditor>,
-    >,
+    query: Query<(&LspSignatureHelpPopup, &CursorState, &TextBuffer, &TextFont), With<CodeEditor>>,
     existing: Query<Entity, With<SignatureHelpPopupData>>,
 ) {
     let Ok((sig_state, cursor_state, buffer, font)) = query.single() else {

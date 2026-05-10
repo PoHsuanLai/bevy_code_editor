@@ -7,7 +7,7 @@ use crate::text_view::{
 };
 use crate::types::*;
 use bevy::prelude::*;
-use bevy_instanced_text::{visible_buffer_range, TextFont, HiddenLines, LayoutWrap};
+use bevy_instanced_text::{visible_buffer_range, HiddenLines, LayoutWrap, TextFont};
 
 type IndentGuidesQuery<'w, 's> = Query<
     'w,

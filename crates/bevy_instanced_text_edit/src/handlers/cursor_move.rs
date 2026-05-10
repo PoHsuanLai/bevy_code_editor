@@ -13,7 +13,7 @@ use crate::editing_events::*;
 use crate::state::{CursorState, SelectionState, TextEditor};
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy_instanced_text::{TextFont, TextBuffer, TextViewport};
+use bevy_instanced_text::{TextBuffer, TextFont, TextViewport};
 
 type EditorView<'w, 's> = Query<
     'w,

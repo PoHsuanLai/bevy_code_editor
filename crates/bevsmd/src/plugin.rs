@@ -5,7 +5,7 @@ use std::sync::Arc;
 use bevy::app::PluginGroupBuilder;
 use bevy::prelude::*;
 use bevy_instanced_text::{
-    ContentMetrics, DisplayLayout, TextFont, RectOverlay, ScrollState, ShapedLine, TextBuffer,
+    ContentMetrics, DisplayLayout, RectOverlay, ScrollState, ShapedLine, TextBuffer, TextFont,
     TextView, TextViewOverlays, TextViewport,
 };
 

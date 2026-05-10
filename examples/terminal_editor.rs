@@ -10,8 +10,8 @@
 use bevscode::prelude::*;
 use bevsterm::prelude::*;
 use bevy::prelude::*;
-use bevy_instanced_text::TextFont;
 use bevy_camera::visibility::RenderLayers;
+use bevy_instanced_text::TextFont;
 
 const DIVIDER_PX: u32 = 1;
 

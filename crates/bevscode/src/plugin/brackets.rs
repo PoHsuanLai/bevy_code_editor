@@ -5,7 +5,7 @@ use crate::settings::*;
 use crate::text_view::{DisplayLayout, TextBuffer, TextViewOverlays};
 use crate::types::*;
 use bevy::prelude::*;
-use bevy_instanced_text::{CornerRadii, TextFont, RectOverlay, RowVertical};
+use bevy_instanced_text::{CornerRadii, RectOverlay, RowVertical, TextFont};
 
 type BracketMatchQuery<'w, 's> = Query<
     'w,

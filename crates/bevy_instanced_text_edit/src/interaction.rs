@@ -15,7 +15,7 @@ use bevy::prelude::*;
 use ropey::Rope;
 
 use bevy_instanced_text::{
-    ContentMetrics, DisplayLayout, TextFont, ScrollState, TextBuffer, TextView, TextViewport,
+    ContentMetrics, DisplayLayout, ScrollState, TextBuffer, TextFont, TextView, TextViewport,
 };
 
 use crate::components::{ScrollConfig, TextViewDragState};

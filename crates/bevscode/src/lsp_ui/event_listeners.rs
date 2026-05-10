@@ -18,8 +18,8 @@ use super::state::{
 use crate::settings::LspConfig;
 use crate::text_view::TextBuffer;
 use crate::types::events::{
-    CompletionApplied, CompletionDismissed, CompletionRequested, HoverRequested,
-    RenameRequested, SignatureHelpRequested, TextEdited,
+    CompletionApplied, CompletionDismissed, CompletionRequested, HoverRequested, RenameRequested,
+    SignatureHelpRequested, TextEdited,
 };
 use crate::types::{CodeEditor, CursorState};
 use bevy::prelude::*;
