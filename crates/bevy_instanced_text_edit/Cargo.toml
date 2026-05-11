@@ -1,6 +1,6 @@
 [package]
 name = "bevy_instanced_text_edit"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["PoHsuanLai"]
 license = "MIT OR Apache-2.0"
@@ -27,7 +27,7 @@ clipboard-wasm = ["dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", 
 
 [dependencies]
 # Text rendering primitives (TextView, TextBuffer, ScrollState, TextViewViewport, FontConfig).
-bevy_instanced_text = { path = "../bevy_instanced_text", version = "0.1.0" }
+bevy_instanced_text = { path = "../bevy_instanced_text", version = "0.1.1" }
 
 # Match the editor's bevy feature set so this crate composes cleanly with it.
 bevy = { version = "0.18", default-features = false, features = [
