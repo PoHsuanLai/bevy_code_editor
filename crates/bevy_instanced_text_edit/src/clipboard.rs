@@ -115,7 +115,6 @@ impl ClipboardProvider for WasmClipboard {
     }
 
     fn set_text(&self, text: &str) {
-        use wasm_bindgen::JsCast;
         let window = web_sys::window().expect("no window");
         let navigator = window.navigator();
         let clipboard = navigator.clipboard();
