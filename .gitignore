@@ -12,4 +12,5 @@ CLAUDE.md
 *.md
 
 !README.md
+!CHANGELOG.md
 *.mov
