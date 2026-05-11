@@ -119,7 +119,7 @@ impl ClipboardProvider for WasmClipboard {
         let navigator = window.navigator();
         let clipboard = navigator.clipboard();
         let promise = clipboard.write_text(text);
-        let _ = wasm_bindgen_futures::JsFuture::from(promise);
+        drop(wasm_bindgen_futures::JsFuture::from(promise));
     }
 }
 
