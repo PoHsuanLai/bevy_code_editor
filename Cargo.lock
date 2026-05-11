@@ -512,7 +512,6 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 name = "bevscode"
 version = "0.1.0"
 dependencies = [
- "arboard",
  "bevy",
  "bevy_camera",
  "bevy_instanced_text",
@@ -1230,8 +1229,12 @@ dependencies = [
  "arboard",
  "bevy",
  "bevy_instanced_text",
+ "js-sys",
  "ropey",
  "serde",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

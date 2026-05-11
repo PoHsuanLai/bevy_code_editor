@@ -75,7 +75,11 @@ impl Default for ClipboardResource {
         {
             Self::new(SystemClipboard)
         }
-        #[cfg(not(feature = "arboard"))]
+        #[cfg(all(feature = "clipboard-wasm", not(feature = "arboard")))]
+        {
+            Self::new(WasmClipboard)
+        }
+        #[cfg(not(any(feature = "arboard", feature = "clipboard-wasm")))]
         {
             Self::new(NullClipboard)
         }
@@ -92,6 +96,32 @@ impl ClipboardProvider for NullClipboard {
         None
     }
     fn set_text(&self, _text: &str) {}
+}
+
+/// WASM clipboard backed by `navigator.clipboard`.
+///
+/// `set_text` fires off an async `writeText` call and returns immediately.
+/// `get_text` always returns `None` — the browser clipboard API is
+/// async-only and cannot be read synchronously. To support paste on WASM,
+/// listen for the browser `paste` event and feed the text directly into
+/// the editor state.
+#[cfg(feature = "clipboard-wasm")]
+pub struct WasmClipboard;
+
+#[cfg(feature = "clipboard-wasm")]
+impl ClipboardProvider for WasmClipboard {
+    fn get_text(&self) -> Option<String> {
+        None
+    }
+
+    fn set_text(&self, text: &str) {
+        use wasm_bindgen::JsCast;
+        let window = web_sys::window().expect("no window");
+        let navigator = window.navigator();
+        let clipboard = navigator.clipboard();
+        let promise = clipboard.write_text(text);
+        let _ = wasm_bindgen_futures::JsFuture::from(promise);
+    }
 }
 
 /// `arboard`-backed clipboard. A fresh `arboard::Clipboard` is created

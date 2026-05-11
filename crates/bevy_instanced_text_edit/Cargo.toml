@@ -19,6 +19,11 @@ default = ["arboard"]
 # substitute your own provider via
 # `insert_resource(ClipboardResource::new(...))`.
 arboard = ["dep:arboard"]
+# `web-sys`-backed `WasmClipboard`. Write is fire-and-forget via the
+# async `navigator.clipboard.writeText` API. Read always returns `None`
+# because the browser clipboard API is async-only; wire up a paste event
+# listener at the application level if you need paste support.
+clipboard-wasm = ["dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:web-sys"]
 
 [dependencies]
 # Text rendering primitives (TextView, TextBuffer, ScrollState, TextViewViewport, FontConfig).
@@ -43,6 +48,11 @@ bevy = { version = "0.18", default-features = false, features = [
 ropey = "1.6"
 arboard = { version = "3.4", optional = true }
 serde = { version = "1.0", features = ["derive"] }
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+js-sys = { version = "0.3", optional = true }
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", optional = true, features = ["Navigator", "Window", "Clipboard"] }
 
 [dev-dependencies]
 bevy = { version = "0.18", features = ["bevy_window", "bevy_winit"] }

@@ -12,7 +12,7 @@ categories = ["game-development", "text-editors"]
 
 [dependencies]
 bevy_instanced_text = { path = "../bevy_instanced_text", version = "0.1.0" }
-bevy_instanced_text_edit = { path = "../bevy_instanced_text_edit", version = "0.1.0" }
+bevy_instanced_text_edit = { path = "../bevy_instanced_text_edit", version = "0.1.0", default-features = false }
 bevy_tree_sitter = { path = "../bevy_tree_sitter", version = "0.1.0", optional = true }
 bevy_lsp = { path = "../bevy_lsp", version = "0.1.0", optional = true }
 
@@ -38,7 +38,6 @@ leafwing-input-manager = { version = "0.20", features = ["keyboard"] }
 cosmic-text = "0.12"
 swash = "0.1"
 bytemuck = { version = "1.14", features = ["derive"] }
-arboard = { version = "3.4" }
 lsp-types = { version = "0.95", optional = true }
 serde_json = { version = "1.0", optional = true }
 fuzzy-matcher = { version = "0.3", optional = true }
@@ -47,9 +46,11 @@ fuzzy-matcher = { version = "0.3", optional = true }
 bevy = { version = "0.18", features = ["bevy_window", "bevy_winit"] }
 
 [features]
-default = ["tree-sitter"]
+default = ["tree-sitter", "clipboard"]
 
 tree-sitter = ["dep:bevy_tree_sitter"]
+clipboard = ["bevy_instanced_text_edit/arboard"]
+clipboard-wasm = ["bevy_instanced_text_edit/clipboard-wasm"]
 lsp = ["dep:bevy_lsp", "lsp-types", "serde_json", "fuzzy-matcher"]
 # Dynamic linking for fast dev iteration (not for release builds)
 dynamic_linking = ["bevy/dynamic_linking"]
