@@ -70,10 +70,14 @@ fn main() {
     // entity that the markdown plugin lays out as styled text.
     app.add_plugins(MarkdownViewerPlugin);
 
-    app.add_systems(Startup, setup_camera)
+    app.add_systems(Startup, (setup_camera, spawn_editor))
         .add_systems(PostStartup, setup_editor)
         .add_systems(Update, (display_lsp_info, auto_request_completion))
         .run();
+}
+
+fn spawn_editor(mut commands: Commands) {
+    commands.spawn((CodeEditor, AutoResizeViewport, Name::new("CodeEditor")));
 }
 
 fn setup_camera(mut commands: Commands) {

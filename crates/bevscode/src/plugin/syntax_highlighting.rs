@@ -673,7 +673,7 @@ impl Plugin for SyntaxPlugin {
         // idempotent — once attached, it's a no-op.
         app.add_systems(
             Startup,
-            init_editor_syntax.after(crate::plugin::spawn_editor_entity),
+            init_editor_syntax,
         );
         app.add_systems(
             Update,

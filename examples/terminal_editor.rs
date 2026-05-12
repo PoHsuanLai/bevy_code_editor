@@ -34,9 +34,6 @@ fn main() {
                     ..default()
                 }),
         )
-        .insert_resource(ViewportConfig {
-            auto_resize_to_window: false,
-        })
         .add_plugins(CodeEditorPlugins)
         .add_plugins(BevyTerminalPlugin)
         .add_systems(Startup, layout_panes)

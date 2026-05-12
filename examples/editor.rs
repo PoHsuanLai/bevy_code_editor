@@ -35,7 +35,7 @@ fn main() {
                 }),
         )
         .add_plugins(CodeEditorPlugins)
-        .add_systems(Startup, setup_camera)
+        .add_systems(Startup, (setup_camera, spawn_editor))
         .add_systems(PostStartup, setup_editor)
         .add_systems(Update, (update_cursor_icon, debug_toggles))
         .run();
@@ -110,6 +110,10 @@ fn debug_toggles(
             }
         }
     }
+}
+
+fn spawn_editor(mut commands: Commands) {
+    commands.spawn((CodeEditor, AutoResizeViewport, Name::new("CodeEditor")));
 }
 
 fn setup_camera(mut commands: Commands) {

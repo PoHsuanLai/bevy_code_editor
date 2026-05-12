@@ -109,10 +109,10 @@ pub mod prelude {
 
     // Editor plugin + its standalone PluginGroup, and the interaction +
     // UI plugins that hosts compose with.
-    pub use crate::plugin::{CodeEditorPlugin, CodeEditorPlugins, EditorCamera, EditorUiPlugin};
+    pub use crate::plugin::{AutoResizeViewport, CodeEditorPlugin, CodeEditorPlugins, EditorCamera, EditorUiPlugin};
 
     // Editor marker + save/open events.
-    pub use crate::types::editor::{CodeEditor, OpenRequested, SaveRequested, ViewportConfig};
+    pub use crate::types::editor::{CodeEditor, OpenRequested, SaveRequested};
     #[cfg(feature = "tree-sitter")]
     pub use crate::types::events::FoldStateChanged;
     #[cfg(feature = "tree-sitter")]

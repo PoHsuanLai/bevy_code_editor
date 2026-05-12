@@ -39,12 +39,6 @@ fn main() {
                     ..default()
                 }),
         )
-        // Opt out of the auto-resize behavior so we can size each editor's
-        // TextViewport ourselves; this also suppresses the plugin's
-        // default editor auto-spawn.
-        .insert_resource(ViewportConfig {
-            auto_resize_to_window: false,
-        })
         .add_plugins(CodeEditorPlugins)
         .add_systems(Startup, spawn_two_editors)
         .run();

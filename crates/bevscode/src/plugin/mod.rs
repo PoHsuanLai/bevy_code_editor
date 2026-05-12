@@ -17,7 +17,7 @@ pub use self::lsp_plugin::LspPlugin;
 
 pub use self::brackets::BracketPlugin;
 pub use self::cursor::CursorPlugin;
-pub use self::editor_ui_plugin::{EditorCamera, EditorUiPlugin};
+pub use self::editor_ui_plugin::{AutoResizeViewport, EditorCamera, EditorUiPlugin};
 pub use self::folding::FoldingPlugin;
 
 // Re-export syntax highlighting resources publicly for external use
@@ -107,8 +107,6 @@ pub struct CodeEditorPlugin;
 
 impl Plugin for CodeEditorPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<ViewportConfig>();
-
         // BracketMatchState, GotoLineState, FoldState, and KeyRepeatState are
         // per-editor / per-input-manager components (cascaded via #[require]);
         // no global resource init. Mouse drag tracking lives on
@@ -127,11 +125,8 @@ impl Plugin for CodeEditorPlugin {
                 .chain(),
         );
 
-        // Spawn the editor entity, plus a default EditorInputManager with the
-        // standard keybindings. Hosts that want to override the keymap can spawn
-        // their own EditorInputManager entity *before* PostStartup; the default
-        // spawn is gated on no existing one being present.
-        app.add_systems(Startup, spawn_editor_entity);
+        // Spawn a default EditorInputManager if none exists. Hosts that want a
+        // custom keymap can spawn their own EditorInputManager entity at Startup.
         app.add_systems(PostStartup, spawn_default_input_manager);
 
         // Register editor-side events. The 33 editing events are registered
@@ -361,19 +356,6 @@ fn register_handler_systems(app: &mut App) {
             .in_set(InputSet)
             .after(lsp::handle_request_completion),
     );
-}
-
-/// Spawn a default editor when the host hasn't opted into manual layout.
-/// Multi-pane hosts set `ViewportConfig { auto_resize_to_window: false }`
-/// and spawn their own `CodeEditor` entities; in that mode this no-ops.
-pub(crate) fn spawn_editor_entity(
-    mut commands: Commands,
-    config: Res<crate::types::editor::ViewportConfig>,
-) {
-    if !config.auto_resize_to_window {
-        return;
-    }
-    commands.spawn((CodeEditor, Name::new("CodeEditor")));
 }
 
 /// Spawn a default `EditorInputManager` with `default_input_map()` if the host

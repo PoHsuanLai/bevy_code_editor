@@ -16,8 +16,7 @@ use bevy_instanced_text::TextFont;
 
 use crate::settings::*;
 use crate::text_view::TextViewport;
-use crate::types::{CodeEditor, Separator, ViewportConfig};
-use bevy_camera::Viewport;
+use crate::types::{CodeEditor, Separator};
 
 /// Marker component for the editor camera
 #[derive(Component, Default, Reflect)]
@@ -49,9 +48,6 @@ impl Plugin for EditorUiPlugin {
                 .after(EditorSetupSet),
         );
 
-        // Update viewport when window resizes (if auto_resize_to_window is true)
-        // Auto-resize when ViewportConfig.auto_resize_to_window is true.
-        // Otherwise hosts write directly to each editor's TextViewport.
         app.add_systems(Update, detect_viewport_resize);
 
         // Update separator position when viewport changes
@@ -107,82 +103,6 @@ impl Plugin for EditorUiPlugin {
         // Note: cursor systems (track_cursor_movement, update_cursor, animate_cursor)
         // are registered by CursorPlugin — not duplicated here.
 
-        // Camera viewport update (for restricted rendering when not full-window)
-        // Run on PostStartup to set initial viewport, then on Update when ViewportDimensions changes
-        app.add_systems(PostStartup, update_camera_viewport);
-        app.add_systems(
-            Update,
-            update_camera_viewport
-                .run_if(|query: Query<(), Changed<TextViewport>>| !query.is_empty())
-                .in_set(super::ApplyStateSet),
-        );
-    }
-}
-
-/// Update camera viewport to restrict rendering to the editor panel bounds
-/// This is essential when auto_resize_to_window is false (e.g., resizable panel mode)
-fn update_camera_viewport(
-    config: Res<ViewportConfig>,
-    viewport_query: Query<&TextViewport, With<CodeEditor>>,
-    windows: Query<&Window>,
-    mut camera_query: Query<(&mut Camera, &mut Transform), With<EditorCamera>>,
-) {
-    // Only set camera viewport when NOT auto-resizing (manual viewport control)
-    if config.auto_resize_to_window {
-        // Clear any existing viewport restriction and reset camera position
-        for (mut camera, mut transform) in camera_query.iter_mut() {
-            if camera.viewport.is_some() {
-                camera.viewport = None;
-            }
-            transform.translation = Vec3::ZERO;
-        }
-        return;
-    }
-
-    let Ok(window) = windows.single() else {
-        return;
-    };
-
-    for viewport in viewport_query.iter() {
-        // Convert from center-origin viewport coordinates to top-left origin window coordinates.
-        // - ViewportOrigin::ScreenAbsolute(p) → p is the panel's LEFT/TOP world-space edges.
-        // - ViewportOrigin::CenteredOrtho → panel is centered at world (0,0).
-        // viewport.width/height are the panel dimensions.
-        let window_width = window.width();
-        let window_height = window.height();
-        let scale_factor = window.scale_factor();
-
-        // Calculate top-left corner of panel in window coordinates
-        // When offset is (0,0), panel is centered in window (auto-resize mode)
-        // When offset is non-zero, it represents the panel's left/top edges (resizable mode)
-        let panel_left_world = viewport.world_left();
-        let panel_top_world = viewport.world_top();
-
-        // Convert world coords to window coords (window: 0,0 = top-left, Y down)
-        // Then scale to physical pixels (Viewport uses physical coordinates)
-        // Window X = world X + window_width/2
-        // Window Y = window_height/2 - world Y
-        let window_x = ((panel_left_world + window_width / 2.0).max(0.0) * scale_factor) as u32;
-        let window_y = (((window_height / 2.0 - panel_top_world).max(0.0)) * scale_factor) as u32;
-        let physical_width = (viewport.width as f32 * scale_factor) as u32;
-        let physical_height = (viewport.height as f32 * scale_factor) as u32;
-
-        // Calculate camera position (center of panel)
-        let camera_x = panel_left_world + viewport.width as f32 / 2.0;
-        let camera_y = panel_top_world - viewport.height as f32 / 2.0;
-
-        for (mut camera, mut transform) in camera_query.iter_mut() {
-            // Set the camera viewport to restrict which window pixels to render to
-            camera.viewport = Some(Viewport {
-                physical_position: UVec2::new(window_x, window_y),
-                physical_size: UVec2::new(physical_width, physical_height),
-                ..default()
-            });
-
-            // Move the camera to the panel center
-            // Content is positioned relative to camera at (0,0)
-            transform.translation = Vec3::new(camera_x, camera_y, transform.translation.z);
-        }
     }
 }
 
@@ -217,17 +137,18 @@ fn compute_viewport_layout(mut viewport_query: ViewportLayoutQuery) {
     }
 }
 
+/// Opt-in marker: editors with this component have their `TextViewport`
+/// automatically sized to the primary window. Hosts that manage viewport size
+/// themselves (multi-pane, render-to-texture) simply omit this component.
+#[derive(Component, Default, Reflect)]
+#[reflect(Component, Default)]
+pub struct AutoResizeViewport;
+
 /// Initialize viewport dimensions from the actual window size
 fn init_viewport_from_window(
-    mut viewport_query: Query<&mut TextViewport, With<CodeEditor>>,
-    config: Res<ViewportConfig>,
+    mut viewport_query: Query<&mut TextViewport, (With<CodeEditor>, With<AutoResizeViewport>)>,
     windows: Query<&Window>,
 ) {
-    // Only auto-initialize if auto_resize_to_window is true
-    if !config.auto_resize_to_window {
-        return;
-    }
-
     if let Ok(window) = windows.single() {
         for mut viewport in viewport_query.iter_mut() {
             viewport.width = window.resolution.width() as u32;
@@ -238,21 +159,14 @@ fn init_viewport_from_window(
 
 /// Detect viewport resize and update dimensions
 fn detect_viewport_resize(
-    config: Res<ViewportConfig>,
-    mut viewport_query: Query<&mut TextViewport, With<CodeEditor>>,
+    mut viewport_query: Query<&mut TextViewport, (With<CodeEditor>, With<AutoResizeViewport>)>,
     windows: Query<&Window>,
 ) {
-    // Only auto-resize when enabled
-    if !config.auto_resize_to_window {
-        return;
-    }
-
     if let Ok(window) = windows.single() {
         let new_width = window.resolution.width() as u32;
         let new_height = window.resolution.height() as u32;
 
         for mut viewport in viewport_query.iter_mut() {
-            // Only update if changed to avoid unnecessary change detection
             if viewport.width != new_width || viewport.height != new_height {
                 viewport.width = new_width;
                 viewport.height = new_height;

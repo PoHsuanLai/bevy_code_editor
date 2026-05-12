@@ -8,23 +8,6 @@
 
 use bevy::prelude::*;
 
-/// When `true`, viewport auto-resizes to window; when `false`, the host
-/// writes directly to each editor's [`crate::text_view::TextViewport`]
-/// component.
-#[derive(Resource, Clone, Copy, Debug, Reflect)]
-#[reflect(Resource, Default, Debug)]
-pub struct ViewportConfig {
-    pub auto_resize_to_window: bool,
-}
-
-impl Default for ViewportConfig {
-    fn default() -> Self {
-        Self {
-            auto_resize_to_window: true,
-        }
-    }
-}
-
 /// Marker component for a code editor entity.
 ///
 /// `#[require]` cascades [`bevy_instanced_text_edit::TextEditor`] (which transitively
