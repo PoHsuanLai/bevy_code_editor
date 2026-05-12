@@ -53,7 +53,7 @@ fn debug_toggles(
     mut text_batches: Query<
         &mut Visibility,
         (
-            With<bevy_instanced_text::view::render::GlyphBatchComponent>,
+            With<GlyphBatchComponent>,
             Without<bevscode::plugin::gpu_line_numbers::GpuLineNumbersBatch>,
         ),
     >,
@@ -64,7 +64,7 @@ fn debug_toggles(
     all_batches: Query<(
         Entity,
         Option<&Name>,
-        &bevy_instanced_text::view::render::GlyphBatchComponent,
+        &GlyphBatchComponent,
     )>,
 ) {
     if mouse.just_pressed(MouseButton::Back) {
@@ -131,13 +131,13 @@ fn setup_editor(
     editor_query: Query<Entity, With<CodeEditor>>,
     asset_server: Res<AssetServer>,
     mut input_focus: ResMut<bevy::input_focus::InputFocus>,
-    mut set_text_writer: MessageWriter<bevy_instanced_text_edit::SetTextRequested>,
+    mut set_text_writer: MessageWriter<SetTextRequested>,
 ) {
     let Ok(entity) = editor_query.single() else {
         return;
     };
 
-    let font = bevy_instanced_text::TextFont::from_font_size(14.0)
+    let font = TextFont::from_font_size(14.0)
         .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
         .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
     commands.entity(entity).insert(font);
@@ -194,7 +194,7 @@ if __name__ == "__main__":
     main()
 "#;
 
-    set_text_writer.write(bevy_instanced_text_edit::SetTextRequested {
+    set_text_writer.write(SetTextRequested {
         entity,
         text: initial_text.to_string(),
     });

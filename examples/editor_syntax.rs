@@ -42,7 +42,7 @@ fn debug_toggles(
     mut text_batches: Query<
         &mut Visibility,
         (
-            With<bevy_instanced_text::view::render::GlyphBatchComponent>,
+            With<GlyphBatchComponent>,
             Without<bevscode::plugin::gpu_line_numbers::GpuLineNumbersBatch>,
         ),
     >,
@@ -53,7 +53,7 @@ fn debug_toggles(
     all_batches: Query<(
         Entity,
         Option<&Name>,
-        &bevy_instanced_text::view::render::GlyphBatchComponent,
+        &GlyphBatchComponent,
     )>,
 ) {
     if mouse.just_pressed(MouseButton::Back) {
@@ -119,13 +119,13 @@ fn setup_editor_with_treesitter(
     mut commands: Commands,
     editor_query: Query<Entity, With<CodeEditor>>,
     asset_server: Res<AssetServer>,
-    mut set_text_writer: MessageWriter<bevy_instanced_text_edit::SetTextRequested>,
+    mut set_text_writer: MessageWriter<SetTextRequested>,
 ) {
     let Ok(entity) = editor_query.single() else {
         return;
     };
 
-    let font = bevy_instanced_text::TextFont::from_font_size(14.0)
+    let font = TextFont::from_font_size(14.0)
         .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
         .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
     commands.entity(entity).insert(font);
@@ -197,7 +197,7 @@ fn main() {
     #[cfg(not(feature = "tree-sitter"))]
     let text = "Tree-sitter feature is not enabled!\n\nRun with `--features tree-sitter`.";
 
-    set_text_writer.write(bevy_instanced_text_edit::SetTextRequested {
+    set_text_writer.write(SetTextRequested {
         entity,
         text: text.to_string(),
     });

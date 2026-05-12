@@ -59,7 +59,7 @@ fn spawn_two_editors(
     let log_half = phys_half as f32 / scale;
     let log_h = window.height();
 
-    let font = bevy_instanced_text::TextFont::from_font_size(14.0)
+    let font = TextFont::from_font_size(14.0)
         .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
         .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
 

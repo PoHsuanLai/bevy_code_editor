@@ -14,7 +14,6 @@
 //! ```rust,no_run
 //! # use bevy::prelude::*;
 //! # use bevscode::prelude::*;
-//! # use bevy_instanced_text::TextFont;
 //! # fn setup(mut commands: Commands) {
 //! // Minimal — auto-sizes to window, default theme and keybindings.
 //! commands.spawn(CodeEditor);
@@ -174,7 +173,13 @@ pub mod prelude {
     // Editable-text widget types from `bevy_instanced_text_edit`. Re-exported so
     // prelude users get them without a separate import.
     pub use bevy_instanced_text_edit::{
-        InstancedTextEditPlugin, InstancedTextInteractionPlugin, ScrollConfig, TextEditor,
+        InstancedTextEditPlugin, InstancedTextInteractionPlugin, ScrollConfig, SetTextRequested,
+        TextEditor,
+    };
+
+    // Rendering internals that host apps need for overlay ordering and batch tinting.
+    pub use bevy_instanced_text::{
+        GlyphBatchComponent, TextViewBatchEntity, TextViewRenderSet,
     };
 
     // Selection / multi-cursor types and the EditorAction enum.
