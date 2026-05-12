@@ -73,15 +73,24 @@ impl SyntaxTree {
 
 /// Per-entity parse pipeline state. Internal to this crate; hosts observe
 /// results via `Changed<SyntaxTree>` rather than querying this component.
-#[derive(Component, Default)]
+#[derive(Component)]
 pub(crate) enum ParseState {
-    #[default]
-    Idle,
+    /// Holds the reusable parser between parses. `None` until the grammar
+    /// is first set; repopulated when each async parse completes.
+    Idle(Option<tree_sitter::Parser>),
+    /// Parser is moved into the task and returned alongside the tree so it
+    /// can be reused on the next parse without re-allocating.
     InFlight {
-        task: Task<Option<tree_sitter::Tree>>,
+        task: Task<(Option<tree_sitter::Tree>, tree_sitter::Parser)>,
         content_version: u64,
         dirty_rows: Option<(u32, u32)>,
     },
+}
+
+impl Default for ParseState {
+    fn default() -> Self {
+        Self::Idle(None)
+    }
 }
 
 pub(crate) fn parse_dirty(
@@ -95,7 +104,7 @@ pub(crate) fn parse_dirty(
 ) {
     for (_, language, source, mut syntax, mut state) in targets.iter_mut() {
         match &mut *state {
-            ParseState::Idle => {
+            ParseState::Idle(ref mut stored_parser) => {
                 let source_version = source.0.content_version();
                 if source_version == syntax.content_version {
                     continue;
@@ -106,11 +115,23 @@ pub(crate) fn parse_dirty(
                     continue;
                 };
 
+                // Build the parser once; reuse it on every subsequent parse.
+                let parser = match stored_parser.take() {
+                    Some(p) => p,
+                    None => {
+                        let mut p = tree_sitter::Parser::new();
+                        if p.set_language(&grammar).is_err() {
+                            continue;
+                        }
+                        p
+                    }
+                };
+
                 let rope = source.0.snapshot();
                 let cached_tree = syntax.tree.clone();
                 let dirty_rows = syntax.bypass_change_detection().dirty_rows;
                 let task = AsyncComputeTaskPool::get()
-                    .spawn(async move { parse_tree_async(rope, grammar, cached_tree) });
+                    .spawn(async move { parse_tree_async(parser, rope, cached_tree) });
 
                 *state = ParseState::InFlight {
                     task,
@@ -123,7 +144,7 @@ pub(crate) fn parse_dirty(
                 content_version,
                 dirty_rows,
             } => {
-                let Some(tree) =
+                let Some((tree, parser)) =
                     futures_lite::future::block_on(futures_lite::future::poll_once(task))
                 else {
                     continue;
@@ -131,7 +152,8 @@ pub(crate) fn parse_dirty(
 
                 let content_version = *content_version;
                 let dirty_rows = *dirty_rows;
-                *state = ParseState::Idle;
+                // Return the parser to Idle so the next parse can reuse it.
+                *state = ParseState::Idle(Some(parser));
 
                 if let Some(tree) = tree {
                     syntax.tree = Some(tree);
@@ -147,23 +169,19 @@ pub(crate) fn parse_dirty(
     }
 }
 
-/// Async worker: incremental parse against `cached_tree` if available,
-/// otherwise full parse from `grammar`.
+/// Async worker: incremental parse using the provided `parser`. Returns the
+/// parser alongside the tree so the caller can reuse it next parse.
 fn parse_tree_async(
+    mut parser: tree_sitter::Parser,
     rope: Rope,
-    grammar: tree_sitter::Language,
     cached_tree: Option<tree_sitter::Tree>,
-) -> Option<tree_sitter::Tree> {
-    let mut parser = tree_sitter::Parser::new();
-    if parser.set_language(&grammar).is_err() {
-        return None;
-    }
-
+) -> (Option<tree_sitter::Tree>, tree_sitter::Parser) {
     let mut reader = RopeReader::new(&rope);
     let mut callback =
         |byte_offset: usize, _position: tree_sitter::Point| -> &[u8] { reader.read(byte_offset) };
 
-    parser.parse_with(&mut callback, cached_tree.as_ref())
+    let tree = parser.parse_with(&mut callback, cached_tree.as_ref());
+    (tree, parser)
 }
 
 /// O(log n) rope lookup — safe to call on the main thread per edit.
