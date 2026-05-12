@@ -319,9 +319,10 @@ pub fn on_pointer_press(
     let interaction = settings.copied().unwrap_or_default();
 
     // Bevy UI picking reports position as normalized (-0.5,-0.5)→(0.5,0.5)
-    // relative to node center. Convert to viewport-local pixels (0,0 = top-left).
+    // relative to node center in physical pixels. Convert to viewport-local
+    // logical pixels (0,0 = top-left) — screen_to_char_pos works in logical.
     let local_pos = match trigger.event().hit.position {
-        Some(p) => (Vec2::new(p.x, p.y) + 0.5) * computed.size(),
+        Some(p) => (Vec2::new(p.x, p.y) + 0.5) * computed.size() * computed.inverse_scale_factor(),
         None => return,
     };
 
@@ -467,11 +468,11 @@ pub fn on_pointer_drag(trigger: On<Pointer<Drag>>, mut views: DragQuery) {
         }
     }
 
-    // Convert screen-space cursor to viewport-local pixels.
-    // UiGlobalTransform.translation is node center in physical pixels;
-    // subtract half-size to get top-left, then offset by cursor position.
-    let node_top_left = ui_transform.translation.xy() - computed.size() * 0.5;
-    let local_pos = cursor_pos - node_top_left;
+    // cursor_pos is logical pixels; UiGlobalTransform.translation is physical pixels.
+    // Convert node top-left to logical, then compute viewport-local position.
+    let inv_scale = computed.inverse_scale_factor();
+    let node_top_left_logical = (ui_transform.translation.xy() - computed.size() * 0.5) * inv_scale;
+    let local_pos = cursor_pos - node_top_left_logical;
     let char_pos = screen_to_char_pos(
         local_pos,
         &buffer.rope,
