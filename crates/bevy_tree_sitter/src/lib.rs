@@ -10,8 +10,8 @@
 //!
 //! Attach these components to an entity to opt into async parsing:
 //!
-//! - **[`Language`]** — which grammar to use. Construct from a
-//!   `tree_sitter::Language` (e.g. `tree_sitter_rust::LANGUAGE`).
+//! - **[`TreeSitterGrammar`]** — which grammar to use. Construct with
+//!   `TreeSitterGrammar::new(grammar, highlights_query)`.
 //! - **[`ParseSourceComp`]** — wraps a [`ParseSource`] implementor that
 //!   provides the text content and a version counter. The plugin polls
 //!   `content_version()` each frame; a bump triggers a re-parse.
@@ -33,7 +33,7 @@
 //!
 //! ```rust,no_run
 //! use bevy::prelude::*;
-//! use bevy_tree_sitter::{Language, TreeSitterPlugin};
+//! use bevy_tree_sitter::{TreeSitterGrammar, TreeSitterPlugin};
 //!
 //! App::new()
 //!     .add_plugins(DefaultPlugins)

@@ -1,32 +1,27 @@
 //! Editor-side syntax highlighting glue.
 //!
-//! The structural parsing + provider trait live in `bevy_tree_sitter`. This
-//! module owns the editor-only pieces:
+//! The structural parsing lives in `bevy_tree_sitter`. This module owns the
+//! editor-only pieces:
 //!
-//! - [`SyntaxInner`]: per-editor mutable state, an `Option<TreeSitterProvider>`
-//!   plus a `tree_version` counter. Stored behind an `Arc<RwLock<_>>` so the
-//!   parse pipeline (writers) and the editor's `produce_line_styles`
-//!   producer (reader) can share access without each owning their own copy.
-//! - `EditorParseSource` / `EditorBufferSnapshot`: bridge between the
-//!   editor's `TextBuffer` (per-entity rope + version) and
-//!   `bevy_tree_sitter`'s [`bevy_tree_sitter::ParseSource`] trait. The
-//!   `parse_dirty` system in bevy_tree_sitter reads from this Component
-//!   to drive async parses.
-//! - `mirror_syntax_tree_to_provider`: editor system that filters on
-//!   `Changed<bevy_tree_sitter::SyntaxTree>` and mirrors the freshly-parsed
-//!   tree (plus its rope snapshot) into the per-entity provider so the
-//!   styling layer's highlight queries find it. Also bumps
-//!   `TextBuffer.content_version` to fully invalidate the glyph cache.
-//! - [`init_editor_syntax`]: startup system that attaches the per-entity
-//!   `SyntaxInner` Arc + the `EditorParseSource` Component and configures
-//!   the provider's highlights query from a [`bevy_tree_sitter::TreeSitterGrammar`]
-//!   Component (when one is present).
+//! - [`EditorSyntaxState`]: a simple Component wrapping `Option<TreeSitterProvider>`
+//!   (the compiled query + cursor). No Arc, no RwLock — it's an ordinary ECS
+//!   component queried directly by the systems that need it.
+//! - `EditorParseSource` / `EditorBufferSnapshot`: bridge between the editor's
+//!   `TextBuffer` and `bevy_tree_sitter`'s `ParseSource` trait. Drives async parses.
+//! - [`init_editor_syntax`]: startup system that attaches `EditorSyntaxState` +
+//!   `ParseSourceComp` + `SyntaxTree` and configures the provider's highlights
+//!   query from a `TreeSitterGrammar` component when one is present.
+//!
+//! `SyntaxTree` (written by `parse_dirty`) is the single source of truth for the
+//! parsed tree. Highlighting queries read from it directly — no mirror system.
 
 #[cfg(feature = "tree-sitter")]
 use crate::text_view::TextBuffer;
 use crate::types::CodeEditor;
 use crate::types::LineSegment;
 use bevy::prelude::*;
+
+#[cfg(feature = "tree-sitter")]
 use std::sync::{Arc, RwLock};
 
 #[cfg(feature = "tree-sitter")]
@@ -43,15 +38,12 @@ type ReactLanguageChangedQuery<'w, 's> = Query<
     's,
     (
         &'static bevy_tree_sitter::TreeSitterGrammar,
-        &'static EditorSyntaxState,
+        &'static mut EditorSyntaxState,
     ),
     (With<CodeEditor>, Changed<bevy_tree_sitter::TreeSitterGrammar>),
 >;
 
 #[cfg(feature = "tree-sitter")]
-// No `Changed<TextBuffer>` filter: handle_set_text mutates before this system's
-// last_run tick is recorded, so Changed<> never fires for the initial load.
-// content_version comparison in the body keeps idle cost low.
 type SyncEditorParseSourceQuery<'w, 's> = Query<
     'w,
     's,
@@ -59,109 +51,49 @@ type SyncEditorParseSourceQuery<'w, 's> = Query<
     With<CodeEditor>,
 >;
 
-#[cfg(feature = "tree-sitter")]
-type MirrorSyntaxTreeQuery<'w, 's> = Query<
-    'w,
-    's,
-    (
-        &'static bevy_tree_sitter::SyntaxTree,
-        &'static EditorSyntaxState,
-        &'static TextBuffer,
-    ),
-    (With<CodeEditor>, Changed<bevy_tree_sitter::SyntaxTree>),
->;
-
-#[cfg(feature = "tree-sitter")]
-use bevy_tree_sitter::{HighlightRange, TreeSitterProvider};
-
-/// Mutable state inside [`EditorSyntaxState`]. Held behind an `Arc<RwLock<_>>`
-/// so the editor's parse pipeline (writers) and the styling producer
-/// (reader) can share access without each owning their own copy.
-pub struct SyntaxInner {
-    #[cfg(feature = "tree-sitter")]
-    pub(crate) provider: Option<TreeSitterProvider>,
-    #[cfg(feature = "tree-sitter")]
-    pub(crate) tree_version: u64,
-    /// Content version of the rope last fed to the provider's cached tree,
-    /// either via sync re-parse (`record_edits_for_incremental_parsing`)
-    /// or via the async parse mirror. Used by the mirror to skip
-    /// overwriting a fresher cached tree with an older async result.
-    #[cfg(feature = "tree-sitter")]
-    pub(crate) applied_content_version: u64,
-}
-
-impl SyntaxInner {
-    fn new() -> Self {
-        Self {
-            #[cfg(feature = "tree-sitter")]
-            provider: None,
-            #[cfg(feature = "tree-sitter")]
-            tree_version: 0,
-            #[cfg(feature = "tree-sitter")]
-            applied_content_version: 0,
-        }
-    }
-}
-
-/// Per-entity Component holding the editor's syntax-provider state.
+/// Per-entity Component holding the compiled highlight query provider.
 ///
-/// Public so host setup code (e.g. the LSP example) can install a provider
-/// directly. Day-to-day usage only needs to attach a
-/// [`bevy_tree_sitter::TreeSitterGrammar`] Component — [`init_editor_syntax`] picks
-/// it up at startup and configures the provider's highlights query.
-// not reflectable: holds `TreeSitterProvider` which wraps `tree_sitter::*`
-// types that don't implement `Reflect`.
-#[derive(Component, Clone)]
+/// An ordinary ECS component — no Arc, no RwLock. Systems that need it query
+/// `&mut EditorSyntaxState` directly. `SyntaxTree` (written by `parse_dirty`)
+/// is the single source of truth for the parsed tree.
+///
+/// Not reflectable: holds `TreeSitterProvider` which wraps `tree_sitter::*`
+/// types that don't implement `Reflect`.
+#[derive(Component, Default)]
 pub struct EditorSyntaxState {
-    pub(crate) inner: Arc<RwLock<SyntaxInner>>,
+    #[cfg(feature = "tree-sitter")]
+    pub(crate) provider: Option<bevy_tree_sitter::TreeSitterProvider>,
 }
 
 impl EditorSyntaxState {
     pub fn new() -> Self {
-        Self {
-            inner: Arc::new(RwLock::new(SyntaxInner::new())),
+        Self::default()
+    }
+
+    #[cfg(feature = "tree-sitter")]
+    pub fn set_provider(&mut self, provider: bevy_tree_sitter::TreeSitterProvider) {
+        self.provider = Some(provider);
+    }
+
+    pub fn is_available(&self) -> bool {
+        #[cfg(feature = "tree-sitter")]
+        {
+            self.provider.as_ref().map(|p| p.is_available()).unwrap_or(false)
+        }
+        #[cfg(not(feature = "tree-sitter"))]
+        {
+            false
         }
     }
 
-    /// Hand out a clone of the inner `Arc<RwLock<_>>`. Cheap (refcount bump).
-    pub fn share_arc(&self) -> Arc<RwLock<SyntaxInner>> {
-        self.inner.clone()
-    }
-
-    #[cfg(feature = "tree-sitter")]
-    pub fn set_provider(&mut self, provider: TreeSitterProvider) {
-        self.inner.write().unwrap().provider = Some(provider);
-    }
-
-    /// Bumped each time the parse tree is replaced. The display-map
-    /// fingerprint folds this in so a finished parse triggers a re-layout.
-    #[cfg(feature = "tree-sitter")]
-    pub fn tree_version(&self) -> u64 {
-        self.inner.read().unwrap().tree_version
-    }
-
-    /// Run a closure with `&Tree` access, if a tree is cached. Returns
-    /// `None` if no provider / no tree.
-    #[cfg(feature = "tree-sitter")]
-    pub fn with_tree<R>(&self, f: impl FnOnce(&bevy_tree_sitter::ts::Tree) -> R) -> Option<R> {
-        let guard = self.inner.read().unwrap();
-        guard.provider.as_ref()?.tree().map(f)
-    }
-
     /// True when `byte_offset` is somewhere a completion request makes
-    /// sense — i.e. *not* inside a string literal or comment. Returns
-    /// `true` (allow) when we have no tree or the language doesn't define
-    /// string/comment node kinds; the caller falls back to its prefix /
-    /// trigger heuristics. Mirrors Zed's "skip in string/comment" gate.
+    /// sense — i.e. *not* inside a string literal or comment. Callers pass
+    /// the tree from `SyntaxTree` directly; returns `true` when absent.
     #[cfg(feature = "tree-sitter")]
-    pub fn is_completion_context(&self, byte_offset: usize) -> bool {
-        let guard = self.inner.read().unwrap();
-        let Some(provider) = guard.provider.as_ref() else {
-            return true;
-        };
-        let Some(tree) = provider.tree() else {
-            return true;
-        };
+    pub fn is_completion_context(
+        tree: &bevy_tree_sitter::ts::Tree,
+        byte_offset: usize,
+    ) -> bool {
         let root = tree.root_node();
         if byte_offset > root.end_byte() {
             return true;
@@ -172,8 +104,6 @@ impl EditorSyntaxState {
         let mut cur = Some(node);
         while let Some(n) = cur {
             let kind = n.kind();
-            // Conservative match: tree-sitter grammars name these consistently
-            // across the languages we ship (rust, javascript, python, …).
             if kind.contains("string") || kind.contains("comment") || kind == "raw_string_literal" {
                 return false;
             }
@@ -183,56 +113,37 @@ impl EditorSyntaxState {
     }
 
     #[cfg(not(feature = "tree-sitter"))]
-    pub fn is_completion_context(&self, _byte_offset: usize) -> bool {
+    pub fn is_completion_context(_byte_offset: usize) -> bool {
         true
     }
 
-    pub fn is_available(&self) -> bool {
-        #[cfg(feature = "tree-sitter")]
-        {
-            self.inner
-                .read()
-                .unwrap()
-                .provider
-                .as_ref()
-                .map(|p| p.is_available())
-                .unwrap_or(false)
-        }
-        #[cfg(not(feature = "tree-sitter"))]
-        {
-            false
-        }
-    }
-
-    /// Highlight a line range and return styled segments — the editor's
-    /// renderer-facing entry point.
+    /// Highlight `text` and return styled per-line segments.
     ///
-    /// Internally: ask the provider for structural `HighlightRange`s, then
-    /// map each capture name through `map_highlight_color`. We re-do the
-    /// color mapping every call (sub-microsecond per range) so theme changes
-    /// don't need cache invalidation.
+    /// Reads the tree directly from `syntax_tree` — no internal tree cache.
+    /// Returns plain-text segments when the provider or tree is absent.
     #[cfg(feature = "tree-sitter")]
     pub fn highlight_range(
         &mut self,
         text: &str,
         start_byte: usize,
+        syntax_tree: &bevy_tree_sitter::SyntaxTree,
+        rope: &ropey::Rope,
         theme: &crate::settings::SyntaxColors,
         default_color: Color,
     ) -> Vec<Vec<LineSegment>> {
-        let mut guard = self.inner.write().unwrap();
-        let Some(provider) = &mut guard.provider else {
+        let Some(provider) = &mut self.provider else {
+            return plain_text_segments(text, default_color);
+        };
+        let Some(tree) = syntax_tree.tree.as_ref() else {
             return plain_text_segments(text, default_color);
         };
         let end_byte = start_byte + text.len();
-        match provider.highlight_range(start_byte..end_byte) {
+        match provider.highlight_range(tree, rope, start_byte..end_byte) {
             Some(highlights) => ranges_to_segments(text, start_byte, &highlights, theme, default_color),
             None => plain_text_segments(text, default_color),
         }
     }
 
-    /// No-tree-sitter fallback — emit a single default-colored segment per line.
-    /// Keeps callers in `display_map::layout` and `input::editing` portable
-    /// when the `tree-sitter` feature is off.
     #[cfg(not(feature = "tree-sitter"))]
     pub fn highlight_range(
         &mut self,
@@ -245,14 +156,8 @@ impl EditorSyntaxState {
     }
 }
 
-impl Default for EditorSyntaxState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Build LineSegments for `text` with no highlights — fallback for when no
-/// provider is installed.
+/// provider or tree is available.
 fn plain_text_segments(text: &str, default_color: Color) -> Vec<Vec<LineSegment>> {
     text.lines()
         .map(|line| {
@@ -282,13 +187,13 @@ fn plain_text_segments(text: &str, default_color: Color) -> Vec<Vec<LineSegment>
 fn ranges_to_segments(
     text: &str,
     start_byte: usize,
-    highlights: &[HighlightRange],
+    highlights: &[bevy_tree_sitter::HighlightRange],
     theme: &crate::settings::SyntaxColors,
     default_color: Color,
 ) -> Vec<Vec<LineSegment>> {
     let mut out: Vec<Vec<LineSegment>> = Vec::with_capacity(text.lines().count());
-    let mut byte_pos = 0usize; // slice-relative offset of current line start
-    let mut hi_idx = 0usize;   // monotone index: first highlight not yet past all previous lines
+    let mut byte_pos = 0usize;
+    let mut hi_idx = 0usize;
 
     for line in text.lines() {
         let line_start = byte_pos;
@@ -297,7 +202,6 @@ fn ranges_to_segments(
         let abs_line_start = start_byte + line_start;
         let abs_line_end = start_byte + line_end;
 
-        // Skip highlights that ended before this line starts.
         while hi_idx < highlights.len()
             && highlights[hi_idx].byte_range.end <= abs_line_start
         {
@@ -305,11 +209,10 @@ fn ranges_to_segments(
         }
 
         let mut segments: Vec<LineSegment> = Vec::new();
-        let mut cursor = abs_line_start; // document-absolute position within this line
-        let mut local_hi = hi_idx;       // per-line copy; advances forward within this line
+        let mut cursor = abs_line_start;
+        let mut local_hi = hi_idx;
 
         while cursor < abs_line_end {
-            // Advance past highlights that ended before cursor.
             while local_hi < highlights.len()
                 && highlights[local_hi].byte_range.end <= cursor
             {
@@ -322,7 +225,6 @@ fn ranges_to_segments(
                 let hl_end = hl.byte_range.end.min(abs_line_end);
 
                 if hl_start > cursor {
-                    // Gap before next highlight — emit default-colored segment.
                     let lo = cursor - abs_line_start;
                     let hi = hl_start - abs_line_start;
                     let slice = &line[lo..hi];
@@ -338,7 +240,6 @@ fn ranges_to_segments(
                     }
                     cursor = hl_start;
                 } else {
-                    // cursor is inside this highlight — emit colored segment.
                     let lo = cursor - abs_line_start;
                     let hi = hl_end - abs_line_start;
                     let slice = &line[lo..hi];
@@ -361,7 +262,6 @@ fn ranges_to_segments(
                     local_hi += 1;
                 }
             } else {
-                // No more highlights — emit remainder as default-colored.
                 let lo = cursor - abs_line_start;
                 let slice = &line[lo..];
                 if !slice.is_empty() {
@@ -378,32 +278,19 @@ fn ranges_to_segments(
             }
         }
 
-        // Suppress whitespace-only lines (renderer falls back to default styling).
         if segments.iter().all(|s| s.text.trim().is_empty()) {
             out.push(Vec::new());
         } else {
             out.push(segments);
         }
 
-        byte_pos = line_end + 1; // +1 for the '\n' separator
+        byte_pos = line_end + 1;
     }
 
     out
 }
 
-/// Snapshot of an editor's buffer state — the slice the parser actually
-/// reads. Held behind `Arc<RwLock<_>>` so:
-///
-/// - The `sync_editor_parse_source` system updates it each frame from
-///   the entity's `TextBuffer`.
-/// - The `bevy_tree_sitter::parse_dirty` system reads `content_version` +
-///   `snapshot` from it (through the `EditorParseSource`'s `ParseSource`
-///   impl) to decide whether to kick off a new parse, and what rope to
-///   feed to the worker.
-///
-/// The version stored here lags `TextBuffer.content_version` by at
-/// most one frame — same staleness profile as the old global-resource
-/// pipeline.
+/// Snapshot of an editor's buffer state for the async parse pipeline.
 #[cfg(feature = "tree-sitter")]
 #[derive(Default)]
 pub(crate) struct EditorBufferSnapshot {
@@ -411,14 +298,11 @@ pub(crate) struct EditorBufferSnapshot {
     pub(crate) content_version: u64,
 }
 
-/// `ParseSource` impl wired into `bevy_tree_sitter`'s parse pipeline. Holds
-/// the per-entity buffer snapshot + the per-entity `SyntaxInner` so
-/// `apply_edit` can interpolate the cached tree without a separate Bevy
-/// system call.
+/// `ParseSource` impl wired into `bevy_tree_sitter`'s parse pipeline.
+/// Only carries the buffer snapshot — no tree state.
 #[cfg(feature = "tree-sitter")]
 pub(crate) struct EditorParseSource {
     pub(crate) buf: Arc<RwLock<EditorBufferSnapshot>>,
-    pub(crate) syntax: Arc<RwLock<SyntaxInner>>,
 }
 
 #[cfg(feature = "tree-sitter")]
@@ -430,48 +314,24 @@ impl bevy_tree_sitter::ParseSource for EditorParseSource {
     fn snapshot(&self) -> ropey::Rope {
         self.buf.read().unwrap().rope.clone()
     }
-
-    fn apply_edit(&self, edit: bevy_tree_sitter::ts::InputEdit) {
-        // Tree interpolation: shift the cached tree's byte offsets so the
-        // highlight queries see consistent ranges while the next async
-        // re-parse runs. Mirrors the old `TreeSitterProvider::apply_sync_edit`
-        // — we keep the rope snapshot through the buffer mirror.
-        let rope = self.buf.read().unwrap().rope.clone();
-        if let Some(provider) = &mut self.syntax.write().unwrap().provider {
-            provider.apply_sync_edit(edit, &rope);
-        }
-    }
 }
 
-/// On startup, attach `EditorSyntaxState` + (when tree-sitter feature is
-/// on) `bevy_tree_sitter::SyntaxTree` + `bevy_tree_sitter::ParseSourceComp`
-/// to every CodeEditor entity.
-///
-/// Each editor gets its own `Arc<RwLock<SyntaxInner>>` — the shared state
-/// the styling layer reads and the parse pipeline mirrors trees into.
-/// The `TreeSitterGrammar` component, if already present, drives the provider's
-/// highlights-query setup; otherwise the editor falls back to plain text
-/// until a host setup system installs one.
+/// On startup, attach `EditorSyntaxState` + `ParseSourceComp` + `SyntaxTree`
+/// to every `CodeEditor` entity. `TreeSitterGrammar`, if present, drives the
+/// initial provider setup.
 #[cfg(feature = "tree-sitter")]
 pub fn init_editor_syntax(mut commands: Commands, editors: InitEditorSyntaxQuery) {
-    for (entity, language) in editors.iter() {
-        let syntax_state = EditorSyntaxState::new();
+    for (entity, grammar) in editors.iter() {
+        let mut syntax_state = EditorSyntaxState::new();
 
-        // If a TreeSitterGrammar component is already present, configure the
-        // provider's highlights query so styling can run on the first
-        // parse completion. Hosts that don't use the Component-driven
-        // path can call `EditorSyntaxState::set_provider` themselves.
-        if let Some(grammar) = language {
-            if let Some(provider) = grammar.create_provider() {
-                syntax_state.inner.write().unwrap().provider = Some(provider);
+        if let Some(g) = grammar {
+            if let Some(provider) = g.create_provider() {
+                syntax_state.provider = Some(provider);
             }
         }
 
         let buf = Arc::new(RwLock::new(EditorBufferSnapshot::default()));
-        let parse_source = EditorParseSource {
-            buf: buf.clone(),
-            syntax: syntax_state.inner.clone(),
-        };
+        let parse_source = EditorParseSource { buf: buf.clone() };
 
         commands.entity(entity).insert((
             syntax_state,
@@ -482,9 +342,6 @@ pub fn init_editor_syntax(mut commands: Commands, editors: InitEditorSyntaxQuery
     }
 }
 
-/// No-tree-sitter fallback: just install `EditorSyntaxState` so the
-/// styling plumbing has something to share. Provider stays `None`; styling
-/// returns empty runs.
 #[cfg(not(feature = "tree-sitter"))]
 pub fn init_editor_syntax(
     mut commands: Commands,
@@ -495,30 +352,24 @@ pub fn init_editor_syntax(
     }
 }
 
-/// Per-entity handle to the `EditorBufferSnapshot` the `ParseSource` reads
-/// from. The sync system writes through this without needing to downcast
-/// the `dyn ParseSource`.
+/// Per-entity handle to the `EditorBufferSnapshot` the `ParseSource` reads from.
 #[cfg(feature = "tree-sitter")]
 #[derive(Component)]
 pub(crate) struct EditorParseBufferRef(pub(crate) Arc<RwLock<EditorBufferSnapshot>>);
 
-/// React to a [`bevy_tree_sitter::TreeSitterGrammar`] change on an editor entity by
-/// (re-)configuring the provider's highlights query. Lets host setup code
-/// insert a `TreeSitterGrammar` post-`init_editor_syntax` and have it picked up.
+/// React to a `TreeSitterGrammar` change by (re-)configuring the provider.
 #[cfg(feature = "tree-sitter")]
-pub(crate) fn react_language_changed(editors: ReactLanguageChangedQuery) {
-    for (grammar, syntax_state) in editors.iter() {
-        let Some(new_provider) = grammar.create_provider() else {
-            continue;
-        };
-        syntax_state.inner.write().unwrap().provider = Some(new_provider);
+pub(crate) fn react_language_changed(mut editors: ReactLanguageChangedQuery) {
+    for (grammar, mut syntax_state) in editors.iter_mut() {
+        if let Some(provider) = grammar.create_provider() {
+            syntax_state.provider = Some(provider);
+        }
     }
 }
 
 #[cfg(feature = "tree-sitter")]
 /// Mirror `TextBuffer.rope` + `content_version` into the per-entity
-/// `EditorBufferSnapshot` so the next `parse_dirty` tick sees the latest
-/// content. Runs in `ApplyStateSet` after edits land on `TextBuffer`.
+/// `EditorBufferSnapshot` so the next `parse_dirty` tick sees the latest content.
 pub(crate) fn sync_editor_parse_source(editors: SyncEditorParseSourceQuery) {
     for (buffer, buf_ref) in editors.iter() {
         let mut buf = buf_ref.0.write().unwrap();
@@ -531,62 +382,17 @@ pub(crate) fn sync_editor_parse_source(editors: SyncEditorParseSourceQuery) {
 }
 
 #[cfg(feature = "tree-sitter")]
-/// React to a freshly-completed parse by mirroring the new tree (and its
-/// rope) into the per-entity provider so highlight queries find it.
-/// Loop prevention lives on `EditorSyntaxState::applied_content_version`.
-pub(crate) fn mirror_syntax_tree_to_provider(mut editor_query: MirrorSyntaxTreeQuery) {
-    for (syntax_tree, syntax_state, buffer) in editor_query.iter_mut() {
-        let Some(tree) = syntax_tree.tree.as_ref() else {
-            continue;
-        };
-
-        let mut guard = syntax_state.inner.write().unwrap();
-        let inner = &mut *guard;
-        // If a sync re-parse already produced a fresher tree, skip — the
-        // async result is stale relative to the live state. (Initial mirror
-        // always proceeds: provider.tree() is None.)
-        let provider_has_tree = inner
-            .provider
-            .as_ref()
-            .map(|p| p.tree().is_some())
-            .unwrap_or(false);
-        if provider_has_tree && syntax_tree.content_version <= inner.applied_content_version {
-            continue;
-        }
-        if let Some(provider) = &mut inner.provider {
-            provider.set_tree(tree.clone(), buffer.rope.clone());
-            inner.tree_version = inner.tree_version.wrapping_add(1);
-            inner.applied_content_version = syntax_tree.content_version;
-        }
-        drop(guard);
-    }
-}
-
-#[cfg(feature = "tree-sitter")]
-/// Apply edits synchronously to the cached tree (tree interpolation).
+/// Apply edits synchronously to `SyntaxTree::tree` (tree interpolation).
 ///
-/// Reads [`crate::types::events::TextEdited`] (emitted by the
-/// `on_edit_invalidate_caches` observer). Routes through
-/// [`bevy_tree_sitter::ParseSource::apply_edit`] on the editor's
-/// `ParseSourceComp` — the editor's impl forwards to the per-entity
-/// provider's `apply_sync_edit`. Tree stays valid for highlighting queries
-/// while the async re-parse runs in the background — eliminates the color
-/// flash on keystroke.
-fn record_edits_for_incremental_parsing(
-    mut editor_query: Query<
-        (
-            &bevy_tree_sitter::ParseSourceComp,
-            &mut bevy_tree_sitter::SyntaxTree,
-            &EditorSyntaxState,
-        ),
-        With<CodeEditor>,
-    >,
+/// `tree.edit()` shifts byte offsets in O(log n) so highlight queries stay
+/// valid while the async re-parse runs. Reads `TextEdited` events emitted by
+/// the `on_edit_invalidate_caches` observer.
+pub(crate) fn record_edits_for_incremental_parsing(
+    mut editor_query: Query<&mut bevy_tree_sitter::SyntaxTree, With<CodeEditor>>,
     mut events: MessageReader<crate::types::events::TextEdited>,
 ) {
     let collected_events: Vec<_> = events.read().cloned().collect();
-    for (parse_source, mut syntax_tree, syntax_state) in editor_query.iter_mut() {
-        // Once any edit in this batch forces a full rebuild, subsequent
-        // same-line edits must not downgrade back to incremental.
+    for mut syntax_tree in editor_query.iter_mut() {
         let mut forced_full_rebuild = false;
         for event in collected_events.iter() {
             let d = &event.delta;
@@ -608,16 +414,8 @@ fn record_edits_for_incremental_parsing(
                 ),
             };
 
-            // Skip "tree interpolation" for huge edits. `tree.edit()` is
-            // O(log n) per leaf, but a select-all-delete touches every leaf
-            // in a 7 MB tree (~60 ms). The async `parse_dirty` will replace
-            // both trees with a fresh parse a frame later anyway, so a frame
-            // of stale highlights costs nothing and skipping the dual
-            // `tree.edit()` calls saves the freeze.
             let removed = edit.old_end_byte.saturating_sub(edit.start_byte);
             let inserted = edit.new_end_byte.saturating_sub(edit.start_byte);
-            // 64 KB: same threshold as TreeSitterProvider::apply_sync_edit uses
-            // internally to decide whether to synchronously re-parse.
             const HUGE_EDIT_THRESHOLD: usize = 64 * 1024;
             let huge_edit = removed > HUGE_EDIT_THRESHOLD || inserted > HUGE_EDIT_THRESHOLD;
 
@@ -626,10 +424,6 @@ fn record_edits_for_incremental_parsing(
                 if let Some(tree) = st.tree.as_mut() {
                     tree.edit(&edit);
                 }
-                // Line-count edits shift every buffer-line index after the edit point.
-                // LineStyles.by_line is keyed by index, so incremental rebuild would
-                // leave stale entries under wrong keys. Force full rebuild (dirty_rows=None);
-                // the tree stays interpolated via tree.edit() above so queries don't flash.
                 let line_count_changed =
                     edit.old_end_position.row != edit.new_end_position.row;
                 if line_count_changed {
@@ -643,20 +437,11 @@ fn record_edits_for_incremental_parsing(
                         None => (start_row, end_row),
                     });
                 }
-                parse_source.0.apply_edit(edit);
             } else {
-                // For huge edits, drop the cached trees entirely so any
-                // in-flight highlight query sees "no tree" and falls back
-                // to plain text instead of querying byte-shifted-but-stale
-                // structure. The async reparse will repopulate.
                 let st = syntax_tree.bypass_change_detection();
                 st.tree = None;
                 st.dirty_rows = None;
-                if let Some(provider) = &mut syntax_state.inner.write().unwrap().provider {
-                    provider.invalidate_tree();
-                }
             }
-            syntax_state.inner.write().unwrap().applied_content_version = event.content_version;
         }
     }
 }
@@ -665,19 +450,9 @@ pub struct SyntaxPlugin;
 
 impl Plugin for SyntaxPlugin {
     fn build(&self, app: &mut App) {
-        // TextEdited is editor-wide: LSP and other plugins listen for it.
         app.add_message::<crate::types::events::TextEdited>();
 
-        // Always attach `EditorSyntaxState` to each editor entity — the
-        // styling plumbing needs an Arc to share regardless of whether
-        // tree-sitter is wired up. Runs in both Startup (for editors
-        // spawned during plugin setup) and Update (for editors spawned at
-        // runtime). The query filter `Without<EditorSyntaxState>` makes it
-        // idempotent — once attached, it's a no-op.
-        app.add_systems(
-            Startup,
-            init_editor_syntax,
-        );
+        app.add_systems(Startup, init_editor_syntax);
         app.add_systems(
             Update,
             init_editor_syntax.in_set(crate::plugin::ApplyStateSet),
@@ -685,21 +460,10 @@ impl Plugin for SyntaxPlugin {
 
         #[cfg(feature = "tree-sitter")]
         {
-            // Pull in the parse-driving system. Idempotent if the host
-            // already added the plugin.
             if !app.is_plugin_added::<bevy_tree_sitter::TreeSitterPlugin>() {
                 app.add_plugins(bevy_tree_sitter::TreeSitterPlugin);
             }
 
-            // Edit pipeline ordering:
-            //   1. react_language_changed: install provider
-            //   2. sync_editor_parse_source: mirror buffer.rope into the parse-source snapshot
-            //   3. record_edits_for_incremental_parsing: tree.edit() + sync re-parse,
-            //      reading TextEdited emitted by the on_edit_invalidate_caches observer
-            //   4. parse_dirty (ParseSet): async re-parse with the synced rope
-            // Steps 2 and 3 must be ordered: 3 reads the rope mirror via
-            // ParseSourceComp::apply_edit, so 2 must mirror the post-edit
-            // rope first.
             app.add_systems(
                 Update,
                 (
@@ -711,13 +475,8 @@ impl Plugin for SyntaxPlugin {
                     .in_set(crate::plugin::ApplyStateSet)
                     .before(bevy_tree_sitter::ParseSet),
             );
-
-            app.add_systems(
-                Update,
-                mirror_syntax_tree_to_provider
-                    .in_set(crate::plugin::ApplyStateSet)
-                    .after(bevy_tree_sitter::ParseSet),
-            );
+            // mirror_syntax_tree_to_provider removed: SyntaxTree is the
+            // single source of truth; highlight_range reads it directly.
         }
     }
 }

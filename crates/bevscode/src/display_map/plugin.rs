@@ -146,6 +146,7 @@ pub(crate) fn produce_line_styles(
             Option<&TextBounds>,
             Option<&HiddenLines>,
             &mut EditorSyntaxState,
+            Option<&bevy_tree_sitter::SyntaxTree>,
             &mut LineStyles,
             &EditorTheme,
             &SyntaxColors,
@@ -270,6 +271,7 @@ pub(crate) fn produce_line_styles(
         wrap,
         hidden,
         mut syntax,
+        syntax_tree,
         mut line_styles,
         theme,
         syntax_theme,
@@ -353,12 +355,25 @@ pub(crate) fn produce_line_styles(
             let start_byte = buffer.rope.line_to_byte(buffer_line);
 
             let _hl_span = bevy::prelude::info_span!("highlight_line").entered();
-            let mut per_line = syntax.highlight_range(
-                line_no_nl,
-                start_byte,
-                syntax_theme,
-                theme.foreground,
-            );
+            let mut per_line = {
+                #[cfg(feature = "tree-sitter")]
+                {
+                    if let Some(st) = syntax_tree {
+                        syntax.highlight_range(
+                            line_no_nl,
+                            start_byte,
+                            st,
+                            &buffer.rope,
+                            syntax_theme,
+                            theme.foreground,
+                        )
+                    } else {
+                        vec![vec![]]
+                    }
+                }
+                #[cfg(not(feature = "tree-sitter"))]
+                syntax.highlight_range(line_no_nl, start_byte, syntax_theme, theme.foreground)
+            };
             let segs = per_line.pop().unwrap_or_default();
             if segs.iter().all(|s| s.text.trim().is_empty()) {
                 if by_line.remove(&(buffer_line as u32)).is_some() {

@@ -47,7 +47,7 @@ type KeyboardLspQuery<'w, 's> = Query<
         &'static bevy_lsp::ServerCapabilities,
         &'static mut crate::lsp_ui::state::LspCompletionPopup,
         &'static mut crate::lsp_ui::state::LspRenamePopup,
-        Option<&'static crate::plugin::syntax_highlighting::EditorSyntaxState>,
+        Option<&'static bevy_tree_sitter::SyntaxTree>,
         &'static LspConfig,
     ),
     With<CodeEditor>,
@@ -87,7 +87,7 @@ pub fn on_focused_keyboard(
         capabilities,
         mut completion_state,
         mut rename_state,
-        syntax_state,
+        syntax_tree,
         lsp,
     )) = lsp_query.get_mut(entity)
     else {
@@ -167,7 +167,7 @@ pub fn on_focused_keyboard(
                     #[cfg(feature = "lsp")]
                     lsp_document.as_deref_mut(),
                     #[cfg(feature = "lsp")]
-                    syntax_state,
+                    syntax_tree,
                     #[cfg(feature = "lsp")]
                     &mut lsp_w,
                 );
@@ -207,9 +207,7 @@ fn insert_typed_char(
     #[cfg(feature = "lsp")] capabilities: &bevy_lsp::ServerCapabilities,
     #[cfg(feature = "lsp")] completion_state: &mut crate::lsp_ui::state::LspCompletionPopup,
     #[cfg(feature = "lsp")] lsp_document: Option<&mut bevy_lsp::LspDocument>,
-    #[cfg(feature = "lsp")] syntax_state: Option<
-        &crate::plugin::syntax_highlighting::EditorSyntaxState,
-    >,
+    #[cfg(feature = "lsp")] syntax_tree: Option<&bevy_tree_sitter::SyntaxTree>,
     #[cfg(feature = "lsp")] lsp_w: &mut MessageWriter<bevy_lsp::LspRequest>,
 ) {
     if brackets.auto_close_quotes
@@ -263,12 +261,15 @@ fn insert_typed_char(
             // Suppress completion requests while the cursor is inside a
             // string or comment per tree-sitter — Zed's "is_completion_context"
             // gate. When tree-sitter isn't ready, default to allow.
-            let in_completion_context = match syntax_state {
-                Some(state) => {
+            let in_completion_context = match syntax_tree.and_then(|st| st.tree.as_ref()) {
+                #[cfg(feature = "tree-sitter")]
+                Some(tree) => {
                     let byte = buffer.rope.char_to_byte(cursor_pos);
-                    state.is_completion_context(byte)
+                    crate::plugin::syntax_highlighting::EditorSyntaxState::is_completion_context(
+                        tree, byte,
+                    )
                 }
-                None => true,
+                _ => true,
             };
 
             // Prefer the LSP server's advertised triggers; fall back to the

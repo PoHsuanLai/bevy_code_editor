@@ -453,7 +453,7 @@ fn editor_initializes_with_syntax_provider() {
         .expect("EditorSyntaxState attached after Startup");
     assert!(
         state.is_available(),
-        "provider must be installed (Language was attached at spawn)"
+        "provider must be installed (TreeSitterGrammar was attached at spawn)"
     );
     assert!(
         world.get::<SyntaxTree>(entity).is_some(),

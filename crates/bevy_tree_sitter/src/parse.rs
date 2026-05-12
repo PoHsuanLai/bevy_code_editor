@@ -11,7 +11,7 @@ use ropey::Rope;
 use std::sync::Arc;
 
 use crate::language::TreeSitterGrammar;
-use crate::tree_sitter::RopeReader;
+use crate::tree_sitter::{build_parser, RopeReader};
 
 /// Buffer interface for the parse pipeline. `content_version` and `snapshot`
 /// are called on the main thread; the cloned `Rope` is moved to the worker.
@@ -114,13 +114,10 @@ pub(crate) fn parse_dirty(
                 // Build the parser once; reuse it on every subsequent parse.
                 let parser = match stored_parser.take() {
                     Some(p) => p,
-                    None => {
-                        let mut p = tree_sitter::Parser::new();
-                        if p.set_language(&grammar).is_err() {
-                            continue;
-                        }
-                        p
-                    }
+                    None => match build_parser(&grammar) {
+                        Some(p) => p,
+                        None => continue,
+                    },
                 };
 
                 let rope = source.0.snapshot();
