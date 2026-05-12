@@ -7,8 +7,6 @@ use bevscode::prelude::*;
 use bevy::prelude::*;
 use bevy::window::{CursorIcon, SystemCursorIcon};
 
-#[cfg(feature = "tree-sitter")]
-use bevy_tree_sitter::Language;
 
 #[cfg(feature = "profile")]
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};

@@ -5,8 +5,6 @@
 
 use bevscode::prelude::*;
 use bevy::prelude::*;
-#[cfg(feature = "tree-sitter")]
-use bevy_tree_sitter::Language;
 
 fn main() {
     App::new()

@@ -28,9 +28,9 @@ use bevy::prelude::*;
 use bevy::ui::ComputedNode;
 use bevy::sprite::Anchor;
 use bevy_egui::{egui, EguiContexts};
-use bevy_lsp::{LspClient, LspDocument, LspMessage};
-#[cfg(feature = "tree-sitter")]
-use bevy_tree_sitter::Language;
+use bevscode::lsp_ui::{
+    CodeActionOrCommand, LspClient, LspDocument, LspMessage, TokioTasksRuntime,
+};
 use egui::Color32;
 
 fn main() {
@@ -923,7 +923,7 @@ fn render_code_actions_egui(
                             };
 
                             let (icon, title) = match action {
-                                bevy_lsp::CodeActionOrCommand::Action(a) => {
+                                CodeActionOrCommand::Action(a) => {
                                     let icon = match &a.kind {
                                         Some(kind) if kind.as_str().starts_with("quickfix") => "W",
                                         Some(kind) if kind.as_str().starts_with("refactor") => "R",
@@ -932,7 +932,7 @@ fn render_code_actions_egui(
                                     };
                                     (icon, a.title.as_str())
                                 }
-                                bevy_lsp::CodeActionOrCommand::Command(c) => {
+                                CodeActionOrCommand::Command(c) => {
                                     ("C", c.title.as_str())
                                 }
                             };
@@ -1065,7 +1065,7 @@ fn setup_editor(
     mut commands: Commands,
     mut editor_query: Query<(Entity, &mut LspClient), With<CodeEditor>>,
     asset_server: Res<AssetServer>,
-    runtime: Res<bevy_lsp::bevy_tokio_tasks::TokioTasksRuntime>,
+    runtime: Res<TokioTasksRuntime>,
     mut set_text_writer: MessageWriter<SetTextRequested>,
 ) {
     let Ok((editor_entity, mut lsp_client)) = editor_query.single_mut() else {
