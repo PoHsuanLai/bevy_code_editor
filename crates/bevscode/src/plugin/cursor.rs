@@ -104,8 +104,9 @@ impl Plugin for CursorPlugin {
         app.add_systems(Update, track_cursor_movement.in_set(super::ApplyStateSet));
 
         // Caret rects are pushed into `TextViewOverlays` during `RenderingSet`,
-        // which runs after the display-map build and before the actual paint.
-        app.add_systems(Update, push_cursor_overlays.in_set(super::RenderingSet));
+        // which runs in PostUpdate after the engine's LayoutProduceSet and
+        // before TextViewRenderSet — so overlays reflect this frame's layout.
+        app.add_systems(PostUpdate, push_cursor_overlays.in_set(super::RenderingSet));
 
         // Note: update_cursor_line_highlight is registered by EditorUiPlugin
         // where it's chained with other visual systems.

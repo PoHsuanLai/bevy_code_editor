@@ -42,15 +42,10 @@ pub struct BracketPlugin;
 
 impl Plugin for BracketPlugin {
     fn build(&self, _app: &mut App) {
-        _app.add_systems(
-            Update,
-            (
-                update_bracket_match.in_set(super::ApplyStateSet),
-                update_bracket_highlight
-                    .after(super::ui_elements::update_indent_guides)
-                    .in_set(super::RenderingSet),
-            ),
-        );
+        // `update_bracket_match` (state) and `update_bracket_highlight` (overlay
+        // producer) are scheduled in EditorUiPlugin alongside the other overlay
+        // systems so the indent-guide / bracket-highlight ordering stays local
+        // to that plugin.
     }
 }
 

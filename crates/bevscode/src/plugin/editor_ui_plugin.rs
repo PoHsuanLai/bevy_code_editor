@@ -35,41 +35,55 @@ impl Plugin for EditorUiPlugin {
         app.add_systems(Update, update_separator_on_resize.run_if(viewport_changed));
 
         // Update gutter_width on the TextViewport when UI settings change.
-        // sync_viewport_from_node owns width/height/margins; bevscode owns gutter_width.
-        app.add_systems(Update, sync_gutter_width);
-
-        // Update font metrics when font loads
+        // sync_viewport_from_node owns width/height/hit_test; bevscode owns
+        // gutter_width / text_area_left / text_area_top. Runs in PostUpdate
+        // before LayoutProduceSet so `produce_layouts` sees this frame's
+        // gutter values when computing the layout fingerprint.
         app.add_systems(
-            Update,
+            PostUpdate,
+            sync_gutter_width.before(bevy_instanced_text::LayoutProduceSet),
+        );
+
+        // Overlay producers read `DisplayLayout`, which `bevy_instanced_text`
+        // rebuilds in PostUpdate. RenderingSet is configured in mod.rs to run
+        // after LayoutProduceSet and before TextViewRenderSet, so producers
+        // here see this frame's layout and the renderer sees their overlays.
+        app.add_systems(
+            PostUpdate,
             update_font_metrics
                 .run_if(bevy_instanced_text::gpu::atlas_ready)
                 .in_set(super::RenderingSet),
         );
 
         app.add_systems(
-            Update,
+            PostUpdate,
             update_gpu_line_numbers
-                .after(bevy_instanced_text::TextViewRenderSet)
                 .run_if(bevy_instanced_text::gpu::atlas_ready)
                 .in_set(super::RenderingSet),
         );
 
         app.add_systems(
-            Update,
+            PostUpdate,
             (update_selection_highlight, update_cursor_line_highlight).in_set(super::RenderingSet),
         );
 
         app.add_systems(
-            Update,
+            PostUpdate,
             update_indent_guides
                 .after(update_gpu_line_numbers)
                 .in_set(super::RenderingSet),
         );
 
+        // `update_bracket_match` mutates state from the cursor (no DisplayLayout
+        // dependency), so it stays in Update/ApplyStateSet. `update_bracket_highlight`
+        // is an overlay producer that reads DisplayLayout — it runs in PostUpdate.
         app.add_systems(
             Update,
-            (update_bracket_match, update_bracket_highlight)
-                .chain()
+            update_bracket_match.in_set(super::ApplyStateSet),
+        );
+        app.add_systems(
+            PostUpdate,
+            update_bracket_highlight
                 .after(update_indent_guides)
                 .in_set(super::RenderingSet),
         );
@@ -103,14 +117,18 @@ fn sync_node_from_window(
     }
 }
 
-/// Sync `TextViewport.gutter_width` from `EditorUi` + `TextFont`.
-/// The engine's `sync_viewport_from_node` owns width/height/margins from `Node`;
-/// this system owns the gutter_width field which has no `Node` equivalent.
+/// Sync gutter geometry into `TextViewport` from `EditorUi` + `TextFont`.
+///
+/// `sync_viewport_from_node` owns `width`/`height` from `Node`; this system
+/// owns the fields that have no `Node` equivalent:
+/// - `gutter_width` — visual width of the line-number gutter
+/// - `text_area_left` — where code content starts (gutter + left margin)
+/// - `text_area_top`  — top margin for the text area
+///
+/// Runs every frame (not change-filtered) so that async `char_width` updates
+/// from `update_font_metrics` are picked up immediately.
 fn sync_gutter_width(
-    mut editors: Query<
-        (&mut TextViewport, &TextFont, &EditorUi),
-        (With<CodeEditor>, Changed<EditorUi>),
-    >,
+    mut editors: Query<(&mut TextViewport, &TextFont, &EditorUi), With<CodeEditor>>,
 ) {
     for (mut viewport, font, ui) in editors.iter_mut() {
         let gutter_width = if ui.show_line_numbers {
@@ -118,8 +136,15 @@ fn sync_gutter_width(
         } else {
             0.0
         };
-        if (viewport.gutter_width - gutter_width).abs() > 0.01 {
+        let text_area_left = gutter_width + ui.code_margin_left;
+        let text_area_top = ui.margin_top;
+        let changed = (viewport.gutter_width - gutter_width).abs() > 0.01
+            || (viewport.text_area_left - text_area_left).abs() > 0.01
+            || (viewport.text_area_top - text_area_top).abs() > 0.01;
+        if changed {
             viewport.gutter_width = gutter_width;
+            viewport.text_area_left = text_area_left;
+            viewport.text_area_top = text_area_top;
         }
     }
 }

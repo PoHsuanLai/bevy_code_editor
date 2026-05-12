@@ -17,4 +17,7 @@
 pub mod plugin;
 pub mod styling;
 
+#[cfg(test)]
+mod plugin_tests;
+
 pub use plugin::{DisplayMapPlugin, LayoutSyncSet};

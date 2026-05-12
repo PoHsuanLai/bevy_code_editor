@@ -49,11 +49,17 @@ type ReactLanguageChangedQuery<'w, 's> = Query<
 >;
 
 #[cfg(feature = "tree-sitter")]
+// Note: no `Changed<TextBuffer>` filter. The first-frame-after-spawn
+// mutation by `handle_set_text` (which runs in Update with no set
+// ordering) consistently lands BEFORE this system's `last_run` tick is
+// recorded, so a `Changed<>` filter would never fire for it. The
+// content_version check inside the body keeps idle-frame cost low —
+// when versions match, we skip the rope clone and just early-out.
 type SyncEditorParseSourceQuery<'w, 's> = Query<
     'w,
     's,
     (&'static TextBuffer, &'static EditorParseBufferRef),
-    (With<CodeEditor>, Changed<TextBuffer>),
+    With<CodeEditor>,
 >;
 
 #[cfg(feature = "tree-sitter")]
@@ -519,9 +525,6 @@ pub(crate) fn react_language_changed(editors: ReactLanguageChangedQuery) {
 pub(crate) fn sync_editor_parse_source(editors: SyncEditorParseSourceQuery) {
     for (buffer, buf_ref) in editors.iter() {
         let mut buf = buf_ref.0.write().unwrap();
-        // Hot path: only write if something changed. RwLock writes are
-        // cheap but the rope clone in particular is one Arc bump we'd
-        // rather skip when nothing's changed.
         if buf.content_version == buffer.content_version {
             continue;
         }
@@ -594,6 +597,9 @@ fn record_edits_for_incremental_parsing(
 ) {
     let collected_events: Vec<_> = events.read().cloned().collect();
     for (parse_source, mut syntax_tree, syntax_state) in editor_query.iter_mut() {
+        // Once any edit in this batch forces a full rebuild, subsequent
+        // same-line edits must not downgrade back to incremental.
+        let mut forced_full_rebuild = false;
         for event in collected_events.iter() {
             let d = &event.delta;
             let edit = bevy_tree_sitter::ts::InputEdit {
@@ -630,15 +636,36 @@ fn record_edits_for_incremental_parsing(
                 if let Some(tree) = st.tree.as_mut() {
                     tree.edit(&edit);
                 }
-                // Union the edit's row range into dirty_rows so the async
-                // parse completion can forward it to produce_line_styles for
-                // incremental rehighlight instead of a full-window rebuild.
-                let start_row = edit.start_position.row as u32;
-                let end_row = edit.new_end_position.row as u32;
-                st.dirty_rows = Some(match st.dirty_rows {
-                    Some((lo, hi)) => (lo.min(start_row), hi.max(end_row)),
-                    None => (start_row, end_row),
-                });
+                // Edits that change the LINE COUNT shift buffer line indices
+                // for every row after `start_position.row`. `LineStyles.by_line`
+                // is keyed by buffer line index, so any incremental dirty
+                // range that doesn't cover ALL shifted rows leaves stale
+                // entries under wrong keys (a `}` typed where `let` should be,
+                // etc.). Force a full LineStyles rebuild — much cheaper than
+                // it sounds because `produce_line_styles` only re-highlights
+                // the visible viewport (~50 rows), not the whole buffer.
+                // The tree-sitter tree itself stays interpolated via
+                // `tree.edit()` above, so highlighting queries don't flash.
+                // `dirty_rows = None` is the "full rebuild" sentinel for
+                // `produce_line_styles`. A line-count-changing edit forces
+                // it because `LineStyles.by_line` is keyed by buffer line
+                // index and indices shift when lines are added/removed —
+                // incremental rebuild would leave stale entries under wrong
+                // keys (the "delete leaves stale glyphs" bug). Once forced
+                // None within an edit batch, stays None.
+                let line_count_changed =
+                    edit.old_end_position.row != edit.new_end_position.row;
+                if line_count_changed {
+                    forced_full_rebuild = true;
+                    st.dirty_rows = None;
+                } else if !forced_full_rebuild {
+                    let start_row = edit.start_position.row as u32;
+                    let end_row = edit.new_end_position.row as u32;
+                    st.dirty_rows = Some(match st.dirty_rows {
+                        Some((lo, hi)) => (lo.min(start_row), hi.max(end_row)),
+                        None => (start_row, end_row),
+                    });
+                }
                 parse_source.0.apply_edit(edit);
             } else {
                 // For huge edits, drop the cached trees entirely so any

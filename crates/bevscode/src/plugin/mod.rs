@@ -113,16 +113,25 @@ impl Plugin for CodeEditorPlugin {
         // `bevy_instanced_text_edit::TextViewDragState`, written by the picking-driven
         // press/drag observers in `bevy_instanced_text_edit::interaction`.
 
-        // Configure system set ordering
+        // Configure system set ordering. RenderingSet moved to PostUpdate so
+        // it runs AFTER bevy_instanced_text's LayoutProduceSet — overlay
+        // producers (selection, cursor-line, brackets, indent guides) read
+        // DisplayLayout, which is now rebuilt in PostUpdate. Keeping them in
+        // Update produced one-frame-stale overlays after every edit.
         app.configure_sets(
             Update,
             (
                 InputSet,
                 bevy_instanced_text_edit::EditEmitSet.after(InputSet),
                 ApplyStateSet.after(bevy_instanced_text_edit::EditEmitSet),
-                RenderingSet.after(ApplyStateSet),
             )
                 .chain(),
+        );
+        app.configure_sets(
+            PostUpdate,
+            RenderingSet
+                .after(bevy_instanced_text::LayoutProduceSet)
+                .before(bevy_instanced_text::TextViewRenderSet),
         );
 
         // Spawn a default EditorInputManager if none exists. Hosts that want a
@@ -203,18 +212,9 @@ impl Plugin for CodeEditorPlugin {
         );
 
         // The renderer (`update_text_views`) is registered by `InstancedTextPlugin`
-        // — see `bevy_instanced_text::view::plugin`. It already runs in
-        // `TextViewRenderSet` with `.run_if(atlas_ready)`. We just configure
-        // the editor-side ordering: rendering must observe this frame's
-        // cursor / selection overlays.
-        app.configure_sets(
-            Update,
-            bevy_instanced_text::TextViewRenderSet
-                .in_set(RenderingSet)
-                .after(crate::plugin::cursor::push_cursor_overlays)
-                .after(crate::plugin::cursor::update_cursor_line_highlight)
-                .after(crate::plugin::ui_elements::update_selection_highlight),
-        );
+        // in PostUpdate / TextViewRenderSet. RenderingSet (configured above) is
+        // already ordered before TextViewRenderSet, so overlay producers in this
+        // crate will be visible to the renderer this frame.
     }
 }
 
