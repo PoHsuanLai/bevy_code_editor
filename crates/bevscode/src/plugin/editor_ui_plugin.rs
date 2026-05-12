@@ -106,34 +106,33 @@ fn sync_node_from_window(
     }
 }
 
-/// Sync gutter geometry into `TextViewport` from `EditorUi` + `TextFont`.
+/// Sync gutter geometry into `Node::padding` and `TextViewport.gutter_width`
+/// from `EditorUi` + `TextFont`.
 ///
-/// `sync_viewport_from_node` owns `width`/`height` from `Node`; this system
-/// owns the fields that have no `Node` equivalent:
-/// - `gutter_width` — visual width of the line-number gutter
-/// - `text_area_left` — where code content starts (gutter + left margin)
-/// - `text_area_top`  — top margin for the text area
+/// `padding.left`  = gutter_width + code_margin_left  (→ ComputedNode::content_inset)
+/// `padding.top`   = margin_top                        (→ ComputedNode::content_inset)
+/// `gutter_width` on TextViewport is kept for gpu_line_numbers positioning,
+/// which needs the gutter sub-region width separately from total padding.
 ///
-/// Runs every frame (not change-filtered) so that async `char_width` updates
+/// Runs every frame (not change-filtered) so async `char_width` updates
 /// from `update_font_metrics` are picked up immediately.
 fn sync_gutter_width(
-    mut editors: Query<(&mut TextViewport, &TextFont, &EditorUi), With<CodeEditor>>,
+    mut editors: Query<(&mut Node, &mut TextViewport, &TextFont, &EditorUi), With<CodeEditor>>,
 ) {
-    for (mut viewport, font, ui) in editors.iter_mut() {
+    for (mut node, mut viewport, font, ui) in editors.iter_mut() {
         let gutter_width = if ui.show_line_numbers {
             ui.gutter_padding_left + ui.gutter_padding_right + (font.char_width * 4.0)
         } else {
             0.0
         };
-        let text_area_left = gutter_width + ui.code_margin_left;
-        let text_area_top = ui.margin_top;
-        let changed = (viewport.gutter_width - gutter_width).abs() > 0.01
-            || (viewport.text_area_left - text_area_left).abs() > 0.01
-            || (viewport.text_area_top - text_area_top).abs() > 0.01;
-        if changed {
+        let padding_left = Val::Px(gutter_width + ui.code_margin_left);
+        let padding_top = Val::Px(ui.margin_top);
+        if node.padding.left != padding_left || node.padding.top != padding_top {
+            node.padding.left = padding_left;
+            node.padding.top = padding_top;
+        }
+        if (viewport.gutter_width - gutter_width).abs() > 0.01 {
             viewport.gutter_width = gutter_width;
-            viewport.text_area_left = text_area_left;
-            viewport.text_area_top = text_area_top;
         }
     }
 }

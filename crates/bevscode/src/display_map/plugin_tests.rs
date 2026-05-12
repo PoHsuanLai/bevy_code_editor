@@ -472,17 +472,20 @@ fn editor_initializes_with_syntax_provider() {
 }
 
 /// Subsystem check: `sync_viewport_from_node` converts physical-pixel
-/// `ComputedNode` size into logical-pixel `TextViewport` width/height.
+/// `ComputedNode` size and `content_inset` into logical-pixel `TextViewport` fields.
 #[test]
 fn sync_viewport_from_node_uses_logical_pixels() {
     let mut app = make_test_app();
     let entity = spawn_test_editor(&mut app, "fn main() {}\n");
 
     // 1600x1200 physical at 2x DPI → 800x600 logical.
+    // padding.left=100px physical (50 logical), padding.top=20px physical (10 logical).
     let physical = Vec2::new(1600.0, 1200.0);
     let mut computed = ComputedNode::default();
     computed.size = physical;
     computed.inverse_scale_factor = 0.5;
+    // min_inset = (left, top) in physical pixels.
+    computed.padding.min_inset = Vec2::new(100.0, 20.0);
     app.world_mut().entity_mut(entity).insert(computed);
 
     // Clear the TextViewport to a known wrong state.
@@ -490,6 +493,8 @@ fn sync_viewport_from_node_uses_logical_pixels() {
         let mut vp = app.world_mut().get_mut::<TextViewport>(entity).unwrap();
         vp.width = 0;
         vp.height = 0;
+        vp.text_area_left = 0.0;
+        vp.text_area_top = 0.0;
     }
     app.world_mut()
         .run_system_once(sync_viewport_from_node)
@@ -498,6 +503,8 @@ fn sync_viewport_from_node_uses_logical_pixels() {
     let vp = app.world().get::<TextViewport>(entity).unwrap();
     assert_eq!(vp.width, 800, "logical width (physical / DPI)");
     assert_eq!(vp.height, 600, "logical height");
+    assert!((vp.text_area_left - 50.0).abs() < 0.1, "padding.left → text_area_left, got {}", vp.text_area_left);
+    assert!((vp.text_area_top - 10.0).abs() < 0.1, "padding.top → text_area_top, got {}", vp.text_area_top);
 }
 
 /// Walks all three layers (LineStyles → DisplayLayout → GlyphBatch) for a
