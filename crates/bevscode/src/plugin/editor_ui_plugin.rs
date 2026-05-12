@@ -18,10 +18,6 @@ use crate::settings::*;
 use crate::text_view::TextViewport;
 use crate::types::{CodeEditor, Separator};
 
-/// Marker component for the editor camera
-#[derive(Component, Default, Reflect)]
-#[reflect(Component, Default)]
-pub struct EditorCamera;
 use super::{
     to_bevy_coords_left_aligned, update_cursor_line_highlight, update_gpu_line_numbers,
     update_indent_guides, update_selection_highlight, EditorSetupSet,

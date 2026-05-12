@@ -17,7 +17,7 @@ pub use self::lsp_plugin::LspPlugin;
 
 pub use self::brackets::BracketPlugin;
 pub use self::cursor::CursorPlugin;
-pub use self::editor_ui_plugin::{AutoResizeViewport, EditorCamera, EditorUiPlugin};
+pub use self::editor_ui_plugin::{AutoResizeViewport, EditorUiPlugin};
 pub use self::folding::FoldingPlugin;
 
 // Re-export syntax highlighting resources publicly for external use
