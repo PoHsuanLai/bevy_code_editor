@@ -544,26 +544,17 @@ pub(crate) fn mirror_syntax_tree_to_provider(mut editor_query: MirrorSyntaxTreeQ
         let inner = &mut *guard;
         // If a sync re-parse already produced a fresher tree, skip — the
         // async result is stale relative to the live state. (Initial mirror
-        // always proceeds: provider.cached_tree is None.)
+        // always proceeds: provider.tree() is None.)
         let provider_has_tree = inner
             .provider
             .as_ref()
-            .map(|p| p.cached_tree.is_some())
+            .map(|p| p.tree().is_some())
             .unwrap_or(false);
         if provider_has_tree && syntax_tree.content_version <= inner.applied_content_version {
             continue;
         }
         if let Some(provider) = &mut inner.provider {
-            provider.cached_tree = Some(tree.clone());
-            provider.cached_rope = Some(buffer.rope.clone());
-            if provider.cached_parser.is_none() {
-                if let Some(ref language) = provider.cached_language {
-                    let mut parser = bevy_tree_sitter::ts::Parser::new();
-                    if parser.set_language(language).is_ok() {
-                        provider.cached_parser = Some(parser);
-                    }
-                }
-            }
+            provider.set_tree(tree.clone(), buffer.rope.clone());
             inner.tree_version = inner.tree_version.wrapping_add(1);
             inner.applied_content_version = syntax_tree.content_version;
         }

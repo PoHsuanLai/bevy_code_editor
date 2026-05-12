@@ -66,13 +66,11 @@ pub struct TreeSitterProvider {
     query: Option<Query>,
     /// Intern table indexed by `capture.index`; cloning is a refcount bump.
     capture_names: Vec<Arc<str>>,
-    pub cached_tree: Option<Tree>,
-    pub cached_parser: Option<Parser>,
-    /// Kept so async tasks can recreate a parser without the `Language` Component.
-    pub cached_language: Option<Language>,
+    cached_tree: Option<Tree>,
+    cached_parser: Option<Parser>,
+    cached_language: Option<Language>,
     query_cursor: QueryCursor,
-    /// `Rope` is `Arc`-backed, so cloning is cheap.
-    pub cached_rope: Option<Rope>,
+    cached_rope: Option<Rope>,
 }
 
 impl TreeSitterProvider {
@@ -186,6 +184,22 @@ impl TreeSitterProvider {
 
     pub fn tree(&self) -> Option<&Tree> {
         self.cached_tree.as_ref()
+    }
+
+    /// Install a pre-parsed tree (e.g. from the async parse pipeline) and its
+    /// source rope. Lazily initialises `cached_parser` from `cached_language`
+    /// if one isn't already present, so subsequent sync edits can re-parse.
+    pub fn set_tree(&mut self, tree: Tree, rope: Rope) {
+        self.cached_tree = Some(tree);
+        self.cached_rope = Some(rope);
+        if self.cached_parser.is_none() {
+            if let Some(ref language) = self.cached_language {
+                let mut parser = Parser::new();
+                if parser.set_language(language).is_ok() {
+                    self.cached_parser = Some(parser);
+                }
+            }
+        }
     }
 
     /// Drop cached tree and rope when content shifts would leave byte offsets stale.
