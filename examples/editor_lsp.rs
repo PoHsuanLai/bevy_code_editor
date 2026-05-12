@@ -29,9 +29,7 @@ use bevy::prelude::*;
 use bevy::ui::ComputedNode;
 use bevy::sprite::Anchor;
 use bevy_egui::{egui, EguiContexts};
-use bevscode::lsp_ui::{
-    CodeActionOrCommand, LspClient, LspDocument, LspMessage, TokioTasksRuntime,
-};
+use bevscode::lsp_ui::{CodeActionOrCommand, LspClient, LspDocument, LspMessage};
 use egui::Color32;
 
 fn main() {
@@ -1066,7 +1064,6 @@ fn setup_editor(
     mut commands: Commands,
     mut editor_query: Query<(Entity, &mut LspClient), With<CodeEditor>>,
     asset_server: Res<AssetServer>,
-    runtime: Res<TokioTasksRuntime>,
     mut set_text_writer: MessageWriter<SetTextRequested>,
 ) {
     let Ok((editor_entity, mut lsp_client)) = editor_query.single_mut() else {
@@ -1111,7 +1108,7 @@ fn setup_editor(
     let doc_uri = lsp_types::Url::parse(&file_uri_str).expect("Failed to parse URI");
 
     // Make sure 'rust-analyzer' is in your PATH (rustup component add rust-analyzer)
-    if let Err(e) = lsp_client.start(&runtime, "rust-analyzer", &[]) {
+    if let Err(e) = lsp_client.start("rust-analyzer", &[]) {
         error!("Failed to start rust-analyzer: {:?}", e);
         return;
     }

@@ -1,12 +1,6 @@
-//! LSP client transport. async-lsp on a shared tokio runtime, with an mpsc
-//! bridge from the async side into ECS via [`LspClient::try_recv`].
-//!
-//! Coverage scope: every typed request and notification in
-//! [`lsp_types::request`] / [`lsp_types::notification`] that the spec
-//! defines is wired through here, regardless of whether the in-tree editor
-//! actually consumes the response. The crate is the *protocol layer* for
-//! Bevy applications; downstream UIs (editor, outline panel, agent
-//! tooling) pick which responses they subscribe to.
+//! LSP client transport. async-lsp over Bevy's smol-based AsyncComputeTaskPool,
+//! with an async-channel bridge from the async side into ECS via
+//! [`LspClient::try_recv`].
 
 use std::collections::HashMap;
 use std::ops::ControlFlow;
@@ -19,8 +13,10 @@ use async_lsp::panic::CatchUnwindLayer;
 use async_lsp::router::Router;
 use async_lsp::tracing::TracingLayer;
 use async_lsp::{ResponseError, ServerSocket};
+use async_process::Child;
 use bevy::prelude::*;
-use bevy_tokio_tasks::TokioTasksRuntime;
+use bevy::tasks::{AsyncComputeTaskPool, Task};
+use futures::channel::oneshot;
 use lsp_types::notification::{
     Cancel as CancelNotif, DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles,
     DidChangeWorkspaceFolders, DidCloseTextDocument, DidOpenTextDocument, DidSaveTextDocument,
@@ -46,21 +42,12 @@ use lsp_types::request::{
     WorkspaceFoldersRequest, WorkspaceSymbolRequest, WorkspaceSymbolResolve,
 };
 use lsp_types::*;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
-use tokio::sync::oneshot;
-use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tower::ServiceBuilder;
 
 use super::messages::{CodeActionOrCommand, LspMessage, LspResponse, WorkspaceSymbolResponseItem};
 
-/// API-parity constant. async-lsp doesn't enforce per-request deadlines;
-/// servers handle long-running work via cancel/progress.
 pub const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 30;
 
-/// Holds suspended response slots for server-initiated requests. The router
-/// stores a oneshot `Sender` keyed by `request_id` when it sees a request
-/// from the server; the host's `Respond*` reply pulls the sender out and
-/// fulfills it.
 type ReplySlots<R> = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<R, ResponseError>>>>>;
 
 #[derive(Default)]
@@ -80,19 +67,14 @@ struct InboundReplySlots {
 #[derive(Component)]
 pub struct LspClient {
     server: Option<ServerSocket>,
-    response_tx: UnboundedSender<LspResponse>,
-    response_rx: Mutex<UnboundedReceiver<LspResponse>>,
-    /// Set by consumers on [`LspResponse::Initialized`].
+    response_tx: async_channel::Sender<LspResponse>,
+    response_rx: async_channel::Receiver<LspResponse>,
     pub initialized: bool,
-    mainloop_abort: Option<Arc<tokio::task::AbortHandle>>,
-    runtime_handle: Option<tokio::runtime::Handle>,
+    // Holds the background tasks alive. Dropped on shutdown/drop.
+    _tasks: Vec<Task<()>>,
     init_done: Arc<AtomicBool>,
     pre_init_queue: Arc<Mutex<Vec<LspMessage>>>,
-    /// Set by `shutdown()` so the mainloop watchdog knows the channel
-    /// closing isn't a crash.
     shutting_down: Arc<AtomicBool>,
-    /// Monotonic counter for server-initiated request ids relayed onto
-    /// the bus. Matches the corresponding `Respond*` outgoing variant.
     next_inbound_request_id: Arc<AtomicU64>,
     inbound_slots: Arc<InboundReplySlots>,
 }
@@ -104,17 +86,14 @@ impl Default for LspClient {
 }
 
 impl LspClient {
-    /// Construct a not-yet-started client; call [`LspClient::start`] to spawn
-    /// the language server.
     pub fn new() -> Self {
-        let (response_tx, response_rx) = unbounded_channel();
+        let (response_tx, response_rx) = async_channel::unbounded();
         Self {
             server: None,
             response_tx,
-            response_rx: Mutex::new(response_rx),
+            response_rx,
             initialized: false,
-            mainloop_abort: None,
-            runtime_handle: None,
+            _tasks: Vec::new(),
             init_done: Arc::new(AtomicBool::new(false)),
             pre_init_queue: Arc::new(Mutex::new(Vec::new())),
             shutting_down: Arc::new(AtomicBool::new(false)),
@@ -123,33 +102,18 @@ impl LspClient {
         }
     }
 
-    /// Spawn the language server and run its main loop on `runtime`. `Err` only
-    /// on synchronous spawn failure (binary missing, permissions); async errors
-    /// log via `warn!` and surface as the bridge channel going quiet.
-    pub fn start(
-        &mut self,
-        runtime: &TokioTasksRuntime,
-        command: &str,
-        args: &[&str],
-    ) -> std::io::Result<()> {
+    /// Spawn the language server. `Err` only on synchronous spawn failure
+    /// (binary missing, permissions). Async errors surface as `LspResponse::Crashed`.
+    pub fn start(&mut self, command: &str, args: &[&str]) -> std::io::Result<()> {
         #[cfg(debug_assertions)]
         debug!("[LSP] Starting server: {} {:?}", command, args);
 
-        // tokio::process::Command::spawn needs an active reactor on the
-        // current thread, but Bevy systems run outside any. Enter the runtime
-        // for the spawn, then drop the guard.
-        let handle = runtime.runtime().handle().clone();
-        let mut child = {
-            let _guard = handle.enter();
-            tokio::process::Command::new(command)
-                .args(args)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .kill_on_drop(true)
-                .spawn()?
-        };
-        self.runtime_handle = Some(handle);
+        let mut child = async_process::Command::new(command)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
 
         let stdin = child.stdin.take().ok_or_else(|| {
             std::io::Error::new(std::io::ErrorKind::BrokenPipe, "child stdin missing")
@@ -175,35 +139,42 @@ impl LspClient {
 
         self.server = Some(server);
 
-        runtime.spawn_background_task(move |_ctx| async move {
-            use tokio::io::{AsyncBufReadExt, BufReader};
-            let mut reader = BufReader::new(stderr).lines();
-            while let Ok(Some(line)) = reader.next_line().await {
-                debug!("[LSP stderr] {}", line);
+        let pool = AsyncComputeTaskPool::get();
+
+        // Drain stderr to debug log.
+        let stderr_task = pool.spawn(async move {
+            use futures::AsyncBufReadExt;
+            let mut reader = futures::io::BufReader::new(stderr);
+            let mut line = String::new();
+            loop {
+                line.clear();
+                match reader.read_line(&mut line).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => debug!("[LSP stderr] {}", line.trim_end()),
+                }
             }
         });
 
-        // run_buffered wants futures::AsyncRead/Write; tokio's ChildStd* only
-        // implement the tokio variants. Compat shim bridges them.
+        // Run the async-lsp mainloop. async-process pipes already implement
+        // futures AsyncRead/AsyncWrite, so no compat shim needed.
         let watchdog_tx = self.response_tx.clone();
         let watchdog_flag = self.shutting_down.clone();
-        let join = runtime.spawn_background_task(move |_ctx| async move {
-            let stdout = stdout.compat();
-            let stdin = stdin.compat_write();
+        let mainloop_task = pool.spawn(async move {
             let outcome = mainloop.run_buffered(stdout, stdin).await;
-            let _ = child.wait().await;
-            // Only treat mainloop exit as a crash if we weren't shutting down.
+            // Wait for the child to exit so it doesn't become a zombie.
+            let _ = Child::status(&mut { child }).await;
             if !watchdog_flag.load(Ordering::Acquire) {
                 if let Err(err) = outcome {
                     warn!("[LSP] main loop exited unexpectedly: {err}");
                 } else {
                     warn!("[LSP] main loop exited unexpectedly");
                 }
-                let _ = watchdog_tx.send(LspResponse::Crashed);
+                let _ = watchdog_tx.try_send(LspResponse::Crashed);
             }
         });
 
-        self.mainloop_abort = Some(Arc::new(join.abort_handle()));
+        self._tasks.push(stderr_task);
+        self._tasks.push(mainloop_task);
 
         Ok(())
     }
@@ -212,16 +183,11 @@ impl LspClient {
         self.server.is_some()
     }
 
-    /// Responses arrive asynchronously via [`Self::try_recv`].
+    /// Queue or dispatch a message. Responses arrive via [`Self::try_recv`].
     pub fn send(&self, message: LspMessage) {
         let Some(server) = self.server.as_ref() else {
             #[cfg(debug_assertions)]
             debug!("[LSP] send() called before start(); dropping message");
-            return;
-        };
-        let Some(handle) = self.runtime_handle.as_ref() else {
-            #[cfg(debug_assertions)]
-            debug!("[LSP] send() called before start(); no runtime handle");
             return;
         };
 
@@ -230,37 +196,22 @@ impl LspClient {
                 root_uri,
                 capabilities,
             } => {
-                self.start_initialize(server.clone(), handle.clone(), root_uri, capabilities);
+                self.start_initialize(server.clone(), root_uri, capabilities);
             }
             LspMessage::Initialized => {}
-            // Shutdown / Exit must always go through, even before init is
-            // done — the host may be exiting on a half-initialized server.
             other @ (LspMessage::Shutdown { .. } | LspMessage::Exit) => {
-                dispatch(
-                    server,
-                    &self.response_tx,
-                    handle,
-                    &self.inbound_slots,
-                    other,
-                );
+                dispatch(server, &self.response_tx, &self.inbound_slots, other);
             }
             other if !self.init_done.load(Ordering::Acquire) => {
                 self.pre_init_queue.lock().unwrap().push(other);
             }
-            other => dispatch(
-                server,
-                &self.response_tx,
-                handle,
-                &self.inbound_slots,
-                other,
-            ),
+            other => dispatch(server, &self.response_tx, &self.inbound_slots, other),
         }
     }
 
     fn start_initialize(
         &self,
         server: ServerSocket,
-        handle: tokio::runtime::Handle,
         root_uri: Url,
         capabilities: Box<ClientCapabilities>,
     ) {
@@ -268,90 +219,69 @@ impl LspClient {
         let init_done = self.init_done.clone();
         let queue = self.pre_init_queue.clone();
         let slots = self.inbound_slots.clone();
-        handle.spawn(async move {
-            #[allow(deprecated)]
-            let params = InitializeParams {
-                process_id: Some(std::process::id()),
-                root_uri: Some(root_uri),
-                capabilities: *capabilities,
-                client_info: Some(ClientInfo {
-                    name: "bevy_lsp".into(),
-                    version: Some(env!("CARGO_PKG_VERSION").into()),
-                }),
-                ..InitializeParams::default()
-            };
-            match server.request::<InitializeRequest>(params).await {
-                Ok(result) => {
-                    if let Err(err) = server.notify::<InitializedNotif>(InitializedParams {}) {
-                        warn!("[LSP] initialized notify failed: {err}");
+        AsyncComputeTaskPool::get()
+            .spawn(async move {
+                #[allow(deprecated)]
+                let params = InitializeParams {
+                    process_id: Some(std::process::id()),
+                    root_uri: Some(root_uri),
+                    capabilities: *capabilities,
+                    client_info: Some(ClientInfo {
+                        name: "bevy_lsp".into(),
+                        version: Some(env!("CARGO_PKG_VERSION").into()),
+                    }),
+                    ..InitializeParams::default()
+                };
+                match server.request::<InitializeRequest>(params).await {
+                    Ok(result) => {
+                        if let Err(err) = server.notify::<InitializedNotif>(InitializedParams {}) {
+                            warn!("[LSP] initialized notify failed: {err}");
+                        }
+                        init_done.store(true, Ordering::Release);
+                        let drained: Vec<LspMessage> =
+                            std::mem::take(&mut *queue.lock().unwrap());
+                        for msg in drained {
+                            dispatch(&server, &tx, &slots, msg);
+                        }
+                        emit(
+                            &tx,
+                            LspResponse::Initialized {
+                                capabilities: Box::new(result.capabilities),
+                            },
+                        );
                     }
-                    init_done.store(true, Ordering::Release);
-                    let drained: Vec<LspMessage> = std::mem::take(&mut *queue.lock().unwrap());
-                    let h = tokio::runtime::Handle::current();
-                    for msg in drained {
-                        dispatch(&server, &tx, &h, &slots, msg);
-                    }
-                    emit(
-                        &tx,
-                        LspResponse::Initialized {
-                            capabilities: Box::new(result.capabilities),
-                        },
-                    );
+                    Err(err) => warn!("[LSP] {} failed: {err}", InitializeRequest::METHOD),
                 }
-                Err(err) => warn!("[LSP] {} failed: {err}", InitializeRequest::METHOD),
-            }
-        });
+            })
+            .detach();
     }
 
-    /// Drain one response from the bridge if available.
     pub fn try_recv(&self) -> Option<LspResponse> {
-        if let Ok(mut rx) = self.response_rx.try_lock() {
-            rx.try_recv().ok()
-        } else {
-            None
-        }
+        self.response_rx.try_recv().ok()
     }
 
-    /// No-op; API parity. async-lsp manages request lifetime.
     pub fn cleanup_timeouts(&self) {}
 
     pub fn is_ready(&self) -> bool {
         self.initialized
     }
 
-    /// Send `Shutdown` then `Exit`; setting `shutting_down` first prevents the
-    /// watchdog from reporting the channel close as `Crashed`. Usually wired
-    /// from a `bevy::app::AppExit` observer.
     pub fn shutdown(&self) {
         if self.server.is_none() {
             return;
         }
         self.shutting_down.store(true, Ordering::Release);
-        // id=0 because ShutdownAck handling is informational; async-lsp
-        // delivers the response whenever it arrives.
         self.send(LspMessage::Shutdown { id: 0 });
         self.send(LspMessage::Exit);
     }
 
-    /// `true` after the watchdog reports the mainloop closing without an
-    /// explicit shutdown — host should drop and re-spawn the client.
     pub fn is_shutting_down(&self) -> bool {
         self.shutting_down.load(Ordering::Acquire)
     }
 }
 
-impl Drop for LspClient {
-    fn drop(&mut self) {
-        // abort() + kill_on_drop(true) terminates the server process.
-        if let Some(abort) = self.mainloop_abort.take() {
-            abort.abort();
-        }
-    }
-}
+type Tx = async_channel::Sender<LspResponse>;
 
-type Tx = UnboundedSender<LspResponse>;
-
-/// Spawn a typed request and feed its result into `map` on success.
 fn spawn<R>(
     server: &ServerSocket,
     tx: &Tx,
@@ -364,12 +294,14 @@ fn spawn<R>(
 {
     let server = server.clone();
     let tx = tx.clone();
-    tokio::spawn(async move {
-        match server.request::<R>(params).await {
-            Ok(result) => map(result, &tx),
-            Err(err) => log_request_error::<R>(err),
-        }
-    });
+    AsyncComputeTaskPool::get()
+        .spawn(async move {
+            match server.request::<R>(params).await {
+                Ok(result) => map(result, &tx),
+                Err(err) => log_request_error::<R>(err),
+            }
+        })
+        .detach();
 }
 
 fn log_request_error<R: LspRequestTrait>(err: async_lsp::Error) {
@@ -395,7 +327,7 @@ where
 
 #[inline]
 fn emit(tx: &Tx, r: LspResponse) {
-    let _ = tx.send(r);
+    let _ = tx.try_send(r);
 }
 
 fn text_pos(uri: Url, position: Position) -> TextDocumentPositionParams {
@@ -405,21 +337,14 @@ fn text_pos(uri: Url, position: Position) -> TextDocumentPositionParams {
     }
 }
 
-/// Build the async-lsp router that handles server→client traffic.
-///
-/// Notifications are forwarded as `LspResponse` notification variants.
-/// Requests get a fresh inbound `request_id`, the `oneshot::Sender` is
-/// stashed in `slots`, and the response variant goes onto the bridge — the
-/// host then sends a matching `LspMessage::Respond*` which fulfills the
-/// suspended sender.
 fn build_router(tx: Tx, next_id: Arc<AtomicU64>, slots: Arc<InboundReplySlots>) -> Router<()> {
     let mut router: Router<()> = Router::new(());
 
-    // ─── Notifications ─────────────────────────────────────────────────────
+    // ─── Notifications ──────────────────────────────────────────────────────
 
     let t = tx.clone();
     router.notification::<PublishDiagnostics>(move |_, params| {
-        let _ = t.send(LspResponse::Diagnostics {
+        let _ = t.try_send(LspResponse::Diagnostics {
             uri: params.uri,
             diagnostics: params.diagnostics,
         });
@@ -428,7 +353,7 @@ fn build_router(tx: Tx, next_id: Arc<AtomicU64>, slots: Arc<InboundReplySlots>) 
 
     let t = tx.clone();
     router.notification::<LogMessage>(move |_, params| {
-        let _ = t.send(LspResponse::LogMessage {
+        let _ = t.try_send(LspResponse::LogMessage {
             typ: params.typ,
             message: params.message,
         });
@@ -437,7 +362,7 @@ fn build_router(tx: Tx, next_id: Arc<AtomicU64>, slots: Arc<InboundReplySlots>) 
 
     let t = tx.clone();
     router.notification::<ShowMessage>(move |_, params| {
-        let _ = t.send(LspResponse::ShowMessage {
+        let _ = t.try_send(LspResponse::ShowMessage {
             typ: params.typ,
             message: params.message,
         });
@@ -446,7 +371,7 @@ fn build_router(tx: Tx, next_id: Arc<AtomicU64>, slots: Arc<InboundReplySlots>) 
 
     let t = tx.clone();
     router.notification::<Progress>(move |_, params| {
-        let _ = t.send(LspResponse::Progress {
+        let _ = t.try_send(LspResponse::Progress {
             token: params.token,
             value: params.value,
         });
@@ -455,27 +380,24 @@ fn build_router(tx: Tx, next_id: Arc<AtomicU64>, slots: Arc<InboundReplySlots>) 
 
     let t = tx.clone();
     router.notification::<TelemetryEvent>(move |_, value| {
-        // Server sends either an object or an array — serialize back to
-        // a generic `serde_json::Value` so consumers don't have to know
-        // about lsp_types' OneOf alias.
         let data = match value {
             OneOf::Left(map) => serde_json::Value::Object(map),
             OneOf::Right(arr) => serde_json::Value::Array(arr),
         };
-        let _ = t.send(LspResponse::Telemetry { data });
+        let _ = t.try_send(LspResponse::Telemetry { data });
         ControlFlow::Continue(())
     });
 
     let t = tx.clone();
     router.notification::<LogTrace>(move |_, params| {
-        let _ = t.send(LspResponse::LogTrace {
+        let _ = t.try_send(LspResponse::LogTrace {
             message: params.message,
             verbose: params.verbose,
         });
         ControlFlow::Continue(())
     });
 
-    // ─── Server requests requiring host reply ─────────────────────────────
+    // ─── Server requests requiring host reply ────────────────────────────────
 
     inbound_request::<WorkspaceConfiguration, _>(
         &mut router,
@@ -568,29 +490,29 @@ fn build_router(tx: Tx, next_id: Arc<AtomicU64>, slots: Arc<InboundReplySlots>) 
         |request_id, _params| LspResponse::WorkspaceFoldersRequested { request_id },
     );
 
-    // ─── Refresh requests (no payload, () return) ────────────────────────
+    // ─── Refresh requests (no payload, () return) ────────────────────────────
 
     let t = tx.clone();
     router.request::<SemanticTokensRefresh, _>(move |_, _params| {
-        let _ = t.send(LspResponse::SemanticTokensRefreshRequested);
+        let _ = t.try_send(LspResponse::SemanticTokensRefreshRequested);
         async move { Ok(()) }
     });
 
     let t = tx.clone();
     router.request::<InlayHintRefreshRequest, _>(move |_, _params| {
-        let _ = t.send(LspResponse::InlayHintRefreshRequested);
+        let _ = t.try_send(LspResponse::InlayHintRefreshRequested);
         async move { Ok(()) }
     });
 
     let t = tx.clone();
     router.request::<CodeLensRefresh, _>(move |_, _params| {
-        let _ = t.send(LspResponse::CodeLensRefreshRequested);
+        let _ = t.try_send(LspResponse::CodeLensRefreshRequested);
         async move { Ok(()) }
     });
 
     let t = tx;
     router.request::<WorkspaceDiagnosticRefresh, _>(move |_, _params| {
-        let _ = t.send(LspResponse::DiagnosticsRefreshRequested);
+        let _ = t.try_send(LspResponse::DiagnosticsRefreshRequested);
         async move { Ok(()) }
     });
 
@@ -606,11 +528,6 @@ fn build_router(tx: Tx, next_id: Arc<AtomicU64>, slots: Arc<InboundReplySlots>) 
     router
 }
 
-/// Wire one server→client request type into the router. The handler:
-/// 1. Mints a fresh `request_id`.
-/// 2. Stashes a `oneshot::Sender` keyed by `request_id` in `slots`.
-/// 3. Emits a `Requested` variant on the bridge for the host to see.
-/// 4. Returns the future that awaits the sender.
 fn inbound_request<R, F>(
     router: &mut Router<()>,
     next_id: Arc<AtomicU64>,
@@ -627,7 +544,7 @@ fn inbound_request<R, F>(
         let request_id = next_id.fetch_add(1, Ordering::Relaxed);
         let (resp_tx, resp_rx) = oneshot::channel();
         slots.lock().unwrap().insert(request_id, resp_tx);
-        let _ = tx.send(surface(request_id, params));
+        let _ = tx.try_send(surface(request_id, params));
         async move {
             match resp_rx.await {
                 Ok(Ok(value)) => Ok(value),
@@ -658,16 +575,14 @@ fn fulfill_slot<T>(
 fn dispatch(
     server: &ServerSocket,
     tx: &Tx,
-    handle: &tokio::runtime::Handle,
     slots: &Arc<InboundReplySlots>,
     message: LspMessage,
 ) {
-    let _guard = handle.enter();
     use LspMessage as M;
     match message {
         M::Initialize { .. } | M::Initialized => {}
 
-        // ─── Cancellation ────────────────────────────────────────────────
+        // ─── Cancellation ──────────────────────────────────────────────────
         M::CancelRequest { id } => fire::<CancelNotif>(
             server,
             CancelParams {
@@ -678,25 +593,23 @@ fn dispatch(
             fire::<WorkDoneProgressCancel>(server, WorkDoneProgressCancelParams { token })
         }
 
-        // ─── Document sync ────────────────────────────────────────────────
+        // ─── Document sync ─────────────────────────────────────────────────
         M::DidOpen {
             uri,
             language_id,
             version,
             text,
-        } => {
-            fire::<DidOpenTextDocument>(
-                server,
-                DidOpenTextDocumentParams {
-                    text_document: TextDocumentItem {
-                        uri,
-                        language_id,
-                        version,
-                        text,
-                    },
+        } => fire::<DidOpenTextDocument>(
+            server,
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri,
+                    language_id,
+                    version,
+                    text,
                 },
-            );
-        }
+            },
+        ),
         M::DidChange {
             uri,
             version,
@@ -744,7 +657,7 @@ fn dispatch(
             });
         }
 
-        // ─── Workspace sync ───────────────────────────────────────────────
+        // ─── Workspace sync ────────────────────────────────────────────────
         M::DidChangeConfiguration { settings } => {
             fire::<DidChangeConfiguration>(server, DidChangeConfigurationParams { settings })
         }
@@ -755,7 +668,7 @@ fn dispatch(
             fire::<DidChangeWorkspaceFolders>(server, DidChangeWorkspaceFoldersParams { event })
         }
 
-        // ─── Completion / hover / signature ──────────────────────────────
+        // ─── Completion / hover / signature ───────────────────────────────
         M::Completion { uri, position, id } => completion(server, tx, uri, position, id),
         M::ResolveCompletionItem { item, id } => {
             spawn::<ResolveCompletionItem>(server, tx, *item, move |result, tx| {
@@ -771,7 +684,7 @@ fn dispatch(
         M::Hover { uri, position, id } => hover(server, tx, uri, position, id),
         M::SignatureHelp { uri, position, id } => signature_help(server, tx, uri, position, id),
 
-        // ─── Navigation ───────────────────────────────────────────────────
+        // ─── Navigation ────────────────────────────────────────────────────
         M::GotoDeclaration { uri, position, id } => {
             let params = GotoDefinitionParams {
                 text_document_position_params: text_pos(uri, position),
@@ -783,7 +696,7 @@ fn dispatch(
                     tx,
                     LspResponse::Declaration {
                         id,
-                        locations: flatten_decl(result),
+                        locations: flatten_goto(result),
                     },
                 );
             });
@@ -799,7 +712,7 @@ fn dispatch(
                     tx,
                     LspResponse::Definition {
                         id,
-                        locations: flatten_def(result),
+                        locations: flatten_goto(result),
                     },
                 );
             });
@@ -815,7 +728,7 @@ fn dispatch(
                     tx,
                     LspResponse::TypeDefinition {
                         id,
-                        locations: flatten_type_def(result),
+                        locations: flatten_goto(result),
                     },
                 );
             });
@@ -831,7 +744,7 @@ fn dispatch(
                     tx,
                     LspResponse::Implementation {
                         id,
-                        locations: flatten_impl(result),
+                        locations: flatten_goto(result),
                     },
                 );
             });
@@ -916,7 +829,7 @@ fn dispatch(
             })
         }
 
-        // ─── Folding / selection ──────────────────────────────────────────
+        // ─── Folding / selection ───────────────────────────────────────────
         M::FoldingRange { uri, id } => {
             let params = FoldingRangeParams {
                 text_document: TextDocumentIdentifier { uri },
@@ -951,7 +864,7 @@ fn dispatch(
             });
         }
 
-        // ─── Code actions / formatting ────────────────────────────────────
+        // ─── Code actions / formatting ─────────────────────────────────────
         M::CodeAction {
             uri,
             range,
@@ -1031,7 +944,7 @@ fn dispatch(
         }
         M::ExecuteCommand { command, arguments } => execute_command(server, tx, command, arguments),
 
-        // ─── Inlay hints / decorative ─────────────────────────────────────
+        // ─── Inlay hints / decorative ──────────────────────────────────────
         M::InlayHint { uri, range, id } => {
             let params = InlayHintParams {
                 text_document: TextDocumentIdentifier { uri },
@@ -1133,7 +1046,7 @@ fn dispatch(
             });
         }
 
-        // ─── Rename ───────────────────────────────────────────────────────
+        // ─── Rename ────────────────────────────────────────────────────────
         M::PrepareRename { uri, position, id } => prepare_rename(server, tx, uri, position, id),
         M::Rename {
             uri,
@@ -1153,7 +1066,7 @@ fn dispatch(
             });
         }
 
-        // ─── Call hierarchy ───────────────────────────────────────────────
+        // ─── Call hierarchy ────────────────────────────────────────────────
         M::PrepareCallHierarchy { uri, position, id } => {
             let params = CallHierarchyPrepareParams {
                 text_document_position_params: text_pos(uri, position),
@@ -1202,7 +1115,7 @@ fn dispatch(
             });
         }
 
-        // ─── Type hierarchy ──────────────────────────────────────────────
+        // ─── Type hierarchy ───────────────────────────────────────────────
         M::PrepareTypeHierarchy { uri, position, id } => {
             let params = TypeHierarchyPrepareParams {
                 text_document_position_params: text_pos(uri, position),
@@ -1295,7 +1208,7 @@ fn dispatch(
             });
         }
 
-        // ─── Pull diagnostics ────────────────────────────────────────────
+        // ─── Pull diagnostics ─────────────────────────────────────────────
         M::DocumentDiagnostic {
             uri,
             identifier,
@@ -1329,7 +1242,7 @@ fn dispatch(
             });
         }
 
-        // ─── Server-pull responses ───────────────────────────────────────
+        // ─── Server-pull responses ─────────────────────────────────────────
         M::RespondConfiguration { id, items } => fulfill_slot(&slots.configuration, id, items),
         M::RespondApplyEdit { id, response } => fulfill_slot(&slots.apply_edit, id, response),
         M::RespondShowMessageRequest { id, action } => {
@@ -1342,7 +1255,9 @@ fn dispatch(
             fulfill_slot(&slots.work_done_progress_create, id, ())
         }
         M::RespondRegisterCapability { id } => fulfill_slot(&slots.register_capability, id, ()),
-        M::RespondUnregisterCapability { id } => fulfill_slot(&slots.unregister_capability, id, ()),
+        M::RespondUnregisterCapability { id } => {
+            fulfill_slot(&slots.unregister_capability, id, ())
+        }
         M::RespondWorkspaceFolders { id, folders } => {
             fulfill_slot(&slots.workspace_folders, id, folders)
         }
@@ -1363,36 +1278,30 @@ fn completion(server: &ServerSocket, tx: &Tx, uri: Url, position: Position, id: 
         context: None,
     };
     spawn::<Completion>(server, tx, params, move |result, tx| match result {
-        Some(CompletionResponse::Array(items)) => {
-            emit(
-                tx,
-                LspResponse::Completion {
-                    id,
-                    items,
-                    is_incomplete: false,
-                },
-            );
-        }
-        Some(CompletionResponse::List(list)) => {
-            emit(
-                tx,
-                LspResponse::Completion {
-                    id,
-                    items: list.items,
-                    is_incomplete: list.is_incomplete,
-                },
-            );
-        }
-        None => {
-            emit(
-                tx,
-                LspResponse::Completion {
-                    id,
-                    items: Vec::new(),
-                    is_incomplete: false,
-                },
-            );
-        }
+        Some(CompletionResponse::Array(items)) => emit(
+            tx,
+            LspResponse::Completion {
+                id,
+                items,
+                is_incomplete: false,
+            },
+        ),
+        Some(CompletionResponse::List(list)) => emit(
+            tx,
+            LspResponse::Completion {
+                id,
+                items: list.items,
+                is_incomplete: list.is_incomplete,
+            },
+        ),
+        None => emit(
+            tx,
+            LspResponse::Completion {
+                id,
+                items: Vec::new(),
+                is_incomplete: false,
+            },
+        ),
     });
 }
 
@@ -1485,42 +1394,35 @@ fn execute_command(
         arguments: arguments.unwrap_or_default(),
         work_done_progress_params: Default::default(),
     };
-    // Fire-and-forget. If the command produces edits, the server emits them
-    // via workspace/applyEdit, which the inbound router relays.
     spawn::<ExecuteCommand>(server, tx, params, |_result, _tx| {});
 }
 
 fn prepare_rename(server: &ServerSocket, tx: &Tx, uri: Url, position: Position, id: u64) {
     spawn::<PrepareRenameRequest>(server, tx, text_pos(uri, position), move |result, tx| {
         match result {
-            Some(PrepareRenameResponse::Range(range)) => {
-                emit(
-                    tx,
-                    LspResponse::PrepareRename {
-                        id,
-                        range,
-                        placeholder: None,
-                    },
-                );
-            }
-            Some(PrepareRenameResponse::RangeWithPlaceholder { range, placeholder }) => {
-                emit(
-                    tx,
-                    LspResponse::PrepareRename {
-                        id,
-                        range,
-                        placeholder: Some(placeholder),
-                    },
-                );
-            }
-            // DefaultBehavior wants an identifier-at-cursor fallback, which the
-            // protocol layer can't compute.
+            Some(PrepareRenameResponse::Range(range)) => emit(
+                tx,
+                LspResponse::PrepareRename {
+                    id,
+                    range,
+                    placeholder: None,
+                },
+            ),
+            Some(PrepareRenameResponse::RangeWithPlaceholder { range, placeholder }) => emit(
+                tx,
+                LspResponse::PrepareRename {
+                    id,
+                    range,
+                    placeholder: Some(placeholder),
+                },
+            ),
+            // DefaultBehavior needs identifier-at-cursor, which the protocol layer can't compute.
             Some(PrepareRenameResponse::DefaultBehavior { .. }) | None => {}
         }
     });
 }
 
-fn flatten_def(r: Option<GotoDefinitionResponse>) -> Vec<Location> {
+fn flatten_goto(r: Option<GotoDefinitionResponse>) -> Vec<Location> {
     match r {
         Some(GotoDefinitionResponse::Scalar(loc)) => vec![loc],
         Some(GotoDefinitionResponse::Array(locs)) => locs,
@@ -1535,21 +1437,6 @@ fn flatten_def(r: Option<GotoDefinitionResponse>) -> Vec<Location> {
     }
 }
 
-// Declaration / type-definition / implementation all alias to
-// `GotoDefinitionResponse` in lsp_types — single helper handles all four.
-fn flatten_decl(r: Option<GotoDefinitionResponse>) -> Vec<Location> {
-    flatten_def(r)
-}
-fn flatten_type_def(r: Option<GotoDefinitionResponse>) -> Vec<Location> {
-    flatten_def(r)
-}
-fn flatten_impl(r: Option<GotoDefinitionResponse>) -> Vec<Location> {
-    flatten_def(r)
-}
-
-/// Flatten LSP `HoverContents` into a `(text, kind)` pair. An `Array` mixing
-/// `LanguageString` with plain text renders as Markdown so the renderer can
-/// treat fenced blocks uniformly.
 fn extract_hover_content(contents: &HoverContents) -> (String, MarkupKind) {
     match contents {
         HoverContents::Markup(markup) => (markup.value.clone(), markup.kind.clone()),

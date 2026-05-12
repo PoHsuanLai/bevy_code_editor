@@ -70,5 +70,4 @@ pub use crate::pos::{
     rope_char_to_lsp_position, rope_range_to_lsp_range, PositionEncoding,
 };
 
-pub use ::bevy_tokio_tasks;
 pub use ::lsp_types;
