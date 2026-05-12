@@ -5,7 +5,6 @@
 
 use bevscode::prelude::*;
 use bevy::prelude::*;
-use bevscode::prelude::TextFont;
 
 fn main() {
     App::new()
@@ -124,10 +123,12 @@ fn setup_editor_with_treesitter(
         return;
     };
 
-    let font = TextFont::from_font_size(14.0)
-        .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
-        .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
-    commands.entity(entity).insert(font);
+    commands.entity(entity).insert((
+        TextFont::from_font_size(14.0)
+            .with_font(asset_server.load("fonts/FiraMono-Regular.ttf")),
+        MonoFontFaces::default()
+            .with_bold(asset_server.load("fonts/FiraMono-Medium.ttf")),
+    ));
 
     #[cfg(feature = "tree-sitter")]
     let text = r#"// Rust syntax highlighting with tree-sitter

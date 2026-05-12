@@ -197,15 +197,14 @@ fn setup_text_view(
     let line_count = lines.len() as u32;
     let line_styles = LineStyles::new(by_line, 0..line_count);
 
-    let font = TextFont::from_font_size(16.0)
-        .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
-        .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
-
     commands.spawn((
         TextView,
         TextBuffer::new(&full_text),
         line_styles,
-        font,
+        TextFont::from_font_size(16.0)
+            .with_font(asset_server.load("fonts/FiraMono-Regular.ttf")),
+        MonoFontFaces::default()
+            .with_bold(asset_server.load("fonts/FiraMono-Medium.ttf")),
         // Val::Px so Bevy UI layout resolves size without needing a UI camera.
         Node {
             width: Val::Px(window.width()),

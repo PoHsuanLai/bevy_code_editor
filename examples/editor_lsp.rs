@@ -1074,10 +1074,12 @@ fn setup_editor(
         return;
     };
 
-    let font = TextFont::from_font_size(14.0)
-        .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
-        .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
-    commands.entity(editor_entity).insert(font);
+    commands.entity(editor_entity).insert((
+        TextFont::from_font_size(14.0)
+            .with_font(asset_server.load("fonts/FiraMono-Regular.ttf")),
+        MonoFontFaces::default()
+            .with_bold(asset_server.load("fonts/FiraMono-Medium.ttf")),
+    ));
 
     let example_file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("editor_lsp.rs");
     let rust_code =

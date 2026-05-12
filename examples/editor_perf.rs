@@ -5,7 +5,6 @@
 
 use bevscode::prelude::*;
 use bevy::prelude::*;
-use bevscode::prelude::TextFont;
 use bevy::window::{CursorIcon, SystemCursorIcon};
 
 
@@ -68,10 +67,12 @@ fn setup_editor(
         return;
     };
 
-    let font = TextFont::from_font_size(14.0)
-        .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
-        .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
-    commands.entity(entity).insert(font);
+    commands.entity(entity).insert((
+        TextFont::from_font_size(14.0)
+            .with_font(asset_server.load("fonts/FiraMono-Regular.ttf")),
+        MonoFontFaces::default()
+            .with_bold(asset_server.load("fonts/FiraMono-Medium.ttf")),
+    ));
 
     input_focus.set(entity);
 

@@ -11,7 +11,6 @@ use bevscode::prelude::*;
 use bevsterm::prelude::*;
 use bevy::prelude::*;
 use bevy_camera::visibility::RenderLayers;
-use bevscode::prelude::TextFont;
 
 const DIVIDER_PX: u32 = 1;
 
@@ -63,8 +62,9 @@ fn layout_panes(
     let terminal_layer = RenderLayers::layer(1);
 
     let font = TextFont::from_font_size(14.0)
-        .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
-        .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
+        .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"));
+    let faces = MonoFontFaces::default()
+        .with_bold(asset_server.load("fonts/FiraMono-Medium.ttf"));
 
     // Left camera → editor.
     commands.spawn((
@@ -134,6 +134,7 @@ fn layout_panes(
         .spawn((
             CodeEditor,
             font.clone(),
+            faces.clone(),
             Node {
                 width: Val::Px(log_half),
                 height: Val::Px(log_h),
@@ -149,6 +150,7 @@ fn layout_panes(
     commands.spawn((
         BevyTerminal,
         font,
+        faces,
         Node {
             width: Val::Px(window.width() - log_half),
             height: Val::Px(log_h),

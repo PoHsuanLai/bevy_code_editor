@@ -45,8 +45,9 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         TextEditor,
         TextFont::from_font_size(20.0)
             .with_line_height_multiplier(1.4)
-            .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
-            .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf")),
+            .with_font(asset_server.load("fonts/FiraMono-Regular.ttf")),
+        MonoFontFaces::default()
+            .with_bold(asset_server.load("fonts/FiraMono-Medium.ttf")),
         Name::new("simple-text-input"),
     ));
 }

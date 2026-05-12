@@ -17,7 +17,6 @@
 
 use bevscode::prelude::*;
 use bevy::prelude::*;
-use bevscode::prelude::TextFont;
 use bevy_camera::visibility::RenderLayers;
 
 const WINDOW_WIDTH: f32 = 1600.0;
@@ -61,8 +60,9 @@ fn spawn_two_editors(
     let log_h = window.height();
 
     let font = TextFont::from_font_size(14.0)
-        .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
-        .with_bold_font(asset_server.load("fonts/FiraMono-Medium.ttf"));
+        .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"));
+    let faces = MonoFontFaces::default()
+        .with_bold(asset_server.load("fonts/FiraMono-Medium.ttf"));
 
     let left_layer = RenderLayers::layer(0);
     let right_layer = RenderLayers::layer(1);
@@ -100,6 +100,7 @@ fn spawn_two_editors(
         .spawn((
             CodeEditor,
             font.clone(),
+            faces.clone(),
             Node {
                 width: Val::Px(log_half),
                 height: Val::Px(log_h),
@@ -113,6 +114,7 @@ fn spawn_two_editors(
         .spawn((
             CodeEditor,
             font,
+            faces,
             Node {
                 width: Val::Px(window.width() - log_half),
                 height: Val::Px(log_h),
