@@ -14,9 +14,10 @@
 
 use crate::types::events::TextEdited;
 use bevy::prelude::*;
+use bevy::ui::ComputedNode;
 use bevy_instanced_text::{
     visible_buffer_range, HiddenLines, LayoutProduceSet, TextBounds, LineStyles, RunWithText,
-    ScrollState, TextBuffer, TextFont, TextViewport,
+    ScrollState, TextBuffer, TextFont,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -138,7 +139,7 @@ pub(crate) fn produce_line_styles(
             Entity,
             &TextBuffer,
             &ScrollState,
-            &TextViewport,
+            &ComputedNode,
             &TextFont,
             Option<&TextBounds>,
             Option<&HiddenLines>,
@@ -162,7 +163,7 @@ pub(crate) fn produce_line_styles(
             With<CodeEditor>,
             Or<(
                 Changed<ScrollState>,
-                Changed<TextViewport>,
+                Changed<ComputedNode>,
                 Changed<HiddenLines>,
                 Changed<EditorTheme>,
                 Changed<SyntaxColors>,
@@ -185,7 +186,7 @@ pub(crate) fn produce_line_styles(
             With<CodeEditor>,
             Or<(
                 Changed<ScrollState>,
-                Changed<TextViewport>,
+                Changed<ComputedNode>,
                 Changed<HiddenLines>,
                 Changed<EditorTheme>,
                 Changed<SyntaxColors>,
@@ -260,7 +261,7 @@ pub(crate) fn produce_line_styles(
         entity,
         buffer,
         scroll,
-        viewport,
+        computed,
         font,
         wrap,
         hidden,
@@ -277,8 +278,11 @@ pub(crate) fn produce_line_styles(
             continue;
         }
 
+        let inv = computed.inverse_scale_factor();
+        let viewport_height = computed.size().y * inv;
+        let text_area_top = computed.content_inset().min_inset.y * inv;
         let wrap = wrap.copied().unwrap_or_default();
-        let range = visible_buffer_range(buffer, scroll, viewport, font, wrap, hidden);
+        let range = visible_buffer_range(buffer, scroll, viewport_height, text_area_top, font, wrap, hidden);
         if range.start >= range.end {
             *line_styles = LineStyles::new(HashMap::new(), 0..0);
             dirty_lines.remove(&entity);
@@ -378,7 +382,7 @@ pub(crate) fn produce_line_styles(
 pub(crate) fn sync_layout_wrap(
     mut editors: Query<
         (
-            &TextViewport,
+            &ComputedNode,
             &TextFont,
             &mut TextBounds,
             &Wrapping,
@@ -387,10 +391,13 @@ pub(crate) fn sync_layout_wrap(
         With<CodeEditor>,
     >,
 ) {
-    for (viewport, font, mut wrap, wrapping, indentation) in editors.iter_mut() {
+    for (computed, font, mut wrap, wrapping, indentation) in editors.iter_mut() {
         let char_width = font.char_width;
         let width: Option<f32> = if wrapping.enabled {
-            let viewport_text_w = (viewport.width as f32 - viewport.text_area_left).max(char_width);
+            let inv = computed.inverse_scale_factor();
+            let viewport_text_w =
+                (computed.size().x * inv - computed.content_inset().min_inset.x * inv)
+                    .max(char_width);
             let budget = match wrapping.wrap_column {
                 Some(col) => (col as f32) * char_width,
                 None => viewport_text_w,

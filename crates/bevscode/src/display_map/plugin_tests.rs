@@ -33,12 +33,12 @@ use bevy::ui::ui_transform::UiGlobalTransform;
 use bevy::ui::ComputedNode;
 use bevy_instanced_text::gpu::{GlyphAtlas, GlyphAtlasPlugin};
 use bevy_instanced_text::view::layout_builder::produce_layouts;
-use bevy_instanced_text::view::plugin::{sync_viewport_from_node, update_text_views};
+use bevy_instanced_text::view::plugin::update_text_views;
 use bevy_instanced_text::view::render::{GlyphBatchComponent, GlyphInstance};
 use bevy_instanced_text::view::tuning::LayoutTuning;
 use bevy_instanced_text::{
     DisplayLayout, LineStyles, ScrollState, TextBounds, TextBuffer, TextFont, TextView,
-    TextViewBatchEntity, TextViewOverlays, TextViewport,
+    TextViewBatchEntity, TextViewOverlays,
 };
 use bevy_instanced_text_edit::{BlinkPhase, EditDelta, EditPoint};
 use bevy_tree_sitter::{Language, SyntaxTree, TreeSitterPlugin};
@@ -76,17 +76,15 @@ fn make_test_app() -> App {
 /// styling / layout plumbing reads — the same bundle the editor's host
 /// app would spawn in production.
 fn spawn_test_editor(app: &mut App, text: &str) -> Entity {
+    let mut computed = ComputedNode::default();
+    computed.size = Vec2::new(800.0, 600.0);
+    computed.inverse_scale_factor = 1.0;
+
     let engine_bundle = (
         TextView,
         TextBuffer::new(text),
         ScrollState::default(),
-        TextViewport {
-            width: 800,
-            height: 600,
-            text_area_left: 0.0,
-            text_area_top: 0.0,
-            gutter_width: 0.0,
-        },
+        computed,
         TextFont {
             font: Handle::default(),
             font_size: 14.0,
@@ -471,40 +469,23 @@ fn editor_initializes_with_syntax_provider() {
     );
 }
 
-/// Subsystem check: `sync_viewport_from_node` converts physical-pixel
-/// `ComputedNode` size and `content_inset` into logical-pixel `TextViewport` fields.
+/// Subsystem check: `ComputedNode` physical-pixel values convert correctly to logical pixels.
+/// The pipeline reads `ComputedNode` directly (no intermediate cache); this test verifies
+/// the logical-pixel arithmetic that all layout/render systems rely on.
 #[test]
-fn sync_viewport_from_node_uses_logical_pixels() {
-    let mut app = make_test_app();
-    let entity = spawn_test_editor(&mut app, "fn main() {}\n");
-
+fn computed_node_logical_pixel_conversion() {
     // 1600x1200 physical at 2x DPI → 800x600 logical.
     // padding.left=100px physical (50 logical), padding.top=20px physical (10 logical).
-    let physical = Vec2::new(1600.0, 1200.0);
     let mut computed = ComputedNode::default();
-    computed.size = physical;
+    computed.size = Vec2::new(1600.0, 1200.0);
     computed.inverse_scale_factor = 0.5;
-    // min_inset = (left, top) in physical pixels.
     computed.padding.min_inset = Vec2::new(100.0, 20.0);
-    app.world_mut().entity_mut(entity).insert(computed);
 
-    // Clear the TextViewport to a known wrong state.
-    {
-        let mut vp = app.world_mut().get_mut::<TextViewport>(entity).unwrap();
-        vp.width = 0;
-        vp.height = 0;
-        vp.text_area_left = 0.0;
-        vp.text_area_top = 0.0;
-    }
-    app.world_mut()
-        .run_system_once(sync_viewport_from_node)
-        .unwrap();
-
-    let vp = app.world().get::<TextViewport>(entity).unwrap();
-    assert_eq!(vp.width, 800, "logical width (physical / DPI)");
-    assert_eq!(vp.height, 600, "logical height");
-    assert!((vp.text_area_left - 50.0).abs() < 0.1, "padding.left → text_area_left, got {}", vp.text_area_left);
-    assert!((vp.text_area_top - 10.0).abs() < 0.1, "padding.top → text_area_top, got {}", vp.text_area_top);
+    let inv = computed.inverse_scale_factor();
+    assert_eq!((computed.size().x * inv) as u32, 800, "logical width");
+    assert_eq!((computed.size().y * inv) as u32, 600, "logical height");
+    assert!((computed.content_inset().min_inset.x * inv - 50.0).abs() < 0.1, "padding.left logical");
+    assert!((computed.content_inset().min_inset.y * inv - 10.0).abs() < 0.1, "padding.top logical");
 }
 
 /// Walks all three layers (LineStyles → DisplayLayout → GlyphBatch) for a
@@ -750,7 +731,7 @@ fn pipeline_consistency_after_repeated_line_deletion() {
     // parse NOT yet complete), then assert no stale rows exist in LineStyles.
     // This catches the intermediate-frame bug where incremental rebuild leaves
     // old entries under shifted indices.
-    let mut simulate_backspace_join = |app: &mut App,
+    let simulate_backspace_join = |app: &mut App,
                                        from_rope: &str,
                                        to_rope: &str,
                                        delete_row: u32,
@@ -883,8 +864,7 @@ fn pipeline_consistency_after_repeated_line_deletion() {
 }
 
 /// Drives the full PostUpdate schedule as it runs in production:
-/// `sync_viewport_from_node` → `produce_layouts` → overlay producers →
-/// `update_text_views`. Verifies that bevscode's overlay systems
+/// `produce_layouts` → overlay producers → `update_text_views`. Verifies that bevscode's overlay systems
 /// (selection, cursor-line highlight, cursor caret, bracket highlight)
 /// don't interfere with the color path in the GPU batch.
 ///
@@ -906,7 +886,6 @@ fn full_postupdate_schedule_with_real_overlays() {
     app.add_systems(
         PostUpdate,
         (
-            sync_viewport_from_node,
             produce_layouts.run_if(bevy_instanced_text::gpu::atlas_ready),
             (
                 update_selection_highlight,

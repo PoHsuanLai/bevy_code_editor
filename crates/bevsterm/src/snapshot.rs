@@ -3,9 +3,10 @@
 use std::collections::HashMap;
 
 use bevy::prelude::*;
+use bevy::ui::ComputedNode;
 use bevy_instanced_text::{
     LineStyles, RunWithText, ScrollState, StyleRun, TextBackgroundColor, TextBuffer, TextColor,
-    TextFont, TextViewport,
+    TextFont,
 };
 use ropey::Rope;
 use wezterm_surface::SequenceNo;
@@ -61,7 +62,7 @@ type SnapshotQuery<'w, 's> = Query<
         Entity,
         &'static TerminalSession,
         &'static mut TextBuffer,
-        &'static TextViewport,
+        &'static ComputedNode,
         &'static TextFont,
         &'static mut ScrollState,
         &'static TerminalColorPalette,
@@ -79,7 +80,7 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         entity,
         session,
         mut buffer,
-        viewport,
+        computed,
         font,
         mut scroll,
         palette,
@@ -102,7 +103,7 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         let needs_rebuild = cache_entry.last_seqno != Some(seqno) || cache_entry.last_rows != rows;
 
         if !needs_rebuild {
-            anchor_scroll_to_bottom(&mut scroll, viewport, font, total_lines, &mut follow);
+            anchor_scroll_to_bottom(&mut scroll, computed, font, total_lines, &mut follow);
             continue;
         }
 
@@ -167,7 +168,7 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         cache_entry.last_cols = cols;
         cache_entry.last_total_lines = total_lines;
         cache_entry.lines = next_lines;
-        anchor_scroll_to_bottom(&mut scroll, viewport, font, total_lines, &mut follow);
+        anchor_scroll_to_bottom(&mut scroll, computed, font, total_lines, &mut follow);
     }
 }
 
@@ -181,7 +182,7 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
 /// where `0` = top of buffer and `max_scroll` (the most-negative value) = bottom.
 fn anchor_scroll_to_bottom(
     scroll: &mut ScrollState,
-    viewport: &TextViewport,
+    computed: &ComputedNode,
     font: &TextFont,
     total_lines: usize,
     follow: &mut TerminalScrollFollow,
@@ -190,8 +191,10 @@ fn anchor_scroll_to_bottom(
     if line_height <= 0.0 {
         return;
     }
-    let viewport_height = viewport.height as f32;
-    let visible_rows = ((viewport_height - viewport.text_area_top) / line_height)
+    let inv = computed.inverse_scale_factor();
+    let viewport_height = computed.size().y * inv;
+    let text_area_top = computed.content_inset().min_inset.y * inv;
+    let visible_rows = ((viewport_height - text_area_top) / line_height)
         .floor()
         .max(0.0) as usize;
     let hidden_rows = total_lines.saturating_sub(visible_rows);

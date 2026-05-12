@@ -7,8 +7,9 @@
 
 use crate::settings::{CursorLine, CursorSettings, EditorTheme};
 use crate::text_view::{
-    DisplayLayout, RectOverlay, RowVertical, TextBuffer, TextViewOverlays, TextViewport,
+    DisplayLayout, RectOverlay, RowVertical, TextBuffer, TextViewOverlays,
 };
+use bevy::ui::ComputedNode;
 use crate::types::*;
 use bevy::prelude::*;
 use bevy_instanced_text::TextFont;
@@ -22,7 +23,6 @@ type PushCursorOverlaysQuery<'w, 's> = Query<
         &'static CursorState,
         &'static bevy_instanced_text_edit::BlinkPhase,
         &'static TextBuffer,
-        &'static TextViewport,
         &'static mut TextViewOverlays,
         &'static FoldState,
         &'static TextFont,
@@ -40,7 +40,7 @@ type CursorLineHighlightQuery<'w, 's> = Query<
         &'static SelectionState,
         &'static CursorState,
         &'static TextBuffer,
-        &'static TextViewport,
+        &'static ComputedNode,
         &'static mut TextViewOverlays,
         &'static FoldState,
         &'static TextFont,
@@ -85,6 +85,7 @@ impl Plugin for CursorPlugin {
         // Settings resources.
         app.register_type::<crate::settings::BracketHighlightStyle>()
             .register_type::<crate::settings::BracketConfig>()
+            .register_type::<crate::settings::GutterConfig>()
             .register_type::<crate::settings::CursorLine>()
             .register_type::<crate::settings::CursorLineStyle>()
             .register_type::<crate::settings::CursorSettings>()
@@ -151,7 +152,6 @@ pub(crate) fn push_cursor_overlays(
         cursor,
         blink,
         buffer,
-        _vp,
         mut overlays,
         fold_state,
         font,
@@ -214,7 +214,7 @@ pub(crate) fn push_cursor_overlays(
     }
 }
 pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlightQuery) {
-    for (sel, cursor, buffer, vp, mut overlays, fold_state, font, layout, theme, cursor_line) in
+    for (sel, cursor, buffer, computed, mut overlays, fold_state, font, layout, theme, cursor_line) in
         editor_query.iter_mut()
     {
         // Drain previous-frame line-border / word rects (z = 0 reserved for cursor-line decoration).
@@ -234,8 +234,11 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
         // Full-line-width band, in pixels relative to the row's text origin.
         // text_area_left is already the row's "x = 0" anchor in render_layout, so the
         // band stretches from the negative gutter edge to the viewport's right edge.
-        let band_x_left = -vp.text_area_left;
-        let band_x_right = vp.width as f32 - vp.text_area_left;
+        let inv = computed.inverse_scale_factor();
+        let text_area_left = computed.content_inset().min_inset.x * inv;
+        let viewport_width = computed.size().x * inv;
+        let band_x_left = -text_area_left;
+        let band_x_right = viewport_width - text_area_left;
         let _ = cursor; // legacy field kept for blink tracking; iteration uses `sel`
 
         for selection in sel.selections.iter() {

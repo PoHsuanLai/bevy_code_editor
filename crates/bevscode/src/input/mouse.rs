@@ -19,13 +19,15 @@
 //! `screen_to_char_pos` helper so editors with active fold regions see the
 //! click land on the right buffer line.
 
-use crate::text_view::{ScrollState, TextBuffer, TextViewport};
+use crate::settings::GutterConfig;
+use crate::text_view::{ScrollState, TextBuffer};
 use crate::types::*;
 #[cfg(feature = "lsp")]
 use bevy::picking::events::Move;
 use bevy::picking::events::{Pointer, Press};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
+use bevy::ui::ComputedNode;
 use bevy_instanced_text::{DisplayLayout, TextFont};
 use ropey::Rope;
 
@@ -37,7 +39,7 @@ type AltClickQuery<'w, 's> = Query<
         &'static mut CursorState,
         &'static TextBuffer,
         &'static ScrollState,
-        &'static TextViewport,
+        &'static ComputedNode,
         &'static FoldState,
         &'static TextFont,
         Option<&'static DisplayLayout>,
@@ -52,7 +54,7 @@ type CtrlClickQuery<'w, 's> = Query<
     (
         &'static TextBuffer,
         &'static ScrollState,
-        &'static TextViewport,
+        &'static ComputedNode,
         &'static FoldState,
         &'static TextFont,
         Option<&'static DisplayLayout>,
@@ -67,7 +69,7 @@ type HoverMoveQuery<'w, 's> = Query<
     (
         &'static TextBuffer,
         &'static ScrollState,
-        &'static TextViewport,
+        &'static ComputedNode,
         &'static FoldState,
         &'static TextFont,
         Option<&'static DisplayLayout>,
@@ -86,7 +88,8 @@ struct HitTestCtx<'a> {
     rope: &'a Rope,
     layout: Option<&'a DisplayLayout>,
     font: &'a TextFont,
-    viewport: &'a TextViewport,
+    text_area_left: f32,
+    text_area_top: f32,
     fold_state: &'a FoldState,
     current_scroll_offset: f32,
 }
@@ -95,8 +98,8 @@ struct HitTestCtx<'a> {
 /// honoring fold-state's display-row → buffer-line mapping. Used by every
 /// editor mouse observer that needs to know which character was clicked.
 fn screen_to_char_pos(screen_pos: Vec2, ctx: &HitTestCtx<'_>) -> usize {
-    let relative_x = screen_pos.x - ctx.viewport.text_area_left;
-    let relative_y = screen_pos.y - ctx.viewport.text_area_top - ctx.current_scroll_offset;
+    let relative_x = screen_pos.x - ctx.text_area_left;
+    let relative_y = screen_pos.y - ctx.text_area_top - ctx.current_scroll_offset;
 
     let display_row = (relative_y / ctx.font.line_height).max(0.0) as usize;
     let buffer_line = ctx.fold_state.display_to_actual_line(display_row);
@@ -139,7 +142,7 @@ fn screen_to_char_pos(screen_pos: Vec2, ctx: &HitTestCtx<'_>) -> usize {
 pub fn on_fold_gutter_press(
     trigger: On<Pointer<Press>>,
     mut editor_query: Query<
-        (&ScrollState, &TextViewport, &mut FoldState, &TextFont),
+        (&ScrollState, &ComputedNode, &GutterConfig, &mut FoldState, &TextFont),
         With<CodeEditor>,
     >,
 ) {
@@ -147,20 +150,22 @@ pub fn on_fold_gutter_press(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((scroll, viewport, mut fold_state, font)) = editor_query.get_mut(entity) else {
+    let Ok((scroll, computed, gutter, mut fold_state, font)) = editor_query.get_mut(entity) else {
         return;
     };
     let Some(local_pos) = trigger.event().hit.position.map(|p| Vec2::new(p.x, p.y)) else {
         return;
     };
 
-    let gutter_start = viewport.gutter_width - 18.0;
-    let gutter_end = viewport.gutter_width + 5.0;
+    let gutter_start = gutter.gutter_width - 18.0;
+    let gutter_end = gutter.gutter_width + 5.0;
     if local_pos.x < gutter_start || local_pos.x >= gutter_end {
         return;
     }
 
-    let relative_y = local_pos.y - viewport.text_area_top + scroll.scroll_offset;
+    let inv = computed.inverse_scale_factor();
+    let text_area_top = computed.content_inset().min_inset.y * inv;
+    let relative_y = local_pos.y - text_area_top + scroll.scroll_offset;
     let display_row = (relative_y / font.line_height).max(0.0) as usize;
     let buffer_line = fold_state.display_to_actual_line(display_row);
 
@@ -191,7 +196,7 @@ pub fn on_alt_click(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((mut sel, mut cursor, buffer, scroll, viewport, fold_state, font, layout)) =
+    let Ok((mut sel, mut cursor, buffer, scroll, computed, fold_state, font, layout)) =
         editor_query.get_mut(entity)
     else {
         return;
@@ -200,13 +205,15 @@ pub fn on_alt_click(
         return;
     };
 
+    let inv = computed.inverse_scale_factor();
     let char_pos = screen_to_char_pos(
         local_pos,
         &HitTestCtx {
             rope: &buffer.rope,
             layout,
             font,
-            viewport,
+            text_area_left: computed.content_inset().min_inset.x * inv,
+            text_area_top: computed.content_inset().min_inset.y * inv,
             fold_state,
             current_scroll_offset: scroll.scroll_offset,
         },
@@ -240,7 +247,7 @@ pub fn on_ctrl_click_goto_definition(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((buffer, scroll, viewport, fold_state, font, layout)) = editor_query.get(entity) else {
+    let Ok((buffer, scroll, computed, fold_state, font, layout)) = editor_query.get(entity) else {
         return;
     };
     let Ok((lsp_client, lsp_document)) = lsp_query.get(entity) else {
@@ -253,13 +260,15 @@ pub fn on_ctrl_click_goto_definition(
         return;
     };
 
+    let inv = computed.inverse_scale_factor();
     let char_pos = screen_to_char_pos(
         local_pos,
         &HitTestCtx {
             rope: &buffer.rope,
             layout,
             font,
-            viewport,
+            text_area_left: computed.content_inset().min_inset.x * inv,
+            text_area_top: computed.content_inset().min_inset.y * inv,
             fold_state,
             current_scroll_offset: scroll.scroll_offset,
         },
@@ -291,7 +300,7 @@ pub fn on_pointer_move_for_hover(
     mut hover_query: Query<&mut crate::lsp_ui::state::LspHoverPopup, With<CodeEditor>>,
 ) {
     let entity = trigger.event().entity;
-    let Ok((buffer, scroll, viewport, fold_state, font, layout, hover_settings)) =
+    let Ok((buffer, scroll, computed, fold_state, font, layout, hover_settings)) =
         editor_query.get(entity)
     else {
         return;
@@ -316,13 +325,15 @@ pub fn on_pointer_move_for_hover(
     }
     hover_state.last_pointer_pos = Some(local_pos);
 
+    let inv = computed.inverse_scale_factor();
     let char_pos = screen_to_char_pos(
         local_pos,
         &HitTestCtx {
             rope: &buffer.rope,
             layout,
             font,
-            viewport,
+            text_area_left: computed.content_inset().min_inset.x * inv,
+            text_area_top: computed.content_inset().min_inset.y * inv,
             fold_state,
             current_scroll_offset: scroll.scroll_offset,
         },

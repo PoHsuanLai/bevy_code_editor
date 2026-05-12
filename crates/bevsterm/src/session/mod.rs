@@ -8,7 +8,8 @@ use std::thread::JoinHandle;
 
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
-use bevy_instanced_text::{TextFont, TextViewport};
+use bevy::ui::ComputedNode;
+use bevy_instanced_text::TextFont;
 use parking_lot::Mutex;
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 
@@ -40,7 +41,7 @@ pub fn open_pending_sessions(
     pending: Query<
         (
             Entity,
-            &TextViewport,
+            &ComputedNode,
             &TextFont,
             Option<&TerminalConfig>,
             Option<&TerminalScrollback>,
@@ -60,8 +61,8 @@ pub fn open_pending_sessions(
         .unwrap_or(1)
         .max(1);
 
-    for (entity, viewport, font, config, scrollback, integration) in &pending {
-        let Some((cols, rows)) = cells_from_viewport(viewport, font) else {
+    for (entity, computed, font, config, scrollback, integration) in &pending {
+        let Some((cols, rows)) = cells_from_viewport(computed, font) else {
             continue;
         };
         if cols < MIN_COLS || rows < MIN_ROWS {

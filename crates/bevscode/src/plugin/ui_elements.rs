@@ -3,19 +3,20 @@
 use crate::settings::*;
 use crate::text_view::{
     DisplayLayout, RectOverlay, RowVertical, ScrollState, TextBuffer, TextViewOverlays,
-    TextViewport,
 };
 use crate::types::*;
 use bevy::prelude::*;
-use bevy_instanced_text::{visible_buffer_range, HiddenLines, TextBounds, TextFont};
+use bevy::ui::ComputedNode;
+use bevy_instanced_text::{visible_buffer_range, HiddenLines, RowMetricsParam, TextBounds, TextFont};
 
 type IndentGuidesQuery<'w, 's> = Query<
     'w,
     's,
     (
+        Entity,
         &'static TextBuffer,
         &'static ScrollState,
-        &'static TextViewport,
+        &'static ComputedNode,
         &'static FoldState,
         &'static TextFont,
         &'static EditorTheme,
@@ -35,7 +36,7 @@ type AutoScrollQuery<'w, 's> = Query<
         &'static mut ScrollState,
         &'static crate::text_view::ContentMetrics,
         &'static mut CursorState,
-        &'static TextViewport,
+        &'static ComputedNode,
         &'static TextFont,
     ),
     With<CodeEditor>,
@@ -61,7 +62,7 @@ pub(crate) fn update_selection_highlight(
         (
             Entity,
             &TextBuffer,
-            &TextViewport,
+            &ComputedNode,
             &ScrollState,
             &SelectionState,
             &mut TextViewOverlays,
@@ -81,7 +82,7 @@ pub(crate) fn update_selection_highlight(
             Or<(
                 Changed<SelectionState>,
                 Changed<ScrollState>,
-                Changed<TextViewport>,
+                Changed<ComputedNode>,
                 Changed<TextBuffer>,
                 Changed<FoldState>,
                 Changed<TextFont>,
@@ -98,7 +99,7 @@ pub(crate) fn update_selection_highlight(
     for (
         editor_entity,
         buffer,
-        viewport,
+        computed,
         scroll,
         sel,
         mut overlays,
@@ -122,8 +123,11 @@ pub(crate) fn update_selection_highlight(
         // Visible buffer-line window. Selections are clipped to this band so
         // a multi-thousand-line selection doesn't allocate per-line rects for
         // off-viewport rows.
+        let inv = computed.inverse_scale_factor();
+        let viewport_height = computed.size().y * inv;
+        let text_area_top = computed.content_inset().min_inset.y * inv;
         let wrap_cfg = wrap.copied().unwrap_or_default();
-        let visible = visible_buffer_range(buffer, scroll, viewport, font, wrap_cfg, hidden);
+        let visible = visible_buffer_range(buffer, scroll, viewport_height, text_area_top, font, wrap_cfg, hidden);
         if visible.start >= visible.end {
             overlays.version = overlays.version.wrapping_add(1);
             continue;
@@ -327,22 +331,24 @@ pub(crate) fn update_indent_guides(
     mut commands: Commands,
     editor_query: IndentGuidesQuery,
     mut guide_query: Query<(Entity, &mut Transform, &mut Visibility, &mut IndentGuide)>,
+    row_metrics_param: RowMetricsParam,
 ) {
     // Collect existing guide entities once (shared pool across editors)
     let mut existing_guides: Vec<_> = guide_query.iter_mut().collect();
     let mut entity_index = 0;
 
-    for (buffer, scroll, vp, fold_state, font, theme, layout, ui, indentation, render_layers) in
+    for (editor_entity, buffer, scroll, computed, fold_state, font, theme, _layout, ui, indentation, render_layers) in
         editor_query.iter()
     {
         if !ui.show_indent_guides {
             continue;
         }
 
+        let inv = computed.inverse_scale_factor();
         let indent_size = indentation.indent_size;
         let line_height = font.line_height;
         let char_width = font.char_width;
-        let viewport_height = vp.height as f32;
+        let viewport_height = computed.size().y * inv;
 
         // Calculate visible display row range
         let visible_start_row = ((-scroll.scroll_offset) / line_height).floor() as usize;
@@ -429,10 +435,9 @@ pub(crate) fn update_indent_guides(
         // Snapshot the engine's row anchor once per editor; consumers
         // route every position through `RowMetrics` so that if the
         // engine changes its convention every guide tracks automatically.
-        let baseline = layout
-            .map(|l| l.baseline_offset)
-            .unwrap_or(font.font_size * bevy_instanced_text::DEFAULT_BASELINE_OFFSET_RATIO);
-        let metrics = bevy_instanced_text::row_metrics_with_baseline(vp, scroll, font, baseline);
+        let Some(metrics) = row_metrics_param.get(editor_entity) else {
+            continue;
+        };
 
         for (display_row, level) in needed_guides.iter() {
             // Sprite anchor is the row's vertical center within the
@@ -520,7 +525,7 @@ pub(crate) fn should_auto_scroll(
 }
 
 pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
-    for (buffer, mut scroll, metrics, mut cursor, vp, font) in editor_query.iter_mut() {
+    for (buffer, mut scroll, metrics, mut cursor, computed, font) in editor_query.iter_mut() {
         // Get cursor position
         let cursor_pos = cursor.cursor_pos.min(buffer.rope.len_chars());
 
@@ -528,13 +533,16 @@ pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
         cursor.last_cursor_pos = cursor_pos;
         let line_index = buffer.rope.char_to_line(cursor_pos);
         let line_height = font.line_height;
-        let viewport_height = vp.height as f32;
-        let viewport_width = vp.width as f32;
+        let inv = computed.inverse_scale_factor();
+        let viewport_height = computed.size().y * inv;
+        let viewport_width = computed.size().x * inv;
+        let text_area_top = computed.content_inset().min_inset.y * inv;
+        let text_area_left = computed.content_inset().min_inset.x * inv;
 
         // === VERTICAL AUTO-SCROLL ===
 
         // Calculate cursor's Y position
-        let cursor_y = vp.text_area_top + scroll.scroll_offset + (line_index as f32 * line_height);
+        let cursor_y = text_area_top + scroll.scroll_offset + (line_index as f32 * line_height);
 
         // Define visible range (with some margin)
         let margin_vertical = line_height * 2.0;
@@ -557,7 +565,7 @@ pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
         scroll.target_scroll_offset = scroll.target_scroll_offset.min(0.0);
         let line_count = buffer.rope.len_lines();
         let content_height = line_count as f32 * line_height;
-        let max_scroll = -(content_height - viewport_height + vp.text_area_top);
+        let max_scroll = -(content_height - viewport_height + text_area_top);
         scroll.target_scroll_offset = scroll.target_scroll_offset.max(max_scroll.min(0.0));
 
         // === HORIZONTAL AUTO-SCROLL ===
@@ -574,7 +582,7 @@ pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
         let margin_horizontal = char_width * 5.0; // 5 characters of margin
         let visible_left = scroll.horizontal_scroll_offset;
         let visible_right = scroll.horizontal_scroll_offset + viewport_width
-            - vp.text_area_left
+            - text_area_left
             - margin_horizontal;
 
         // Adjust horizontal target scroll if cursor is outside visible range
@@ -584,7 +592,7 @@ pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
         } else if cursor_x > visible_right {
             // Cursor is right of visible area - scroll right
             scroll.target_horizontal_scroll_offset =
-                cursor_x - (viewport_width - vp.text_area_left - margin_horizontal);
+                cursor_x - (viewport_width - text_area_left - margin_horizontal);
         }
 
         // Clamp target_horizontal_scroll_offset to valid range

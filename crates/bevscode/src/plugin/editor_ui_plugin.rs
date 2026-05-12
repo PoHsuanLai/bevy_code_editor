@@ -4,7 +4,6 @@ use bevy::prelude::*;
 use bevy_instanced_text::TextFont;
 
 use crate::settings::*;
-use crate::text_view::TextViewport;
 use crate::types::{CodeEditor, Separator};
 
 use super::{
@@ -31,7 +30,7 @@ impl Plugin for EditorUiPlugin {
         // This runs every frame so window resizes are picked up automatically.
         app.add_systems(Update, sync_node_from_window);
 
-        // Update separator position when viewport changes (now driven by sync_viewport_from_node)
+        // Update separator position when ComputedNode changes (driven by Bevy UI layout).
         app.add_systems(Update, update_separator_on_resize.run_if(viewport_changed));
 
         app.add_systems(
@@ -106,20 +105,20 @@ fn sync_node_from_window(
     }
 }
 
-/// Sync gutter geometry into `Node::padding` and `TextViewport.gutter_width`
+/// Sync gutter geometry into `Node::padding` and `GutterConfig.gutter_width`
 /// from `EditorUi` + `TextFont`.
 ///
 /// `padding.left`  = gutter_width + code_margin_left  (→ ComputedNode::content_inset)
 /// `padding.top`   = margin_top                        (→ ComputedNode::content_inset)
-/// `gutter_width` on TextViewport is kept for gpu_line_numbers positioning,
+/// `gutter_width` on `GutterConfig` is kept for gpu_line_numbers positioning,
 /// which needs the gutter sub-region width separately from total padding.
 ///
 /// Runs every frame (not change-filtered) so async `char_width` updates
 /// from `update_font_metrics` are picked up immediately.
 fn sync_gutter_width(
-    mut editors: Query<(&mut Node, &mut TextViewport, &TextFont, &EditorUi), With<CodeEditor>>,
+    mut editors: Query<(&mut Node, &mut GutterConfig, &TextFont, &EditorUi), With<CodeEditor>>,
 ) {
-    for (mut node, mut viewport, font, ui) in editors.iter_mut() {
+    for (mut node, mut gutter_config, font, ui) in editors.iter_mut() {
         let gutter_width = if ui.show_line_numbers {
             ui.gutter_padding_left + ui.gutter_padding_right + (font.char_width * 4.0)
         } else {
@@ -131,8 +130,8 @@ fn sync_gutter_width(
             node.padding.left = padding_left;
             node.padding.top = padding_top;
         }
-        if (viewport.gutter_width - gutter_width).abs() > 0.01 {
-            viewport.gutter_width = gutter_width;
+        if (gutter_config.gutter_width - gutter_width).abs() > 0.01 {
+            gutter_config.gutter_width = gutter_width;
         }
     }
 }
@@ -142,7 +141,8 @@ fn setup_editor_ui(
     mut commands: Commands,
     editor_query: Query<
         (
-            &TextViewport,
+            &ComputedNode,
+            &GutterConfig,
             &EditorTheme,
             &EditorUi,
             Option<&bevy_camera::visibility::RenderLayers>,
@@ -150,9 +150,11 @@ fn setup_editor_ui(
         With<CodeEditor>,
     >,
 ) {
-    for (viewport, theme, ui, render_layers) in editor_query.iter() {
-        let viewport_width = viewport.width as f32;
-        let viewport_height = viewport.height as f32;
+    for (computed, gutter, theme, ui, render_layers) in editor_query.iter() {
+        let inv = computed.inverse_scale_factor();
+        let logical = computed.size() * inv;
+        let viewport_width = logical.x;
+        let viewport_height = logical.y;
 
         if ui.show_separator {
             let mut cmds = commands.spawn((
@@ -162,7 +164,7 @@ fn setup_editor_ui(
                     ..default()
                 },
                 Transform::from_translation(to_bevy_coords_left_aligned(
-                    viewport.gutter_width,
+                    gutter.gutter_width,
                     viewport_height / 2.0,
                     viewport_width,
                     viewport_height,
@@ -178,25 +180,27 @@ fn setup_editor_ui(
     }
 }
 
-fn viewport_changed(query: Query<(), Changed<TextViewport>>) -> bool {
+fn viewport_changed(query: Query<(), (With<CodeEditor>, Changed<ComputedNode>)>) -> bool {
     !query.is_empty()
 }
 
 fn update_separator_on_resize(
-    viewport_query: Query<&TextViewport, With<CodeEditor>>,
+    viewport_query: Query<(&ComputedNode, &GutterConfig), With<CodeEditor>>,
     mut separator_query: Query<(&mut Sprite, &mut Transform), With<Separator>>,
 ) {
-    let Some(viewport) = viewport_query.iter().next() else {
+    let Some((computed, gutter)) = viewport_query.iter().next() else {
         return;
     };
 
-    for (mut sprite, mut transform) in separator_query.iter_mut() {
-        let viewport_height = viewport.height as f32;
-        let viewport_width = viewport.width as f32;
+    let inv = computed.inverse_scale_factor();
+    let logical = computed.size() * inv;
+    let viewport_width = logical.x;
+    let viewport_height = logical.y;
 
+    for (mut sprite, mut transform) in separator_query.iter_mut() {
         sprite.custom_size = Some(Vec2::new(1.0, viewport_height));
         transform.translation = to_bevy_coords_left_aligned(
-            viewport.gutter_width,
+            gutter.gutter_width,
             viewport_height / 2.0,
             viewport_width,
             viewport_height,

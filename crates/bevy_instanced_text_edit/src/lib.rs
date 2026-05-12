@@ -53,7 +53,6 @@
 //!         commands.spawn((
 //!             bevy_instanced_text_edit::TextEditor,
 //!             TextBuffer::new("edit me"),
-//!             TextViewport::default(),
 //!             TextFont::default(),
 //!         ));
 //!     })

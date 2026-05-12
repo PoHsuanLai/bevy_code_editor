@@ -145,7 +145,7 @@ pub mod prelude {
     //! Convenient re-exports for common editor usage.
     //!
     //! Engine-side primitives (`TextView`, `TextFont`, `DisplayLayout`,
-    //! `TextBuffer`, `ScrollState`, `ContentMetrics`, `TextViewport`,
+    //! `TextBuffer`, `ScrollState`, `ContentMetrics`,
     //! `InstancedTextPlugin`, `InstancedTextPlugins`) come in via
     //! `bevy_instanced_text::prelude::*`. The
     //! editor adds: the editor plugin (+ `standalone()`'s plugin group), the
@@ -157,8 +157,7 @@ pub mod prelude {
     //! that need them.
 
     // Engine surface — InstancedTextPlugins, InstancedTextPlugin, TextView,
-    // TextFont, DisplayLayout, TextBuffer, ScrollState, ContentMetrics,
-    // TextViewport.
+    // TextFont, DisplayLayout, TextBuffer, ScrollState, ContentMetrics.
     pub use bevy_instanced_text::prelude::*;
 
     // Editor plugin + its standalone PluginGroup, and the interaction +
@@ -184,5 +183,5 @@ pub mod prelude {
 
     // Theme — hosts that match the editor's clear color in their own
     // Camera2d setup grab `EditorTheme::default().background`.
-    pub use crate::settings::EditorTheme;
+    pub use crate::settings::{EditorTheme, GutterConfig};
 }

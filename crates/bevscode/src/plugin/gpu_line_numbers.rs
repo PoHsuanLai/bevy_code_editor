@@ -4,11 +4,12 @@
 
 use crate::settings::*;
 use crate::text_view::render::{GlyphBatchComponent, GlyphInstance};
-use crate::text_view::{ScrollState, TextBuffer, TextViewport};
+use crate::text_view::{ScrollState, TextBuffer};
 use crate::types::*;
 use bevy::prelude::*;
+use bevy::ui::ComputedNode;
 use bevy_instanced_text::gpu::GlyphAtlas;
-use bevy_instanced_text::TextFont;
+use bevy_instanced_text::{RowMetricsParam, TextFont};
 
 /// Marker component for the GPU line numbers batch entity
 #[derive(Component, Reflect)]
@@ -33,7 +34,8 @@ type GpuLineNumbersQuery<'w, 's> = Query<
         &'static SelectionState,
         &'static TextBuffer,
         &'static ScrollState,
-        &'static TextViewport,
+        &'static ComputedNode,
+        &'static GutterConfig,
         Ref<'static, FoldState>,
         &'static TextFont,
         &'static EditorTheme,
@@ -52,13 +54,15 @@ pub(crate) fn update_gpu_line_numbers(
     mut images: ResMut<Assets<Image>>,
     fonts: Res<Assets<bevy::text::Font>>,
     batch_query: Query<(Entity, &GpuLineNumbersBatch)>,
+    row_metrics_param: RowMetricsParam,
 ) {
     for (
         editor_entity,
         sel,
         buffer,
         scroll,
-        viewport,
+        computed,
+        gutter,
         fold_state,
         font,
         theme,
@@ -81,12 +85,18 @@ pub(crate) fn update_gpu_line_numbers(
 
         let existing_batch_for_editor = batch_query.iter().find(|(_, b)| b.editor == editor_entity);
 
+        let inv = computed.inverse_scale_factor();
+        let logical_w = computed.size().x * inv;
+        let logical_h = computed.size().y * inv;
+        let logical_w_u32 = logical_w as u32;
+        let logical_h_u32 = logical_h as u32;
+
         if !fold_changed {
             // Check if existing batch is still valid
             if let Some((entity, batch)) = existing_batch_for_editor {
                 let scroll_changed = (batch.built_at_scroll - scroll.scroll_offset).abs() > 0.01;
-                let viewport_changed = batch.built_at_width != viewport.width
-                    || batch.built_at_height != viewport.height;
+                let viewport_changed =
+                    batch.built_at_width != logical_w_u32 || batch.built_at_height != logical_h_u32;
 
                 if !scroll_changed
                     && !viewport_changed
@@ -100,8 +110,8 @@ pub(crate) fn update_gpu_line_numbers(
 
         let line_height = font.line_height;
         let font_size = font.font_size;
-        let _viewport_width = viewport.width as f32;
-        let viewport_height = viewport.height as f32;
+        let viewport_height = logical_h;
+        let text_area_top = computed.content_inset().min_inset.y * inv;
 
         // Collect cursor lines for highlighting active line numbers
         let cursor_lines: std::collections::HashSet<usize> = sel
@@ -118,11 +128,11 @@ pub(crate) fn update_gpu_line_numbers(
         let viewport_top = -scroll.scroll_offset - line_height * buffer_lines;
         let viewport_bottom = viewport_top + viewport_height + line_height * buffer_lines * 2.0;
 
-        let first_visible_display_row = ((viewport_top - viewport.text_area_top) / line_height)
+        let first_visible_display_row = ((viewport_top - text_area_top) / line_height)
             .floor()
             .max(0.0) as usize;
         let last_visible_display_row =
-            ((viewport_bottom - viewport.text_area_top) / line_height).ceil() as usize;
+            ((viewport_bottom - text_area_top) / line_height).ceil() as usize;
 
         let total_buffer_lines = buffer.line_count();
         let has_folding = fold_state.regions.iter().any(|r| r.is_folded);
@@ -143,11 +153,14 @@ pub(crate) fn update_gpu_line_numbers(
         // but its baseline must match what the engine paints for the main
         // text on the same row — `glyph_baseline_screen_y` is the engine's
         // own formula exposed as a public helper.
-        let metrics = bevy_instanced_text::row_metrics(viewport, scroll, font);
+        let Some(metrics) = row_metrics_param.get(editor_entity) else {
+            continue;
+        };
 
         // Calculate gutter center X position (camera-relative, not world coords)
         // Camera is at viewport center, so gutter is at -viewport_width/2 + gutter_width/2
-        let gutter_center_x = viewport.world_left() + viewport.gutter_width / 2.0;
+        let world_left = -logical_w / 2.0;
+        let gutter_center_x = world_left + gutter.gutter_width / 2.0;
 
         // Pre-allocate instances
         let estimated_capacity = (last_visible_display_row - first_visible_display_row + 2) * 4;
@@ -219,7 +232,7 @@ pub(crate) fn update_gpu_line_numbers(
             // Right-align: start X so that text ends near the right edge of gutter (with padding)
             let right_padding = 8.0;
             let start_x =
-                gutter_center_x + viewport.gutter_width / 2.0 - right_padding - shape.width;
+                gutter_center_x + gutter.gutter_width / 2.0 - right_padding - shape.width;
 
             // Emit each shaped glyph
             for g in &shape.glyphs {
@@ -294,8 +307,8 @@ pub(crate) fn update_gpu_line_numbers(
                 editor: editor_entity,
                 built_at_version: buffer.content_version,
                 built_at_scroll: scroll.scroll_offset,
-                built_at_width: viewport.width,
-                built_at_height: viewport.height,
+                built_at_width: logical_w_u32,
+                built_at_height: logical_h_u32,
             })
             .insert(Visibility::Visible);
             if let Some(layers) = render_layers {
@@ -314,8 +327,8 @@ pub(crate) fn update_gpu_line_numbers(
                     editor: editor_entity,
                     built_at_version: buffer.content_version,
                     built_at_scroll: scroll.scroll_offset,
-                    built_at_width: viewport.width,
-                    built_at_height: viewport.height,
+                    built_at_width: logical_w_u32,
+                    built_at_height: logical_h_u32,
                 },
                 Name::new("GpuLineNumbersBatch"),
                 Visibility::Visible,

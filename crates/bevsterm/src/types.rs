@@ -16,7 +16,7 @@ use crate::backend;
 /// Spawn this on an entity to make it a terminal; the `#[require]`
 /// cascade brings in rendering substrate, selection state, terminal
 /// state, theme, and `Pickable` for mouse routing. PTY + child shell
-/// open lazily once `TextViewport` and `TextFont` produce a
+/// open lazily once `ComputedNode` and `TextFont` produce a
 /// non-zero (cols, rows), so the shell never renders a stale 80×24
 /// frame. Configure shell / argv / env / cwd via [`TerminalConfig`].
 #[derive(Component, Default, Reflect)]
@@ -26,7 +26,6 @@ use crate::backend;
     bevy_instanced_text::TextBuffer,
     bevy_instanced_text::ScrollState,
     bevy_instanced_text::ContentMetrics,
-    bevy_instanced_text::TextViewport,
     bevy_instanced_text::TextFont,
     bevy_instanced_text::LineStyles,
     bevy_instanced_text::HiddenLines,

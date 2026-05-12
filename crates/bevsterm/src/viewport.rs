@@ -1,5 +1,6 @@
 use bevy::prelude::*;
-use bevy_instanced_text::{TextFont, TextViewport};
+use bevy::ui::ComputedNode;
+use bevy_instanced_text::TextFont;
 
 use crate::backend;
 use crate::types::TerminalSession;
@@ -7,11 +8,12 @@ use crate::types::TerminalSession;
 pub const MIN_COLS: u16 = 2;
 pub const MIN_ROWS: u16 = 1;
 
-/// Convert a viewport + font into a (cols, rows) cell count, or `None`
+/// Convert a computed node + font into a (cols, rows) cell count, or `None`
 /// if the viewport hasn't been laid out yet (zero-area).
-pub fn cells_from_viewport(viewport: &TextViewport, font: &TextFont) -> Option<(u16, u16)> {
-    let usable_w = (viewport.width as f32 - viewport.text_area_left).max(0.0);
-    let usable_h = (viewport.height as f32 - viewport.text_area_top).max(0.0);
+pub fn cells_from_viewport(computed: &ComputedNode, font: &TextFont) -> Option<(u16, u16)> {
+    let inv = computed.inverse_scale_factor();
+    let usable_w = (computed.size().x * inv - computed.content_inset().min_inset.x * inv).max(0.0);
+    let usable_h = (computed.size().y * inv - computed.content_inset().min_inset.y * inv).max(0.0);
     if usable_w <= 0.0 || usable_h <= 0.0 || font.char_width <= 0.0 || font.line_height <= 0.0 {
         return None;
     }
@@ -23,8 +25,8 @@ pub fn cells_from_viewport(viewport: &TextViewport, font: &TextFont) -> Option<(
 #[allow(clippy::type_complexity)]
 pub fn sync_terminal_size(
     mut q: Query<
-        (&TextViewport, &TextFont, &mut TerminalSession),
-        Or<(Changed<TextViewport>, Changed<TextFont>)>,
+        (&ComputedNode, &TextFont, &mut TerminalSession),
+        Or<(Changed<ComputedNode>, Changed<TextFont>)>,
     >,
     windows: Query<&bevy::window::Window, With<bevy::window::PrimaryWindow>>,
 ) {
@@ -34,8 +36,8 @@ pub fn sync_terminal_size(
         .unwrap_or(1)
         .max(1);
 
-    for (viewport, font, mut session) in q.iter_mut() {
-        let Some((raw_cols, raw_rows)) = cells_from_viewport(viewport, font) else {
+    for (computed, font, mut session) in q.iter_mut() {
+        let Some((raw_cols, raw_rows)) = cells_from_viewport(computed, font) else {
             continue;
         };
         let cols = raw_cols.max(MIN_COLS);

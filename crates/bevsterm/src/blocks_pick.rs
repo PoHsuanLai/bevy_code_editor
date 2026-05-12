@@ -2,7 +2,8 @@
 //! against `TerminalBlockState` and emit `TerminalBlockSelected`.
 
 use bevy::prelude::*;
-use bevy_instanced_text::{DisplayLayout, ScrollState, TextViewport};
+use bevy::ui::ComputedNode;
+use bevy_instanced_text::{DisplayLayout, ScrollState};
 
 use crate::messages::TerminalBlockSelected;
 use crate::types::TerminalBlockState;
@@ -13,7 +14,7 @@ pub fn on_terminal_block_press(
         &TerminalBlockState,
         &DisplayLayout,
         &ScrollState,
-        &TextViewport,
+        &ComputedNode,
     )>,
     mut selected_w: MessageWriter<TerminalBlockSelected>,
 ) {
@@ -21,14 +22,19 @@ pub fn on_terminal_block_press(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((state, layout, scroll, viewport)) = q.get(entity) else {
+    let Ok((state, layout, scroll, computed)) = q.get(entity) else {
         return;
     };
-    let Some(local) = trigger.event().hit.position.map(|p| Vec2::new(p.x, p.y)) else {
+    // Bevy UI hit position: normalized (-0.5,-0.5)→(0.5,0.5) from node center.
+    // Convert to viewport-local logical pixels (0,0 = top-left of node).
+    let Some(norm) = trigger.event().hit.position.map(|p| Vec2::new(p.x, p.y)) else {
         return;
     };
-
-    let click_y = local.y - viewport.text_area_top + scroll.scroll_offset;
+    let inv_scale = computed.inverse_scale_factor();
+    let logical_size = computed.size() * inv_scale;
+    let text_area_top = computed.content_inset().min_inset.y * inv_scale;
+    let local_y = (norm.y + 0.5) * logical_size.y;
+    let click_y = local_y - text_area_top + scroll.scroll_offset;
     let default_lh = layout.line_height;
     let Some(line) = layout.lines.iter().find(|l| {
         let lh = l.line_height.unwrap_or(default_lh);

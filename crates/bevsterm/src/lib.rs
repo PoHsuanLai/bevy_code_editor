@@ -86,5 +86,5 @@ pub mod prelude {
         TerminalConfig, TerminalGridSnapshot, TerminalInputMode, TerminalScrollFollow,
         TerminalScrollback, TerminalShellInfo,
     };
-    pub use bevy_instanced_text::{TextFont, TextViewport};
+    pub use bevy_instanced_text::TextFont;
 }

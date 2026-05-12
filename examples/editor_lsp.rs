@@ -23,9 +23,9 @@ use bevscode::lsp_ui::state::{
     LspCodeActionsPopup, LspCompletionPopup, LspHoverPopup, LspRenamePopup, LspSignatureHelpPopup,
 };
 use bevscode::prelude::*;
-use bevscode::text_view::TextViewport;
 use bevscode::types::{CodeEditor, CursorState};
 use bevy::prelude::*;
+use bevy::ui::ComputedNode;
 use bevy::sprite::Anchor;
 use bevy_egui::{egui, EguiContexts};
 use bevy_instanced_text::{ScrollState, TextColor, TextFont};
@@ -419,13 +419,15 @@ fn position_popup(
     popup_height: f32,
     line_height: f32,
     viewport_offset: &LspEguiViewportOffset,
-    viewport: &TextViewport,
+    computed: &ComputedNode,
     prefer_above: bool,
 ) -> egui::Pos2 {
+    let inv_scale = computed.inverse_scale_factor();
+    let logical_size = computed.size() * inv_scale;
     let vp_left = viewport_offset.screen_offset.x;
     let vp_top = viewport_offset.screen_offset.y;
-    let vp_right = vp_left + viewport.width as f32;
-    let vp_bottom = vp_top + viewport.height as f32;
+    let vp_right = vp_left + logical_size.x;
+    let vp_bottom = vp_top + logical_size.y;
 
     // Overlap the popup with the cursor row by half a line so there's no
     // gap between the text and the egui area. Without this, moving the
@@ -499,7 +501,7 @@ fn render_completion_egui(
     mut contexts: EguiContexts,
     query: Query<(Entity, &LspCompletionPopup, &CursorState, &TextFont), With<CodeEditor>>,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Single<&TextViewport, With<CodeEditor>>,
+    viewport: Single<&ComputedNode, With<CodeEditor>>,
     anchors: bevy_instanced_text::BufferAnchorParam,
 ) {
     let Ok((editor, completion_state, cursor_state, font)) = query.single() else {
@@ -666,7 +668,7 @@ fn render_hover_egui(
     mut contexts: EguiContexts,
     query: Query<(Entity, &LspHoverPopup, &LspCompletionPopup, &TextFont), With<CodeEditor>>,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Single<&TextViewport, With<CodeEditor>>,
+    viewport: Single<&ComputedNode, With<CodeEditor>>,
     anchors: bevy_instanced_text::BufferAnchorParam,
 ) {
     let Ok((editor, hover_state, completion_state, font)) = query.single() else {
@@ -735,7 +737,7 @@ fn render_signature_help_egui(
     mut contexts: EguiContexts,
     query: Query<(Entity, &LspSignatureHelpPopup, &CursorState, &TextFont), With<CodeEditor>>,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Single<&TextViewport, With<CodeEditor>>,
+    viewport: Single<&ComputedNode, With<CodeEditor>>,
     anchors: bevy_instanced_text::BufferAnchorParam,
 ) {
     let Ok((editor, sig_state, cursor_state, font)) = query.single() else {
@@ -860,7 +862,7 @@ fn render_code_actions_egui(
     mut contexts: EguiContexts,
     query: Query<(Entity, &LspCodeActionsPopup, &CursorState, &TextFont), With<CodeEditor>>,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Single<&TextViewport, With<CodeEditor>>,
+    viewport: Single<&ComputedNode, With<CodeEditor>>,
     anchors: bevy_instanced_text::BufferAnchorParam,
 ) {
     let Ok((editor, action_state, cursor_state, font)) = query.single() else {
@@ -881,7 +883,8 @@ fn render_code_actions_egui(
     let item_height = font.line_height.max(22.0);
 
     // Position near the gutter, below cursor
-    let gutter_x = viewport_offset.screen_offset.x + viewport.text_area_left - 20.0;
+    let text_area_left = viewport.content_inset().min_inset.x * viewport.inverse_scale_factor();
+    let gutter_x = viewport_offset.screen_offset.x + text_area_left - 20.0;
     let action_count = action_state.actions.len().min(10);
     let popup_height = action_count as f32 * item_height + 12.0;
 
@@ -976,7 +979,7 @@ fn render_rename_egui(
         With<CodeEditor>,
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Single<&TextViewport, With<CodeEditor>>,
+    viewport: Single<&ComputedNode, With<CodeEditor>>,
     anchors: bevy_instanced_text::BufferAnchorParam,
 ) {
     let Ok((editor, mut rename_state, lsp_client, lsp_document, font)) = query.single_mut() else {

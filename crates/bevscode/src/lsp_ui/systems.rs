@@ -8,7 +8,8 @@
 use bevy::prelude::*;
 use lsp_types::*;
 
-use crate::text_view::{ScrollState, TextBuffer, TextViewport};
+use crate::text_view::{ScrollState, TextBuffer};
+use bevy::ui::ComputedNode;
 use crate::types::{CodeEditor, CursorState};
 use bevy_instanced_text::TextFont;
 
@@ -47,7 +48,7 @@ type RequestInlayHintsQuery<'w, 's> = Query<
         &'static ServerCapabilities,
         Ref<'static, TextBuffer>,
         Ref<'static, ScrollState>,
-        Ref<'static, TextViewport>,
+        Ref<'static, ComputedNode>,
         Option<&'static LspDocument>,
         &'static mut LspInlayHints,
         &'static TextFont,
@@ -605,7 +606,7 @@ pub fn sync_lsp_document(
 
 /// System to request inlay hints for visible range
 pub fn request_inlay_hints(mut query: RequestInlayHintsQuery) {
-    let Ok((lsp_client, capabilities, buffer, scroll, vp, lsp_document, mut hint_state, font)) =
+    let Ok((lsp_client, capabilities, buffer, scroll, computed, lsp_document, mut hint_state, font)) =
         query.single_mut()
     else {
         return;
@@ -614,7 +615,10 @@ pub fn request_inlay_hints(mut query: RequestInlayHintsQuery) {
         return;
     }
 
-    if !hint_state.needs_refresh && !buffer.is_changed() && !scroll.is_changed() && !vp.is_changed()
+    if !hint_state.needs_refresh
+        && !buffer.is_changed()
+        && !scroll.is_changed()
+        && !computed.is_changed()
     {
         return;
     }
@@ -624,8 +628,10 @@ pub fn request_inlay_hints(mut query: RequestInlayHintsQuery) {
     };
 
     // Calculate visible range with some buffer
+    let inv = computed.inverse_scale_factor();
+    let viewport_height = computed.size().y * inv;
     let visible_start_line = (scroll.scroll_offset / font.line_height) as u32;
-    let visible_lines = (vp.height as f32 / font.line_height) as u32 + 10;
+    let visible_lines = (viewport_height / font.line_height) as u32 + 10;
     let visible_end_line = (visible_start_line + visible_lines).min(buffer.rope.len_lines() as u32);
 
     let range = Range {

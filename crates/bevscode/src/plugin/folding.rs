@@ -5,7 +5,7 @@
 //! stays on the entity but `regions` remains empty — no folding is detected.
 //!
 //! No gutter chevron renderer is included. Downstream consumers wanting
-//! `▶`/`▼` indicators read `FoldState` + `ScrollState` + `TextViewport`
+//! `▶`/`▼` indicators read `FoldState` + `ScrollState` + `ComputedNode`
 //! and emit whatever entity they prefer (Sprite, Text2d, or — best —
 //! `RectOverlay`s into `TextViewOverlays` so they go through the engine's
 //! GPU instanced batch). Click-to-toggle stays wired up via `on_gutter_click`

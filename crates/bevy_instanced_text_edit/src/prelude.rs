@@ -3,7 +3,7 @@
 //!
 //! Pair with `bevy_instanced_text::prelude::*` which supplies the rendering
 //! primitives (`TextView`, `TextBuffer`, `ScrollState`, `ContentMetrics`,
-//! `TextViewport`, `TextFont`, the engine plugin group).
+//! `TextFont`, the engine plugin group).
 
 pub use crate::components::{ScrollConfig, TextViewDragState};
 pub use crate::cursor_settings::{BlinkPhase, CursorSettings, CursorStyle};

@@ -201,12 +201,12 @@ if __name__ == "__main__":
 }
 
 fn update_cursor_icon(
-    editor_query: Query<(Entity, &TextViewport), With<CodeEditor>>,
+    editor_query: Query<(Entity, &ComputedNode), With<CodeEditor>>,
     input_focus: Res<bevy::input_focus::InputFocus>,
     mut commands: Commands,
     windows: Query<(Entity, &Window), With<Window>>,
 ) {
-    let Ok((editor_entity, viewport)) = editor_query.single() else {
+    let Ok((editor_entity, computed)) = editor_query.single() else {
         return;
     };
 
@@ -218,7 +218,7 @@ fn update_cursor_icon(
         // Convert to world coordinates
         let cursor_x = cursor_pos.x - window.width() / 2.0;
 
-        let viewport_width = viewport.width as f32;
+        let viewport_width = computed.size().x * computed.inverse_scale_factor();
         let code_area_right = viewport_width / 2.0 - 20.0;
 
         // Show text cursor only over code area when focused

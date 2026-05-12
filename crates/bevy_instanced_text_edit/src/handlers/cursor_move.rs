@@ -13,7 +13,8 @@ use crate::editing_events::*;
 use crate::state::{CursorState, SelectionState, TextEditor};
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy_instanced_text::{TextBuffer, TextFont, TextViewport};
+use bevy::ui::ComputedNode;
+use bevy_instanced_text::{TextBuffer, TextFont};
 
 type EditorView<'w, 's> = Query<
     'w,
@@ -217,7 +218,7 @@ type PagingView<'w, 's> = Query<
         &'static mut SelectionState,
         &'static mut CursorState,
         &'static TextBuffer,
-        &'static TextViewport,
+        &'static ComputedNode,
         &'static TextFont,
     ),
     With<TextEditor>,
@@ -226,11 +227,12 @@ type PagingView<'w, 's> = Query<
 /// Visible-line count for one page jump. Mirrors VS Code / Zed: a
 /// page is the visible line count minus one line of overlap so the
 /// reader keeps a single line of context after the jump.
-fn page_lines(viewport: &TextViewport, font: &TextFont) -> isize {
+fn page_lines(computed: &ComputedNode, font: &TextFont) -> isize {
     if font.line_height <= 0.0 {
         return 1;
     }
-    let visible = (viewport.height as f32 / font.line_height).floor() as isize;
+    let height = computed.size().y * computed.inverse_scale_factor();
+    let visible = (height / font.line_height).floor() as isize;
     (visible - 1).max(1)
 }
 
@@ -245,10 +247,10 @@ pub fn handle_move_cursor_page_up(
     let Some(entity) = focused(&input_focus) else {
         return;
     };
-    let Ok((mut sel, mut cursor, buffer, viewport, font)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer, computed, font)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor_lines(&mut cursor, &buffer.rope, -page_lines(viewport, font));
+    move_cursor_lines(&mut cursor, &buffer.rope, -page_lines(computed, font));
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -263,9 +265,9 @@ pub fn handle_move_cursor_page_down(
     let Some(entity) = focused(&input_focus) else {
         return;
     };
-    let Ok((mut sel, mut cursor, buffer, viewport, font)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer, computed, font)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor_lines(&mut cursor, &buffer.rope, page_lines(viewport, font));
+    move_cursor_lines(&mut cursor, &buffer.rope, page_lines(computed, font));
     sel.apply_primary_cursor(&cursor);
 }

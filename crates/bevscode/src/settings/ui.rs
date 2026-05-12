@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// Per-editor UI visual settings. Layout dimensions are computed from these
-/// and written into the editor's `TextViewport` each frame.
+/// and written into `Node::padding` each frame via `sync_gutter_width`.
 #[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct EditorUi {
@@ -20,6 +20,15 @@ pub struct EditorUi {
     pub gutter_padding_right: f32,
     pub code_margin_left: f32,
     pub margin_top: f32,
+}
+
+/// Resolved gutter geometry, populated every frame by `sync_gutter_width`.
+/// Read by line-number rendering and fold gutter hit-testing.
+/// Do not set manually — it is derived from `EditorUi` + `TextFont`.
+#[derive(Component, Clone, Copy, Debug, Default, Reflect)]
+#[reflect(Component, Default, Debug)]
+pub struct GutterConfig {
+    pub gutter_width: f32,
 }
 
 /// Controls which whitespace characters are rendered as visible glyphs.

@@ -15,9 +15,8 @@ use bevy::prelude::*;
 use bevy::ui::ui_transform::UiGlobalTransform;
 use ropey::Rope;
 
-use bevy_instanced_text::{
-    ContentMetrics, DisplayLayout, ScrollState, TextBuffer, TextFont, TextView, TextViewport,
-};
+use bevy::ui::ComputedNode;
+use bevy_instanced_text::{ContentMetrics, DisplayLayout, ScrollState, TextBuffer, TextFont, TextView};
 
 use crate::components::{ScrollConfig, TextViewDragState};
 use crate::state::{CursorState, SelectionState};
@@ -29,7 +28,7 @@ type ScrollQuery<'w, 's> = Query<
         &'static TextBuffer,
         &'static mut ScrollState,
         &'static ContentMetrics,
-        &'static TextViewport,
+        &'static ComputedNode,
         &'static TextFont,
         Option<&'static ScrollConfig>,
     ),
@@ -43,7 +42,6 @@ type PressQuery<'w, 's> = Query<
         &'static mut TextViewDragState,
         &'static TextBuffer,
         &'static ScrollState,
-        &'static TextViewport,
         &'static TextFont,
         &'static ComputedNode,
         Option<&'static DisplayLayout>,
@@ -61,7 +59,6 @@ type DragQuery<'w, 's> = Query<
         &'static mut TextViewDragState,
         &'static TextBuffer,
         &'static ScrollState,
-        &'static TextViewport,
         &'static TextFont,
         &'static ComputedNode,
         &'static UiGlobalTransform,
@@ -91,12 +88,13 @@ pub fn screen_to_char_pos(
     layout: Option<&DisplayLayout>,
     current_scroll_offset: f32,
     font: &TextFont,
-    viewport: &TextViewport,
+    text_area_left: f32,
+    text_area_top: f32,
     scroll_offset_override: Option<f32>,
 ) -> usize {
-    let relative_x = screen_pos.x - viewport.text_area_left;
+    let relative_x = screen_pos.x - text_area_left;
     let scroll_offset = scroll_offset_override.unwrap_or(current_scroll_offset);
-    let relative_y = screen_pos.y - viewport.text_area_top - scroll_offset;
+    let relative_y = screen_pos.y - text_area_top - scroll_offset;
 
     let line_height = font.line_height;
     let display_row = (relative_y / line_height).max(0.0) as usize;
@@ -234,7 +232,7 @@ fn block_slice(rope: &Rope, start: usize, end: usize) -> String {
 /// display-map producer maintains that field as it shapes lines.
 pub fn on_pointer_scroll(trigger: On<Pointer<Scroll>>, mut views: ScrollQuery) {
     let entity = trigger.event().entity;
-    let Ok((buffer, mut scroll, metrics, viewport, font, scroll_cfg)) = views.get_mut(entity)
+    let Ok((buffer, mut scroll, metrics, computed, font, scroll_cfg)) = views.get_mut(entity)
     else {
         return;
     };
@@ -245,6 +243,12 @@ pub fn on_pointer_scroll(trigger: On<Pointer<Scroll>>, mut views: ScrollQuery) {
     let unit = trigger.event().unit;
     let dx = trigger.event().x;
     let dy = trigger.event().y;
+
+    let inv = computed.inverse_scale_factor();
+    let viewport_width = computed.size().x * inv;
+    let viewport_height = computed.size().y * inv;
+    let text_area_left = computed.content_inset().min_inset.x * inv;
+    let text_area_top = computed.content_inset().min_inset.y * inv;
 
     // `MouseScrollUnit::Line` — dy is in logical lines (mouse wheel, typically ±1 per notch).
     // `MouseScrollUnit::Pixel` — dy is already in physical pixels (trackpad); multiply only by
@@ -259,8 +263,7 @@ pub fn on_pointer_scroll(trigger: On<Pointer<Scroll>>, mut views: ScrollQuery) {
 
     // Horizontal scroll — only when content overflows.
     if dx.abs() > 0.0 {
-        let viewport_width = viewport.width as f32;
-        let available_text_width = viewport_width - viewport.text_area_left;
+        let available_text_width = viewport_width - text_area_left;
         if metrics.max_content_width > available_text_width {
             let scroll_delta = dx * h_delta_per_dx;
             let max_h = (metrics.max_content_width - available_text_width).max(0.0);
@@ -279,8 +282,7 @@ pub fn on_pointer_scroll(trigger: On<Pointer<Scroll>>, mut views: ScrollQuery) {
         let scroll_delta = dy * v_delta_per_dy;
         let line_count = buffer.rope.len_lines();
         let content_height = line_count as f32 * font.line_height;
-        let viewport_height = viewport.height as f32;
-        let max_scroll = (-(content_height - viewport_height + viewport.text_area_top)).min(0.0);
+        let max_scroll = (-(content_height - viewport_height + text_area_top)).min(0.0);
         if scroll_cfg.smooth {
             scroll.target_scroll_offset =
                 (scroll.target_scroll_offset + scroll_delta).clamp(max_scroll, 0.0);
@@ -311,7 +313,7 @@ pub fn on_pointer_press(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((mut drag_state, buffer, scroll, viewport, font, computed, layout, sel, cursor, settings)) =
+    let Ok((mut drag_state, buffer, scroll, font, computed, layout, sel, cursor, settings)) =
         views.get_mut(entity)
     else {
         return;
@@ -326,13 +328,17 @@ pub fn on_pointer_press(
         None => return,
     };
 
+    let inv = computed.inverse_scale_factor();
+    let text_area_left = computed.content_inset().min_inset.x * inv;
+    let text_area_top = computed.content_inset().min_inset.y * inv;
     let char_pos = screen_to_char_pos(
         local_pos,
         &buffer.rope,
         layout,
         scroll.scroll_offset,
         font,
-        viewport,
+        text_area_left,
+        text_area_top,
         None,
     );
 
@@ -450,7 +456,7 @@ pub fn on_pointer_drag(trigger: On<Pointer<Drag>>, mut views: DragQuery) {
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((mut drag_state, buffer, scroll, viewport, font, computed, ui_transform, layout, sel, cursor)) =
+    let Ok((mut drag_state, buffer, scroll, font, computed, ui_transform, layout, sel, cursor)) =
         views.get_mut(entity)
     else {
         return;
@@ -473,13 +479,16 @@ pub fn on_pointer_drag(trigger: On<Pointer<Drag>>, mut views: DragQuery) {
     let inv_scale = computed.inverse_scale_factor();
     let node_top_left_logical = (ui_transform.translation.xy() - computed.size() * 0.5) * inv_scale;
     let local_pos = cursor_pos - node_top_left_logical;
+    let text_area_left = computed.content_inset().min_inset.x * inv_scale;
+    let text_area_top = computed.content_inset().min_inset.y * inv_scale;
     let char_pos = screen_to_char_pos(
         local_pos,
         &buffer.rope,
         layout,
         scroll.scroll_offset,
         font,
-        viewport,
+        text_area_left,
+        text_area_top,
         Some(drag_state.drag_start_scroll_offset),
     );
 
