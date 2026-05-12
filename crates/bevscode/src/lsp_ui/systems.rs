@@ -557,25 +557,20 @@ pub fn sync_lsp_document(
     time: Res<Time>,
     mut query: Query<
         (
-            Entity,
             &TextBuffer,
             Option<&mut LspDocument>,
             &mut LspDidChangeBatcher,
         ),
         With<CodeEditor>,
     >,
-    mut lsp_w: MessageWriter<LspRequest>,
 ) {
-    let Ok((entity, buffer, lsp_document, mut batcher)) = query.single_mut() else {
+    let Ok((buffer, lsp_document, mut batcher)) = query.single_mut() else {
         return;
     };
     if batcher.pending.is_empty() && !batcher.force_full_doc {
         return;
     }
     let Some(mut lsp_document) = lsp_document else {
-        // Drop queued edits — without a document URI there is no server
-        // to flush to. The next edit after `LspDocument` is attached
-        // re-arms the batcher cleanly.
         batcher.pending.clear();
         batcher.force_full_doc = false;
         return;
@@ -586,26 +581,14 @@ pub fn sync_lsp_document(
         return;
     }
 
-    let version = lsp_document.bump_version();
-    let changes = if batcher.force_full_doc {
+    if batcher.force_full_doc {
         batcher.pending.clear();
-        vec![TextDocumentContentChangeEvent {
-            range: None,
-            range_length: None,
-            text: buffer.rope.chunks().collect(),
-        }]
+        lsp_document.push_full_sync(buffer.rope.chunks().collect());
     } else {
-        std::mem::take(&mut batcher.pending)
-    };
-
-    lsp_w.write(LspRequest {
-        entity,
-        msg: LspMessage::DidChange {
-            uri: lsp_document.uri.clone(),
-            version,
-            changes,
-        },
-    });
+        for change in std::mem::take(&mut batcher.pending) {
+            lsp_document.push_change(change);
+        }
+    }
 
     batcher.force_full_doc = false;
     batcher.timer.reset();

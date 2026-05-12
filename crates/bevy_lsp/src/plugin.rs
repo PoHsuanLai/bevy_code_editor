@@ -10,6 +10,7 @@ use bevy::app::AppExit;
 use bevy::prelude::*;
 
 use crate::client::LspClient;
+use crate::document::LspDocument;
 use crate::messages::{LspRequest, *};
 
 /// Registers all outbound LSP response messages, drives the drain pipeline
@@ -93,6 +94,7 @@ impl Plugin for LspPlugin {
         app.add_systems(
             Update,
             (
+                flush_document_changes,
                 drain_lsp_responses,
                 flush_a.after(drain_lsp_responses),
                 flush_b.after(drain_lsp_responses),
@@ -759,6 +761,25 @@ fn flush_e(
         shutdown_ack => shutdown_w,
         crashed => crashed_w,
     );
+}
+
+fn flush_document_changes(
+    mut query: Query<(Entity, &mut LspDocument), Changed<LspDocument>>,
+    mut lsp_w: MessageWriter<LspRequest>,
+) {
+    for (entity, mut doc) in &mut query {
+        let Some((version, changes)) = doc.take_changes() else {
+            continue;
+        };
+        lsp_w.write(LspRequest {
+            entity,
+            msg: LspMessage::DidChange {
+                uri: doc.uri.clone(),
+                version,
+                changes,
+            },
+        });
+    }
 }
 
 fn dispatch_lsp_request(trigger: On<LspRequest>, clients: Query<&LspClient>) {
