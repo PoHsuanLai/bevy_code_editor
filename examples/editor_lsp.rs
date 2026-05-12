@@ -1098,8 +1098,7 @@ fn setup_editor(
     #[cfg(feature = "tree-sitter")]
     commands
         .entity(editor_entity)
-        .insert(Language::from_grammar(
-            "rust",
+        .insert(TreeSitterGrammar::new(
             tree_sitter_rust::LANGUAGE.into(),
             tree_sitter_rust::HIGHLIGHTS_QUERY,
         ));

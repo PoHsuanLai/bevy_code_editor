@@ -1,6 +1,6 @@
 //! `SetLanguageRequested` handler — swaps the editor's
-//! `bevy_tree_sitter::Language` component. The downstream parser observes
-//! the change and re-parses on the next frame.
+//! `bevy_tree_sitter::TreeSitterGrammar` component. The downstream parser
+//! observes the change and re-parses on the next frame.
 
 use bevy::prelude::*;
 
@@ -17,12 +17,12 @@ pub fn handle_set_language(
             continue;
         }
         let mut entity = commands.entity(ev.entity);
-        match &ev.language {
-            Some(lang) => {
-                entity.insert(lang.clone());
+        match &ev.grammar {
+            Some(grammar) => {
+                entity.insert(grammar.clone());
             }
             None => {
-                entity.remove::<bevy_tree_sitter::Language>();
+                entity.remove::<bevy_tree_sitter::TreeSitterGrammar>();
             }
         }
     }

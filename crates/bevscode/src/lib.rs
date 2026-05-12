@@ -170,7 +170,7 @@ pub mod prelude {
     #[cfg(feature = "tree-sitter")]
     pub use crate::types::events::SetLanguageRequested;
     #[cfg(feature = "tree-sitter")]
-    pub use bevy_tree_sitter::Language;
+    pub use bevy_tree_sitter::TreeSitterGrammar;
 
     // Editable-text widget types from `bevy_instanced_text_edit`. Re-exported so
     // prelude users get them without a separate import.

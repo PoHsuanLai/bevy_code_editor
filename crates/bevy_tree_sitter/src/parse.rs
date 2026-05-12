@@ -10,7 +10,7 @@ use bevy::tasks::{AsyncComputeTaskPool, Task};
 use ropey::Rope;
 use std::sync::Arc;
 
-use crate::language::Language;
+use crate::language::TreeSitterGrammar;
 use crate::tree_sitter::RopeReader;
 
 /// Buffer interface for the parse pipeline. `content_version` and `snapshot`
@@ -95,14 +95,13 @@ impl Default for ParseState {
 
 pub(crate) fn parse_dirty(
     mut targets: Query<(
-        Entity,
-        &Language,
+        &TreeSitterGrammar,
         &ParseSourceComp,
         &mut SyntaxTree,
         &mut ParseState,
     )>,
 ) {
-    for (_, language, source, mut syntax, mut state) in targets.iter_mut() {
+    for (grammar_comp, source, mut syntax, mut state) in targets.iter_mut() {
         match &mut *state {
             ParseState::Idle(ref mut stored_parser) => {
                 let source_version = source.0.content_version();
@@ -110,10 +109,7 @@ pub(crate) fn parse_dirty(
                     continue;
                 }
 
-                let Some(grammar) = language.tree_sitter.as_ref().map(|c| c.grammar.clone())
-                else {
-                    continue;
-                };
+                let grammar = grammar_comp.grammar.clone();
 
                 // Build the parser once; reuse it on every subsequent parse.
                 let parser = match stored_parser.take() {

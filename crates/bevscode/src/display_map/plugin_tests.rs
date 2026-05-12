@@ -41,7 +41,7 @@ use bevy_instanced_text::{
     TextViewBatchEntity, TextViewOverlays,
 };
 use bevy_instanced_text_edit::{BlinkPhase, EditDelta, EditPoint};
-use bevy_tree_sitter::{Language, SyntaxTree, TreeSitterPlugin};
+use bevy_tree_sitter::{SyntaxTree, TreeSitterGrammar, TreeSitterPlugin};
 use std::time::{Duration, Instant};
 
 // ── Shared helpers ───────────────────────────────────────────────────────
@@ -108,8 +108,7 @@ fn spawn_test_editor(app: &mut App, text: &str) -> Entity {
         BracketMatchState::default(),
         BracketConfig::default(),
     );
-    let language = Language::from_grammar(
-        "rust",
+    let language = TreeSitterGrammar::new(
         tree_sitter_rust::LANGUAGE.into(),
         tree_sitter_rust::HIGHLIGHTS_QUERY,
     );

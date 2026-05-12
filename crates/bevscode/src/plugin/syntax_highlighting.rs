@@ -19,7 +19,7 @@
 //!   `TextBuffer.content_version` to fully invalidate the glyph cache.
 //! - [`init_editor_syntax`]: startup system that attaches the per-entity
 //!   `SyntaxInner` Arc + the `EditorParseSource` Component and configures
-//!   the provider's highlights query from a [`bevy_tree_sitter::Language`]
+//!   the provider's highlights query from a [`bevy_tree_sitter::TreeSitterGrammar`]
 //!   Component (when one is present).
 
 #[cfg(feature = "tree-sitter")]
@@ -33,7 +33,7 @@ use std::sync::{Arc, RwLock};
 type InitEditorSyntaxQuery<'w, 's> = Query<
     'w,
     's,
-    (Entity, Option<&'static bevy_tree_sitter::Language>),
+    (Entity, Option<&'static bevy_tree_sitter::TreeSitterGrammar>),
     (With<CodeEditor>, Without<EditorSyntaxState>),
 >;
 
@@ -42,10 +42,10 @@ type ReactLanguageChangedQuery<'w, 's> = Query<
     'w,
     's,
     (
-        &'static bevy_tree_sitter::Language,
+        &'static bevy_tree_sitter::TreeSitterGrammar,
         &'static EditorSyntaxState,
     ),
-    (With<CodeEditor>, Changed<bevy_tree_sitter::Language>),
+    (With<CodeEditor>, Changed<bevy_tree_sitter::TreeSitterGrammar>),
 >;
 
 #[cfg(feature = "tree-sitter")]
@@ -107,7 +107,7 @@ impl SyntaxInner {
 ///
 /// Public so host setup code (e.g. the LSP example) can install a provider
 /// directly. Day-to-day usage only needs to attach a
-/// [`bevy_tree_sitter::Language`] Component — [`init_editor_syntax`] picks
+/// [`bevy_tree_sitter::TreeSitterGrammar`] Component — [`init_editor_syntax`] picks
 /// it up at startup and configures the provider's highlights query.
 // not reflectable: holds `TreeSitterProvider` which wraps `tree_sitter::*`
 // types that don't implement `Reflect`.
@@ -449,7 +449,7 @@ impl bevy_tree_sitter::ParseSource for EditorParseSource {
 ///
 /// Each editor gets its own `Arc<RwLock<SyntaxInner>>` — the shared state
 /// the styling layer reads and the parse pipeline mirrors trees into.
-/// The `Language` Component, if already present, drives the provider's
+/// The `TreeSitterGrammar` component, if already present, drives the provider's
 /// highlights-query setup; otherwise the editor falls back to plain text
 /// until a host setup system installs one.
 #[cfg(feature = "tree-sitter")]
@@ -457,12 +457,12 @@ pub fn init_editor_syntax(mut commands: Commands, editors: InitEditorSyntaxQuery
     for (entity, language) in editors.iter() {
         let syntax_state = EditorSyntaxState::new();
 
-        // If a Language Component is already present, configure the
+        // If a TreeSitterGrammar component is already present, configure the
         // provider's highlights query so styling can run on the first
         // parse completion. Hosts that don't use the Component-driven
         // path can call `EditorSyntaxState::set_provider` themselves.
-        if let Some(lang) = language {
-            if let Some(provider) = lang.create_tree_sitter_provider() {
+        if let Some(grammar) = language {
+            if let Some(provider) = grammar.create_provider() {
                 syntax_state.inner.write().unwrap().provider = Some(provider);
             }
         }
@@ -502,13 +502,13 @@ pub fn init_editor_syntax(
 #[derive(Component)]
 pub(crate) struct EditorParseBufferRef(pub(crate) Arc<RwLock<EditorBufferSnapshot>>);
 
-/// React to a [`bevy_tree_sitter::Language`] change on an editor entity by
+/// React to a [`bevy_tree_sitter::TreeSitterGrammar`] change on an editor entity by
 /// (re-)configuring the provider's highlights query. Lets host setup code
-/// install a `Language` post-`init_editor_syntax` and have it picked up.
+/// insert a `TreeSitterGrammar` post-`init_editor_syntax` and have it picked up.
 #[cfg(feature = "tree-sitter")]
 pub(crate) fn react_language_changed(editors: ReactLanguageChangedQuery) {
-    for (language, syntax_state) in editors.iter() {
-        let Some(new_provider) = language.create_tree_sitter_provider() else {
+    for (grammar, syntax_state) in editors.iter() {
+        let Some(new_provider) = grammar.create_provider() else {
             continue;
         };
         syntax_state.inner.write().unwrap().provider = Some(new_provider);

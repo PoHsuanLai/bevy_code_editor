@@ -1,54 +1,34 @@
-//! Language descriptor + tree-sitter grammar configuration.
+//! Tree-sitter grammar configuration component.
 
 use bevy::prelude::*;
-
 use crate::tree_sitter::TreeSitterProvider;
 
-/// Language descriptor: name + optional tree-sitter grammar/query.
+/// Tree-sitter grammar + highlight query for an entity.
 ///
-/// Not Reflect: `tree_sitter::Language` owns FFI-side state. LSP wiring lives
-/// in the consumer crate so `bevy_tree_sitter` stays pure tree-sitter.
+/// Insert this component to opt into async parsing and highlight queries.
+/// Omit it for plain-text entities.
+///
+/// Not Reflect: `tree_sitter::Language` owns FFI-side state.
 #[derive(Component, Clone)]
-pub struct Language {
-    pub name: String,
-    pub tree_sitter: Option<TreeSitterConfig>,
-}
-
-#[derive(Clone)]
-pub struct TreeSitterConfig {
+pub struct TreeSitterGrammar {
     pub grammar: tree_sitter::Language,
     pub highlights_query: String,
 }
 
-impl Language {
-    pub fn from_grammar(
-        name: impl Into<String>,
-        grammar: tree_sitter::Language,
-        highlights_query: impl Into<String>,
-    ) -> Self {
+impl TreeSitterGrammar {
+    pub fn new(grammar: tree_sitter::Language, highlights_query: impl Into<String>) -> Self {
         Self {
-            name: name.into(),
-            tree_sitter: Some(TreeSitterConfig {
-                grammar,
-                highlights_query: highlights_query.into(),
-            }),
+            grammar,
+            highlights_query: highlights_query.into(),
         }
     }
 
-    /// Plain text — no tree-sitter wiring.
-    pub fn plain(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            tree_sitter: None,
-        }
-    }
-
-    /// Returns `None` if tree-sitter is unconfigured or the highlight query fails to compile.
-    pub fn create_tree_sitter_provider(&self) -> Option<TreeSitterProvider> {
-        let config = self.tree_sitter.as_ref()?;
+    /// Build a [`TreeSitterProvider`] from this grammar. Returns `None` if the
+    /// highlight query fails to compile.
+    pub fn create_provider(&self) -> Option<TreeSitterProvider> {
         let mut provider = TreeSitterProvider::new();
         provider
-            .set_query(&config.highlights_query, config.grammar.clone())
+            .set_query(&self.highlights_query, self.grammar.clone())
             .ok()?;
         Some(provider)
     }

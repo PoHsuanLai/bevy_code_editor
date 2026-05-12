@@ -203,8 +203,7 @@ fn main() {
     });
 
     #[cfg(feature = "tree-sitter")]
-    commands.entity(entity).insert(Language::from_grammar(
-        "rust",
+    commands.entity(entity).insert(TreeSitterGrammar::new(
         tree_sitter_rust::LANGUAGE.into(),
         tree_sitter_rust::HIGHLIGHTS_QUERY,
     ));

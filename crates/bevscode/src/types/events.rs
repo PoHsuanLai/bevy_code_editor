@@ -126,13 +126,13 @@ impl CompletionApplied {
 /// filename). Triggers a re-parse and re-highlight on the next frame.
 /// `language` is `Option` so hosts can clear back to "no syntax."
 ///
-/// Not Reflect: `bevy_tree_sitter::Language` carries `tree_sitter::Language`
+/// Not Reflect: `bevy_tree_sitter::TreeSitterGrammar` carries `tree_sitter::Language`
 /// FFI state. Gated on the `tree-sitter` feature.
 #[cfg(feature = "tree-sitter")]
 #[derive(Message, Clone)]
 pub struct SetLanguageRequested {
     pub entity: Entity,
-    pub language: Option<bevy_tree_sitter::Language>,
+    pub grammar: Option<bevy_tree_sitter::TreeSitterGrammar>,
 }
 
 /// Outbound: a fold region's `is_folded` flipped, or a `fold_all` /

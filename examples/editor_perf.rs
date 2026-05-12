@@ -101,8 +101,7 @@ fn setup_editor(
     });
 
     #[cfg(feature = "tree-sitter")]
-    commands.entity(entity).insert(Language::from_grammar(
-        "c",
+    commands.entity(entity).insert(TreeSitterGrammar::new(
         tree_sitter_c::LANGUAGE.into(),
         tree_sitter_c::HIGHLIGHT_QUERY,
     ));
