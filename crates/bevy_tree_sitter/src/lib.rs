@@ -56,6 +56,4 @@ pub use crate::highlight::{highlight_ranges, HighlightRange};
 pub use crate::language::{Language, TreeSitterConfig};
 pub use crate::parse::{byte_to_point, ParseSource, ParseSourceComp, ParseTask, SyntaxTree};
 pub use crate::plugin::{ParseSet, TreeSitterPlugin};
-pub use crate::tree_sitter::{
-    RopeReader, TreeSitterProvider, MAX_BYTES_TO_QUERY, SYNC_REPARSE_BYTE_LIMIT,
-};
+pub use crate::tree_sitter::TreeSitterProvider;

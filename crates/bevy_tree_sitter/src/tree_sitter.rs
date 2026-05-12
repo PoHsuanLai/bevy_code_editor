@@ -11,18 +11,18 @@ use std::sync::Arc;
 use tree_sitter::{Language, Parser, Query, QueryCursor, Tree};
 
 /// Maximum bytes to query at once (matches Zed's heuristic).
-pub const MAX_BYTES_TO_QUERY: usize = 16 * 1024;
+const MAX_BYTES_TO_QUERY: usize = 16 * 1024;
 
 /// Buffer-size threshold above which `apply_sync_edit` skips its synchronous
 /// `parse_with` call and only does the cheap `tree.edit()` byte-offset shift.
 /// Larger buffers let the async `parse_dirty` pipeline handle the reparse
 /// off the main thread. ~64 KB covers typical source files; sqlite3.c-scale
 /// (~7 MB) defers.
-pub const SYNC_REPARSE_BYTE_LIMIT: usize = 64 * 1024;
+pub(crate) const SYNC_REPARSE_BYTE_LIMIT: usize = 64 * 1024;
 
 /// Zero-copy rope reader for `parse_with`. Streams chunks forward; seeking
 /// backwards resets the chunk iterator.
-pub struct RopeReader<'a> {
+pub(crate) struct RopeReader<'a> {
     rope: &'a Rope,
     chunks: ropey::iter::Chunks<'a>,
     current_chunk: &'a [u8],
@@ -30,7 +30,7 @@ pub struct RopeReader<'a> {
 }
 
 impl<'a> RopeReader<'a> {
-    pub fn new(rope: &'a Rope) -> Self {
+    pub(crate) fn new(rope: &'a Rope) -> Self {
         let mut chunks = rope.chunks();
         let current_chunk = chunks.next().map(|s| s.as_bytes()).unwrap_or(b"");
         Self {
@@ -41,7 +41,7 @@ impl<'a> RopeReader<'a> {
         }
     }
 
-    pub fn read(&mut self, byte_offset: usize) -> &'a [u8] {
+    pub(crate) fn read(&mut self, byte_offset: usize) -> &'a [u8] {
         if byte_offset < self.total_byte_offset {
             *self = Self::new(self.rope);
         }

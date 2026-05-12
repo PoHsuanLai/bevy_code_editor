@@ -201,16 +201,7 @@ pub fn byte_to_point(rope: &Rope, byte_offset: usize) -> tree_sitter::Point {
     let char_offset = rope.byte_to_char(byte_offset);
     let line = rope.char_to_line(char_offset);
     let line_start_char = rope.line_to_char(line);
-    let column_char = char_offset - line_start_char;
-
-    let line_slice = rope.line(line);
-    let mut column_byte = 0;
-    for (i, _) in line_slice.chars().enumerate() {
-        if i >= column_char {
-            break;
-        }
-        column_byte += line_slice.char(i).len_utf8();
-    }
-
+    let line_start_byte = rope.char_to_byte(line_start_char);
+    let column_byte = byte_offset - line_start_byte;
     tree_sitter::Point::new(line, column_byte)
 }

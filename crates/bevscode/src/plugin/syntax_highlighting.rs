@@ -616,8 +616,10 @@ fn record_edits_for_incremental_parsing(
             // `tree.edit()` calls saves the freeze.
             let removed = edit.old_end_byte.saturating_sub(edit.start_byte);
             let inserted = edit.new_end_byte.saturating_sub(edit.start_byte);
-            let huge_edit = removed > bevy_tree_sitter::SYNC_REPARSE_BYTE_LIMIT
-                || inserted > bevy_tree_sitter::SYNC_REPARSE_BYTE_LIMIT;
+            // 64 KB: same threshold as TreeSitterProvider::apply_sync_edit uses
+            // internally to decide whether to synchronously re-parse.
+            const HUGE_EDIT_THRESHOLD: usize = 64 * 1024;
+            let huge_edit = removed > HUGE_EDIT_THRESHOLD || inserted > HUGE_EDIT_THRESHOLD;
 
             if !huge_edit {
                 let st = syntax_tree.bypass_change_detection();
