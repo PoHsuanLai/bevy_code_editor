@@ -718,6 +718,170 @@ fn pipeline_consistency_after_backspace_join() {
     );
 }
 
+/// Successive line-deleting backspaces across multiple frames must not leave
+/// any lines uncolored. This is the regression test for the bug where
+/// `produce_line_styles` received a bounded `Some(row_range)` from the
+/// `TextEdited` event handler even when the edit changed the line count,
+/// causing a partial incremental rebuild that left shifted rows stale.
+///
+/// Three backspace-joins, each in its own frame:
+///   frame 1: delete `\n` at end of line 0 → 3 lines
+///   frame 2: delete `\n` at end of line 0 → 2 lines
+///   frame 3: delete `\n` at end of line 0 → 1 line (`fn` still on row 0)
+///
+/// After each edit, every visible styled line must still carry syntax color.
+#[test]
+fn pipeline_consistency_after_repeated_line_deletion() {
+    // Start with 8 lines; we'll backspace 7 newlines one per frame.
+    let source = "fn main() {\n    let a = 1;\n    let b = 2;\n    let c = 3;\n    let d = 4;\n    let e = 5;\n}\n";
+    let mut app = make_test_app();
+    install_atlas_and_font(&mut app);
+    let entity = spawn_test_editor(&mut app, source);
+
+    // Wait for initial parse to color `fn` on row 0.
+    run_until(&mut app, entity, Duration::from_secs(5), |w, e| {
+        w.get::<LineStyles>(e)
+            .and_then(|s| s.by_line.get(&0u32).cloned())
+            .map(|runs| runs.iter().any(|r| r.text == "fn"))
+            .unwrap_or(false)
+    });
+
+    // Helper: emit one line-deleting backspace, run one frame (edit applied,
+    // parse NOT yet complete), then assert no stale rows exist in LineStyles.
+    // This catches the intermediate-frame bug where incremental rebuild leaves
+    // old entries under shifted indices.
+    let mut simulate_backspace_join = |app: &mut App,
+                                       from_rope: &str,
+                                       to_rope: &str,
+                                       delete_row: u32,
+                                       content_version: u64,
+                                       expected_total_lines: usize| {
+        {
+            let mut buf = app.world_mut().get_mut::<TextBuffer>(entity).unwrap();
+            buf.rope = ropey::Rope::from_str(to_rope);
+            buf.content_version = content_version;
+        }
+        let newline_byte = from_rope
+            .split('\n')
+            .take(delete_row as usize + 1)
+            .map(|s| s.len() + 1)
+            .sum::<usize>()
+            .saturating_sub(1);
+        let col = from_rope
+            .split('\n')
+            .nth(delete_row as usize)
+            .map(|s| s.len())
+            .unwrap_or(0) as u32;
+        app.world_mut()
+            .resource_mut::<Messages<TextEdited>>()
+            .write(TextEdited {
+                delta: EditDelta {
+                    start_byte: newline_byte,
+                    old_end_byte: newline_byte + 1,
+                    new_end_byte: newline_byte,
+                    start_position: EditPoint { row: delete_row, column_byte: col },
+                    old_end_position: EditPoint { row: delete_row + 1, column_byte: 0 },
+                    new_end_position: EditPoint { row: delete_row, column_byte: col },
+                },
+                content_version,
+                pre_edit_rope: None,
+            });
+
+        // One frame: edit events processed, produce_line_styles runs.
+        // The async parse is unlikely to be done yet — this is the frame
+        // where the bug manifested: incremental rebuild with a stale map.
+        app.update();
+
+        let ls = app.world().get::<LineStyles>(entity).unwrap().clone();
+        // No row at or beyond expected_total_lines should have styled runs.
+        for row in expected_total_lines as u32..expected_total_lines as u32 + 4 {
+            let stale = ls.by_line.get(&row).cloned().unwrap_or_default();
+            assert!(
+                stale.is_empty(),
+                "STALE (frame after edit {content_version}): row {row} has runs \
+                 after deletion to {expected_total_lines} lines: {:?}",
+                stale.iter().map(|r| r.text.clone()).collect::<Vec<_>>()
+            );
+        }
+
+        // Wait for reparse to complete before the next edit.
+        run_until(app, entity, Duration::from_secs(5), |w, e| {
+            w.get::<SyntaxTree>(e)
+                .map(|st| st.content_version >= content_version)
+                .unwrap_or(false)
+        });
+    };
+
+    // Seven successive line-deleting backspaces, each in its own frame.
+    // Source starts as 8 lines; we join them down to 1.
+    let edits: &[(&str, &str, u32, u64, usize)] = &[
+        // (from, to, delete_row, content_version, expected_line_count_after)
+        (
+            "fn main() {\n    let a = 1;\n    let b = 2;\n    let c = 3;\n    let d = 4;\n    let e = 5;\n}\n",
+            "fn main() {\n    let a = 1;\n    let b = 2;\n    let c = 3;\n    let d = 4;\n    let e = 5;\n}",
+            6, 2, 7,
+        ),
+        (
+            "fn main() {\n    let a = 1;\n    let b = 2;\n    let c = 3;\n    let d = 4;\n    let e = 5;\n}",
+            "fn main() {\n    let a = 1;\n    let b = 2;\n    let c = 3;\n    let d = 4;\n    let e = 5;}",
+            5, 3, 6,
+        ),
+        (
+            "fn main() {\n    let a = 1;\n    let b = 2;\n    let c = 3;\n    let d = 4;\n    let e = 5;}",
+            "fn main() {\n    let a = 1;\n    let b = 2;\n    let c = 3;\n    let d = 4;    let e = 5;}",
+            4, 4, 5,
+        ),
+        (
+            "fn main() {\n    let a = 1;\n    let b = 2;\n    let c = 3;\n    let d = 4;    let e = 5;}",
+            "fn main() {\n    let a = 1;\n    let b = 2;\n    let c = 3;    let d = 4;    let e = 5;}",
+            3, 5, 4,
+        ),
+        (
+            "fn main() {\n    let a = 1;\n    let b = 2;\n    let c = 3;    let d = 4;    let e = 5;}",
+            "fn main() {\n    let a = 1;\n    let b = 2;    let c = 3;    let d = 4;    let e = 5;}",
+            2, 6, 3,
+        ),
+        (
+            "fn main() {\n    let a = 1;\n    let b = 2;    let c = 3;    let d = 4;    let e = 5;}",
+            "fn main() {\n    let a = 1;    let b = 2;    let c = 3;    let d = 4;    let e = 5;}",
+            1, 7, 2,
+        ),
+        (
+            "fn main() {\n    let a = 1;    let b = 2;    let c = 3;    let d = 4;    let e = 5;}",
+            "fn main() {    let a = 1;    let b = 2;    let c = 3;    let d = 4;    let e = 5;}",
+            0, 8, 1,
+        ),
+    ];
+    for (from, to, row, ver, total) in edits {
+        simulate_backspace_join(&mut app, from, to, *row, *ver, *total);
+    }
+
+    drive_layout_and_render_once(&mut app);
+
+    let world = app.world();
+    let line_styles = world.get::<LineStyles>(entity).unwrap().clone();
+
+    // After all deletions only row 0 remains. It must still contain `fn` colored.
+    let row0 = line_styles.by_line.get(&0u32).cloned().unwrap_or_default();
+    assert!(
+        row0.iter().any(|r| r.text == "fn"),
+        "REGRESSION: row 0 lost `fn` color after repeated line-deleting backspaces. \
+         Got runs: {:?}",
+        row0.iter().map(|r| (r.text.clone(), r.run.fg)).collect::<Vec<_>>()
+    );
+
+    // No rows beyond 0 should have any styled content (buffer only has 1 line).
+    for row in 1u32..4u32 {
+        let stale = line_styles.by_line.get(&row).cloned().unwrap_or_default();
+        assert!(
+            stale.is_empty(),
+            "STALE RUNS: row {} has leftover styled runs after deletion: {:?}",
+            row,
+            stale.iter().map(|r| (r.text.clone(), r.run.fg)).collect::<Vec<_>>()
+        );
+    }
+}
+
 /// Drives the full PostUpdate schedule as it runs in production:
 /// `sync_viewport_from_node` → `produce_layouts` → overlay producers →
 /// `update_text_views`. Verifies that bevscode's overlay systems

@@ -200,18 +200,27 @@ pub(crate) fn produce_line_styles(
     // Collect edit events: record the changed line range per entity.
     // Multiple edits in one frame are unioned. `None` means full rebuild.
     for event in edit_events.read() {
-        // TextEdited is not entity-keyed in its current form — it's broadcast.
-        // We can only use the row range; apply to all editors that changed.
-        let start_row = event.delta.start_position.row;
-        let end_row = event.delta.new_end_position.row;
-        // Mark all content-changed editors with this dirty range (union if multiple).
+        // Line-count edits shift every buffer-line index after the edit point.
+        // LineStyles.by_line is keyed by index so incremental rebuild leaves
+        // stale entries under wrong keys. Force a full rebuild (None).
+        let line_count_changed =
+            event.delta.old_end_position.row != event.delta.new_end_position.row;
+        let dirty = if line_count_changed {
+            None
+        } else {
+            let start_row = event.delta.start_position.row;
+            let end_row = event.delta.new_end_position.row;
+            Some((start_row, end_row))
+        };
         for entity in content_changed.iter() {
-            let entry = dirty_lines
-                .entry(entity)
-                .or_insert(Some((start_row, end_row)));
-            if let Some((lo, hi)) = entry {
-                *lo = (*lo).min(start_row);
-                *hi = (*hi).max(end_row);
+            let entry = dirty_lines.entry(entity).or_insert(dirty);
+            match (entry.as_mut(), dirty) {
+                (Some((lo, hi)), Some((new_lo, new_hi))) => {
+                    *lo = (*lo).min(new_lo);
+                    *hi = (*hi).max(new_hi);
+                }
+                // Either side is None → full rebuild.
+                _ => *entry = None,
             }
         }
     }
