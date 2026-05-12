@@ -970,7 +970,6 @@ fn render_rename_egui(
         (
             Entity,
             &mut LspRenamePopup,
-            &LspClient,
             Option<&LspDocument>,
             &TextFont,
         ),
@@ -979,8 +978,9 @@ fn render_rename_egui(
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&ComputedNode, With<CodeEditor>>,
     anchors: BufferAnchorParam,
+    mut lsp_w: MessageWriter<LspRequest>,
 ) {
-    let Ok((editor, mut rename_state, lsp_client, lsp_document, font)) = query.single_mut() else {
+    let Ok((editor, mut rename_state, lsp_document, font)) = query.single_mut() else {
         return;
     };
     if !rename_state.visible {
@@ -1050,11 +1050,14 @@ fn render_rename_egui(
         rename_state.reset();
     } else if submit && rename_state.can_submit() {
         if let Some(doc) = lsp_document {
-            lsp_client.send(LspMessage::Rename {
-                uri: doc.uri.clone(),
-                position: range.start,
-                new_name: rename_state.new_name.clone(),
-                id: 0,
+            lsp_w.write(LspRequest {
+                entity: editor,
+                msg: LspMessage::Rename {
+                    uri: doc.uri.clone(),
+                    position: range.start,
+                    new_name: rename_state.new_name.clone(),
+                    id: 0,
+                },
             });
         }
     }
@@ -1065,6 +1068,7 @@ fn setup_editor(
     mut editor_query: Query<(Entity, &mut LspClient), With<CodeEditor>>,
     asset_server: Res<AssetServer>,
     mut set_text_writer: MessageWriter<SetTextRequested>,
+    mut lsp_w: MessageWriter<LspRequest>,
 ) {
     let Ok((editor_entity, mut lsp_client)) = editor_query.single_mut() else {
         return;
@@ -1119,19 +1123,19 @@ fn setup_editor(
         lsp_types::Url::from_directory_path(&project_root).expect("Failed to get project root URI");
     let capabilities = lsp_types::ClientCapabilities::default();
 
-    lsp_client.send(LspMessage::Initialize {
+    lsp_w.write(LspRequest { entity: editor_entity, msg: LspMessage::Initialize {
         root_uri: root_uri.clone(),
         capabilities: Box::new(capabilities),
-    });
+    }});
 
-    lsp_client.send(LspMessage::Initialized);
+    lsp_w.write(LspRequest { entity: editor_entity, msg: LspMessage::Initialized });
 
-    lsp_client.send(LspMessage::DidOpen {
+    lsp_w.write(LspRequest { entity: editor_entity, msg: LspMessage::DidOpen {
         uri: doc_uri.clone(),
         language_id: "rust".to_string(),
         version: 1,
         text: rust_code.to_string(),
-    });
+    }});
 
     // Insert per-document state on the editor entity. Other LSP-side
     // Components (capabilities, popups, debounce, sync extra) are already on

@@ -74,7 +74,7 @@ pub mod prelude {
 // Re-export commonly used types at module level for backward compatibility.
 // Transport types come from bevy_lsp; UI types are local.
 pub use bevy_lsp::{
-    CodeActionOrCommand, LspClient, LspDocument, LspMessage, LspResponse, RequestType,
+    CodeActionOrCommand, LspClient, LspDocument, LspMessage, LspRequest, LspResponse, RequestType,
     ServerCapabilities,
 };
 pub use state::{

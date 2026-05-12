@@ -87,7 +87,7 @@ impl Plugin for LspPlugin {
             .add_message::<LspServerCrashed>();
 
         app.add_message::<LspRequest>();
-        app.observe(dispatch_lsp_request);
+        app.add_observer(dispatch_lsp_request);
 
         app.init_resource::<DrainedResponses>();
         app.add_systems(
@@ -761,8 +761,8 @@ fn flush_e(
     );
 }
 
-fn dispatch_lsp_request(trigger: Trigger<LspRequest>, clients: Query<&LspClient>) {
-    let Ok(client) = clients.get(trigger.target()) else {
+fn dispatch_lsp_request(trigger: On<LspRequest>, clients: Query<&LspClient>) {
+    let Ok(client) = clients.get(trigger.entity) else {
         return;
     };
     client.send(trigger.event().msg.clone());
