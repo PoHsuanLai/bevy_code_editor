@@ -187,6 +187,10 @@ fn drain_lsp_responses(
             match response {
                 R::Initialized { capabilities } => {
                     client.initialized = true;
+                    // Drain messages that arrived before initialize completed.
+                    for msg in std::mem::take(&mut client.pre_init_queue) {
+                        client.send(msg);
+                    }
                     w.initialized.write(LspServerInitialized { entity, capabilities: *capabilities });
                 }
                 R::Diagnostics { uri, diagnostics } => {
@@ -400,18 +404,18 @@ fn flush_document_changes(
     }
 }
 
-fn dispatch_lsp_request(trigger: On<LspRequest>, clients: Query<&LspClient>) {
-    let Ok(client) = clients.get(trigger.entity) else {
+fn dispatch_lsp_request(trigger: On<LspRequest>, mut clients: Query<&mut LspClient>) {
+    let Ok(mut client) = clients.get_mut(trigger.entity) else {
         return;
     };
     client.send(trigger.event().msg.clone());
 }
 
-fn shutdown_clients_on_app_exit(mut exit: MessageReader<AppExit>, clients: Query<&LspClient>) {
+fn shutdown_clients_on_app_exit(mut exit: MessageReader<AppExit>, mut clients: Query<&mut LspClient>) {
     if exit.read().next().is_none() {
         return;
     }
-    for client in clients.iter() {
+    for mut client in clients.iter_mut() {
         client.shutdown();
     }
 }

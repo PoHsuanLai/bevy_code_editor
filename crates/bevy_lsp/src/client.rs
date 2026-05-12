@@ -69,11 +69,13 @@ pub struct LspClient {
     server: Option<ServerSocket>,
     response_tx: async_channel::Sender<LspResponse>,
     response_rx: async_channel::Receiver<LspResponse>,
-    pub initialized: bool,
+    pub(crate) initialized: bool,  // set by plugin.rs on LspServerInitialized
     // Holds the background tasks alive. Dropped on shutdown/drop.
     _tasks: Vec<Task<()>>,
+    // Messages queued before initialize completes. Drained by plugin.rs on
+    // the frame it processes LspServerInitialized — no Arc<Mutex> needed.
+    pub(crate) pre_init_queue: Vec<LspMessage>,
     init_done: Arc<AtomicBool>,
-    pre_init_queue: Arc<Mutex<Vec<LspMessage>>>,
     shutting_down: Arc<AtomicBool>,
     next_inbound_request_id: Arc<AtomicU64>,
     inbound_slots: Arc<InboundReplySlots>,
@@ -94,8 +96,8 @@ impl LspClient {
             response_rx,
             initialized: false,
             _tasks: Vec::new(),
+            pre_init_queue: Vec::new(),
             init_done: Arc::new(AtomicBool::new(false)),
-            pre_init_queue: Arc::new(Mutex::new(Vec::new())),
             shutting_down: Arc::new(AtomicBool::new(false)),
             next_inbound_request_id: Arc::new(AtomicU64::new(1)),
             inbound_slots: Arc::new(InboundReplySlots::default()),
@@ -184,7 +186,7 @@ impl LspClient {
     }
 
     /// Queue or dispatch a message. Responses arrive via [`Self::try_recv`].
-    pub fn send(&self, message: LspMessage) {
+    pub fn send(&mut self, message: LspMessage) {
         let Some(server) = self.server.as_ref() else {
             #[cfg(debug_assertions)]
             debug!("[LSP] send() called before start(); dropping message");
@@ -203,7 +205,7 @@ impl LspClient {
                 dispatch(server, &self.response_tx, &self.inbound_slots, other);
             }
             other if !self.init_done.load(Ordering::Acquire) => {
-                self.pre_init_queue.lock().unwrap().push(other);
+                self.pre_init_queue.push(other);
             }
             other => dispatch(server, &self.response_tx, &self.inbound_slots, other),
         }
@@ -217,7 +219,6 @@ impl LspClient {
     ) {
         let tx = self.response_tx.clone();
         let init_done = self.init_done.clone();
-        let queue = self.pre_init_queue.clone();
         let slots = self.inbound_slots.clone();
         AsyncComputeTaskPool::get()
             .spawn(async move {
@@ -238,11 +239,6 @@ impl LspClient {
                             warn!("[LSP] initialized notify failed: {err}");
                         }
                         init_done.store(true, Ordering::Release);
-                        let drained: Vec<LspMessage> =
-                            std::mem::take(&mut *queue.lock().unwrap());
-                        for msg in drained {
-                            dispatch(&server, &tx, &slots, msg);
-                        }
                         emit(
                             &tx,
                             LspResponse::Initialized {
@@ -266,7 +262,7 @@ impl LspClient {
         self.initialized
     }
 
-    pub fn shutdown(&self) {
+    pub fn shutdown(&mut self) {
         if self.server.is_none() {
             return;
         }
