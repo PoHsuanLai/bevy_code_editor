@@ -1,16 +1,13 @@
 //! Component-driven async tree-sitter parsing.
 //!
 //! `parse_dirty` detects when `ParseSource::content_version()` outruns the
-//! stored tree version, kicks off an async parse task via
-//! `AsyncComputeTaskPool`, and writes the result back when complete.
-//! In-flight tasks are tracked in a `Local<HashMap>` — no child entities,
-//! no leaked implementation details. Single-flight per entity; never blocks
-//! the main thread.
+//! stored tree version, transitions the entity's `ParseState` to `InFlight`,
+//! and writes the result back when the task completes. Single-flight per
+//! entity; never blocks the main thread.
 
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task};
 use ropey::Rope;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::language::Language;
@@ -49,6 +46,7 @@ impl ParseSourceComp {
 ///
 /// Not Reflect: `tree_sitter::Tree` owns FFI-side state.
 #[derive(Component, Default)]
+#[require(ParseState)]
 pub struct SyntaxTree {
     pub tree: Option<tree_sitter::Tree>,
     pub content_version: u64,
@@ -73,68 +71,77 @@ impl SyntaxTree {
     }
 }
 
-pub(crate) struct InFlightParse {
-    task: Task<Option<tree_sitter::Tree>>,
-    content_version: u64,
-    dirty_rows: Option<(u32, u32)>,
+/// Per-entity parse pipeline state. Internal to this crate; hosts observe
+/// results via `Changed<SyntaxTree>` rather than querying this component.
+#[derive(Component, Default)]
+pub(crate) enum ParseState {
+    #[default]
+    Idle,
+    InFlight {
+        task: Task<Option<tree_sitter::Tree>>,
+        content_version: u64,
+        dirty_rows: Option<(u32, u32)>,
+    },
 }
 
 pub(crate) fn parse_dirty(
-    mut targets: Query<(Entity, &Language, &ParseSourceComp, &mut SyntaxTree)>,
-    mut in_flight: Local<HashMap<Entity, InFlightParse>>,
+    mut targets: Query<(
+        Entity,
+        &Language,
+        &ParseSourceComp,
+        &mut SyntaxTree,
+        &mut ParseState,
+    )>,
 ) {
-    // Kick off new parses for dirty entities that aren't already in flight.
-    for (entity, language, source, mut syntax) in targets.iter_mut() {
-        let source_version = source.0.content_version();
-        if source_version == syntax.content_version || in_flight.contains_key(&entity) {
-            continue;
-        }
+    for (_, language, source, mut syntax, mut state) in targets.iter_mut() {
+        match &mut *state {
+            ParseState::Idle => {
+                let source_version = source.0.content_version();
+                if source_version == syntax.content_version {
+                    continue;
+                }
 
-        let Some(grammar) = language.tree_sitter.as_ref().map(|c| c.grammar.clone()) else {
-            continue;
-        };
+                let Some(grammar) = language.tree_sitter.as_ref().map(|c| c.grammar.clone())
+                else {
+                    continue;
+                };
 
-        let rope = source.0.snapshot();
-        let cached_tree = syntax.tree.clone();
-        let dirty_rows = syntax.bypass_change_detection().dirty_rows;
-        let task = AsyncComputeTaskPool::get()
-            .spawn(async move { parse_tree_async(rope, grammar, cached_tree) });
+                let rope = source.0.snapshot();
+                let cached_tree = syntax.tree.clone();
+                let dirty_rows = syntax.bypass_change_detection().dirty_rows;
+                let task = AsyncComputeTaskPool::get()
+                    .spawn(async move { parse_tree_async(rope, grammar, cached_tree) });
 
-        in_flight.insert(
-            entity,
-            InFlightParse {
+                *state = ParseState::InFlight {
+                    task,
+                    content_version: source_version,
+                    dirty_rows,
+                };
+            }
+            ParseState::InFlight {
                 task,
-                content_version: source_version,
+                content_version,
                 dirty_rows,
-            },
-        );
-    }
+            } => {
+                let Some(tree) =
+                    futures_lite::future::block_on(futures_lite::future::poll_once(task))
+                else {
+                    continue;
+                };
 
-    // Poll completed tasks and write results back.
-    let completed: Vec<(Entity, Option<tree_sitter::Tree>, u64, Option<(u32, u32)>)> = in_flight
-        .iter_mut()
-        .filter_map(|(entity, parse)| {
-            let tree = futures_lite::future::block_on(futures_lite::future::poll_once(
-                &mut parse.task,
-            ))?;
-            Some((*entity, tree, parse.content_version, parse.dirty_rows))
-        })
-        .collect();
+                let content_version = *content_version;
+                let dirty_rows = *dirty_rows;
+                *state = ParseState::Idle;
 
-    for (entity, tree, content_version, dirty_rows) in completed {
-        in_flight.remove(&entity);
-        if let Ok((_, _, _, mut syntax)) = targets.get_mut(entity) {
-            if let Some(tree) = tree {
-                syntax.tree = Some(tree);
-                syntax.content_version = content_version;
-                syntax.tree_version = syntax.tree_version.wrapping_add(1);
-                syntax.dirty_rows = dirty_rows;
-            } else {
-                // Record the attempted version to avoid infinite-loop retries.
-                // bypass_change_detection keeps Changed<SyntaxTree> silent on
-                // failed parses — downstream readers don't care.
-                let s = syntax.bypass_change_detection();
-                s.content_version = content_version;
+                if let Some(tree) = tree {
+                    syntax.tree = Some(tree);
+                    syntax.content_version = content_version;
+                    syntax.tree_version = syntax.tree_version.wrapping_add(1);
+                    syntax.dirty_rows = dirty_rows;
+                } else {
+                    let s = syntax.bypass_change_detection();
+                    s.content_version = content_version;
+                }
             }
         }
     }
