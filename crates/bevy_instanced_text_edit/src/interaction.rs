@@ -1,10 +1,9 @@
 //! Shared text-view interactions — scroll, selection, copy.
 //!
 //! Implemented as observers on `Pointer<…>` events (from `bevy_picking`)
-//! and `FocusedInput<KeyboardInput>` (from `bevy_input_focus`), routed by
-//! the custom backend in [`crate::picking`]. The polling systems that used
-//! to live here (manual cursor-rect hit-testing) are gone — picking +
-//! focus dispatch handle entity routing for us.
+//! and `FocusedInput<KeyboardInput>` (from `bevy_input_focus`). Hit-testing
+//! is delegated entirely to Bevy UI's picking backend — `TextView` is a `Node`,
+//! so `ComputedNode::contains_point` handles it for free.
 
 use bevy::input::keyboard::{KeyCode, KeyboardInput};
 use bevy::input::mouse::MouseScrollUnit;
@@ -13,6 +12,7 @@ use bevy::input_focus::{FocusedInput, InputFocus};
 use bevy::picking::events::{Drag, Pointer, Press, Release, Scroll};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
+use bevy::ui::ui_transform::UiGlobalTransform;
 use ropey::Rope;
 
 use bevy_instanced_text::{
@@ -45,6 +45,7 @@ type PressQuery<'w, 's> = Query<
         &'static ScrollState,
         &'static TextViewport,
         &'static TextFont,
+        &'static ComputedNode,
         Option<&'static DisplayLayout>,
         Option<&'static mut SelectionState>,
         Option<&'static mut CursorState>,
@@ -62,6 +63,8 @@ type DragQuery<'w, 's> = Query<
         &'static ScrollState,
         &'static TextViewport,
         &'static TextFont,
+        &'static ComputedNode,
+        &'static UiGlobalTransform,
         Option<&'static DisplayLayout>,
         Option<&'static mut SelectionState>,
         Option<&'static mut CursorState>,
@@ -308,15 +311,17 @@ pub fn on_pointer_press(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((mut drag_state, buffer, scroll, viewport, font, layout, sel, cursor, settings)) =
+    let Ok((mut drag_state, buffer, scroll, viewport, font, computed, layout, sel, cursor, settings)) =
         views.get_mut(entity)
     else {
         return;
     };
     let interaction = settings.copied().unwrap_or_default();
 
+    // Bevy UI picking reports position as normalized (-0.5,-0.5)→(0.5,0.5)
+    // relative to node center. Convert to viewport-local pixels (0,0 = top-left).
     let local_pos = match trigger.event().hit.position {
-        Some(p) => Vec2::new(p.x, p.y),
+        Some(p) => (Vec2::new(p.x, p.y) + 0.5) * computed.size(),
         None => return,
     };
 
@@ -402,7 +407,7 @@ pub fn on_pointer_press(
     drag_state.is_dragging = true;
     drag_state.drag_start_pos = Some(char_pos);
     drag_state.drag_start_scroll_offset = scroll.scroll_offset;
-    drag_state.last_screen_pos = Some(viewport.hit_test_position + local_pos);
+    drag_state.last_screen_pos = Some(trigger.event().pointer_location.position);
     input_focus.set(entity);
 }
 
@@ -444,7 +449,7 @@ pub fn on_pointer_drag(trigger: On<Pointer<Drag>>, mut views: DragQuery) {
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((mut drag_state, buffer, scroll, viewport, font, layout, sel, cursor)) =
+    let Ok((mut drag_state, buffer, scroll, viewport, font, computed, ui_transform, layout, sel, cursor)) =
         views.get_mut(entity)
     else {
         return;
@@ -462,7 +467,11 @@ pub fn on_pointer_drag(trigger: On<Pointer<Drag>>, mut views: DragQuery) {
         }
     }
 
-    let local_pos = cursor_pos - viewport.hit_test_position;
+    // Convert screen-space cursor to viewport-local pixels.
+    // UiGlobalTransform.translation is node center in physical pixels;
+    // subtract half-size to get top-left, then offset by cursor position.
+    let node_top_left = ui_transform.translation.xy() - computed.size() * 0.5;
+    let local_pos = cursor_pos - node_top_left;
     let char_pos = screen_to_char_pos(
         local_pos,
         &buffer.rope,

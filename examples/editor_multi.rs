@@ -51,7 +51,7 @@ fn spawn_two_editors(
     mut input_focus: ResMut<bevy::input_focus::InputFocus>,
 ) {
     let Ok(window) = windows.single() else { return };
-    // Camera::viewport rects are in physical pixels; TextViewport is in logical pixels.
+    // Camera::viewport rects are in physical pixels; Node size is in logical pixels.
     let scale = window.scale_factor();
     let phys_w = (window.width() * scale) as u32;
     let phys_h = (window.height() * scale) as u32;
@@ -95,9 +95,6 @@ fn spawn_two_editors(
         Name::new("RightCamera"),
     ));
 
-    // Split-camera setup: Node provides size (synced by sync_viewport_from_node);
-    // hit_test_position is manually set because there's no unified UI tree to
-    // derive screen origin from UiGlobalTransform.
     let left = commands
         .spawn((
             CodeEditor,
@@ -105,10 +102,6 @@ fn spawn_two_editors(
             Node {
                 width: Val::Px(log_half),
                 height: Val::Px(log_h),
-                ..default()
-            },
-            TextViewport {
-                hit_test_position: Vec2::new(0.0, 0.0),
                 ..default()
             },
             left_layer,
@@ -122,10 +115,6 @@ fn spawn_two_editors(
             Node {
                 width: Val::Px(window.width() - log_half),
                 height: Val::Px(log_h),
-                ..default()
-            },
-            TextViewport {
-                hit_test_position: Vec2::new(log_half, 0.0),
                 ..default()
             },
             right_layer,

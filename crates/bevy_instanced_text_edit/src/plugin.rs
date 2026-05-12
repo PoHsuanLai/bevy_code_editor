@@ -4,7 +4,7 @@
 //! `DefaultPickingPlugins` and `InputDispatchPlugin`.
 
 use bevy::input_focus::InputDispatchPlugin;
-use bevy::picking::{DefaultPickingPlugins, PickingSystems};
+use bevy::picking::DefaultPickingPlugins;
 use bevy::prelude::*;
 
 use crate::components::{ScrollConfig, TextViewDragState};
@@ -13,7 +13,6 @@ use crate::handlers;
 use crate::interaction::{
     on_focused_keyboard, on_pointer_drag, on_pointer_press, on_pointer_release, on_pointer_scroll,
 };
-use crate::picking::text_view_picking_backend;
 use crate::state::{
     CursorState, EditHistoryState, IndentConfig, OnEdit, SelectionState, SnapshotPreEdit,
     TextEditor,
@@ -50,11 +49,6 @@ impl Plugin for InstancedTextInteractionPlugin {
         if !app.is_plugin_added::<InputDispatchPlugin>() {
             app.add_plugins(InputDispatchPlugin);
         }
-
-        app.add_systems(
-            PreUpdate,
-            text_view_picking_backend.in_set(PickingSystems::Backend),
-        );
 
         app.add_observer(on_pointer_press);
         app.add_observer(on_pointer_drag);

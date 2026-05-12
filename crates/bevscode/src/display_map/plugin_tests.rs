@@ -83,7 +83,6 @@ fn spawn_test_editor(app: &mut App, text: &str) -> Entity {
         TextViewport {
             width: 800,
             height: 600,
-            hit_test_position: Vec2::ZERO,
             text_area_left: 0.0,
             text_area_top: 0.0,
             gutter_width: 0.0,
@@ -473,29 +472,24 @@ fn editor_initializes_with_syntax_provider() {
 }
 
 /// Subsystem check: `sync_viewport_from_node` converts physical-pixel
-/// `ComputedNode` size + `UiGlobalTransform` into logical-pixel
-/// `TextViewport` fields.
+/// `ComputedNode` size into logical-pixel `TextViewport` width/height.
 #[test]
 fn sync_viewport_from_node_uses_logical_pixels() {
     let mut app = make_test_app();
     let entity = spawn_test_editor(&mut app, "fn main() {}\n");
 
-    // 1600x1200 physical at 2x DPI → 800x600 logical, top-left at (0,0).
+    // 1600x1200 physical at 2x DPI → 800x600 logical.
     let physical = Vec2::new(1600.0, 1200.0);
     let mut computed = ComputedNode::default();
     computed.size = physical;
     computed.inverse_scale_factor = 0.5;
-    app.world_mut().entity_mut(entity).insert((
-        computed,
-        UiGlobalTransform::from(Affine2::from_translation(physical * 0.5)),
-    ));
+    app.world_mut().entity_mut(entity).insert(computed);
 
     // Clear the TextViewport to a known wrong state.
     {
         let mut vp = app.world_mut().get_mut::<TextViewport>(entity).unwrap();
         vp.width = 0;
         vp.height = 0;
-        vp.hit_test_position = Vec2::new(-999.0, -999.0);
     }
     app.world_mut()
         .run_system_once(sync_viewport_from_node)
@@ -504,11 +498,6 @@ fn sync_viewport_from_node_uses_logical_pixels() {
     let vp = app.world().get::<TextViewport>(entity).unwrap();
     assert_eq!(vp.width, 800, "logical width (physical / DPI)");
     assert_eq!(vp.height, 600, "logical height");
-    assert!(
-        (vp.hit_test_position - Vec2::ZERO).length() < 0.01,
-        "top-left in logical pixels, got {:?}",
-        vp.hit_test_position
-    );
 }
 
 /// Walks all three layers (LineStyles → DisplayLayout → GlyphBatch) for a

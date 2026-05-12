@@ -71,7 +71,6 @@ pub mod handlers;
 pub mod history;
 pub mod interaction;
 pub mod key_repeat;
-pub mod picking;
 pub mod plugin;
 pub mod prelude;
 pub mod selection;

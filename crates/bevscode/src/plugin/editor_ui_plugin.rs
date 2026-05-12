@@ -34,20 +34,11 @@ impl Plugin for EditorUiPlugin {
         // Update separator position when viewport changes (now driven by sync_viewport_from_node)
         app.add_systems(Update, update_separator_on_resize.run_if(viewport_changed));
 
-        // Update gutter_width on the TextViewport when UI settings change.
-        // sync_viewport_from_node owns width/height/hit_test; bevscode owns
-        // gutter_width / text_area_left / text_area_top. Runs in PostUpdate
-        // before LayoutProduceSet so `produce_layouts` sees this frame's
-        // gutter values when computing the layout fingerprint.
         app.add_systems(
             PostUpdate,
             sync_gutter_width.before(bevy_instanced_text::LayoutProduceSet),
         );
 
-        // Overlay producers read `DisplayLayout`, which `bevy_instanced_text`
-        // rebuilds in PostUpdate. RenderingSet is configured in mod.rs to run
-        // after LayoutProduceSet and before TextViewRenderSet, so producers
-        // here see this frame's layout and the renderer sees their overlays.
         app.add_systems(
             PostUpdate,
             update_font_metrics
@@ -74,9 +65,7 @@ impl Plugin for EditorUiPlugin {
                 .in_set(super::RenderingSet),
         );
 
-        // `update_bracket_match` mutates state from the cursor (no DisplayLayout
-        // dependency), so it stays in Update/ApplyStateSet. `update_bracket_highlight`
-        // is an overlay producer that reads DisplayLayout — it runs in PostUpdate.
+        // State update stays in Update; overlay producer reads DisplayLayout so it runs in PostUpdate.
         app.add_systems(
             Update,
             update_bracket_match.in_set(super::ApplyStateSet),

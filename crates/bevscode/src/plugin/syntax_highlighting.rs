@@ -49,12 +49,9 @@ type ReactLanguageChangedQuery<'w, 's> = Query<
 >;
 
 #[cfg(feature = "tree-sitter")]
-// Note: no `Changed<TextBuffer>` filter. The first-frame-after-spawn
-// mutation by `handle_set_text` (which runs in Update with no set
-// ordering) consistently lands BEFORE this system's `last_run` tick is
-// recorded, so a `Changed<>` filter would never fire for it. The
-// content_version check inside the body keeps idle-frame cost low —
-// when versions match, we skip the rope clone and just early-out.
+// No `Changed<TextBuffer>` filter: handle_set_text mutates before this system's
+// last_run tick is recorded, so Changed<> never fires for the initial load.
+// content_version comparison in the body keeps idle cost low.
 type SyncEditorParseSourceQuery<'w, 's> = Query<
     'w,
     's,
@@ -636,23 +633,10 @@ fn record_edits_for_incremental_parsing(
                 if let Some(tree) = st.tree.as_mut() {
                     tree.edit(&edit);
                 }
-                // Edits that change the LINE COUNT shift buffer line indices
-                // for every row after `start_position.row`. `LineStyles.by_line`
-                // is keyed by buffer line index, so any incremental dirty
-                // range that doesn't cover ALL shifted rows leaves stale
-                // entries under wrong keys (a `}` typed where `let` should be,
-                // etc.). Force a full LineStyles rebuild — much cheaper than
-                // it sounds because `produce_line_styles` only re-highlights
-                // the visible viewport (~50 rows), not the whole buffer.
-                // The tree-sitter tree itself stays interpolated via
-                // `tree.edit()` above, so highlighting queries don't flash.
-                // `dirty_rows = None` is the "full rebuild" sentinel for
-                // `produce_line_styles`. A line-count-changing edit forces
-                // it because `LineStyles.by_line` is keyed by buffer line
-                // index and indices shift when lines are added/removed —
-                // incremental rebuild would leave stale entries under wrong
-                // keys (the "delete leaves stale glyphs" bug). Once forced
-                // None within an edit batch, stays None.
+                // Line-count edits shift every buffer-line index after the edit point.
+                // LineStyles.by_line is keyed by index, so incremental rebuild would
+                // leave stale entries under wrong keys. Force full rebuild (dirty_rows=None);
+                // the tree stays interpolated via tree.edit() above so queries don't flash.
                 let line_count_changed =
                     edit.old_end_position.row != edit.new_end_position.row;
                 if line_count_changed {
@@ -674,7 +658,6 @@ fn record_edits_for_incremental_parsing(
                 // structure. The async reparse will repopulate.
                 let st = syntax_tree.bypass_change_detection();
                 st.tree = None;
-                // Full rebuild needed — clear dirty_rows.
                 st.dirty_rows = None;
                 if let Some(provider) = &mut syntax_state.inner.write().unwrap().provider {
                     provider.invalidate_tree();

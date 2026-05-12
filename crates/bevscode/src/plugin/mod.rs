@@ -113,11 +113,6 @@ impl Plugin for CodeEditorPlugin {
         // `bevy_instanced_text_edit::TextViewDragState`, written by the picking-driven
         // press/drag observers in `bevy_instanced_text_edit::interaction`.
 
-        // Configure system set ordering. RenderingSet moved to PostUpdate so
-        // it runs AFTER bevy_instanced_text's LayoutProduceSet — overlay
-        // producers (selection, cursor-line, brackets, indent guides) read
-        // DisplayLayout, which is now rebuilt in PostUpdate. Keeping them in
-        // Update produced one-frame-stale overlays after every edit.
         app.configure_sets(
             Update,
             (
@@ -211,10 +206,6 @@ impl Plugin for CodeEditorPlugin {
                 .in_set(ApplyStateSet),
         );
 
-        // The renderer (`update_text_views`) is registered by `InstancedTextPlugin`
-        // in PostUpdate / TextViewRenderSet. RenderingSet (configured above) is
-        // already ordered before TextViewRenderSet, so overlay producers in this
-        // crate will be visible to the renderer this frame.
     }
 }
 

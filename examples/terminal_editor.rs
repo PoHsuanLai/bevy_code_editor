@@ -56,7 +56,7 @@ fn layout_panes(
     let phys_divider = (DIVIDER_PX as f32 * scale) as u32;
     let phys_half = (phys_w - phys_divider) / 2;
 
-    // Logical dimensions fed to TextViewport (viewport uses logical pixels).
+    // Logical dimensions for Node size (used by Bevy UI layout).
     let log_half = phys_half as f32 / scale;
     let log_h = window.height();
 
@@ -132,8 +132,6 @@ fn layout_panes(
         Name::new("PaneDivider"),
     ));
 
-    // Split-camera setup: Node provides size; hit_test_position is manually
-    // set since there's no unified UI tree to derive it from UiGlobalTransform.
     let editor = commands
         .spawn((
             CodeEditor,
@@ -141,10 +139,6 @@ fn layout_panes(
             Node {
                 width: Val::Px(log_half),
                 height: Val::Px(log_h),
-                ..default()
-            },
-            TextViewport {
-                hit_test_position: Vec2::new(0.0, 0.0),
                 ..default()
             },
             editor_layer,
@@ -161,10 +155,6 @@ fn layout_panes(
             width: Val::Px(window.width() - log_half),
             height: Val::Px(log_h),
             padding: UiRect::left(Val::Px(12.0)),
-            ..default()
-        },
-        TextViewport {
-            hit_test_position: Vec2::new(log_half + DIVIDER_PX as f32, 0.0),
             ..default()
         },
         terminal_layer,
