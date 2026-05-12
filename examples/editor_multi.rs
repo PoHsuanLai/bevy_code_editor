@@ -95,13 +95,19 @@ fn spawn_two_editors(
         Name::new("RightCamera"),
     ));
 
+    // Split-camera setup: Node provides size (synced by sync_viewport_from_node);
+    // hit_test_position is manually set because there's no unified UI tree to
+    // derive screen origin from UiGlobalTransform.
     let left = commands
         .spawn((
             CodeEditor,
             font.clone(),
+            Node {
+                width: Val::Px(log_half),
+                height: Val::Px(log_h),
+                ..default()
+            },
             TextViewport {
-                width: log_half as u32,
-                height: log_h as u32,
                 hit_test_position: Vec2::new(0.0, 0.0),
                 ..default()
             },
@@ -113,9 +119,12 @@ fn spawn_two_editors(
         .spawn((
             CodeEditor,
             font,
+            Node {
+                width: Val::Px(window.width() - log_half),
+                height: Val::Px(log_h),
+                ..default()
+            },
             TextViewport {
-                width: (window.width() - log_half) as u32,
-                height: log_h as u32,
                 hit_test_position: Vec2::new(log_half, 0.0),
                 ..default()
             },

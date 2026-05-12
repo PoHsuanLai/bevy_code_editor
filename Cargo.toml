@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     "crates/bevscode",
     "crates/bevy_lsp",
-    "crates/bevsmd",
     "crates/bevsterm",
     "crates/bevy_instanced_text",
     "crates/bevy_instanced_text_edit",

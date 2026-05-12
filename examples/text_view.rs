@@ -4,15 +4,14 @@
 //! can render styled text independently, without `CodeEditorPlugin`, cursor,
 //! selection, syntax highlighting, or keybindings.
 //!
-//! Builds a `DisplayLayout` directly via `trivial_layout`. Mouse-wheel
-//! scrolling here is handled by a tiny demo-local system; real consumers
+//! Mouse-wheel scrolling is handled by a tiny demo-local system; real consumers
 //! that want the editor's scroll/drag/copy behaviour also add
 //! `InstancedTextInteractionPlugin`.
 
 use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
 use bevy_instanced_text::prelude::*;
-use bevy_instanced_text::view::snapshot::{trivial_layout, StyleRun};
+use bevy_instanced_text::view::snapshot::StyleRun;
 use bevy_instanced_text::TextFont;
 
 fn main() {
@@ -46,7 +45,7 @@ fn setup_camera(mut commands: Commands) {
 fn setup_text_view(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    windows: Query<&Window>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
 ) {
     let Ok(window) = windows.single() else {
         return;
@@ -174,7 +173,7 @@ fn setup_text_view(
         styled_line("benefits with greater feature completeness.", dim),
     ];
 
-    // Plain rope text for hit-testing / copy.
+    // Build rope text from the styled lines.
     let mut full_text = String::new();
     for (i, (text, _)) in lines.iter().enumerate() {
         full_text.push_str(text);
@@ -182,22 +181,21 @@ fn setup_text_view(
             full_text.push('\n');
         }
     }
-    let buffer = TextBuffer::new(&full_text);
-    let scroll = ScrollState::default();
-    let metrics = ContentMetrics::default();
 
-    // Build the display layout directly. Match the editor's font defaults so
-    // the demo's metrics line up with what `update_text_views` uses.
-    let line_height = 24.0;
-    let char_width = 10.0;
-    let baseline_offset = 18.0 * 0.32;
-    let layout = trivial_layout(
-        &lines,
-        line_height,
-        char_width,
-        baseline_offset,
-        Color::srgb(0.85, 0.85, 0.85),
-    );
+    // Build LineStyles from the per-line runs.
+    let mut by_line = std::collections::HashMap::new();
+    for (i, (_text, runs)) in lines.iter().enumerate() {
+        let row_runs: Vec<RunWithText> = runs
+            .iter()
+            .map(|r| RunWithText {
+                text: _text.clone(),
+                run: r.clone(),
+            })
+            .collect();
+        by_line.insert(i as u32, row_runs);
+    }
+    let line_count = lines.len() as u32;
+    let line_styles = LineStyles::new(by_line, 0..line_count);
 
     let font = TextFont::from_font_size(16.0)
         .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"))
@@ -205,18 +203,16 @@ fn setup_text_view(
 
     commands.spawn((
         TextView,
-        buffer,
-        scroll,
-        metrics,
+        TextBuffer::new(&full_text),
+        line_styles,
         font,
-        TextViewport {
-            width: window.resolution.width() as u32,
-            height: window.resolution.height() as u32,
-            text_area_left: 16.0,
-            text_area_top: 16.0,
+        // Val::Px so Bevy UI layout resolves size without needing a UI camera.
+        Node {
+            width: Val::Px(window.width()),
+            height: Val::Px(window.height()),
+            padding: UiRect::all(Val::Px(16.0)),
             ..default()
         },
-        layout,
     ));
 }
 

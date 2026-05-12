@@ -43,6 +43,7 @@ bevy = { version = "0.18", default-features = false, features = [
     "bevy_camera",
     "bevy_input_focus",
     "bevy_picking",
+    "bevy_ui",
 ] }
 
 ropey = "1.6"

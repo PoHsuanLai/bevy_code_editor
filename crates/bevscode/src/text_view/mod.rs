@@ -20,10 +20,8 @@ pub use bevy_instanced_text::view::{
     layout, overlay, render, snapshot, state, viewport, ContentMetrics, DisplayLayout,
     GlyphBatchComponent, GlyphInstance, RectOverlay, RowVertical, ScrollState, ShapedLine,
     StyleRun, TextBuffer, TextView, TextViewBatch, TextViewBatchEntity, TextViewOverlays,
-    TextViewRenderSet, TextViewport, ViewportOrigin,
+    TextViewRenderSet, TextViewport,
 };
-
-pub use bevy_instanced_text::view::snapshot::trivial_layout;
 
 pub use bevy_instanced_text_edit::{
     copy_selection, screen_to_char_pos, InstancedTextInteractionPlugin, ScrollConfig,

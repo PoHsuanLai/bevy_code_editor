@@ -19,6 +19,7 @@ bevy = { version = "0.18", default-features = false, features = [
     "bevy_camera",
     "bevy_input_focus",
     "bevy_picking",
+    "bevy_ui",
     "bevy_window",
     "bevy_winit",
     "bevy_log",
@@ -30,7 +31,6 @@ bevy_instanced_text = { path = "../crates/bevy_instanced_text" }
 bevy_instanced_text_edit = { path = "../crates/bevy_instanced_text_edit" }
 bevscode = { path = "../crates/bevscode" }
 bevsterm = { path = "../crates/bevsterm" }
-bevsmd = { path = "../crates/bevsmd", features = ["tree-sitter"] }
 bevy_tree_sitter = { path = "../crates/bevy_tree_sitter", optional = true }
 bevy_lsp = { path = "../crates/bevy_lsp", optional = true }
 
@@ -110,6 +110,3 @@ path = "terminal_editor.rs"
 name = "text_input"
 path = "text_input.rs"
 
-[[example]]
-name = "markdown"
-path = "markdown.rs"

@@ -2,7 +2,7 @@
 //! the engine's per-frame layout system via plain-data Components.
 //!
 //! The engine's `produce_layouts` (in `bevy_instanced_text::view::layout_builder`)
-//! reads `HiddenLines` / `LineStyles` / `LayoutWrap` Components off each
+//! reads `HiddenLines` / `LineStyles` / `TextBounds` Components off each
 //! `TextView` entity and drives layout production itself. This plugin owns:
 //!
 //! - A startup system that inserts default `HiddenLines` / `LineStyles`
@@ -15,7 +15,7 @@
 use crate::types::events::TextEdited;
 use bevy::prelude::*;
 use bevy_instanced_text::{
-    visible_buffer_range, HiddenLines, LayoutProduceSet, LayoutWrap, LineStyles, RunWithText,
+    visible_buffer_range, HiddenLines, LayoutProduceSet, TextBounds, LineStyles, RunWithText,
     ScrollState, TextBuffer, TextFont, TextViewport,
 };
 use std::collections::{HashMap, HashSet};
@@ -140,7 +140,7 @@ pub(crate) fn produce_line_styles(
             &ScrollState,
             &TextViewport,
             &TextFont,
-            Option<&LayoutWrap>,
+            Option<&TextBounds>,
             Option<&HiddenLines>,
             &mut EditorSyntaxState,
             &mut LineStyles,
@@ -365,13 +365,13 @@ pub(crate) fn produce_line_styles(
     }
 }
 
-/// Refresh `LayoutWrap` from `Wrapping` + `Indentation`.
+/// Refresh `TextBounds` from `Wrapping` + `Indentation`.
 pub(crate) fn sync_layout_wrap(
     mut editors: Query<
         (
             &TextViewport,
             &TextFont,
-            &mut LayoutWrap,
+            &mut TextBounds,
             &Wrapping,
             &Indentation,
         ),
@@ -380,7 +380,7 @@ pub(crate) fn sync_layout_wrap(
 ) {
     for (viewport, font, mut wrap, wrapping, indentation) in editors.iter_mut() {
         let char_width = font.char_width;
-        let budget_px: Option<f32> = if wrapping.enabled {
+        let width: Option<f32> = if wrapping.enabled {
             let viewport_text_w = (viewport.width as f32 - viewport.text_area_left).max(char_width);
             let budget = match wrapping.wrap_column {
                 Some(col) => (col as f32) * char_width,
@@ -395,11 +395,8 @@ pub(crate) fn sync_layout_wrap(
         } else {
             0.0
         };
-        let next = LayoutWrap {
-            budget_px,
-            indent_px,
-        };
-        if wrap.budget_px != next.budget_px || wrap.indent_px != next.indent_px {
+        let next = TextBounds { width, indent_px };
+        if wrap.width != next.width || wrap.indent_px != next.indent_px {
             *wrap = next;
         }
     }

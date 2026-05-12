@@ -25,13 +25,10 @@ use bevscode::lsp_ui::state::{
 use bevscode::prelude::*;
 use bevscode::text_view::TextViewport;
 use bevscode::types::{CodeEditor, CursorState};
-use bevsmd::{MarkdownDoc, MarkdownLinks, MarkdownViewerPlugin};
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use bevy_egui::{egui, EguiContexts};
-use bevy_instanced_text::{
-    ContentMetrics, DisplayLayout, ScrollState, TextBuffer, TextColor, TextFont, TextView,
-};
+use bevy_instanced_text::{ScrollState, TextColor, TextFont};
 use bevy_lsp::{LspClient, LspDocument, LspMessage};
 #[cfg(feature = "tree-sitter")]
 use bevy_tree_sitter::Language;
@@ -64,11 +61,6 @@ fn main() {
     // LspPlugin is part of `CodeEditorPlugins` under the `lsp` feature; we
     // just supply the egui-based UI layer here.
     app.add_plugins(LspEguiUiPlugin);
-
-    // Markdown rendering for LSP hover popups: when a server returns
-    // Markdown content, `render_hover_markdown` spawns a child TextView
-    // entity that the markdown plugin lays out as styled text.
-    app.add_plugins(MarkdownViewerPlugin);
 
     app.add_systems(Startup, (setup_camera, spawn_editor))
         .add_systems(PostStartup, setup_editor)
@@ -109,7 +101,6 @@ impl Plugin for LspEguiUiPlugin {
             (
                 render_completion_egui,
                 render_hover_egui,
-                render_hover_markdown,
                 render_signature_help_egui,
                 render_code_actions_egui,
                 render_rename_egui,
@@ -669,12 +660,8 @@ fn render_completion_egui(
     }
 }
 
-/// Render the hover popup as an egui overlay.
-///
-/// Skipped when the LSP server returned Markdown — `render_hover_markdown`
-/// (the sprite + TextView path) handles that case to render real rich
-/// text. Plain-text hovers stay on the egui path because there's nothing
-/// to gain from involving the markdown renderer.
+/// Render the hover popup as an egui overlay. All hover content (plain-text
+/// and Markdown) is displayed as plain text via egui.
 fn render_hover_egui(
     mut contexts: EguiContexts,
     query: Query<(Entity, &LspHoverPopup, &LspCompletionPopup, &TextFont), With<CodeEditor>>,
@@ -688,11 +675,6 @@ fn render_hover_egui(
     if !hover_state.visible || hover_state.content.is_empty() {
         return;
     }
-    // Markdown hovers route through the bevsmd viewer instead.
-    if hover_state.kind == lsp_types::MarkupKind::Markdown {
-        return;
-    }
-
     let ctx = match contexts.ctx_mut() {
         Ok(c) => c,
         Err(e) => {
@@ -746,160 +728,6 @@ fn render_hover_egui(
                     });
                 });
         });
-}
-
-/// Marker for the markdown hover popup entity. Carries the popup's
-/// background sprite + the bundle of components that drive the
-/// `bevsmd` viewer (parses + relayouts on `Changed<MarkdownDoc>`).
-#[derive(Component)]
-struct MarkdownHoverPopup;
-
-/// Render the hover popup as a sprite + child TextView when the LSP
-/// server returned Markdown. Mirrors `render_hover_egui`'s position
-/// math but uses world-space sprites so the markdown viewer's GPU
-/// pipeline draws into the same frame as the editor.
-///
-/// Exists alongside (not replacing) `render_hover_egui`: that one
-/// handles plain-text hovers; this one handles markdown. The two are
-/// mutually exclusive at runtime — both check `hover_state.kind` and
-/// short-circuit when the format isn't theirs.
-fn render_hover_markdown(
-    mut commands: Commands,
-    editors: Query<(Entity, &LspHoverPopup, &TextFont), With<CodeEditor>>,
-    viewport_offset: Res<LspEguiViewportOffset>,
-    viewport: Single<&TextViewport, With<CodeEditor>>,
-    anchors: bevy_instanced_text::BufferAnchorParam,
-    existing: Query<Entity, With<MarkdownHoverPopup>>,
-) {
-    let Ok((editor, hover_state, font)) = editors.single() else {
-        return;
-    };
-
-    let visible = hover_state.visible
-        && !hover_state.content.is_empty()
-        && hover_state.kind == lsp_types::MarkupKind::Markdown;
-
-    if !visible {
-        for entity in existing.iter() {
-            commands
-                .entity(entity)
-                .queue_silenced(bevy::ecs::system::entity_command::despawn());
-        }
-        return;
-    }
-
-    let (cursor_x, cursor_y) = cursor_screen_pos(
-        hover_state.trigger_char_index,
-        editor,
-        &anchors,
-        &viewport_offset,
-    );
-
-    let popup_width = 520.0_f32;
-    let popup_height = estimate_markdown_popup_height(&hover_state.content, font);
-    let pos = position_popup_world(
-        cursor_x,
-        cursor_y,
-        popup_width,
-        popup_height,
-        font.line_height,
-        *viewport,
-    );
-
-    let viewport_for_layout = TextViewport {
-        width: popup_width as u32,
-        height: popup_height as u32,
-        text_area_left: 12.0,
-        text_area_top: 12.0,
-        ..default()
-    };
-
-    if let Some(entity) = existing.iter().next() {
-        // Update path: just replace the doc + transform. The plugin's
-        // `rebuild_markdown_layout` re-parses on `Changed<MarkdownDoc>`.
-        let pos_with_z = Vec3::new(pos.x + popup_width * 0.5, pos.y - popup_height * 0.5, 100.0);
-        commands.entity(entity).insert((
-            MarkdownDoc::new(hover_state.content.clone()),
-            viewport_for_layout,
-            Transform::from_translation(pos_with_z),
-            Sprite::from_color(
-                Color::srgba(0.10, 0.11, 0.13, 0.96),
-                Vec2::new(popup_width, popup_height),
-            ),
-        ));
-    } else {
-        let pos_with_z = Vec3::new(pos.x + popup_width * 0.5, pos.y - popup_height * 0.5, 100.0);
-        commands.spawn((
-            Name::new("LspHoverMarkdown"),
-            MarkdownHoverPopup,
-            LspUiVisual,
-            // Sprite acts as the popup's background card. The child
-            // TextView paints on top via the engine's render pass.
-            Sprite::from_color(
-                Color::srgba(0.10, 0.11, 0.13, 0.96),
-                Vec2::new(popup_width, popup_height),
-            ),
-            Transform::from_translation(pos_with_z),
-            TextView,
-            TextBuffer::default(),
-            ScrollState::default(),
-            ContentMetrics::default(),
-            viewport_for_layout,
-            font.clone(),
-            MarkdownDoc::new(hover_state.content.clone()),
-            DisplayLayout::default(),
-            MarkdownLinks::default(),
-        ));
-    }
-}
-
-/// Crude height estimate for the markdown popup, mirroring the egui
-/// path's heuristic: line count × line_height plus some chrome. Real
-/// height after layout may differ; the sprite background is sized
-/// from this estimate and clipping is left to the popup's max width.
-fn estimate_markdown_popup_height(content: &str, font: &TextFont) -> f32 {
-    let line_count = content.lines().count().max(1) as f32;
-    // Headings + code blocks inflate height — pad generously.
-    (line_count * font.line_height * 1.2 + 40.0).clamp(64.0, 480.0)
-}
-
-/// World-space popup placement: returns the popup's top-left corner in
-/// the same coordinate space `Transform::from_translation` expects (Y
-/// increases upward, origin at viewport center). Mirrors
-/// `position_popup`'s clamping but skips the viewport_offset since
-/// world-space sprites don't need the screen-offset shift.
-fn position_popup_world(
-    cursor_x: f32,
-    cursor_y: f32,
-    popup_width: f32,
-    popup_height: f32,
-    line_height: f32,
-    viewport: &TextViewport,
-) -> Vec2 {
-    let half_w = viewport.width as f32 * 0.5;
-    let half_h = viewport.height as f32 * 0.5;
-
-    // cursor_screen_pos returns top-left-origin screen pixels relative
-    // to the editor panel; convert to Bevy world (center origin, Y up).
-    let world_cursor_x = cursor_x - half_w;
-    let world_cursor_y = half_h - cursor_y;
-
-    // Prefer below cursor; flip above when the popup would overflow.
-    let below_top_y = world_cursor_y - line_height;
-    let above_top_y = world_cursor_y + line_height + popup_height;
-    let top_y = if below_top_y - popup_height >= -half_h {
-        below_top_y
-    } else if above_top_y <= half_h {
-        above_top_y
-    } else {
-        below_top_y
-    };
-
-    // Clamp horizontally so the popup stays on-screen.
-    let max_left = half_w - popup_width;
-    let left_x = world_cursor_x.clamp(-half_w, max_left.max(-half_w));
-
-    Vec2::new(left_x, top_y)
 }
 
 /// Render the signature help popup as an egui overlay.

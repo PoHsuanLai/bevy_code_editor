@@ -7,7 +7,7 @@ use crate::text_view::{
 };
 use crate::types::*;
 use bevy::prelude::*;
-use bevy_instanced_text::{visible_buffer_range, HiddenLines, LayoutWrap, TextFont};
+use bevy_instanced_text::{visible_buffer_range, HiddenLines, TextBounds, TextFont};
 
 type IndentGuidesQuery<'w, 's> = Query<
     'w,
@@ -69,7 +69,7 @@ pub(crate) fn update_selection_highlight(
             &TextFont,
             Option<&DisplayLayout>,
             Option<&HiddenLines>,
-            Option<&LayoutWrap>,
+            Option<&TextBounds>,
             &EditorTheme,
         ),
         With<CodeEditor>,
