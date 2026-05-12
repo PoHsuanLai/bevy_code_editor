@@ -17,6 +17,7 @@
 
 use bevscode::prelude::*;
 use bevy::prelude::*;
+use bevscode::prelude::TextFont;
 use bevy_camera::visibility::RenderLayers;
 
 const WINDOW_WIDTH: f32 = 1600.0;

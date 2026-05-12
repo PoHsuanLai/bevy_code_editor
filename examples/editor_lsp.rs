@@ -23,6 +23,7 @@ use bevscode::lsp_ui::state::{
     LspCodeActionsPopup, LspCompletionPopup, LspHoverPopup, LspRenamePopup, LspSignatureHelpPopup,
 };
 use bevscode::prelude::*;
+use bevscode::prelude::{TextColor, TextFont};
 use bevscode::types::{CodeEditor, CursorState};
 use bevy::prelude::*;
 use bevy::ui::ComputedNode;

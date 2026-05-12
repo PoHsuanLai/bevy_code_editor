@@ -5,6 +5,7 @@
 
 use bevscode::prelude::*;
 use bevy::prelude::*;
+use bevscode::prelude::TextFont;
 
 fn main() {
     App::new()

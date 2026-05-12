@@ -15,6 +15,7 @@
 
 use bevscode::prelude::*;
 use bevy::prelude::*;
+use bevscode::prelude::TextFont;
 use bevy::window::{CursorIcon, SystemCursorIcon};
 
 fn main() {
