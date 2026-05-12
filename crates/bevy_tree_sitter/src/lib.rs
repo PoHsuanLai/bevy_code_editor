@@ -54,6 +54,6 @@ pub use ::tree_sitter as ts;
 
 pub use crate::highlight::{highlight_ranges, HighlightRange};
 pub use crate::language::{Language, TreeSitterConfig};
-pub use crate::parse::{byte_to_point, ParseSource, ParseSourceComp, ParseTask, SyntaxTree};
+pub use crate::parse::{byte_to_point, ParseSource, ParseSourceComp, SyntaxTree};
 pub use crate::plugin::{ParseSet, TreeSitterPlugin};
 pub use crate::tree_sitter::TreeSitterProvider;

@@ -1,32 +1,20 @@
 //! Component-driven async tree-sitter parsing.
 //!
 //! `parse_dirty` detects when `ParseSource::content_version()` outruns the
-//! stored tree version, spawns a [`ParseTask`] on a child entity (so
-//! `Changed<SyntaxTree>` doesn't fire while in-flight), and writes the result
-//! back when complete. Single-flight per entity; never blocks the main thread.
+//! stored tree version, kicks off an async parse task via
+//! `AsyncComputeTaskPool`, and writes the result back when complete.
+//! In-flight tasks are tracked in a `Local<HashMap>` — no child entities,
+//! no leaked implementation details. Single-flight per entity; never blocks
+//! the main thread.
 
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task};
 use ropey::Rope;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::language::Language;
 use crate::tree_sitter::RopeReader;
-
-/// Stored on a CHILD entity so the parent's `Changed<SyntaxTree>` doesn't fire
-/// on every spawn/despawn of this transient task entity.
-#[derive(Component)]
-pub struct ParseTask {
-    task: Task<Option<tree_sitter::Tree>>,
-    /// Version at kick-off time; written into [`SyntaxTree`] on completion.
-    pub content_version: u64,
-    /// The parent entity that holds `SyntaxTree`/`Language`/`ParseSourceComp`.
-    pub target: Entity,
-    /// Dirty row range from the edit(s) that triggered this parse. Forwarded
-    /// into [`SyntaxTree::dirty_rows`] on completion so downstream systems
-    /// can do incremental rehighlight instead of a full-window rebuild.
-    pub dirty_rows: Option<(u32, u32)>,
-}
 
 /// Buffer interface for the parse pipeline. `content_version` and `snapshot`
 /// are called on the main thread; the cloned `Rope` is moved to the worker.
@@ -85,23 +73,20 @@ impl SyntaxTree {
     }
 }
 
-#[allow(clippy::type_complexity)]
-pub(crate) fn parse_dirty(
-    mut commands: Commands,
-    mut targets: Query<(Entity, &Language, &ParseSourceComp, &mut SyntaxTree)>,
-    mut tasks: Query<(Entity, &mut ParseTask)>,
-) {
-    let mut in_flight: std::collections::HashSet<Entity> = std::collections::HashSet::new();
-    for (_, task) in tasks.iter() {
-        in_flight.insert(task.target);
-    }
+pub(crate) struct InFlightParse {
+    task: Task<Option<tree_sitter::Tree>>,
+    content_version: u64,
+    dirty_rows: Option<(u32, u32)>,
+}
 
+pub(crate) fn parse_dirty(
+    mut targets: Query<(Entity, &Language, &ParseSourceComp, &mut SyntaxTree)>,
+    mut in_flight: Local<HashMap<Entity, InFlightParse>>,
+) {
+    // Kick off new parses for dirty entities that aren't already in flight.
     for (entity, language, source, mut syntax) in targets.iter_mut() {
         let source_version = source.0.content_version();
-        if source_version == syntax.content_version {
-            continue;
-        }
-        if in_flight.contains(&entity) {
+        if source_version == syntax.content_version || in_flight.contains_key(&entity) {
             continue;
         }
 
@@ -111,69 +96,48 @@ pub(crate) fn parse_dirty(
 
         let rope = source.0.snapshot();
         let cached_tree = syntax.tree.clone();
-        // Snapshot the current dirty range so the completed parse can forward
-        // it to `SyntaxTree::dirty_rows` for incremental rehighlight.
         let dirty_rows = syntax.bypass_change_detection().dirty_rows;
-        let task_pool = AsyncComputeTaskPool::get();
-        let task = task_pool.spawn(async move { parse_tree_async(rope, grammar, cached_tree) });
+        let task = AsyncComputeTaskPool::get()
+            .spawn(async move { parse_tree_async(rope, grammar, cached_tree) });
 
-        commands.spawn((
-            ParseTask {
+        in_flight.insert(
+            entity,
+            InFlightParse {
                 task,
                 content_version: source_version,
-                target: entity,
                 dirty_rows,
             },
-            ChildOf(entity),
-        ));
-        in_flight.insert(entity);
+        );
     }
 
-    let mut completed: Vec<(Entity, ParseCompletion)> = Vec::new();
-    for (task_entity, mut parse_task) in tasks.iter_mut() {
-        let Some(tree) =
-            futures_lite::future::block_on(futures_lite::future::poll_once(&mut parse_task.task))
-        else {
-            continue;
-        };
-        completed.push((
-            task_entity,
-            ParseCompletion {
-                target: parse_task.target,
-                content_version: parse_task.content_version,
-                dirty_rows: parse_task.dirty_rows,
-                tree,
-            },
-        ));
-    }
+    // Poll completed tasks and write results back.
+    let completed: Vec<(Entity, Option<tree_sitter::Tree>, u64, Option<(u32, u32)>)> = in_flight
+        .iter_mut()
+        .filter_map(|(entity, parse)| {
+            let tree = futures_lite::future::block_on(futures_lite::future::poll_once(
+                &mut parse.task,
+            ))?;
+            Some((*entity, tree, parse.content_version, parse.dirty_rows))
+        })
+        .collect();
 
-    for (task_entity, completion) in completed {
-        if let Ok((_, _, _, mut syntax)) = targets.get_mut(completion.target) {
-            if let Some(tree) = completion.tree {
+    for (entity, tree, content_version, dirty_rows) in completed {
+        in_flight.remove(&entity);
+        if let Ok((_, _, _, mut syntax)) = targets.get_mut(entity) {
+            if let Some(tree) = tree {
                 syntax.tree = Some(tree);
-                syntax.content_version = completion.content_version;
+                syntax.content_version = content_version;
                 syntax.tree_version = syntax.tree_version.wrapping_add(1);
-                // Forward the dirty row range from the spawning edit so
-                // `produce_line_styles` can rehighlight only the touched lines
-                // instead of the full visible window.
-                syntax.dirty_rows = completion.dirty_rows;
+                syntax.dirty_rows = dirty_rows;
             } else {
                 // Record the attempted version to avoid infinite-loop retries.
                 // bypass_change_detection keeps Changed<SyntaxTree> silent on
                 // failed parses — downstream readers don't care.
                 let s = syntax.bypass_change_detection();
-                s.content_version = completion.content_version;
+                s.content_version = content_version;
             }
         }
-        commands.entity(task_entity).despawn();
     }
-}
-
-struct ParseCompletion {
-    target: Entity,
-    content_version: u64,
-    dirty_rows: Option<(u32, u32)>,
-    tree: Option<tree_sitter::Tree>,
 }
 
 /// Async worker: incremental parse against `cached_tree` if available,
