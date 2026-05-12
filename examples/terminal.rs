@@ -6,7 +6,7 @@
 
 use bevsterm::prelude::*;
 use bevy::prelude::*;
-use bevy_instanced_text::{InstancedTextPlugins, TextFont};
+use bevsterm::prelude::TextFont;
 
 #[cfg(feature = "profile")]
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
@@ -28,9 +28,7 @@ fn main() {
                 ..default()
             }),
     )
-    .add_plugins(InstancedTextPlugins)
-    .add_plugins(BevyTerminalPlugin)
-    .add_plugins(bevsterm::BevyTerminalPtyPlugin)
+    .add_plugins(BevyTerminalPlugins)
     .add_systems(Startup, (setup_camera, spawn_terminal))
     .add_systems(Update, log_events);
 

@@ -11,9 +11,7 @@ use bevscode::prelude::*;
 use bevsterm::prelude::*;
 use bevy::prelude::*;
 use bevy_camera::visibility::RenderLayers;
-use bevy_instanced_text::TextFont;
-#[cfg(feature = "tree-sitter")]
-use bevy_tree_sitter::Language;
+use bevscode::prelude::TextFont;
 
 const DIVIDER_PX: u32 = 1;
 
@@ -165,7 +163,7 @@ fn layout_panes(
 fn setup_editor_content(
     mut commands: Commands,
     editor_query: Query<Entity, With<CodeEditor>>,
-    mut set_text_writer: MessageWriter<bevy_instanced_text_edit::SetTextRequested>,
+    mut set_text_writer: MessageWriter<SetTextRequested>,
 ) {
     let Ok(entity) = editor_query.single() else {
         return;
@@ -194,7 +192,7 @@ fn setup(mut commands: Commands) {
 }
 "#;
 
-    set_text_writer.write(bevy_instanced_text_edit::SetTextRequested {
+    set_text_writer.write(SetTextRequested {
         entity,
         text: text.to_string(),
     });
