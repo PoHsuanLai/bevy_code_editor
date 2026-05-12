@@ -1,23 +1,9 @@
-//! `BevyTerminalPlugin`: register types + messages, declare system sets,
-//! wire spawn / drain / shutdown, idempotently add input-focus and
-//! picking infrastructure.
-//!
-//! System sets — chained, each is a phase of one frame:
-//!
-//! ```text
-//! TerminalPtyDrainSet      ← drain crossbeam Receiver, mirror term mode
-//! TerminalApplyStateSet    ← clipboard handlers, viewport-driven resize
-//! TerminalSnapshotSet      ← Term grid → LineStyles + caret overlay
-//!                           (engine's LayoutProduceSet runs after this)
-//! ```
-
 use bevy::app::PluginGroupBuilder;
 use bevy::prelude::*;
 use bevy_instanced_text::view::layout_builder::LayoutProduceSet;
 
 use crate::drain::drain_pty_events;
 use crate::messages::*;
-use crate::session::{on_terminal_removed, open_pending_sessions, TerminalEventLoopRegistry};
 use crate::types::{
     BevyTerminal, TerminalBlockState, TerminalColorPalette, TerminalConfig, TerminalGridSnapshot,
     TerminalInputMode, TerminalScrollFollow, TerminalScrollback, TerminalShellInfo,
@@ -32,6 +18,11 @@ pub struct TerminalApplyStateSet;
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TerminalSnapshotSet;
 
+/// Terminal renderer plugin. Handles VT parsing, grid snapshotting, input,
+/// selection, and all ECS state. Does not spawn any PTY — add
+/// [`BevyTerminalPtyPlugin`] alongside this for native PTY support, or supply
+/// your own [`crate::types::TerminalSession`] and
+/// [`crate::types::TerminalEventChannel`] for WASM / custom IO backends.
 #[derive(Default)]
 pub struct BevyTerminalPlugin;
 
@@ -73,10 +64,7 @@ impl Plugin for BevyTerminalPlugin {
             .register_type::<TerminalSendSignal>()
             .register_type::<TerminalFocus>()
             .register_type::<TerminalClear>();
-        // `TerminalKeyInput` carries non-Reflect wezterm types and is intentionally
-        // not registered for Reflect — it only needs to flow on the bus.
 
-        // Message buses.
         app.add_message::<TerminalExited>()
             .add_message::<TerminalTitleChanged>()
             .add_message::<TerminalBell>()
@@ -99,7 +87,6 @@ impl Plugin for BevyTerminalPlugin {
             .add_message::<TerminalFocus>()
             .add_message::<TerminalClear>();
 
-        app.init_resource::<TerminalEventLoopRegistry>();
         app.register_type::<bevy_instanced_text_edit::CursorSettings>();
         app.register_type::<bevy_instanced_text_edit::CursorStyle>();
         app.register_type::<bevy_instanced_text::TextColor>();
@@ -118,14 +105,9 @@ impl Plugin for BevyTerminalPlugin {
         app.configure_sets(Update, LayoutProduceSet.after(TerminalSnapshotSet));
 
         app.add_systems(Update, drain_pty_events.in_set(TerminalPtyDrainSet));
-        // Open the PTY before resizing it: spawn first, sync second.
         app.add_systems(
             Update,
-            (
-                open_pending_sessions,
-                crate::viewport::sync_terminal_size.after(open_pending_sessions),
-            )
-                .in_set(TerminalApplyStateSet),
+            crate::viewport::sync_terminal_size.in_set(TerminalApplyStateSet),
         );
         app.add_systems(
             Update,
@@ -139,14 +121,11 @@ impl Plugin for BevyTerminalPlugin {
                 crate::clipboard::handle_scroll_to_bottom,
                 crate::clipboard::handle_scroll_to_top,
                 crate::clipboard::handle_key_input,
-                crate::clipboard::handle_send_signal,
                 crate::clipboard::handle_focus,
                 crate::clipboard::handle_clear,
             )
                 .in_set(TerminalApplyStateSet),
         );
-        // Runs after the snapshot tick so it sees the freshly-mutated follow
-        // state and emits at most one event per actual transition per frame.
         app.add_systems(
             Update,
             crate::clipboard::emit_scroll_follow_changed
@@ -177,28 +156,31 @@ impl Plugin for BevyTerminalPlugin {
                 .after(crate::snapshot::sync_grid_snapshot),
         );
 
-        app.add_observer(on_terminal_removed);
         app.add_observer(crate::input::on_focused_terminal_keyboard);
         app.add_observer(crate::blocks_pick::on_terminal_block_press);
     }
 }
 
-/// Full bundle for embedders: registers `BevyTerminalPlugin` plus the
-/// supporting plugins terminals need (text engine GPU + view, input
-/// dispatch, text interaction). Mirrors `bevy_code_editor::CodeEditorPlugins`.
+/// Full bundle for native hosts: text engine GPU + view, input dispatch,
+/// text interaction, renderer, and PTY backend.
 ///
 /// Disable individual entries with `.build().disable::<T>()` when composing
-/// with hosts that already own one of the dependencies.
+/// with a host that already owns one of the dependencies.
 pub struct BevyTerminalPlugins;
 
 impl PluginGroup for BevyTerminalPlugins {
     fn build(self) -> PluginGroupBuilder {
-        PluginGroupBuilder::start::<Self>()
+        let mut group = PluginGroupBuilder::start::<Self>()
             .add(bevy_instanced_text::gpu::GlyphAtlasPlugin)
             .add(bevy_instanced_text::gpu::InstancedTextRenderPlugin)
             .add(bevy_instanced_text::view::plugin::InstancedTextPlugin)
             .add(bevy::input_focus::InputDispatchPlugin)
             .add(bevy_instanced_text_edit::InstancedTextInteractionPlugin)
-            .add(BevyTerminalPlugin)
+            .add(BevyTerminalPlugin);
+        #[cfg(feature = "pty")]
+        {
+            group = group.add(crate::session::BevyTerminalPtyPlugin);
+        }
+        group
     }
 }

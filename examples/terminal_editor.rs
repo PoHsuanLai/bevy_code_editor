@@ -36,6 +36,7 @@ fn main() {
         )
         .add_plugins(CodeEditorPlugins)
         .add_plugins(BevyTerminalPlugin)
+        .add_plugins(bevsterm::BevyTerminalPtyPlugin)
         .add_systems(Startup, layout_panes)
         .add_systems(PostStartup, setup_editor_content)
         .run();
@@ -131,14 +132,18 @@ fn layout_panes(
         Name::new("PaneDivider"),
     ));
 
-    // Editor — left pane.
+    // Split-camera setup: Node provides size; hit_test_position is manually
+    // set since there's no unified UI tree to derive it from UiGlobalTransform.
     let editor = commands
         .spawn((
             CodeEditor,
             font.clone(),
+            Node {
+                width: Val::Px(log_half),
+                height: Val::Px(log_h),
+                ..default()
+            },
             TextViewport {
-                width: log_half as u32,
-                height: log_h as u32,
                 hit_test_position: Vec2::new(0.0, 0.0),
                 ..default()
             },
@@ -152,11 +157,13 @@ fn layout_panes(
     commands.spawn((
         BevyTerminal,
         font,
+        Node {
+            width: Val::Px(window.width() - log_half),
+            height: Val::Px(log_h),
+            padding: UiRect::left(Val::Px(12.0)),
+            ..default()
+        },
         TextViewport {
-            width: (window.width() - log_half) as u32,
-            height: log_h as u32,
-            text_area_left: 12.0,
-            text_area_top: 0.0,
             hit_test_position: Vec2::new(log_half + DIVIDER_PX as f32, 0.0),
             ..default()
         },

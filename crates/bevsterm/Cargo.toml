@@ -30,6 +30,7 @@ bevy = { version = "0.18", default-features = false, features = [
     "bevy_camera",
     "bevy_input_focus",
     "bevy_picking",
+    "bevy_ui",
     "bevy_window",
 ] }
 
@@ -39,7 +40,7 @@ wezterm-term = { git = "https://github.com/wezterm/wezterm", rev = "577474d89ee6
 wezterm-surface = { git = "https://github.com/wezterm/wezterm", rev = "577474d89ee61aef4a48145cdec82a638d874751" }
 termwiz = { git = "https://github.com/wezterm/wezterm", rev = "577474d89ee61aef4a48145cdec82a638d874751" }
 
-portable-pty = "0.9"
+portable-pty = { version = "0.9", optional = true }
 crossbeam-channel = "0.5"
 parking_lot = "0.12"
 
@@ -56,7 +57,11 @@ bevy = { version = "0.18", features = ["bevy_window", "bevy_winit"] }
 bevscode = { path = "../bevscode" }
 
 [features]
-default = ["arboard"]
+default = ["arboard", "pty"]
+# Native PTY backend (portable-pty). Disable for WASM / headless builds and
+# add `BevyTerminalPlugin` only; supply your own `TerminalSession` +
+# `TerminalEventChannel` (e.g. backed by a WebSocket).
+pty = ["dep:portable-pty"]
 # `arboard`-backed clipboard. Disable for headless/web builds and inject your
 # own `ClipboardProvider` via `insert_resource(ClipboardResource::new(...))`.
 arboard = ["bevy_instanced_text_edit/arboard"]

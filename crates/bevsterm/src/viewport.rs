@@ -1,10 +1,5 @@
-//! Viewport-change → PTY + `Terminal` resize. Also exposes
-//! [`cells_from_viewport`] so the deferred-spawn path can reuse the
-//! same conversion.
-
 use bevy::prelude::*;
 use bevy_instanced_text::{TextFont, TextViewport};
-use portable_pty::PtySize;
 
 use crate::backend;
 use crate::types::TerminalSession;
@@ -13,8 +8,7 @@ pub const MIN_COLS: u16 = 2;
 pub const MIN_ROWS: u16 = 1;
 
 /// Convert a viewport + font into a (cols, rows) cell count, or `None`
-/// if the viewport hasn't been laid out yet (zero-area). Caller decides
-/// what to do with sub-`MIN_*` results.
+/// if the viewport hasn't been laid out yet (zero-area).
 pub fn cells_from_viewport(viewport: &TextViewport, font: &TextFont) -> Option<(u16, u16)> {
     let usable_w = (viewport.width as f32 - viewport.text_area_left).max(0.0);
     let usable_h = (viewport.height as f32 - viewport.text_area_top).max(0.0);
@@ -60,15 +54,8 @@ pub fn sync_terminal_size(
             pixel_height: (rows * cell_h) as usize,
             dpi: scale,
         };
-        let pty_size = PtySize {
-            cols,
-            rows,
-            pixel_width: cols * cell_w,
-            pixel_height: rows * cell_h,
-        };
 
         session.terminal.lock().resize(new_size);
-        let _ = session.pty_master.lock().resize(pty_size);
         session.size = new_size;
     }
 }

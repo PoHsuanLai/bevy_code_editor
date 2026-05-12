@@ -102,7 +102,6 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         let needs_rebuild = cache_entry.last_seqno != Some(seqno) || cache_entry.last_rows != rows;
 
         if !needs_rebuild {
-            drop(term);
             anchor_scroll_to_bottom(&mut scroll, viewport, font, total_lines, &mut follow);
             continue;
         }

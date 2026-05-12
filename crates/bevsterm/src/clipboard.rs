@@ -6,12 +6,11 @@ use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy_instanced_text::{ScrollState, TextBuffer, TextFont};
 use bevy_instanced_text_edit::{copy_selection, ClipboardResource, SelectionState};
-use portable_pty::PtySize;
 
 use crate::messages::{
     TerminalClear, TerminalCopySelection, TerminalFocus, TerminalKeyInput, TerminalPaste,
     TerminalResize, TerminalRunCommand, TerminalScrollFollowChanged, TerminalScrollTo,
-    TerminalScrollToBottom, TerminalScrollToTop, TerminalSendSignal, TerminalWriteBytes,
+    TerminalScrollToBottom, TerminalScrollToTop, TerminalWriteBytes,
 };
 use crate::types::{TerminalGridSnapshot, TerminalScrollFollow, TerminalSession};
 
@@ -84,21 +83,11 @@ pub fn handle_resize(
             pixel_height: (ev.rows * cell_h) as usize,
             dpi: session.size.dpi,
         };
-        let pty_size = PtySize {
-            cols: ev.cols,
-            rows: ev.rows,
-            pixel_width: ev.cols * cell_w,
-            pixel_height: ev.rows * cell_h,
-        };
         session.terminal.lock().resize(new_size);
-        let _ = session.pty_master.lock().resize(pty_size);
         session.size = new_size;
     }
 }
 
-/// Jump the viewport so `line` (0 = top of scrollback, growing downward) sits
-/// at the top of the visible area. Disengages bottom-follow so the user stays
-/// where they jumped to as new output arrives.
 pub fn handle_scroll_to(
     mut events: MessageReader<TerminalScrollTo>,
     mut q: Query<(&mut ScrollState, &mut TerminalScrollFollow, &TextFont)>,
@@ -115,8 +104,6 @@ pub fn handle_scroll_to(
     }
 }
 
-/// Re-engage bottom-follow and snap to the latest output. The next
-/// `sync_grid_snapshot` tick will write the bottom-anchored offsets.
 pub fn handle_scroll_to_bottom(
     mut events: MessageReader<TerminalScrollToBottom>,
     mut q: Query<&mut TerminalScrollFollow>,
@@ -126,13 +113,9 @@ pub fn handle_scroll_to_bottom(
             continue;
         };
         follow.stick_to_bottom = true;
-        // Force `anchor_scroll_to_bottom`'s wheel-detector to skip — by leaving
-        // `last_applied_target` alone, `target_scroll_offset` will look "in
-        // sync" until the system rewrites both to the new bottom.
     }
 }
 
-/// Jump to the top of the buffer and disengage bottom-follow.
 pub fn handle_scroll_to_top(
     mut events: MessageReader<TerminalScrollToTop>,
     mut q: Query<(&mut ScrollState, &mut TerminalScrollFollow)>,
@@ -150,7 +133,7 @@ pub fn handle_scroll_to_top(
 
 pub fn handle_clear(
     mut events: MessageReader<TerminalClear>,
-    mut q: Query<(&TerminalSession, &mut TerminalGridSnapshot)>,
+    mut q: Query<(&mut TerminalSession, &mut TerminalGridSnapshot)>,
 ) {
     const CLEAR_SEQUENCE: &[u8] = b"\x1b[3J\x1b[2J\x1b[H";
     for ev in events.read() {
@@ -162,9 +145,6 @@ pub fn handle_clear(
     }
 }
 
-/// Synthesize a keypress. Wezterm encodes the key according to the term's
-/// current input mode (cursor-key application, kitty keyboard, etc.) and
-/// writes the resulting bytes to the PTY.
 pub fn handle_key_input(mut events: MessageReader<TerminalKeyInput>, q: Query<&TerminalSession>) {
     for ev in events.read() {
         let Ok(session) = q.get(ev.entity) else {
@@ -174,36 +154,6 @@ pub fn handle_key_input(mut events: MessageReader<TerminalKeyInput>, q: Query<&T
     }
 }
 
-/// Forward a POSIX signal to the PTY child's process group. No-op on
-/// Windows (process-group signalling has no equivalent).
-#[cfg(unix)]
-pub fn handle_send_signal(
-    mut events: MessageReader<TerminalSendSignal>,
-    q: Query<&TerminalSession>,
-) {
-    for ev in events.read() {
-        let Ok(session) = q.get(ev.entity) else {
-            continue;
-        };
-        let pgid = session.pty_master.lock().process_group_leader();
-        if let Some(pgid) = pgid {
-            // SAFETY: killpg is signal-safe and takes a pid_t + int. We hold
-            // no locks here that the signal handler could deadlock against.
-            unsafe {
-                libc::killpg(pgid as libc::pid_t, ev.signal);
-            }
-        }
-    }
-}
-
-#[cfg(not(unix))]
-pub fn handle_send_signal(mut events: MessageReader<TerminalSendSignal>) {
-    // Drain so the message bus doesn't grow unbounded on Windows.
-    for _ in events.read() {}
-}
-
-/// Programmatically focus a terminal entity. Mirrors what `on_terminal_added`
-/// does on first spawn, but exposed so split-pane hosts can drive focus.
 pub fn handle_focus(
     mut events: MessageReader<TerminalFocus>,
     sessions: Query<(), With<TerminalSession>>,
@@ -216,18 +166,12 @@ pub fn handle_focus(
     }
 }
 
-/// Mirror `Changed<TerminalScrollFollow>` onto the message bus so hosts
-/// that prefer events over change-detection queries get notified when the
-/// auto-follow state flips.
 pub fn emit_scroll_follow_changed(
     q: Query<(Entity, &TerminalScrollFollow), Changed<TerminalScrollFollow>>,
     mut writer: MessageWriter<TerminalScrollFollowChanged>,
     mut last: Local<HashMap<Entity, bool>>,
 ) {
     for (entity, follow) in q.iter() {
-        // `Changed` fires on any field write — including `last_applied_target`,
-        // which we update every frame. Filter to actual `stick_to_bottom`
-        // transitions so hosts only see meaningful events.
         let prev = last.insert(entity, follow.stick_to_bottom);
         if prev != Some(follow.stick_to_bottom) {
             writer.write(TerminalScrollFollowChanged {

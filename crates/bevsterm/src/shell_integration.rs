@@ -1,26 +1,107 @@
-//! Shell snippets that emit OSC 133 (`A`/`B`/`C`/`D`) so the terminal
-//! can detect command boundaries. Without this, `get_semantic_zones`
-//! returns nothing and no command blocks render.
+use bevy::prelude::*;
 
-pub fn default_zsh_init() -> &'static str {
-    r#"
-__bevy_terminal_precmd() { print -Pn "\e]133;A\a"; }
-__bevy_terminal_preexec() { print -Pn "\e]133;C\a"; }
-typeset -ag precmd_functions preexec_functions
-precmd_functions+=(__bevy_terminal_precmd)
-preexec_functions+=(__bevy_terminal_preexec)
-"#
+use crate::backend::SharedWriter;
+
+/// Injects shell integration hooks into a freshly-opened PTY session.
+///
+/// Called once by `BevyTerminalPtyPlugin` right after the PTY opens.
+/// Implementations write whatever bytes are needed to the PTY input —
+/// typically an `eval '...'` wrapped in a bootstrap guard so subshells
+/// don't re-inject.
+pub trait ShellIntegration: Send + Sync {
+    fn inject(&self, pty_input: &SharedWriter);
 }
 
-pub fn default_bash_init() -> &'static str {
-    r#"
-__bevy_terminal_prompt_command() { printf '\e]133;A\a'; }
-__bevy_terminal_preexec() {
+/// Per-entity shell integration. Insert alongside [`crate::types::BevyTerminal`]
+/// to enable OSC 133 command blocks for that terminal:
+///
+/// ```rust,no_run
+/// # use bevy::prelude::*;
+/// # use bevsterm::prelude::*;
+/// # use bevsterm::shell_integration::{ShellIntegrationComponent, ZshIntegration, auto_detect};
+/// # fn setup(mut commands: Commands) {
+/// // Explicit:
+/// commands.spawn((BevyTerminal, ShellIntegrationComponent::new(ZshIntegration)));
+///
+/// // Auto-detect from $SHELL:
+/// commands.spawn((BevyTerminal, ShellIntegrationComponent::auto()));
+/// # }
+/// ```
+#[derive(Component)]
+pub struct ShellIntegrationComponent(pub Box<dyn ShellIntegration>);
+
+impl ShellIntegrationComponent {
+    pub fn new(integration: impl ShellIntegration + 'static) -> Self {
+        Self(Box::new(integration))
+    }
+
+    pub fn auto() -> Self {
+        Self(auto_detect(None))
+    }
+}
+
+/// No-op — the default when no [`ShellIntegrationComponent`] is on the entity.
+pub struct NoIntegration;
+
+impl ShellIntegration for NoIntegration {
+    fn inject(&self, _: &SharedWriter) {}
+}
+
+pub struct ZshIntegration;
+
+impl ShellIntegration for ZshIntegration {
+    fn inject(&self, pty_input: &SharedWriter) {
+        let script = r#"__bevsterm_precmd() { print -Pn "\e]133;A\a"; }
+__bevsterm_preexec() { print -Pn "\e]133;C\a"; }
+typeset -ag precmd_functions preexec_functions
+precmd_functions+=(__bevsterm_precmd)
+preexec_functions+=(__bevsterm_preexec)
+export BEVSTERM_BOOTSTRAPPED=1"#;
+        let cmd = format!(
+            " [[ -z $BEVSTERM_BOOTSTRAPPED ]] && eval '{}'\n",
+            script.replace('\'', "'\\''")
+        );
+        let _ = pty_input.write_bytes(cmd.as_bytes());
+    }
+}
+
+pub struct BashIntegration;
+
+impl ShellIntegration for BashIntegration {
+    fn inject(&self, pty_input: &SharedWriter) {
+        let script = r#"__bevsterm_prompt_command() { printf '\e]133;A\a'; }
+__bevsterm_preexec() {
     if [[ "$BASH_COMMAND" != "$PROMPT_COMMAND" ]]; then
         printf '\e]133;C\a'
     fi
 }
-PROMPT_COMMAND="__bevy_terminal_prompt_command;${PROMPT_COMMAND:-:}"
-trap '__bevy_terminal_preexec' DEBUG
-"#
+PROMPT_COMMAND="__bevsterm_prompt_command;${PROMPT_COMMAND:-:}"
+trap '__bevsterm_preexec' DEBUG
+export BEVSTERM_BOOTSTRAPPED=1"#;
+        let cmd = format!(
+            " [[ -z $BEVSTERM_BOOTSTRAPPED ]] && eval '{}'\n",
+            script.replace('\'', "'\\''")
+        );
+        let _ = pty_input.write_bytes(cmd.as_bytes());
+    }
+}
+
+/// Detects the shell from `$SHELL` (or the provided program name) and returns
+/// the matching integration. Falls back to [`NoIntegration`] for unknown shells.
+pub fn auto_detect(shell_program: Option<&str>) -> Box<dyn ShellIntegration> {
+    let shell = shell_program
+        .map(|s| s.to_string())
+        .or_else(|| std::env::var("SHELL").ok())
+        .unwrap_or_default();
+    let name = shell
+        .rsplit('/')
+        .next()
+        .unwrap_or(&shell)
+        .trim_start_matches('-'); // login shells prefix with '-'
+
+    match name {
+        "zsh" => Box::new(ZshIntegration),
+        "bash" => Box::new(BashIntegration),
+        _ => Box::new(NoIntegration),
+    }
 }

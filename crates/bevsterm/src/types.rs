@@ -32,7 +32,6 @@ use crate::backend;
     bevy_instanced_text::HiddenLines,
     bevy_instanced_text::TextColor,
     bevy_instanced_text::TextBackgroundColor,
-    bevy_instanced_text::BlockDecorTheme,
     bevy_instanced_text_edit::SelectionState,
     bevy_instanced_text_edit::TextViewDragState,
     bevy_instanced_text_edit::TextCursorColor,
@@ -90,12 +89,11 @@ pub struct TerminalConfig {
     pub cwd: Option<String>,
 }
 
-/// Live PTY handles for a running terminal. Inserted by `open_pending_sessions`
-/// once the viewport size is known; absent before that.
+/// Live terminal handles. Inserted by `open_pending_sessions` (native PTY) or
+/// by the host directly (WASM / custom IO).
 #[derive(Component)]
 pub struct TerminalSession {
     pub terminal: Arc<Mutex<backend::Terminal>>,
-    pub pty_master: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
     pub pty_input: backend::SharedWriter,
     pub size: backend::TerminalSize,
 }

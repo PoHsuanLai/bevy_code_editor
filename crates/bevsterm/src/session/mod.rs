@@ -1,3 +1,4 @@
+#![cfg(feature = "pty")]
 //! PTY session lifecycle: deferred open once viewport is known, kill +
 //! thread join on entity removal.
 
@@ -9,35 +10,31 @@ use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 use bevy_instanced_text::{TextFont, TextViewport};
 use parking_lot::Mutex;
-use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, PtySize};
+use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 
 use crate::backend;
 use crate::messages::{TerminalReady, TerminalSpawnFailed};
+use crate::plugin::TerminalApplyStateSet;
+use crate::shell_integration::ShellIntegrationComponent;
 use crate::types::{
     BevyTerminal, TerminalConfig, TerminalEventChannel, TerminalScrollback, TerminalSession,
 };
 use crate::viewport::{cells_from_viewport, MIN_COLS, MIN_ROWS};
 
-/// Per-entity book-keeping for the reader thread + child killer so the
-/// removal observer can shut both down deterministically.
 pub(crate) struct ReaderHandle {
     pub join: JoinHandle<()>,
     pub killer: Box<dyn ChildKiller + Send + Sync>,
+    pub pty_master: Mutex<Box<dyn MasterPty + Send>>,
 }
 
-/// Tracks per-entity PTY reader threads and child killers so the removal
-/// observer can shut them down deterministically when a `BevyTerminal` entity
-/// is despawned.
+/// Tracks per-entity PTY handles.
 #[derive(Resource, Default)]
 pub struct TerminalEventLoopRegistry {
     pub(crate) handles: HashMap<Entity, ReaderHandle>,
 }
 
-/// Open the PTY for any `BevyTerminal` entity that has acquired a usable
-/// viewport + font but doesn't yet have a `TerminalSession`. Runs every
-/// frame in `TerminalApplyStateSet` and short-circuits once the session
-/// exists. Replaces the old eager `On<Add>` observer that opened the PTY
-/// at a hardcoded 80×24, causing visible reflow when the real size landed.
+/// Open the PTY for any `BevyTerminal` entity that has a usable viewport + font
+/// but no `TerminalSession` yet. Deferred so the PTY opens at the correct size.
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn open_pending_sessions(
     pending: Query<
@@ -47,6 +44,7 @@ pub fn open_pending_sessions(
             &TextFont,
             Option<&TerminalConfig>,
             Option<&TerminalScrollback>,
+            Option<&ShellIntegrationComponent>,
         ),
         (With<BevyTerminal>, Without<TerminalSession>),
     >,
@@ -62,7 +60,7 @@ pub fn open_pending_sessions(
         .unwrap_or(1)
         .max(1);
 
-    for (entity, viewport, font, config, scrollback) in &pending {
+    for (entity, viewport, font, config, scrollback, integration) in &pending {
         let Some((cols, rows)) = cells_from_viewport(viewport, font) else {
             continue;
         };
@@ -76,6 +74,9 @@ pub fn open_pending_sessions(
 
         match build_session(cols, rows, cell_w, cell_h, scale, scrollback_lines, cmd) {
             Ok((session, channel, reader_handle)) => {
+                if let Some(si) = integration {
+                    si.0.inject(&session.pty_input);
+                }
                 registry.handles.insert(entity, reader_handle);
                 commands.entity(entity).insert((session, channel));
                 ready_w.write(TerminalReady { entity, cols, rows });
@@ -87,6 +88,27 @@ pub fn open_pending_sessions(
                 commands.entity(entity).despawn();
             }
         }
+    }
+}
+
+/// Forward PTY resize to the master whenever the renderer has already updated
+/// `session.size` (via viewport change or `TerminalResize` message).
+pub fn sync_pty_size(
+    q: Query<(Entity, &TerminalSession), Changed<TerminalSession>>,
+    registry: Res<TerminalEventLoopRegistry>,
+) {
+    for (entity, session) in &q {
+        let Some(handle) = registry.handles.get(&entity) else {
+            continue;
+        };
+        let s = &session.size;
+        let pty_size = PtySize {
+            cols: s.cols as u16,
+            rows: s.rows as u16,
+            pixel_width: s.pixel_width as u16,
+            pixel_height: s.pixel_height as u16,
+        };
+        let _ = handle.pty_master.lock().resize(pty_size);
     }
 }
 
@@ -150,17 +172,12 @@ fn build_session(
                     Err(_) => break,
                 }
             }
-            // Drop our handle on the child so its FDs close once the killer
-            // (held by the registry) drops too.
             drop(child);
         })?;
-
-    let pty_master = Arc::new(Mutex::new(pty_pair.master));
 
     Ok((
         TerminalSession {
             terminal,
-            pty_master,
             pty_input,
             size,
         },
@@ -168,7 +185,11 @@ fn build_session(
             rx,
             alerts: alerts_rx,
         },
-        ReaderHandle { join, killer },
+        ReaderHandle {
+            join,
+            killer,
+            pty_master: Mutex::new(pty_pair.master),
+        },
     ))
 }
 
@@ -206,9 +227,7 @@ fn default_shell() -> String {
     }
 }
 
-/// Kill the child shell and join the reader thread when a `BevyTerminal`
-/// entity is removed. The killer is sendable so calling it from the main
-/// thread unblocks the reader's `read()` and the join finishes promptly.
+/// Kill the child process and join the reader thread when a `BevyTerminal` is removed.
 pub fn on_terminal_removed(
     trigger: On<Remove, BevyTerminal>,
     mut registry: ResMut<TerminalEventLoopRegistry>,
@@ -218,7 +237,6 @@ pub fn on_terminal_removed(
         return;
     };
     if let Err(e) = handle.killer.kill() {
-        // Already exited — fine. Anything else is rare and worth logging.
         if e.kind() != std::io::ErrorKind::InvalidInput && e.kind() != std::io::ErrorKind::NotFound
         {
             warn!("bevy_terminal: kill failed for {entity:?}: {e}");
@@ -227,4 +245,58 @@ pub fn on_terminal_removed(
     if let Err(panic) = handle.join.join() {
         warn!("bevy_terminal: reader thread panicked for {entity:?}: {panic:?}");
     }
+}
+
+/// Register PTY systems on an existing `BevyTerminalPlugin` app.
+pub struct BevyTerminalPtyPlugin;
+
+impl Plugin for BevyTerminalPtyPlugin {
+    fn build(&self, app: &mut App) {
+        assert!(
+            app.is_plugin_added::<crate::plugin::BevyTerminalPlugin>(),
+            "BevyTerminalPtyPlugin requires BevyTerminalPlugin to be added first"
+        );
+        app.init_resource::<TerminalEventLoopRegistry>()
+            .add_systems(
+                Update,
+                (
+                    open_pending_sessions,
+                    sync_pty_size.after(open_pending_sessions),
+                )
+                    .in_set(TerminalApplyStateSet),
+            )
+            .add_systems(
+                Update,
+                handle_send_signal.in_set(TerminalApplyStateSet),
+            )
+            .add_observer(on_terminal_removed);
+    }
+}
+
+/// Forward a POSIX signal to the PTY child's process group.
+#[cfg(unix)]
+pub fn handle_send_signal(
+    mut events: MessageReader<crate::messages::TerminalSendSignal>,
+    q: Query<Entity, With<TerminalSession>>,
+    registry: Res<TerminalEventLoopRegistry>,
+) {
+    for ev in events.read() {
+        if q.get(ev.entity).is_err() {
+            continue;
+        }
+        let Some(handle) = registry.handles.get(&ev.entity) else {
+            continue;
+        };
+        let pgid = handle.pty_master.lock().process_group_leader();
+        if let Some(pgid) = pgid {
+            unsafe {
+                libc::killpg(pgid as libc::pid_t, ev.signal);
+            }
+        }
+    }
+}
+
+#[cfg(not(unix))]
+pub fn handle_send_signal(mut events: MessageReader<crate::messages::TerminalSendSignal>) {
+    for _ in events.read() {}
 }

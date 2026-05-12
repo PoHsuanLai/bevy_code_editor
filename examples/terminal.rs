@@ -30,6 +30,7 @@ fn main() {
     )
     .add_plugins(InstancedTextPlugins)
     .add_plugins(BevyTerminalPlugin)
+    .add_plugins(bevsterm::BevyTerminalPtyPlugin)
     .add_systems(Startup, (setup_camera, spawn_terminal))
     .add_systems(Update, log_events);
 
@@ -46,9 +47,9 @@ fn setup_camera(mut commands: Commands) {
 }
 
 fn spawn_terminal(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<&Window>) {
-    let Ok(window) = windows.single() else {
-        return;
-    };
+    let Ok(window) = windows.single() else { return };
+    let w = window.width();
+    let h = window.height();
 
     let regular: Handle<bevy::text::Font> = asset_server.load("fonts/FiraMono-Regular.ttf");
     let bold: Handle<bevy::text::Font> = asset_server.load("fonts/FiraMono-Medium.ttf");
@@ -57,17 +58,14 @@ fn spawn_terminal(mut commands: Commands, asset_server: Res<AssetServer>, window
         .with_font(regular)
         .with_bold_font(bold);
 
-    let logical_w = window.width() as u32;
-    let logical_h = window.height() as u32;
-
     commands.spawn((
         BevyTerminal,
         font,
-        TextViewport {
-            width: logical_w,
-            height: logical_h,
-            text_area_left: 12.0,
-            text_area_top: 0.0,
+        // Val::Px so Bevy UI layout can resolve size without a UI camera.
+        Node {
+            width: Val::Px(w),
+            height: Val::Px(h),
+            padding: UiRect::left(Val::Px(12.0)),
             ..default()
         },
     ));
