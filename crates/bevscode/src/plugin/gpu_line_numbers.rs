@@ -9,7 +9,7 @@ use crate::types::*;
 use bevy::prelude::*;
 use bevy::ui::ComputedNode;
 use bevy_instanced_text::gpu::GlyphAtlas;
-use bevy_instanced_text::{RowMetricsParam, TextFont};
+use bevy_instanced_text::{MonoCellWidth, RowMetricsParam};
 
 /// Marker component for the GPU line numbers batch entity
 #[derive(Component, Reflect)]
@@ -38,6 +38,8 @@ type GpuLineNumbersQuery<'w, 's> = Query<
         &'static GutterConfig,
         Ref<'static, FoldState>,
         &'static TextFont,
+        &'static bevy::text::LineHeight,
+        &'static MonoCellWidth,
         &'static EditorTheme,
         &'static EditorUi,
         &'static Performance,
@@ -65,6 +67,8 @@ pub(crate) fn update_gpu_line_numbers(
         gutter,
         fold_state,
         font,
+        lh,
+        _mono,
         theme,
         ui,
         performance,
@@ -108,7 +112,7 @@ pub(crate) fn update_gpu_line_numbers(
             }
         }
 
-        let line_height = font.line_height;
+        let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
         let font_size = font.font_size;
         let viewport_height = logical_h;
         let text_area_top = computed.content_inset().min_inset.y * inv;

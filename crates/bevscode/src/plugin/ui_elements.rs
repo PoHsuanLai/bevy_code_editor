@@ -7,7 +7,7 @@ use crate::text_view::{
 use crate::types::*;
 use bevy::prelude::*;
 use bevy::ui::ComputedNode;
-use bevy_instanced_text::{visible_buffer_range, HiddenLines, RowMetricsParam, TextBounds, TextFont};
+use bevy_instanced_text::{visible_buffer_range, HiddenLines, MonoCellWidth, RowMetricsParam, TextBounds};
 
 type IndentGuidesQuery<'w, 's> = Query<
     'w,
@@ -19,6 +19,8 @@ type IndentGuidesQuery<'w, 's> = Query<
         &'static ComputedNode,
         &'static FoldState,
         &'static TextFont,
+        &'static bevy::text::LineHeight,
+        &'static MonoCellWidth,
         &'static EditorTheme,
         Option<&'static DisplayLayout>,
         &'static EditorUi,
@@ -38,6 +40,8 @@ type AutoScrollQuery<'w, 's> = Query<
         &'static mut CursorState,
         &'static ComputedNode,
         &'static TextFont,
+        &'static bevy::text::LineHeight,
+        &'static MonoCellWidth,
     ),
     With<CodeEditor>,
 >;
@@ -68,6 +72,8 @@ pub(crate) fn update_selection_highlight(
             &mut TextViewOverlays,
             &FoldState,
             &TextFont,
+            &bevy::text::LineHeight,
+            &MonoCellWidth,
             Option<&DisplayLayout>,
             Option<&HiddenLines>,
             Option<&TextBounds>,
@@ -85,7 +91,7 @@ pub(crate) fn update_selection_highlight(
                 Changed<ComputedNode>,
                 Changed<TextBuffer>,
                 Changed<FoldState>,
-                Changed<TextFont>,
+                Changed<MonoCellWidth>,
                 Changed<EditorTheme>,
             )>,
         ),
@@ -105,6 +111,8 @@ pub(crate) fn update_selection_highlight(
         mut overlays,
         fold_state,
         font,
+        lh,
+        mono,
         layout,
         hidden,
         wrap,
@@ -118,7 +126,8 @@ pub(crate) fn update_selection_highlight(
         // cursor caret uses z = +1; z = 0 is reserved for line-bg/highlight overlays).
         overlays.rects.retain(|r| r.z != -1);
 
-        let char_width = font.char_width;
+        let char_width = mono.px;
+        let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
 
         // Visible buffer-line window. Selections are clipped to this band so
         // a multi-thousand-line selection doesn't allocate per-line rects for
@@ -127,7 +136,7 @@ pub(crate) fn update_selection_highlight(
         let viewport_height = computed.size().y * inv;
         let text_area_top = computed.content_inset().min_inset.y * inv;
         let wrap_cfg = wrap.copied().unwrap_or_default();
-        let visible = visible_buffer_range(buffer, scroll, viewport_height, text_area_top, font, wrap_cfg, hidden);
+        let visible = visible_buffer_range(buffer, scroll, viewport_height, text_area_top, line_height, char_width, wrap_cfg, hidden);
         if visible.start >= visible.end {
             overlays.version = overlays.version.wrapping_add(1);
             continue;
@@ -337,7 +346,7 @@ pub(crate) fn update_indent_guides(
     let mut existing_guides: Vec<_> = guide_query.iter_mut().collect();
     let mut entity_index = 0;
 
-    for (editor_entity, buffer, scroll, computed, fold_state, font, theme, _layout, ui, indentation, render_layers) in
+    for (editor_entity, buffer, scroll, computed, fold_state, font, lh, mono, theme, _layout, ui, indentation, render_layers) in
         editor_query.iter()
     {
         if !ui.show_indent_guides {
@@ -346,8 +355,8 @@ pub(crate) fn update_indent_guides(
 
         let inv = computed.inverse_scale_factor();
         let indent_size = indentation.indent_size;
-        let line_height = font.line_height;
-        let char_width = font.char_width;
+        let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
+        let char_width = mono.px;
         let viewport_height = computed.size().y * inv;
 
         // Calculate visible display row range
@@ -525,14 +534,14 @@ pub(crate) fn should_auto_scroll(
 }
 
 pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
-    for (buffer, mut scroll, metrics, mut cursor, computed, font) in editor_query.iter_mut() {
+    for (buffer, mut scroll, metrics, mut cursor, computed, font, lh, mono) in editor_query.iter_mut() {
         // Get cursor position
         let cursor_pos = cursor.cursor_pos.min(buffer.rope.len_chars());
 
         // Update last cursor position
         cursor.last_cursor_pos = cursor_pos;
         let line_index = buffer.rope.char_to_line(cursor_pos);
-        let line_height = font.line_height;
+        let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
         let inv = computed.inverse_scale_factor();
         let viewport_height = computed.size().y * inv;
         let viewport_width = computed.size().x * inv;
@@ -573,7 +582,7 @@ pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
         // Calculate cursor's X position (column within line)
         let line_start = buffer.rope.line_to_char(line_index);
         let col_index = cursor_pos - line_start;
-        let char_width = font.char_width;
+        let char_width = mono.px;
 
         // Cursor X position relative to code area (before scrolling)
         let cursor_x = col_index as f32 * char_width;

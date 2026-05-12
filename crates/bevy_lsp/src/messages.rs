@@ -846,6 +846,21 @@ pub enum WorkspaceSymbolResponseItem {
     Information(SymbolInformation),
 }
 
+// ─── Outbound request message ──────────────────────────────────────────
+//
+// Hosts write `MessageWriter<LspRequest>` to send any LSP request or
+// notification without importing `LspClient` directly. `LspPlugin` wires
+// one observer that routes each message to the right client entity.
+
+/// Wraps an [`LspMessage`] with the target [`LspClient`] entity.
+/// Write with `MessageWriter<LspRequest>`; respond by reading the
+/// matching `Lsp*Response` message.
+#[derive(Message, EntityEvent, Clone, Debug)]
+pub struct LspRequest {
+    pub entity: Entity,
+    pub msg: LspMessage,
+}
+
 // ─── Bevy messages ─────────────────────────────────────────────────────
 //
 // One per LspResponse variant. Hosts subscribe to whichever they care about.

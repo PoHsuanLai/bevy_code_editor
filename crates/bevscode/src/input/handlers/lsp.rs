@@ -17,12 +17,12 @@ pub fn handle_request_completion(
     editor_q: Query<(&CursorState, &crate::text_view::TextBuffer), With<CodeEditor>>,
     mut lsp_q: Query<
         (
-            &bevy_lsp::LspClient,
             Option<&bevy_lsp::LspDocument>,
             &mut crate::lsp_ui::state::LspCompletionPopup,
         ),
         With<CodeEditor>,
     >,
+    mut lsp_w: MessageWriter<bevy_lsp::LspRequest>,
 ) {
     if events.read().next().is_none() {
         return;
@@ -33,15 +33,16 @@ pub fn handle_request_completion(
     let Ok((cursor, buffer)) = editor_q.get(entity) else {
         return;
     };
-    let Ok((lsp_client, lsp_document, mut completion_state)) = lsp_q.get_mut(entity) else {
+    let Ok((lsp_document, mut completion_state)) = lsp_q.get_mut(entity) else {
         return;
     };
     request_completion(
+        entity,
         cursor,
         &buffer.rope,
-        lsp_client,
         &mut completion_state,
         lsp_document,
+        &mut lsp_w,
     );
 }
 
@@ -57,13 +58,13 @@ pub fn handle_rename_symbol(
     editor_q: Query<(&CursorState, &crate::text_view::TextBuffer), With<CodeEditor>>,
     mut lsp_q: Query<
         (
-            &bevy_lsp::LspClient,
             Option<&bevy_lsp::LspDocument>,
             &bevy_lsp::ServerCapabilities,
             &mut crate::lsp_ui::state::LspRenamePopup,
         ),
         With<CodeEditor>,
     >,
+    mut lsp_w: MessageWriter<bevy_lsp::LspRequest>,
 ) {
     if events.read().next().is_none() {
         return;
@@ -74,8 +75,7 @@ pub fn handle_rename_symbol(
     let Ok((cursor, buffer)) = editor_q.get(entity) else {
         return;
     };
-    let Ok((lsp_client, lsp_document, capabilities, mut rename_state)) = lsp_q.get_mut(entity)
-    else {
+    let Ok((lsp_document, capabilities, mut rename_state)) = lsp_q.get_mut(entity) else {
         return;
     };
     if !capabilities.supports_rename() {
@@ -90,5 +90,5 @@ pub fn handle_rename_symbol(
         bevy_lsp::PositionEncoding::Utf16,
     );
     rename_state.start_prepare(position);
-    crate::lsp_ui::systems::request_prepare_rename(lsp_client, capabilities, &doc.uri, position);
+    crate::lsp_ui::systems::request_prepare_rename(entity, capabilities, &doc.uri, position, &mut lsp_w);
 }

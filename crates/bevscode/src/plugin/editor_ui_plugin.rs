@@ -1,7 +1,7 @@
 //! Editor UI plugin for rendering editor visual elements
 
 use bevy::prelude::*;
-use bevy_instanced_text::TextFont;
+use bevy_instanced_text::MonoCellWidth;
 
 use crate::settings::*;
 use crate::types::{CodeEditor, Separator};
@@ -116,11 +116,11 @@ fn sync_node_from_window(
 /// Runs every frame (not change-filtered) so async `char_width` updates
 /// from `update_font_metrics` are picked up immediately.
 fn sync_gutter_width(
-    mut editors: Query<(&mut Node, &mut GutterConfig, &TextFont, &EditorUi), With<CodeEditor>>,
+    mut editors: Query<(&mut Node, &mut GutterConfig, &MonoCellWidth, &EditorUi), With<CodeEditor>>,
 ) {
-    for (mut node, mut gutter_config, font, ui) in editors.iter_mut() {
+    for (mut node, mut gutter_config, mono, ui) in editors.iter_mut() {
         let gutter_width = if ui.show_line_numbers {
-            ui.gutter_padding_left + ui.gutter_padding_right + (font.char_width * 4.0)
+            ui.gutter_padding_left + ui.gutter_padding_right + (mono.px * 4.0)
         } else {
             0.0
         };
@@ -210,19 +210,19 @@ fn update_separator_on_resize(
 }
 
 fn update_font_metrics(
-    mut editors: Query<&mut TextFont, With<CodeEditor>>,
+    mut editors: Query<(&TextFont, &mut MonoCellWidth), With<CodeEditor>>,
     mut atlas: ResMut<GlyphAtlas>,
     fonts: Res<Assets<bevy::text::Font>>,
 ) {
-    for mut font in editors.iter_mut() {
+    for (font, mut mono) in editors.iter_mut() {
         let font_id = atlas.ensure_font(&font.font, &fonts);
         let width = atlas.shape_line("0", font.font_size, font_id).width;
-        if width > 0.0 && (font.char_width - width).abs() > 0.01 {
+        if width > 0.0 && (mono.px - width).abs() > 0.01 {
             info!(
-                "Updating font char_width from {:.3} to {:.3} (measured)",
-                font.char_width, width
+                "Updating char_width from {:.3} to {:.3} (measured)",
+                mono.px, width
             );
-            font.char_width = width;
+            mono.px = width;
         }
     }
 }

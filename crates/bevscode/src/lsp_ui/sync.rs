@@ -17,7 +17,7 @@ use bevy::prelude::*;
 use crate::settings::*;
 use crate::text_view::TextBuffer;
 use crate::types::{CodeEditor, CursorState};
-use bevy_instanced_text::TextFont;
+use bevy_instanced_text::MonoCellWidth;
 
 use super::components::*;
 use super::state::{
@@ -44,15 +44,18 @@ pub fn sync_completion_popup(
             &CursorState,
             &TextBuffer,
             &TextFont,
+            &bevy::text::LineHeight,
+            &MonoCellWidth,
             &LspConfig,
         ),
         With<CodeEditor>,
     >,
     existing: Query<Entity, With<CompletionPopupData>>,
 ) {
-    let Ok((completion_state, cursor_state, buffer, font, lsp)) = query.single() else {
+    let Ok((completion_state, cursor_state, buffer, font, lh, mono, lsp)) = query.single() else {
         return;
     };
+    let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
     let filtered_items = completion_state.filtered_items();
 
     if !completion_state.visible || filtered_items.is_empty() {
@@ -77,13 +80,13 @@ pub fn sync_completion_popup(
         .max()
         .unwrap_or(20);
 
-    let calculated_width = (max_char_count as f32 * font.char_width) + 20.0;
+    let calculated_width = (max_char_count as f32 * mono.px) + 20.0;
     let box_width = calculated_width.clamp(200.0, 600.0);
 
     let max_visible = lsp.completion.max_items;
     let total_items = filtered_items.len();
     let visible_count = total_items.min(max_visible);
-    let box_height = (visible_count as f32 * font.line_height) + 10.0;
+    let box_height = (visible_count as f32 * line_height) + 10.0;
 
     let items: Vec<CompletionItemData> = filtered_items
         .iter()
@@ -134,10 +137,10 @@ pub fn sync_completion_popup(
 /// Sync hover state to marker entity
 pub fn sync_hover_popup(
     mut commands: Commands,
-    query: Query<(&LspHoverPopup, &TextBuffer, &TextFont), With<CodeEditor>>,
+    query: Query<(&LspHoverPopup, &TextBuffer, &TextFont, &MonoCellWidth), With<CodeEditor>>,
     existing: Query<Entity, With<HoverPopupData>>,
 ) {
-    let Ok((hover_state, buffer, font)) = query.single() else {
+    let Ok((hover_state, buffer, font, mono)) = query.single() else {
         return;
     };
 
@@ -161,7 +164,7 @@ pub fn sync_hover_popup(
         .map(|l| l.chars().count())
         .max()
         .unwrap_or(0);
-    let hover_char_width = font.char_width * 0.9;
+    let hover_char_width = mono.px * 0.9;
 
     let calculated_width = (max_line_chars as f32 * hover_char_width) + padding * 2.0;
     let box_width = calculated_width.clamp(100.0, 600.0);
@@ -193,10 +196,10 @@ pub fn sync_hover_popup(
 /// Sync signature help state to marker entity
 pub fn sync_signature_help_popup(
     mut commands: Commands,
-    query: Query<(&LspSignatureHelpPopup, &CursorState, &TextBuffer, &TextFont), With<CodeEditor>>,
+    query: Query<(&LspSignatureHelpPopup, &CursorState, &TextBuffer, &TextFont, &MonoCellWidth), With<CodeEditor>>,
     existing: Query<Entity, With<SignatureHelpPopupData>>,
 ) {
-    let Ok((sig_state, cursor_state, buffer, font)) = query.single() else {
+    let Ok((sig_state, cursor_state, buffer, font, mono)) = query.single() else {
         return;
     };
 
@@ -224,7 +227,7 @@ pub fn sync_signature_help_popup(
     let padding = 8.0;
 
     let sig_label = &signature.label;
-    let box_width = (sig_label.chars().count() as f32 * font.char_width * 0.9 + padding * 2.0)
+    let box_width = (sig_label.chars().count() as f32 * mono.px * 0.9 + padding * 2.0)
         .clamp(100.0, 600.0);
     let box_height = font_size * 1.4 + padding * 2.0;
 
@@ -274,12 +277,23 @@ pub fn sync_signature_help_popup(
 /// Sync code action state to marker entity
 pub fn sync_code_actions_popup(
     mut commands: Commands,
-    query: Query<(&LspCodeActionsPopup, &CursorState, &TextBuffer, &TextFont), With<CodeEditor>>,
+    query: Query<
+        (
+            &LspCodeActionsPopup,
+            &CursorState,
+            &TextBuffer,
+            &TextFont,
+            &bevy::text::LineHeight,
+            &MonoCellWidth,
+        ),
+        With<CodeEditor>,
+    >,
     existing: Query<Entity, With<CodeActionsPopupData>>,
 ) {
-    let Ok((action_state, cursor_state, buffer, font)) = query.single() else {
+    let Ok((action_state, cursor_state, buffer, font, lh, mono)) = query.single() else {
         return;
     };
+    let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
 
     if !action_state.visible || action_state.actions.is_empty() {
         for entity in existing.iter() {
@@ -302,9 +316,9 @@ pub fn sync_code_actions_popup(
         .max()
         .unwrap_or(20);
 
-    let box_width = (max_label_len as f32 * font.char_width + 20.0).clamp(200.0, 400.0);
+    let box_width = (max_label_len as f32 * mono.px + 20.0).clamp(200.0, 400.0);
     let visible_count = action_state.actions.len().min(10);
-    let box_height = (visible_count as f32 * font.line_height) + 10.0;
+    let box_height = (visible_count as f32 * line_height) + 10.0;
 
     let actions: Vec<CodeActionItemData> = action_state
         .actions
@@ -360,12 +374,13 @@ pub fn sync_code_actions_popup(
 /// Sync rename state to marker entity
 pub fn sync_rename_input(
     mut commands: Commands,
-    query: Query<(&LspRenamePopup, &TextFont), With<CodeEditor>>,
+    query: Query<(&LspRenamePopup, &TextFont, &bevy::text::LineHeight, &MonoCellWidth), With<CodeEditor>>,
     existing: Query<Entity, With<RenameInputData>>,
 ) {
-    let Ok((rename_state, font)) = query.single() else {
+    let Ok((rename_state, font, lh, mono)) = query.single() else {
         return;
     };
+    let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
 
     if !rename_state.visible {
         for entity in existing.iter() {
@@ -398,9 +413,9 @@ pub fn sync_rename_input(
     };
 
     let text_width =
-        (display_text.chars().count().max(8) as f32 * font.char_width) + padding_x * 2.0 + 4.0;
+        (display_text.chars().count().max(8) as f32 * mono.px) + padding_x * 2.0 + 4.0;
     let box_width = text_width.clamp(100.0, 300.0);
-    let box_height = font.line_height + padding_y * 2.0;
+    let box_height = line_height + padding_y * 2.0;
 
     let popup_data = RenameInputData {
         line,

@@ -28,7 +28,7 @@ use bevy::picking::events::{Pointer, Press};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::ui::ComputedNode;
-use bevy_instanced_text::{DisplayLayout, TextFont};
+use bevy_instanced_text::{DisplayLayout, MonoCellWidth};
 use ropey::Rope;
 
 type AltClickQuery<'w, 's> = Query<
@@ -42,6 +42,8 @@ type AltClickQuery<'w, 's> = Query<
         &'static ComputedNode,
         &'static FoldState,
         &'static TextFont,
+        &'static bevy::text::LineHeight,
+        &'static MonoCellWidth,
         Option<&'static DisplayLayout>,
     ),
     With<CodeEditor>,
@@ -57,6 +59,8 @@ type CtrlClickQuery<'w, 's> = Query<
         &'static ComputedNode,
         &'static FoldState,
         &'static TextFont,
+        &'static bevy::text::LineHeight,
+        &'static MonoCellWidth,
         Option<&'static DisplayLayout>,
     ),
     With<CodeEditor>,
@@ -72,6 +76,8 @@ type HoverMoveQuery<'w, 's> = Query<
         &'static ComputedNode,
         &'static FoldState,
         &'static TextFont,
+        &'static bevy::text::LineHeight,
+        &'static MonoCellWidth,
         Option<&'static DisplayLayout>,
         &'static crate::settings::LspConfig,
     ),
@@ -87,7 +93,8 @@ use bevy_lsp::LspMessage;
 struct HitTestCtx<'a> {
     rope: &'a Rope,
     layout: Option<&'a DisplayLayout>,
-    font: &'a TextFont,
+    mono: &'a MonoCellWidth,
+    line_height: f32,
     text_area_left: f32,
     text_area_top: f32,
     fold_state: &'a FoldState,
@@ -101,7 +108,7 @@ fn screen_to_char_pos(screen_pos: Vec2, ctx: &HitTestCtx<'_>) -> usize {
     let relative_x = screen_pos.x - ctx.text_area_left;
     let relative_y = screen_pos.y - ctx.text_area_top - ctx.current_scroll_offset;
 
-    let display_row = (relative_y / ctx.font.line_height).max(0.0) as usize;
+    let display_row = (relative_y / ctx.line_height).max(0.0) as usize;
     let buffer_line = ctx.fold_state.display_to_actual_line(display_row);
 
     let line_count = ctx.rope.len_lines();
@@ -130,7 +137,7 @@ fn screen_to_char_pos(screen_pos: Vec2, ctx: &HitTestCtx<'_>) -> usize {
         }
     }
 
-    let col = (relative_x / ctx.font.char_width).max(0.0) as usize;
+    let col = (relative_x / ctx.mono.px).max(0.0) as usize;
     let line_len = ctx.rope.line(buffer_line).len_chars().saturating_sub(1);
     let char_in_line = col.min(line_len);
     line_start_char + char_in_line
@@ -142,7 +149,7 @@ fn screen_to_char_pos(screen_pos: Vec2, ctx: &HitTestCtx<'_>) -> usize {
 pub fn on_fold_gutter_press(
     trigger: On<Pointer<Press>>,
     mut editor_query: Query<
-        (&ScrollState, &ComputedNode, &GutterConfig, &mut FoldState, &TextFont),
+        (&ScrollState, &ComputedNode, &GutterConfig, &mut FoldState, &TextFont, &bevy::text::LineHeight, &MonoCellWidth),
         With<CodeEditor>,
     >,
 ) {
@@ -150,7 +157,7 @@ pub fn on_fold_gutter_press(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((scroll, computed, gutter, mut fold_state, font)) = editor_query.get_mut(entity) else {
+    let Ok((scroll, computed, gutter, mut fold_state, font, lh, _mono)) = editor_query.get_mut(entity) else {
         return;
     };
     let Some(local_pos) = trigger.event().hit.position.map(|p| Vec2::new(p.x, p.y)) else {
@@ -163,10 +170,11 @@ pub fn on_fold_gutter_press(
         return;
     }
 
+    let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
     let inv = computed.inverse_scale_factor();
     let text_area_top = computed.content_inset().min_inset.y * inv;
     let relative_y = local_pos.y - text_area_top + scroll.scroll_offset;
-    let display_row = (relative_y / font.line_height).max(0.0) as usize;
+    let display_row = (relative_y / line_height).max(0.0) as usize;
     let buffer_line = fold_state.display_to_actual_line(display_row);
 
     if fold_state.is_foldable_line(buffer_line) {
@@ -196,7 +204,7 @@ pub fn on_alt_click(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((mut sel, mut cursor, buffer, scroll, computed, fold_state, font, layout)) =
+    let Ok((mut sel, mut cursor, buffer, scroll, computed, fold_state, font, lh, mono, layout)) =
         editor_query.get_mut(entity)
     else {
         return;
@@ -211,7 +219,8 @@ pub fn on_alt_click(
         &HitTestCtx {
             rope: &buffer.rope,
             layout,
-            font,
+            mono,
+            line_height: bevy_instanced_text::resolve_line_height(*lh, font.font_size),
             text_area_left: computed.content_inset().min_inset.x * inv,
             text_area_top: computed.content_inset().min_inset.y * inv,
             fold_state,
@@ -247,7 +256,7 @@ pub fn on_ctrl_click_goto_definition(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((buffer, scroll, computed, fold_state, font, layout)) = editor_query.get(entity) else {
+    let Ok((buffer, scroll, computed, fold_state, font, lh, mono, layout)) = editor_query.get(entity) else {
         return;
     };
     let Ok((lsp_client, lsp_document)) = lsp_query.get(entity) else {
@@ -266,7 +275,8 @@ pub fn on_ctrl_click_goto_definition(
         &HitTestCtx {
             rope: &buffer.rope,
             layout,
-            font,
+            mono,
+            line_height: bevy_instanced_text::resolve_line_height(*lh, font.font_size),
             text_area_left: computed.content_inset().min_inset.x * inv,
             text_area_top: computed.content_inset().min_inset.y * inv,
             fold_state,
@@ -300,7 +310,7 @@ pub fn on_pointer_move_for_hover(
     mut hover_query: Query<&mut crate::lsp_ui::state::LspHoverPopup, With<CodeEditor>>,
 ) {
     let entity = trigger.event().entity;
-    let Ok((buffer, scroll, computed, fold_state, font, layout, hover_settings)) =
+    let Ok((buffer, scroll, computed, fold_state, font, lh, mono, layout, hover_settings)) =
         editor_query.get(entity)
     else {
         return;
@@ -319,19 +329,21 @@ pub fn on_pointer_move_for_hover(
     // in screen space since the last trigger — saves the per-event work on
     // sub-pixel jitter and at-rest cursors. Threshold is one char width.
     if let Some(last) = hover_state.last_pointer_pos {
-        if (last - local_pos).length_squared() < (font.char_width * font.char_width) {
+        if (last - local_pos).length_squared() < (mono.px * mono.px) {
             return;
         }
     }
     hover_state.last_pointer_pos = Some(local_pos);
 
     let inv = computed.inverse_scale_factor();
+    let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
     let char_pos = screen_to_char_pos(
         local_pos,
         &HitTestCtx {
             rope: &buffer.rope,
             layout,
-            font,
+            mono,
+            line_height,
             text_area_left: computed.content_inset().min_inset.x * inv,
             text_area_top: computed.content_inset().min_inset.y * inv,
             fold_state,

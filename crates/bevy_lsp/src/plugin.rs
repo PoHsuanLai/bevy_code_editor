@@ -10,7 +10,7 @@ use bevy::app::AppExit;
 use bevy::prelude::*;
 
 use crate::client::LspClient;
-use crate::messages::*;
+use crate::messages::{LspRequest, *};
 
 /// Registers all outbound LSP response messages, drives the drain pipeline
 /// each frame, and gracefully shuts down every [`LspClient`] on `AppExit`.
@@ -85,6 +85,9 @@ impl Plugin for LspPlugin {
             .add_message::<LspWorkspaceDiagnosticResponse>()
             .add_message::<LspShutdownAck>()
             .add_message::<LspServerCrashed>();
+
+        app.add_message::<LspRequest>();
+        app.observe(dispatch_lsp_request);
 
         app.init_resource::<DrainedResponses>();
         app.add_systems(
@@ -756,6 +759,13 @@ fn flush_e(
         shutdown_ack => shutdown_w,
         crashed => crashed_w,
     );
+}
+
+fn dispatch_lsp_request(trigger: Trigger<LspRequest>, clients: Query<&LspClient>) {
+    let Ok(client) = clients.get(trigger.target()) else {
+        return;
+    };
+    client.send(trigger.event().msg.clone());
 }
 
 fn shutdown_clients_on_app_exit(mut exit: MessageReader<AppExit>, clients: Query<&LspClient>) {

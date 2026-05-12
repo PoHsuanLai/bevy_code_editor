@@ -11,7 +11,7 @@ use lsp_types::*;
 use crate::text_view::{ScrollState, TextBuffer};
 use bevy::ui::ComputedNode;
 use crate::types::{CodeEditor, CursorState};
-use bevy_instanced_text::TextFont;
+use bevy_instanced_text::MonoCellWidth;
 
 use super::state::{
     LspCodeActionsPopup, LspCompletionPopup, LspDidChangeBatcher, LspDocumentHighlights,
@@ -20,7 +20,7 @@ use super::state::{
 use bevy_lsp::{
     CodeActionOrCommand, LspClient, LspCodeActionsResponse, LspCompletionResponse,
     LspDefinitionResponse, LspDiagnosticsUpdated, LspDocument, LspDocumentHighlightsResponse,
-    LspFormatResponse, LspHoverResponse, LspInlayHintsResponse, LspMessage,
+    LspFormatResponse, LspHoverResponse, LspInlayHintsResponse, LspMessage, LspRequest,
     LspPrepareRenameResponse, LspReferencesResponse, LspRenameResponse, LspResolvedCompletionItem,
     LspServerCrashed, LspServerInitialized, LspShutdownAck, LspSignatureHelpResponse,
     ServerCapabilities,
@@ -44,6 +44,7 @@ type RequestInlayHintsQuery<'w, 's> = Query<
     'w,
     's,
     (
+        Entity,
         &'static LspClient,
         &'static ServerCapabilities,
         Ref<'static, TextBuffer>,
@@ -52,6 +53,8 @@ type RequestInlayHintsQuery<'w, 's> = Query<
         Option<&'static LspDocument>,
         &'static mut LspInlayHints,
         &'static TextFont,
+        &'static bevy::text::LineHeight,
+        &'static MonoCellWidth,
     ),
     With<CodeEditor>,
 >;
@@ -60,7 +63,7 @@ type RequestDocumentHighlightsQuery<'w, 's> = Query<
     'w,
     's,
     (
-        &'static LspClient,
+        Entity,
         &'static ServerCapabilities,
         &'static CursorState,
         &'static TextBuffer,
@@ -554,15 +557,16 @@ pub fn sync_lsp_document(
     time: Res<Time>,
     mut query: Query<
         (
+            Entity,
             &TextBuffer,
-            &LspClient,
             Option<&mut LspDocument>,
             &mut LspDidChangeBatcher,
         ),
         With<CodeEditor>,
     >,
+    mut lsp_w: MessageWriter<LspRequest>,
 ) {
-    let Ok((buffer, lsp_client, lsp_document, mut batcher)) = query.single_mut() else {
+    let Ok((entity, buffer, lsp_document, mut batcher)) = query.single_mut() else {
         return;
     };
     if batcher.pending.is_empty() && !batcher.force_full_doc {
@@ -594,10 +598,13 @@ pub fn sync_lsp_document(
         std::mem::take(&mut batcher.pending)
     };
 
-    lsp_client.send(LspMessage::DidChange {
-        uri: lsp_document.uri.clone(),
-        version,
-        changes,
+    lsp_w.write(LspRequest {
+        entity,
+        msg: LspMessage::DidChange {
+            uri: lsp_document.uri.clone(),
+            version,
+            changes,
+        },
     });
 
     batcher.force_full_doc = false;
@@ -605,12 +612,13 @@ pub fn sync_lsp_document(
 }
 
 /// System to request inlay hints for visible range
-pub fn request_inlay_hints(mut query: RequestInlayHintsQuery) {
-    let Ok((lsp_client, capabilities, buffer, scroll, computed, lsp_document, mut hint_state, font)) =
+pub fn request_inlay_hints(mut query: RequestInlayHintsQuery, mut lsp_w: MessageWriter<LspRequest>) {
+    let Ok((entity, lsp_client, capabilities, buffer, scroll, computed, lsp_document, mut hint_state, font, lh, mono)) =
         query.single_mut()
     else {
         return;
     };
+    let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
     if !lsp_client.is_ready() || !capabilities.supports_inlay_hints() {
         return;
     }
@@ -630,8 +638,8 @@ pub fn request_inlay_hints(mut query: RequestInlayHintsQuery) {
     // Calculate visible range with some buffer
     let inv = computed.inverse_scale_factor();
     let viewport_height = computed.size().y * inv;
-    let visible_start_line = (scroll.scroll_offset / font.line_height) as u32;
-    let visible_lines = (viewport_height / font.line_height) as u32 + 10;
+    let visible_start_line = (scroll.scroll_offset / line_height) as u32;
+    let visible_lines = (viewport_height / line_height) as u32 + 10;
     let visible_end_line = (visible_start_line + visible_lines).min(buffer.rope.len_lines() as u32);
 
     let range = Range {
@@ -650,10 +658,13 @@ pub fn request_inlay_hints(mut query: RequestInlayHintsQuery) {
         return;
     }
 
-    lsp_client.send(LspMessage::InlayHint {
-        uri: lsp_document.uri.clone(),
-        range,
-        id: 0,
+    lsp_w.write(LspRequest {
+        entity,
+        msg: LspMessage::InlayHint {
+            uri: lsp_document.uri.clone(),
+            range,
+            id: 0,
+        },
     });
 
     hint_state.cached_range = Some(range);
@@ -670,18 +681,22 @@ pub fn cleanup_lsp_timeouts(query: Query<&LspClient, With<CodeEditor>>) {
 /// Helper to send signature help request. Bumps `sig_state.request_id`
 /// so the response handler can drop stale results.
 pub fn request_signature_help(
-    lsp_client: &LspClient,
+    entity: Entity,
     capabilities: &ServerCapabilities,
     uri: &Url,
     position: Position,
     sig_state: &mut LspSignatureHelpPopup,
+    lsp_w: &mut MessageWriter<LspRequest>,
 ) {
     if capabilities.supports_signature_help() {
         sig_state.request_id = sig_state.request_id.wrapping_add(1);
-        lsp_client.send(LspMessage::SignatureHelp {
-            uri: uri.clone(),
-            position,
-            id: sig_state.request_id,
+        lsp_w.write(LspRequest {
+            entity,
+            msg: LspMessage::SignatureHelp {
+                uri: uri.clone(),
+                position,
+                id: sig_state.request_id,
+            },
         });
     }
 }
@@ -693,26 +708,34 @@ pub fn request_signature_help(
 /// explicit `Ctrl+.`) will call this directly with the relevant range
 /// and the diagnostics intersecting it.
 pub fn request_code_actions(
-    lsp_client: &LspClient,
+    entity: Entity,
     capabilities: &ServerCapabilities,
     uri: &Url,
     range: Range,
     diagnostics: Vec<Diagnostic>,
     action_state: &mut LspCodeActionsPopup,
+    lsp_w: &mut MessageWriter<LspRequest>,
 ) {
     if capabilities.supports_code_actions() {
         action_state.request_id = action_state.request_id.wrapping_add(1);
-        lsp_client.send(LspMessage::CodeAction {
-            uri: uri.clone(),
-            range,
-            diagnostics,
-            id: action_state.request_id,
+        lsp_w.write(LspRequest {
+            entity,
+            msg: LspMessage::CodeAction {
+                uri: uri.clone(),
+                range,
+                diagnostics,
+                id: action_state.request_id,
+            },
         });
     }
 }
 
 /// Execute a code action
-pub fn execute_code_action(lsp_client: &LspClient, action: &CodeActionOrCommand) {
+pub fn execute_code_action(
+    entity: Entity,
+    action: &CodeActionOrCommand,
+    lsp_w: &mut MessageWriter<LspRequest>,
+) {
     match action {
         CodeActionOrCommand::Action(action) => {
             // TODO: Apply workspace edit when present.
@@ -721,18 +744,23 @@ pub fn execute_code_action(lsp_client: &LspClient, action: &CodeActionOrCommand)
                 debug!("[LSP] Code action has workspace edit: {:?}", edit);
             }
 
-            // If action has command, execute it
             if let Some(command) = &action.command {
-                lsp_client.send(LspMessage::ExecuteCommand {
-                    command: command.command.clone(),
-                    arguments: command.arguments.clone(),
+                lsp_w.write(LspRequest {
+                    entity,
+                    msg: LspMessage::ExecuteCommand {
+                        command: command.command.clone(),
+                        arguments: command.arguments.clone(),
+                    },
                 });
             }
         }
         CodeActionOrCommand::Command(command) => {
-            lsp_client.send(LspMessage::ExecuteCommand {
-                command: command.command.clone(),
-                arguments: command.arguments.clone(),
+            lsp_w.write(LspRequest {
+                entity,
+                msg: LspMessage::ExecuteCommand {
+                    command: command.command.clone(),
+                    arguments: command.arguments.clone(),
+                },
             });
         }
     }
@@ -743,9 +771,13 @@ pub fn execute_code_action(lsp_client: &LspClient, action: &CodeActionOrCommand)
 /// (the IDE feature where clicking on a name highlights every other use
 /// in the same file). Debounce delay comes from
 /// `LspConfig::highlight_delay_ms`.
-pub fn request_document_highlights(time: Res<Time>, mut query: RequestDocumentHighlightsQuery) {
+pub fn request_document_highlights(
+    time: Res<Time>,
+    mut query: RequestDocumentHighlightsQuery,
+    mut lsp_w: MessageWriter<LspRequest>,
+) {
     let Ok((
-        lsp_client,
+        entity,
         capabilities,
         cursor_state,
         buffer,
@@ -756,7 +788,7 @@ pub fn request_document_highlights(time: Res<Time>, mut query: RequestDocumentHi
     else {
         return;
     };
-    if !lsp_client.is_ready() || !capabilities.supports_document_highlight() {
+    if !capabilities.supports_document_highlight() {
         return;
     }
 
@@ -799,45 +831,53 @@ pub fn request_document_highlights(time: Res<Time>, mut query: RequestDocumentHi
         cursor_pos,
         capabilities.position_encoding(),
     );
-    lsp_client.send(LspMessage::DocumentHighlight {
-        uri: lsp_document.uri.clone(),
-        position,
-        id: 0,
+    lsp_w.write(LspRequest {
+        entity,
+        msg: LspMessage::DocumentHighlight {
+            uri: lsp_document.uri.clone(),
+            position,
+            id: 0,
+        },
     });
 }
 
 /// Helper to request prepare rename
 pub fn request_prepare_rename(
-    lsp_client: &LspClient,
+    entity: Entity,
     capabilities: &ServerCapabilities,
     uri: &Url,
     position: Position,
+    lsp_w: &mut MessageWriter<LspRequest>,
 ) {
     if capabilities.supports_prepare_rename() {
-        lsp_client.send(LspMessage::PrepareRename {
-            uri: uri.clone(),
-            position,
-            id: 0,
+        lsp_w.write(LspRequest {
+            entity,
+            msg: LspMessage::PrepareRename {
+                uri: uri.clone(),
+                position,
+                id: 0,
+            },
         });
     }
-    // If server supports rename but not prepare, the caller handles the dialog directly.
-    // If server doesn't support rename at all, start_prepare was already called — reset it.
 }
 
-/// Helper to execute rename
 pub fn execute_rename(
-    lsp_client: &LspClient,
+    entity: Entity,
     capabilities: &ServerCapabilities,
     uri: &Url,
     position: Position,
     new_name: String,
+    lsp_w: &mut MessageWriter<LspRequest>,
 ) {
     if capabilities.supports_rename() {
-        lsp_client.send(LspMessage::Rename {
-            uri: uri.clone(),
-            position,
-            new_name,
-            id: 0,
+        lsp_w.write(LspRequest {
+            entity,
+            msg: LspMessage::Rename {
+                uri: uri.clone(),
+                position,
+                new_name,
+                id: 0,
+            },
         });
     }
 }

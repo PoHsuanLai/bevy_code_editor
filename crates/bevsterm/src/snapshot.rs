@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 use bevy::ui::ComputedNode;
 use bevy_instanced_text::{
-    LineStyles, RunWithText, ScrollState, StyleRun, TextBackgroundColor, TextBuffer, TextColor,
-    TextFont,
+    LineStyles, MonoCellWidth, RunWithText, ScrollState, StyleRun, TextBackgroundColor, TextBuffer,
+    TextColor,
 };
 use ropey::Rope;
 use wezterm_surface::SequenceNo;
@@ -64,6 +64,8 @@ type SnapshotQuery<'w, 's> = Query<
         &'static mut TextBuffer,
         &'static ComputedNode,
         &'static TextFont,
+        &'static bevy::text::LineHeight,
+        &'static MonoCellWidth,
         &'static mut ScrollState,
         &'static TerminalColorPalette,
         &'static TextColor,
@@ -82,6 +84,8 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         mut buffer,
         computed,
         font,
+        lh,
+        _mono,
         mut scroll,
         palette,
         fg_color,
@@ -91,6 +95,7 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         mut follow,
     ) in q.iter_mut()
     {
+        let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
         let cache_entry = cache.entry(entity).or_default();
 
         let term = session.terminal.lock();
@@ -103,7 +108,7 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         let needs_rebuild = cache_entry.last_seqno != Some(seqno) || cache_entry.last_rows != rows;
 
         if !needs_rebuild {
-            anchor_scroll_to_bottom(&mut scroll, computed, font, total_lines, &mut follow);
+            anchor_scroll_to_bottom(&mut scroll, computed, line_height, total_lines, &mut follow);
             continue;
         }
 
@@ -168,7 +173,7 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         cache_entry.last_cols = cols;
         cache_entry.last_total_lines = total_lines;
         cache_entry.lines = next_lines;
-        anchor_scroll_to_bottom(&mut scroll, computed, font, total_lines, &mut follow);
+        anchor_scroll_to_bottom(&mut scroll, computed, line_height, total_lines, &mut follow);
     }
 }
 
@@ -183,11 +188,10 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
 fn anchor_scroll_to_bottom(
     scroll: &mut ScrollState,
     computed: &ComputedNode,
-    font: &TextFont,
+    line_height: f32,
     total_lines: usize,
     follow: &mut TerminalScrollFollow,
 ) {
-    let line_height = font.line_height;
     if line_height <= 0.0 {
         return;
     }

@@ -6,7 +6,7 @@
 
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy_instanced_text::{TextFont, TextViewOverlays};
+use bevy_instanced_text::{MonoCellWidth, TextViewOverlays};
 use bevy_instanced_text_edit::{
     caret_overlay, cursor_blink_visible, BlinkPhase, CursorSettings, TextCursorColor,
 };
@@ -50,13 +50,13 @@ pub fn push_terminal_caret(
         Entity,
         &TerminalGridSnapshot,
         &BlinkPhase,
-        &TextFont,
+        &MonoCellWidth,
         &TextCursorColor,
         &CursorSettings,
         &mut TextViewOverlays,
     )>,
 ) {
-    for (entity, snapshot, blink, font, theme, cursor_settings, mut overlays) in q.iter_mut() {
+    for (entity, snapshot, blink, mono, theme, cursor_settings, mut overlays) in q.iter_mut() {
         // Drain previous-frame caret (z=1) — same convention as the editor.
         overlays.rects.retain(|r| r.z != 1);
 
@@ -75,7 +75,7 @@ pub fn push_terminal_caret(
             continue;
         }
 
-        let x_left = snapshot.cursor_col as f32 * font.char_width;
+        let x_left = snapshot.cursor_col as f32 * mono.px;
         overlays.rects.push(caret_overlay(
             snapshot.cursor_row,
             x_left,

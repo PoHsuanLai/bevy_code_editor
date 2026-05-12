@@ -16,8 +16,8 @@ use crate::types::events::TextEdited;
 use bevy::prelude::*;
 use bevy::ui::ComputedNode;
 use bevy_instanced_text::{
-    visible_buffer_range, HiddenLines, LayoutProduceSet, TextBounds, LineStyles, RunWithText,
-    ScrollState, TextBuffer, TextFont,
+    visible_buffer_range, HiddenLines, LayoutProduceSet, TextBounds, LineStyles, MonoCellWidth,
+    RunWithText, ScrollState, TextBuffer,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -141,6 +141,8 @@ pub(crate) fn produce_line_styles(
             &ScrollState,
             &ComputedNode,
             &TextFont,
+            &bevy::text::LineHeight,
+            &MonoCellWidth,
             Option<&TextBounds>,
             Option<&HiddenLines>,
             &mut EditorSyntaxState,
@@ -263,6 +265,8 @@ pub(crate) fn produce_line_styles(
         scroll,
         computed,
         font,
+        lh,
+        mono,
         wrap,
         hidden,
         mut syntax,
@@ -282,7 +286,8 @@ pub(crate) fn produce_line_styles(
         let viewport_height = computed.size().y * inv;
         let text_area_top = computed.content_inset().min_inset.y * inv;
         let wrap = wrap.copied().unwrap_or_default();
-        let range = visible_buffer_range(buffer, scroll, viewport_height, text_area_top, font, wrap, hidden);
+        let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
+        let range = visible_buffer_range(buffer, scroll, viewport_height, text_area_top, line_height, mono.px, wrap, hidden);
         if range.start >= range.end {
             *line_styles = LineStyles::new(HashMap::new(), 0..0);
             dirty_lines.remove(&entity);
@@ -383,7 +388,7 @@ pub(crate) fn sync_layout_wrap(
     mut editors: Query<
         (
             &ComputedNode,
-            &TextFont,
+            &MonoCellWidth,
             &mut TextBounds,
             &Wrapping,
             &Indentation,
@@ -391,8 +396,8 @@ pub(crate) fn sync_layout_wrap(
         With<CodeEditor>,
     >,
 ) {
-    for (computed, font, mut wrap, wrapping, indentation) in editors.iter_mut() {
-        let char_width = font.char_width;
+    for (computed, mono, mut wrap, wrapping, indentation) in editors.iter_mut() {
+        let char_width = mono.px;
         let width: Option<f32> = if wrapping.enabled {
             let inv = computed.inverse_scale_factor();
             let viewport_text_w =

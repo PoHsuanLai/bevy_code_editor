@@ -25,6 +25,7 @@ use crate::types::{CodeEditor, CursorState};
 use bevy::prelude::*;
 use bevy_lsp::{
     rope_byte_to_lsp_position, rope_char_to_lsp_position, LspClient, LspDocument, LspMessage,
+    LspRequest,
 };
 use lsp_types::{Range, TextDocumentContentChangeEvent};
 
@@ -58,9 +59,9 @@ type RenameRequestQuery<'w, 's> = Query<
     'w,
     's,
     (
+        Entity,
         &'static TextBuffer,
         Option<&'static LspDocument>,
-        &'static LspClient,
         &'static bevy_lsp::ServerCapabilities,
         &'static mut LspRenamePopup,
     ),
@@ -71,9 +72,9 @@ type SignatureHelpRequestQuery<'w, 's> = Query<
     'w,
     's,
     (
+        Entity,
         &'static TextBuffer,
         Option<&'static LspDocument>,
-        &'static LspClient,
         &'static bevy_lsp::ServerCapabilities,
         &'static mut LspSignatureHelpPopup,
     ),
@@ -210,8 +211,9 @@ pub fn listen_hover_requests(
 pub fn listen_rename_requests(
     mut events: MessageReader<RenameRequested>,
     mut query: RenameRequestQuery,
+    mut lsp_w: MessageWriter<LspRequest>,
 ) {
-    let Ok((buffer, lsp_document, lsp_client, caps, mut rename_state)) = query.single_mut() else {
+    let Ok((entity, buffer, lsp_document, caps, mut rename_state)) = query.single_mut() else {
         return;
     };
     let Some(lsp_document) = lsp_document else {
@@ -221,10 +223,13 @@ pub fn listen_rename_requests(
     for event in events.read() {
         let position = rope_char_to_lsp_position(&buffer.rope, event.cursor_char, enc);
         rename_state.start_prepare(position);
-        lsp_client.send(LspMessage::PrepareRename {
-            uri: lsp_document.uri.clone(),
-            position,
-            id: 0,
+        lsp_w.write(LspRequest {
+            entity,
+            msg: LspMessage::PrepareRename {
+                uri: lsp_document.uri.clone(),
+                position,
+                id: 0,
+            },
         });
     }
 }
@@ -232,9 +237,9 @@ pub fn listen_rename_requests(
 pub fn listen_signature_help_requests(
     mut events: MessageReader<SignatureHelpRequested>,
     mut query: SignatureHelpRequestQuery,
+    mut lsp_w: MessageWriter<LspRequest>,
 ) {
-    let Ok((buffer, lsp_document, lsp_client, caps, mut sig_help_state)) = query.single_mut()
-    else {
+    let Ok((entity, buffer, lsp_document, caps, mut sig_help_state)) = query.single_mut() else {
         return;
     };
     let Some(lsp_document) = lsp_document else {
@@ -243,10 +248,13 @@ pub fn listen_signature_help_requests(
     let enc = caps.position_encoding();
     for event in events.read() {
         sig_help_state.dismiss();
-        lsp_client.send(LspMessage::SignatureHelp {
-            uri: lsp_document.uri.clone(),
-            position: rope_char_to_lsp_position(&buffer.rope, event.cursor_char, enc),
-            id: sig_help_state.request_id,
+        lsp_w.write(LspRequest {
+            entity,
+            msg: LspMessage::SignatureHelp {
+                uri: lsp_document.uri.clone(),
+                position: rope_char_to_lsp_position(&buffer.rope, event.cursor_char, enc),
+                id: sig_help_state.request_id,
+            },
         });
     }
 }
@@ -271,15 +279,16 @@ pub fn listen_dismiss_completion(
 pub fn drive_completion_resolve(
     mut query: Query<
         (
+            Entity,
             &mut LspCompletionPopup,
-            &bevy_lsp::LspClient,
             &bevy_lsp::ServerCapabilities,
         ),
         With<CodeEditor>,
     >,
+    mut lsp_w: MessageWriter<LspRequest>,
     mut last_selected: Local<Option<usize>>,
 ) {
-    let Ok((mut popup, lsp_client, caps)) = query.single_mut() else {
+    let Ok((entity, mut popup, caps)) = query.single_mut() else {
         *last_selected = None;
         return;
     };
@@ -314,7 +323,10 @@ pub fn drive_completion_resolve(
     popup.resolve_request_id = popup.resolve_request_id.wrapping_add(1);
     let id = popup.resolve_request_id;
     popup.pending_resolve = Some((lsp_item.label.clone(), id));
-    lsp_client.send(LspMessage::ResolveCompletionItem { item: lsp_item, id });
+    lsp_w.write(LspRequest {
+        entity,
+        msg: LspMessage::ResolveCompletionItem { item: lsp_item, id },
+    });
 }
 
 /// Dismiss the completion popup when the cursor moves out of a position
@@ -350,11 +362,12 @@ pub fn dismiss_completion_on_cursor_move(
 pub fn tick_lsp_debounce_timers(
     time: Res<Time>,
     mut query: Query<
-        (&LspClient, &mut LspDebounceTimers, &mut LspCompletionPopup),
+        (Entity, &mut LspDebounceTimers, &mut LspCompletionPopup),
         With<CodeEditor>,
     >,
+    mut lsp_w: MessageWriter<LspRequest>,
 ) {
-    let Ok((lsp_client, mut debounce, mut completion_state)) = query.single_mut() else {
+    let Ok((entity, mut debounce, mut completion_state)) = query.single_mut() else {
         return;
     };
 
@@ -363,10 +376,13 @@ pub fn tick_lsp_debounce_timers(
         if debounce.completion_timer.just_finished() {
             if let Some(req) = debounce.pending_completion.take() {
                 completion_state.request_id = completion_state.request_id.wrapping_add(1);
-                lsp_client.send(LspMessage::Completion {
-                    uri: req.uri,
-                    position: req.position,
-                    id: completion_state.request_id,
+                lsp_w.write(LspRequest {
+                    entity,
+                    msg: LspMessage::Completion {
+                        uri: req.uri,
+                        position: req.position,
+                        id: completion_state.request_id,
+                    },
                 });
             }
         }
@@ -376,10 +392,13 @@ pub fn tick_lsp_debounce_timers(
         debounce.hover_timer.tick(time.delta());
         if debounce.hover_timer.just_finished() {
             if let Some(req) = debounce.pending_hover.take() {
-                lsp_client.send(LspMessage::Hover {
-                    uri: req.uri,
-                    position: req.position,
-                    id: 0,
+                lsp_w.write(LspRequest {
+                    entity,
+                    msg: LspMessage::Hover {
+                        uri: req.uri,
+                        position: req.position,
+                        id: 0,
+                    },
                 });
             }
         }

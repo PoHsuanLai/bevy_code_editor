@@ -12,7 +12,7 @@ use crate::text_view::{
 use bevy::ui::ComputedNode;
 use crate::types::*;
 use bevy::prelude::*;
-use bevy_instanced_text::TextFont;
+use bevy_instanced_text::MonoCellWidth;
 
 type PushCursorOverlaysQuery<'w, 's> = Query<
     'w,
@@ -25,7 +25,7 @@ type PushCursorOverlaysQuery<'w, 's> = Query<
         &'static TextBuffer,
         &'static mut TextViewOverlays,
         &'static FoldState,
-        &'static TextFont,
+        &'static MonoCellWidth,
         Option<&'static DisplayLayout>,
         &'static EditorTheme,
         &'static CursorSettings,
@@ -43,7 +43,7 @@ type CursorLineHighlightQuery<'w, 's> = Query<
         &'static ComputedNode,
         &'static mut TextViewOverlays,
         &'static FoldState,
-        &'static TextFont,
+        &'static MonoCellWidth,
         Option<&'static DisplayLayout>,
         &'static EditorTheme,
         &'static CursorLine,
@@ -154,7 +154,7 @@ pub(crate) fn push_cursor_overlays(
         buffer,
         mut overlays,
         fold_state,
-        font,
+        mono,
         layout,
         theme,
         cursor_settings,
@@ -178,7 +178,7 @@ pub(crate) fn push_cursor_overlays(
             continue;
         }
 
-        let char_width = font.char_width;
+        let char_width = mono.px;
         let _ = cursor; // unused under the SelectionCollection-driven path
 
         for selection in sel.selections.iter() {
@@ -214,7 +214,7 @@ pub(crate) fn push_cursor_overlays(
     }
 }
 pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlightQuery) {
-    for (sel, cursor, buffer, computed, mut overlays, fold_state, font, layout, theme, cursor_line) in
+    for (sel, cursor, buffer, computed, mut overlays, fold_state, mono, layout, theme, cursor_line) in
         editor_query.iter_mut()
     {
         // Drain previous-frame line-border / word rects (z = 0 reserved for cursor-line decoration).
@@ -225,7 +225,7 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
             continue;
         }
 
-        let char_width = font.char_width;
+        let char_width = mono.px;
 
         let border_thickness = cursor_line.border_thickness;
         let border_color = cursor_line.border_color;

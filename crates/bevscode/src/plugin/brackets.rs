@@ -5,7 +5,7 @@ use crate::settings::*;
 use crate::text_view::{DisplayLayout, TextBuffer, TextViewOverlays};
 use crate::types::*;
 use bevy::prelude::*;
-use bevy_instanced_text::{CornerRadii, RectOverlay, RowVertical, TextFont};
+use bevy_instanced_text::{CornerRadii, MonoCellWidth, RectOverlay, RowVertical};
 
 type BracketMatchQuery<'w, 's> = Query<
     'w,
@@ -29,7 +29,7 @@ type BracketHighlightQuery<'w, 's> = Query<
         &'static TextBuffer,
         &'static BracketMatchState,
         &'static FoldState,
-        &'static TextFont,
+        &'static MonoCellWidth,
         Option<&'static DisplayLayout>,
         &'static EditorTheme,
         &'static BracketConfig,
@@ -171,7 +171,7 @@ pub(crate) fn update_bracket_highlight(mut editor_query: BracketHighlightQuery) 
     const BORDER: f32 = 2.0;
     const Z: i8 = 2;
 
-    for (buffer, bracket_state, fold_state, font, layout, theme, brackets, mut overlays) in
+    for (buffer, bracket_state, fold_state, mono, layout, theme, brackets, mut overlays) in
         editor_query.iter_mut()
     {
         // Drain previous-frame bracket rects (z = 0, reserved for bracket highlights).
@@ -189,7 +189,7 @@ pub(crate) fn update_bracket_highlight(mut editor_query: BracketHighlightQuery) 
             brackets.style,
             BracketHighlightStyle::Background | BracketHighlightStyle::Both
         );
-        let char_width = font.char_width;
+        let char_width = mono.px;
 
         let mut pushed = 0usize;
         for &bracket_pos in &[

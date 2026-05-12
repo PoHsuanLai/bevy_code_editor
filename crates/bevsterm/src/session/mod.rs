@@ -9,7 +9,7 @@ use std::thread::JoinHandle;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 use bevy::ui::ComputedNode;
-use bevy_instanced_text::TextFont;
+use bevy_instanced_text::MonoCellWidth;
 use parking_lot::Mutex;
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 
@@ -43,6 +43,8 @@ pub fn open_pending_sessions(
             Entity,
             &ComputedNode,
             &TextFont,
+            &bevy::text::LineHeight,
+            &MonoCellWidth,
             Option<&TerminalConfig>,
             Option<&TerminalScrollback>,
             Option<&ShellIntegrationComponent>,
@@ -61,15 +63,17 @@ pub fn open_pending_sessions(
         .unwrap_or(1)
         .max(1);
 
-    for (entity, computed, font, config, scrollback, integration) in &pending {
-        let Some((cols, rows)) = cells_from_viewport(computed, font) else {
+    for (entity, computed, font, lh, mono, config, scrollback, integration) in &pending {
+        let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
+        let char_width = mono.px;
+        let Some((cols, rows)) = cells_from_viewport(computed, char_width, line_height) else {
             continue;
         };
         if cols < MIN_COLS || rows < MIN_ROWS {
             continue;
         }
-        let cell_w = font.char_width.round().max(1.0) as u16;
-        let cell_h = font.line_height.round().max(1.0) as u16;
+        let cell_w = char_width.round().max(1.0) as u16;
+        let cell_h = line_height.round().max(1.0) as u16;
         let scrollback_lines = scrollback.cloned().unwrap_or_default().max_lines;
         let cmd = build_command(config);
 

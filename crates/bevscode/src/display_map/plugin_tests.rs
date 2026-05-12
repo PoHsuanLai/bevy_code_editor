@@ -37,7 +37,7 @@ use bevy_instanced_text::view::plugin::update_text_views;
 use bevy_instanced_text::view::render::{GlyphBatchComponent, GlyphInstance};
 use bevy_instanced_text::view::tuning::LayoutTuning;
 use bevy_instanced_text::{
-    DisplayLayout, LineStyles, ScrollState, TextBounds, TextBuffer, TextFont, TextView,
+    DisplayLayout, LineStyles, MonoCellWidth, ScrollState, TextBounds, TextBuffer, TextView,
     TextViewBatchEntity, TextViewOverlays,
 };
 use bevy_instanced_text_edit::{BlinkPhase, EditDelta, EditPoint};
@@ -85,16 +85,9 @@ fn spawn_test_editor(app: &mut App, text: &str) -> Entity {
         TextBuffer::new(text),
         ScrollState::default(),
         computed,
-        TextFont {
-            font: Handle::default(),
-            font_size: 14.0,
-            line_height: 21.0,
-            char_width: 8.0,
-            font_bold: None,
-            font_italic: None,
-            font_bold_italic: None,
-            font_synthesis: Default::default(),
-        },
+        TextFont::from_font_size(14.0),
+        bevy::text::LineHeight::Px(21.0),
+        MonoCellWidth { px: 8.0 },
         DisplayLayout::default(),
         TextViewOverlays::default(),
         TextBounds::default(),

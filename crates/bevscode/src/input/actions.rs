@@ -12,7 +12,7 @@ use crate::lsp_ui::state::LspCompletionPopup;
 #[cfg(feature = "lsp")]
 use bevy::log::trace;
 #[cfg(feature = "lsp")]
-use bevy_lsp::{LspClient, LspDocument, LspMessage};
+use bevy_lsp::{LspDocument, LspMessage, LspRequest};
 
 /// Insert a closing bracket / quote without moving the cursor (auto-close).
 pub fn insert_closing_char(cursor: &CursorState, buffer: &mut TextBuffer, c: char) {
@@ -119,11 +119,12 @@ pub fn update_completion_filter(
 /// Request completion from LSP.
 #[cfg(feature = "lsp")]
 pub fn request_completion(
+    entity: Entity,
     cursor: &CursorState,
     rope: &Rope,
-    lsp_client: &LspClient,
     completion_state: &mut LspCompletionPopup,
     lsp_document: Option<&LspDocument>,
+    lsp_w: &mut MessageWriter<LspRequest>,
 ) {
     let cursor_pos = cursor.cursor_pos.min(rope.len_chars());
     let lsp_position =
@@ -161,10 +162,13 @@ pub fn request_completion(
 
         if !can_refilter_locally {
             completion_state.request_id = completion_state.request_id.wrapping_add(1);
-            lsp_client.send(LspMessage::Completion {
-                uri: doc.uri.clone(),
-                position: lsp_position,
-                id: completion_state.request_id,
+            lsp_w.write(LspRequest {
+                entity,
+                msg: LspMessage::Completion {
+                    uri: doc.uri.clone(),
+                    position: lsp_position,
+                    id: completion_state.request_id,
+                },
             });
             if completion_state.initial_query.is_empty() {
                 completion_state.initial_query = new_query.clone();

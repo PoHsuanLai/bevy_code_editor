@@ -43,7 +43,6 @@ type KeyboardLspQuery<'w, 's> = Query<
     'w,
     's,
     (
-        &'static bevy_lsp::LspClient,
         Option<&'static mut bevy_lsp::LspDocument>,
         &'static bevy_lsp::ServerCapabilities,
         &'static mut crate::lsp_ui::state::LspCompletionPopup,
@@ -72,6 +71,7 @@ pub fn on_focused_keyboard(
         With<CodeEditor>,
     >,
     #[cfg(feature = "lsp")] mut lsp_query: KeyboardLspQuery,
+    #[cfg(feature = "lsp")] mut lsp_w: MessageWriter<bevy_lsp::LspRequest>,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     let entity = trigger.event().focused_entity;
@@ -83,7 +83,6 @@ pub fn on_focused_keyboard(
 
     #[cfg(feature = "lsp")]
     let Ok((
-        lsp_client,
         mut lsp_document,
         capabilities,
         mut completion_state,
@@ -121,11 +120,12 @@ pub fn on_focused_keyboard(
                         (rename_state.position, lsp_document.as_deref())
                     {
                         crate::lsp_ui::systems::execute_rename(
-                            lsp_client,
+                            entity,
                             capabilities,
                             &doc.uri,
                             position,
                             rename_state.new_name.clone(),
+                            &mut lsp_w,
                         );
                     }
                 }
@@ -159,7 +159,7 @@ pub fn on_focused_keyboard(
                     #[cfg(feature = "lsp")]
                     lsp,
                     #[cfg(feature = "lsp")]
-                    lsp_client,
+                    entity,
                     #[cfg(feature = "lsp")]
                     capabilities,
                     #[cfg(feature = "lsp")]
@@ -168,6 +168,8 @@ pub fn on_focused_keyboard(
                     lsp_document.as_deref_mut(),
                     #[cfg(feature = "lsp")]
                     syntax_state,
+                    #[cfg(feature = "lsp")]
+                    &mut lsp_w,
                 );
             }
         }
@@ -181,7 +183,7 @@ pub fn on_focused_keyboard(
             );
             #[cfg(feature = "lsp")]
             {
-                let _ = (&lsp_client, &lsp_document);
+                let _ = &lsp_document;
                 completion_state.dismiss();
             }
         }
@@ -201,13 +203,14 @@ fn insert_typed_char(
     buffer: &mut crate::text_view::TextBuffer,
     brackets: &BracketConfig,
     #[cfg(feature = "lsp")] lsp: &LspConfig,
-    #[cfg(feature = "lsp")] lsp_client: &bevy_lsp::LspClient,
+    #[cfg(feature = "lsp")] entity: Entity,
     #[cfg(feature = "lsp")] capabilities: &bevy_lsp::ServerCapabilities,
     #[cfg(feature = "lsp")] completion_state: &mut crate::lsp_ui::state::LspCompletionPopup,
     #[cfg(feature = "lsp")] lsp_document: Option<&mut bevy_lsp::LspDocument>,
     #[cfg(feature = "lsp")] syntax_state: Option<
         &crate::plugin::syntax_highlighting::EditorSyntaxState,
     >,
+    #[cfg(feature = "lsp")] lsp_w: &mut MessageWriter<bevy_lsp::LspRequest>,
 ) {
     if brackets.auto_close_quotes
         && get_closing_quote(c).is_some()
@@ -298,11 +301,12 @@ fn insert_typed_char(
             if is_trigger && in_completion_context {
                 completion_state.dismiss();
                 request_completion(
+                    entity,
                     cursor,
                     &buffer.rope,
-                    lsp_client,
                     completion_state,
                     lsp_document.as_deref(),
+                    &mut lsp_w,
                 );
             } else if (c.is_alphanumeric() || c == '_') && in_completion_context {
                 if completion_state.visible {
@@ -313,11 +317,12 @@ fn insert_typed_char(
                     if word_len >= lsp.completion.min_word_length {
                         completion_state.start_char_index = word_start;
                         request_completion(
+                            entity,
                             cursor,
                             &buffer.rope,
-                            lsp_client,
                             completion_state,
                             lsp_document.as_deref(),
+                            &mut lsp_w,
                         );
                     }
                 }

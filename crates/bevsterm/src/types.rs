@@ -26,7 +26,7 @@ use crate::backend;
     bevy_instanced_text::TextBuffer,
     bevy_instanced_text::ScrollState,
     bevy_instanced_text::ContentMetrics,
-    bevy_instanced_text::TextFont,
+    bevy_instanced_text::MonoCellWidth,
     bevy_instanced_text::LineStyles,
     bevy_instanced_text::HiddenLines,
     bevy_instanced_text::TextColor,
