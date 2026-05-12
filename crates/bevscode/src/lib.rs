@@ -61,7 +61,61 @@
 //! App::new()
 //!     .add_plugins(DefaultPlugins)
 //!     .add_plugins(CodeEditorPlugins)
+//!     .add_systems(Startup, setup)
 //!     .run();
+//!
+//! fn setup(mut commands: Commands) {
+//!     // One Camera2d is all that's needed for a single full-window editor.
+//!     commands.spawn(Camera2d);
+//!     // CodeEditor auto-sizes to the window via AutoResizeViewport.
+//!     commands.spawn(CodeEditor);
+//! }
+//! ```
+//!
+//! ## Camera and layout
+//!
+//! `CodeEditor` is a standard Bevy UI `Node`. Size and position it the same
+//! way you would any other UI element — `Node::width`, `Node::height`, flex
+//! layout, etc. The editor reads its dimensions from `ComputedNode` each frame;
+//! no manual viewport management is needed.
+//!
+//! **Single window (default):** spawn `CodeEditor` alone. The
+//! [`AutoResizeViewport`] component (added automatically) keeps the node
+//! pixel-perfect with the primary window. One `Camera2d` at the default origin
+//! is all the rendering side needs.
+//!
+//! **Split panes:** omit `AutoResizeViewport` and set explicit `Node` sizes.
+//! Give each editor entity a `RenderLayers` component and spawn a matching
+//! `Camera2d` with a `Camera::viewport` rect (in physical pixels) for that
+//! layer. The editor's glyph instances are rendered in world space relative to
+//! the camera — two cameras, two viewports, each seeing only its own layer:
+//!
+//! ```rust,no_run
+//! # use bevy::prelude::*;
+//! # use bevy_camera::visibility::RenderLayers;
+//! # use bevscode::prelude::*;
+//! # fn split(mut commands: Commands, window: Query<&Window>) {
+//! let window = window.single().unwrap();
+//! let scale = window.scale_factor();
+//! let half_phys = (window.width() * scale / 2.0) as u32;
+//! let full_phys = (window.height() * scale) as u32;
+//! let half_log = window.width() / 2.0;
+//!
+//! commands.spawn((Camera2d, Camera {
+//!     viewport: Some(bevy::camera::Viewport {
+//!         physical_position: UVec2::ZERO,
+//!         physical_size: UVec2::new(half_phys, full_phys),
+//!         ..default()
+//!     }),
+//!     ..default()
+//! }, RenderLayers::layer(0)));
+//!
+//! commands.spawn((
+//!     CodeEditor,
+//!     Node { width: Val::Px(half_log), height: Val::Px(window.height()), ..default() },
+//!     RenderLayers::layer(0),
+//! ));
+//! # }
 //! ```
 //!
 //! ## Plugin composition
