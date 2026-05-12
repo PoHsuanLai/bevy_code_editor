@@ -72,7 +72,7 @@ type MirrorSyntaxTreeQuery<'w, 's> = Query<
 >;
 
 #[cfg(feature = "tree-sitter")]
-use bevy_tree_sitter::{HighlightRange, SyntaxProvider, TreeSitterProvider};
+use bevy_tree_sitter::{HighlightRange, TreeSitterProvider};
 
 /// Mutable state inside [`EditorSyntaxState`]. Held behind an `Arc<RwLock<_>>`
 /// so the editor's parse pipeline (writers) and the styling producer
@@ -198,7 +198,6 @@ impl EditorSyntaxState {
                 .map(|p| p.is_available())
                 .unwrap_or(false)
         }
-
         #[cfg(not(feature = "tree-sitter"))]
         {
             false
@@ -216,8 +215,6 @@ impl EditorSyntaxState {
     pub fn highlight_range(
         &mut self,
         text: &str,
-        start_line: usize,
-        end_line: usize,
         start_byte: usize,
         theme: &crate::settings::SyntaxColors,
         default_color: Color,
@@ -226,8 +223,11 @@ impl EditorSyntaxState {
         let Some(provider) = &mut guard.provider else {
             return plain_text_segments(text, default_color);
         };
-        let highlights = provider.highlight_range(text, start_line, end_line, start_byte);
-        ranges_to_segments(text, start_byte, &highlights, theme, default_color)
+        let end_byte = start_byte + text.len();
+        match provider.highlight_range(start_byte..end_byte) {
+            Some(highlights) => ranges_to_segments(text, start_byte, &highlights, theme, default_color),
+            None => plain_text_segments(text, default_color),
+        }
     }
 
     /// No-tree-sitter fallback — emit a single default-colored segment per line.
@@ -237,8 +237,6 @@ impl EditorSyntaxState {
     pub fn highlight_range(
         &mut self,
         text: &str,
-        _start_line: usize,
-        _end_line: usize,
         _start_byte: usize,
         _theme: &crate::settings::SyntaxColors,
         default_color: Color,
@@ -274,53 +272,98 @@ fn plain_text_segments(text: &str, default_color: Color) -> Vec<Vec<LineSegment>
         .collect()
 }
 
-/// Translate per-line `HighlightRange`s back into `LineSegment`s, mapping
-/// capture names through the editor's `SyntaxColors`.
+/// Translate a flat sorted `HighlightRange` slice into per-line `LineSegment`s,
+/// mapping capture names through the editor's `SyntaxColors`.
 ///
-/// `start_byte` is the document byte offset of `text` — `HighlightRange`
-/// byte ranges are document-absolute, so we subtract `start_byte` to index
-/// into `text`.
+/// `highlights` is document-absolute and sorted by `byte_range.start`.
+/// `start_byte` is the document byte offset of the first byte of `text`.
+/// Two-pointer walk: O(L + H) where L = bytes in text, H = highlight count.
 #[cfg(feature = "tree-sitter")]
 fn ranges_to_segments(
     text: &str,
     start_byte: usize,
-    per_line: &[Vec<HighlightRange>],
+    highlights: &[HighlightRange],
     theme: &crate::settings::SyntaxColors,
     default_color: Color,
 ) -> Vec<Vec<LineSegment>> {
-    let mut out: Vec<Vec<LineSegment>> =
-        Vec::with_capacity(per_line.len().max(text.lines().count()));
-    let mut byte_pos = 0usize;
+    let mut out: Vec<Vec<LineSegment>> = Vec::with_capacity(text.lines().count());
+    let mut byte_pos = 0usize; // slice-relative offset of current line start
+    let mut hi_idx = 0usize;   // monotone index: first highlight not yet past all previous lines
 
-    for (line, ranges) in text.lines().zip(per_line.iter()) {
+    for line in text.lines() {
         let line_start = byte_pos;
         let line_len = line.len();
         let line_end = line_start + line_len;
+        let abs_line_start = start_byte + line_start;
+        let abs_line_end = start_byte + line_end;
 
-        // Walk the line in document bytes, slicing out segments where each
-        // range starts/ends. Gaps between ranges become default-colored
-        // segments. Ranges land sorted from the provider.
-        //
-        // Provider ranges are document-absolute (`start_byte + ...`); we
-        // subtract `start_byte` to get the slice-relative byte offset before
-        // clamping into [line_start, line_end]. Without this, every line
-        // past the first one clamps every range to line_end and emits no
-        // styled segments — the "only line 0 colored" bug.
-        let mut segments: Vec<LineSegment> = Vec::with_capacity(ranges.len() + 1);
-        let mut cursor = line_start;
-        for range in ranges {
-            let abs_to_slice = |b: usize| b.saturating_sub(start_byte);
-            let range_start = abs_to_slice(range.byte_range.start)
-                .max(line_start)
-                .min(line_end);
-            let range_end = abs_to_slice(range.byte_range.end)
-                .max(line_start)
-                .min(line_end);
+        // Skip highlights that ended before this line starts.
+        while hi_idx < highlights.len()
+            && highlights[hi_idx].byte_range.end <= abs_line_start
+        {
+            hi_idx += 1;
+        }
 
-            if range_start > cursor {
-                let local_lo = cursor - line_start;
-                let local_hi = range_start - line_start;
-                let slice = &line[local_lo..local_hi];
+        let mut segments: Vec<LineSegment> = Vec::new();
+        let mut cursor = abs_line_start; // document-absolute position within this line
+        let mut local_hi = hi_idx;       // per-line copy; advances forward within this line
+
+        while cursor < abs_line_end {
+            // Advance past highlights that ended before cursor.
+            while local_hi < highlights.len()
+                && highlights[local_hi].byte_range.end <= cursor
+            {
+                local_hi += 1;
+            }
+
+            if local_hi < highlights.len() {
+                let hl = &highlights[local_hi];
+                let hl_start = hl.byte_range.start.max(abs_line_start);
+                let hl_end = hl.byte_range.end.min(abs_line_end);
+
+                if hl_start > cursor {
+                    // Gap before next highlight — emit default-colored segment.
+                    let lo = cursor - abs_line_start;
+                    let hi = hl_start - abs_line_start;
+                    let slice = &line[lo..hi];
+                    if !slice.is_empty() {
+                        segments.push(LineSegment {
+                            text: slice.to_string(),
+                            color: default_color,
+                            background: None,
+                            corner_radius: 0.0,
+                            font_scale: 0.0,
+                            skew: 0.0,
+                        });
+                    }
+                    cursor = hl_start;
+                } else {
+                    // cursor is inside this highlight — emit colored segment.
+                    let lo = cursor - abs_line_start;
+                    let hi = hl_end - abs_line_start;
+                    let slice = &line[lo..hi];
+                    if !slice.is_empty() {
+                        let color = crate::syntax::map_highlight_color(
+                            Some(&hl.capture_name),
+                            theme,
+                            default_color,
+                        );
+                        segments.push(LineSegment {
+                            text: slice.to_string(),
+                            color,
+                            background: None,
+                            corner_radius: 0.0,
+                            font_scale: 0.0,
+                            skew: 0.0,
+                        });
+                    }
+                    cursor = hl_end;
+                    local_hi += 1;
+                }
+            } else {
+                // No more highlights — emit remainder as default-colored.
+                let lo = cursor - abs_line_start;
+                let slice = &line[lo..];
                 if !slice.is_empty() {
                     segments.push(LineSegment {
                         text: slice.to_string(),
@@ -331,63 +374,20 @@ fn ranges_to_segments(
                         skew: 0.0,
                     });
                 }
-                cursor = range_start;
-            }
-
-            if range_end > cursor {
-                let local_lo = cursor - line_start;
-                let local_hi = range_end - line_start;
-                let slice = &line[local_lo..local_hi];
-                if !slice.is_empty() {
-                    let color = crate::syntax::map_highlight_color(
-                        Some(&range.capture_name),
-                        theme,
-                        default_color,
-                    );
-                    segments.push(LineSegment {
-                        text: slice.to_string(),
-                        color,
-                        background: None,
-                        corner_radius: 0.0,
-                        font_scale: 0.0,
-                        skew: 0.0,
-                    });
-                }
-                cursor = range_end;
+                cursor = abs_line_end;
             }
         }
 
-        if cursor < line_end {
-            let local_lo = cursor - line_start;
-            let slice = &line[local_lo..];
-            if !slice.is_empty() {
-                segments.push(LineSegment {
-                    text: slice.to_string(),
-                    color: default_color,
-                    background: None,
-                    corner_radius: 0.0,
-                    font_scale: 0.0,
-                    skew: 0.0,
-                });
-            }
-        }
-
-        // Suppress whitespace-only lines (the renderer treats empty Vec as
-        // "no segments" and falls back to default styling without paying for
-        // a glyph run).
+        // Suppress whitespace-only lines (renderer falls back to default styling).
         if segments.iter().all(|s| s.text.trim().is_empty()) {
             out.push(Vec::new());
         } else {
             out.push(segments);
         }
 
-        byte_pos = line_end + 1;
+        byte_pos = line_end + 1; // +1 for the '\n' separator
     }
 
-    // Pad with empty rows if the provider returned fewer than expected.
-    while out.len() < per_line.len() {
-        out.push(Vec::new());
-    }
     out
 }
 

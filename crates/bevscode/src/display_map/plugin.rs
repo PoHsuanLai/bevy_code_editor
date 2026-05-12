@@ -355,8 +355,6 @@ pub(crate) fn produce_line_styles(
             let _hl_span = bevy::prelude::info_span!("highlight_line").entered();
             let mut per_line = syntax.highlight_range(
                 line_no_nl,
-                buffer_line,
-                buffer_line + 1,
                 start_byte,
                 syntax_theme,
                 theme.foreground,

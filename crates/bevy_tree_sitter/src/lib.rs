@@ -18,9 +18,8 @@
 //! - **[`SyntaxTree`]** — written back by the plugin when parsing completes.
 //!   Subscribe with `Changed<SyntaxTree>` to react to new trees.
 //!
-//! To get highlight ranges from a tree, attach a [`SyntaxProvider`] (built
-//! via [`TreeSitterProvider`]) to the same entity and query
-//! [`HighlightRange`] items. Each range carries a
+//! To get highlight ranges from a tree, call [`highlight_ranges`] with the
+//! tree, rope, and compiled query. Each [`HighlightRange`] carries a
 //! [`HighlightRange::capture_name`] (e.g. `"keyword"`, `"function.method"`,
 //! `"comment"`) — map these to colors, decorations, or whatever the host needs.
 //!
@@ -53,7 +52,7 @@ pub mod tree_sitter;
 /// without a direct dep on the C-binding crate.
 pub use ::tree_sitter as ts;
 
-pub use crate::highlight::{HighlightRange, SyntaxProvider};
+pub use crate::highlight::{highlight_ranges, HighlightRange};
 pub use crate::language::{Language, TreeSitterConfig};
 pub use crate::parse::{byte_to_point, ParseSource, ParseSourceComp, ParseTask, SyntaxTree};
 pub use crate::plugin::{ParseSet, TreeSitterPlugin};
