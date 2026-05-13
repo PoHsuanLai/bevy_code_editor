@@ -6,7 +6,6 @@
 
 use bevsterm::prelude::*;
 use bevy::prelude::*;
-use bevsterm::prelude::TextFont; // disambiguate from bevy::prelude::TextFont
 
 #[cfg(feature = "profile")]
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
