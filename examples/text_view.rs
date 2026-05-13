@@ -222,7 +222,7 @@ fn handle_scroll(
     let scroll_speed = 40.0;
     for event in mouse_wheel.read() {
         for mut smooth in text_views.iter_mut() {
-            smooth.target_y += event.y * scroll_speed;
+            smooth.target_y -= event.y * scroll_speed;
             smooth.target_y = smooth.target_y.max(0.0);
         }
     }

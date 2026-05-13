@@ -486,6 +486,39 @@ fn computed_node_logical_pixel_conversion() {
     assert!((computed.content_inset().min_inset.y * inv - 10.0).abs() < 0.1, "padding.top logical");
 }
 
+/// Regression: tree-sitter highlights must be applied to every visible row,
+/// not just the first. The batching change in `produce_line_styles` (one
+/// tree-sitter query covering the whole visible window instead of one per
+/// line) must distribute the returned highlights back to each line.
+#[test]
+fn many_lines_all_get_highlighted() {
+    let mut source = String::new();
+    for i in 0..200 {
+        source.push_str(&format!("fn f{}() {{ let x = {}; }}\n", i, i));
+    }
+    let mut app = make_test_app();
+    install_atlas_and_font(&mut app);
+    let entity = spawn_test_editor(&mut app, &source);
+
+    await_initial_parse(&mut app, entity);
+    drive_layout_and_render_once(&mut app);
+
+    let world = app.world();
+    let line_styles = world.get::<LineStyles>(entity).unwrap();
+    let rows_with_fn: Vec<u32> = line_styles
+        .by_line
+        .iter()
+        .filter_map(|(row, runs)| runs.iter().any(|r| r.text == "fn").then_some(*row))
+        .collect();
+    assert!(
+        rows_with_fn.len() > 1,
+        "expected `fn` keyword highlight on many rows, got rows: {:?}. \
+         LineStyles.by_line has {} entries.",
+        rows_with_fn,
+        line_styles.by_line.len()
+    );
+}
+
 /// Walks all three layers (LineStyles → DisplayLayout → GlyphBatch) for a
 /// static buffer. First divergence is reported by layer in the failure
 /// message, so this localizes any pipeline-color regression.

@@ -230,8 +230,8 @@ fn ranges_to_segments(
                 let hl_end = hl.byte_range.end.min(abs_line_end);
 
                 if hl_start > cursor {
-                    let lo = cursor - abs_line_start;
-                    let hi = hl_start - abs_line_start;
+                    let lo = (cursor - abs_line_start).min(line.len());
+                    let hi = (hl_start - abs_line_start).min(line.len());
                     let slice = &line[lo..hi];
                     if !slice.is_empty() {
                         segments.push(LineSegment {
@@ -245,8 +245,8 @@ fn ranges_to_segments(
                     }
                     cursor = hl_start;
                 } else {
-                    let lo = cursor - abs_line_start;
-                    let hi = hl_end - abs_line_start;
+                    let lo = (cursor - abs_line_start).min(line.len());
+                    let hi = (hl_end - abs_line_start).min(line.len());
                     let slice = &line[lo..hi];
                     if !slice.is_empty() {
                         let color = crate::syntax::map_highlight_color(
@@ -267,7 +267,7 @@ fn ranges_to_segments(
                     local_hi += 1;
                 }
             } else {
-                let lo = cursor - abs_line_start;
+                let lo = (cursor - abs_line_start).min(line.len());
                 let slice = &line[lo..];
                 if !slice.is_empty() {
                     segments.push(LineSegment {
@@ -379,7 +379,16 @@ pub(crate) fn react_language_changed(mut editors: ReactLanguageChangedQuery) {
 /// keeps returning a strictly-increasing value (tree-sitter cache key).
 pub(crate) fn sync_editor_parse_source(editors: SyncEditorParseSourceQuery) {
     for (buffer, buf_ref) in editors.iter() {
-        if !buffer.is_changed() {
+        // `is_changed()` can miss the first observation of a buffer when
+        // `EditorParseBufferRef` is attached on a later tick than the buffer
+        // itself (e.g. host-side `SetTextRequested` flows). Fall back to
+        // comparing rope byte length so we still resync after such a load.
+        let buffer_bytes = buffer.rope().len_bytes();
+        let needs_sync = buffer.is_changed() || {
+            let snap = buf_ref.0.read().unwrap();
+            snap.rope.len_bytes() != buffer_bytes
+        };
+        if !needs_sync {
             continue;
         }
         let mut buf = buf_ref.0.write().unwrap();

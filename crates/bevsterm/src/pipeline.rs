@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use bevy::prelude::*;
 use bevy::ui::ComputedNode;
-use bevy::ui::ScrollPosition;
+
 use bevy_instanced_text::{
     LineStyles, MonoCellWidth, RunWithText, SmoothScroll, StyleRun, TextBackgroundColor, TextBuffer,
     TextColor, TextSpan,
@@ -66,7 +66,6 @@ type SnapshotQuery<'w, 's> = Query<
         &'static TextFont,
         &'static bevy::text::LineHeight,
         &'static MonoCellWidth,
-        &'static mut ScrollPosition,
         &'static mut SmoothScroll,
         &'static TerminalColorPalette,
         &'static TextColor,
@@ -87,7 +86,6 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         font,
         lh,
         _mono,
-        mut scroll_pos,
         mut smooth,
         palette,
         fg_color,
@@ -110,7 +108,7 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         let needs_rebuild = cache_entry.last_seqno != Some(seqno) || cache_entry.last_rows != rows;
 
         if !needs_rebuild {
-            anchor_scroll_to_bottom(&mut scroll_pos, &mut smooth, computed, line_height, total_lines, &mut follow);
+            anchor_scroll_to_bottom(&mut smooth, computed, line_height, total_lines, &mut follow);
             continue;
         }
 
@@ -175,7 +173,7 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         cache_entry.last_cols = cols;
         cache_entry.last_total_lines = total_lines;
         cache_entry.lines = next_lines;
-        anchor_scroll_to_bottom(&mut scroll_pos, &mut smooth, computed, line_height, total_lines, &mut follow);
+        anchor_scroll_to_bottom(&mut smooth, computed, line_height, total_lines, &mut follow);
     }
 }
 
@@ -183,10 +181,7 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
 /// user is already at (or within one row of) the bottom. Wheeling back to
 /// within one row of the bottom re-engages follow.
 ///
-/// Convention: `scroll_pos.y` is in `[0, max_scroll]`, positive = scrolled down.
-/// `0` = top of buffer, `max_scroll` (positive) = bottom.
 fn anchor_scroll_to_bottom(
-    scroll_pos: &mut ScrollPosition,
     smooth: &mut SmoothScroll,
     computed: &ComputedNode,
     line_height: f32,
@@ -206,18 +201,17 @@ fn anchor_scroll_to_bottom(
     let max_scroll = hidden_rows as f32 * line_height;
     let stick_threshold = line_height;
 
-    // If the target moved away from where we last anchored, the user wheeled.
     if (smooth.target_y - follow.last_applied_target).abs() > 0.5 {
         follow.stick_to_bottom = max_scroll - smooth.target_y <= stick_threshold;
     }
 
     if follow.stick_to_bottom {
-        scroll_pos.y = max_scroll;
+        smooth.offset_y = max_scroll;
         smooth.target_y = max_scroll;
         follow.last_applied_target = max_scroll;
     } else if max_scroll - smooth.target_y <= stick_threshold {
         follow.stick_to_bottom = true;
-        scroll_pos.y = max_scroll;
+        smooth.offset_y = max_scroll;
         smooth.target_y = max_scroll;
         follow.last_applied_target = max_scroll;
     } else {

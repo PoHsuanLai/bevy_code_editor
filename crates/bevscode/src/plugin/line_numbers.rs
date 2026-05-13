@@ -9,7 +9,6 @@ use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::*;
 use bevy::text::Justify;
-use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{
     view::glyph::TextDecoration, HiddenLines, LineStyles, MonoFontFaces, RunWithText,
     SmoothScroll, StyleRun, TextBuffer, TextSpan,
@@ -82,7 +81,6 @@ pub(crate) fn sync_gutter_text_view(
             Entity,
             &SelectionState,
             &TextBuffer<RopeBuffer>,
-            &ScrollPosition,
             &SmoothScroll,
             &GutterConfig,
             Ref<FoldState>,
@@ -95,8 +93,7 @@ pub(crate) fn sync_gutter_text_view(
         (
             &GutterTextView,
             &mut TextBuffer<TextSpan>,
-            &mut ScrollPosition,
-        &mut SmoothScroll,
+            &mut SmoothScroll,
             &mut HiddenLines,
             &mut LineStyles,
             &mut Node,
@@ -106,11 +103,10 @@ pub(crate) fn sync_gutter_text_view(
         Without<CodeEditor>,
     >,
 ) {
-    for (editor_entity, sel, buffer, scroll_pos, _smooth, gutter, fold_state, theme, ui) in editor_query.iter() {
+    for (editor_entity, sel, buffer, smooth, gutter, fold_state, theme, ui) in editor_query.iter() {
         let Some((
             _,
             mut g_buffer,
-            mut g_scroll_pos,
             mut g_smooth,
             mut g_hidden,
             mut g_styles,
@@ -149,9 +145,9 @@ pub(crate) fn sync_gutter_text_view(
         }
 
         // Mirror vertical scroll.
-        if (g_scroll_pos.y - scroll_pos.y).abs() > 1e-4 {
-            g_scroll_pos.y = scroll_pos.y;
-            g_smooth.target_y = scroll_pos.y;
+        if (g_smooth.offset_y - smooth.offset_y).abs() > 1e-4 {
+            g_smooth.offset_y = smooth.offset_y;
+            g_smooth.target_y = smooth.offset_y;
         }
 
         // Ropey counts a phantom empty line after a trailing '\n'; subtract it

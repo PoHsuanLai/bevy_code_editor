@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy::ui::ScrollPosition;
+
 use bevy_instanced_text::{MonoCellWidth, SmoothScroll, TextBuffer, TextSpan};
 use bevy_text_interaction::{ClipboardResource, SelectionState};
 
@@ -103,15 +103,15 @@ pub fn handle_resize(
 
 pub fn handle_scroll_to(
     mut events: MessageReader<TerminalScrollTo>,
-    mut q: Query<(&mut ScrollPosition, &mut SmoothScroll, &mut TerminalScrollFollow, &TextFont, &bevy::text::LineHeight, &MonoCellWidth)>,
+    mut q: Query<(&mut SmoothScroll, &mut TerminalScrollFollow, &TextFont, &bevy::text::LineHeight, &MonoCellWidth)>,
 ) {
     for ev in events.read() {
-        let Ok((mut scroll_pos, mut smooth, mut follow, font, lh, _mono)) = q.get_mut(ev.entity) else {
+        let Ok((mut smooth, mut follow, font, lh, _mono)) = q.get_mut(ev.entity) else {
             continue;
         };
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
         let target = ev.line.max(0) as f32 * line_height;
-        scroll_pos.y = target;
+        smooth.offset_y = target;
         smooth.target_y = target;
         follow.stick_to_bottom = false;
         follow.last_applied_target = target;
@@ -132,13 +132,13 @@ pub fn handle_scroll_to_bottom(
 
 pub fn handle_scroll_to_top(
     mut events: MessageReader<TerminalScrollToTop>,
-    mut q: Query<(&mut ScrollPosition, &mut SmoothScroll, &mut TerminalScrollFollow)>,
+    mut q: Query<(&mut SmoothScroll, &mut TerminalScrollFollow)>,
 ) {
     for ev in events.read() {
-        let Ok((mut scroll_pos, mut smooth, mut follow)) = q.get_mut(ev.entity) else {
+        let Ok((mut smooth, mut follow)) = q.get_mut(ev.entity) else {
             continue;
         };
-        scroll_pos.y = 0.0;
+        smooth.offset_y = 0.0;
         smooth.target_y = 0.0;
         follow.stick_to_bottom = false;
         follow.last_applied_target = 0.0;

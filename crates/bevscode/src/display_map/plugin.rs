@@ -16,7 +16,6 @@ use crate::types::events::TextEdited;
 use bevy_text_editor::RopeBuffer;
 use bevy::prelude::*;
 use bevy::ui::ComputedNode;
-use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{
     visible_buffer_range, HiddenLines, LayoutProduceSet, TextBounds, LineStyles, MonoCellWidth,
     RunWithText, SmoothScroll, TextBuffer,
@@ -140,7 +139,6 @@ pub(crate) fn produce_line_styles(
         (
             Entity,
             &TextBuffer<RopeBuffer>,
-            &ScrollPosition,
             &SmoothScroll,
             &ComputedNode,
             &TextFont,
@@ -168,7 +166,7 @@ pub(crate) fn produce_line_styles(
         (
             With<CodeEditor>,
             Or<(
-                Changed<ScrollPosition>,
+                Changed<SmoothScroll>,
                 Changed<ComputedNode>,
                 Changed<HiddenLines>,
                 Changed<EditorTheme>,
@@ -191,7 +189,7 @@ pub(crate) fn produce_line_styles(
         (
             With<CodeEditor>,
             Or<(
-                Changed<ScrollPosition>,
+                Changed<SmoothScroll>,
                 Changed<ComputedNode>,
                 Changed<HiddenLines>,
                 Changed<EditorTheme>,
@@ -273,8 +271,7 @@ pub(crate) fn produce_line_styles(
     for (
         entity,
         buffer,
-        scroll_pos,
-        _smooth,
+        smooth,
         computed,
         font,
         lh,
@@ -300,7 +297,7 @@ pub(crate) fn produce_line_styles(
         let text_area_top = computed.content_inset().min_inset.y * inv;
         let wrap = wrap.copied().unwrap_or_default();
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
-        let range = visible_buffer_range(&**buffer, scroll_pos.y, viewport_height, text_area_top, line_height, mono.px, wrap, hidden);
+        let range = visible_buffer_range(&**buffer, smooth.offset_y, viewport_height, text_area_top, line_height, mono.px, wrap, hidden);
         if range.start >= range.end {
             *line_styles = LineStyles::new(HashMap::new());
             syntax.covered = 0..0;
