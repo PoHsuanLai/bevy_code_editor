@@ -9,9 +9,10 @@ use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::*;
 use bevy::text::Justify;
+use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{
     view::snapshot::TextDecoration, HiddenLines, LineStyles, MonoFontFaces, RunWithText,
-    ScrollState, StyleRun, TextBuffer, TextSpan,
+    SmoothScroll, StyleRun, TextBuffer, TextSpan,
 };
 use bevy_instanced_text_edit::RopeBuffer;
 
@@ -81,7 +82,8 @@ pub(crate) fn sync_gutter_text_view(
             Entity,
             &SelectionState,
             &TextBuffer<RopeBuffer>,
-            &ScrollState,
+            &ScrollPosition,
+            &SmoothScroll,
             &GutterConfig,
             Ref<FoldState>,
             &EditorTheme,
@@ -93,7 +95,8 @@ pub(crate) fn sync_gutter_text_view(
         (
             &GutterTextView,
             &mut TextBuffer<TextSpan>,
-            &mut ScrollState,
+            &mut ScrollPosition,
+        &mut SmoothScroll,
             &mut HiddenLines,
             &mut LineStyles,
             &mut Node,
@@ -103,11 +106,12 @@ pub(crate) fn sync_gutter_text_view(
         Without<CodeEditor>,
     >,
 ) {
-    for (editor_entity, sel, buffer, scroll, gutter, fold_state, theme, ui) in editor_query.iter() {
+    for (editor_entity, sel, buffer, scroll_pos, _smooth, gutter, fold_state, theme, ui) in editor_query.iter() {
         let Some((
             _,
             mut g_buffer,
-            mut g_scroll,
+            mut g_scroll_pos,
+            mut g_smooth,
             mut g_hidden,
             mut g_styles,
             mut g_node,
@@ -145,10 +149,9 @@ pub(crate) fn sync_gutter_text_view(
         }
 
         // Mirror vertical scroll.
-        let scroll_offset = scroll.scroll_offset;
-        if (g_scroll.scroll_offset - scroll_offset).abs() > 1e-4 {
-            g_scroll.scroll_offset = scroll_offset;
-            g_scroll.target_scroll_offset = scroll_offset;
+        if (g_scroll_pos.y - scroll_pos.y).abs() > 1e-4 {
+            g_scroll_pos.y = scroll_pos.y;
+            g_smooth.target_y = scroll_pos.y;
         }
 
         // Rebuild content when line count or fold state changes.

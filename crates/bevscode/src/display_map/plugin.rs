@@ -16,9 +16,10 @@ use crate::types::events::TextEdited;
 use bevy_instanced_text_edit::RopeBuffer;
 use bevy::prelude::*;
 use bevy::ui::ComputedNode;
+use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{
     visible_buffer_range, HiddenLines, LayoutProduceSet, TextBounds, LineStyles, MonoCellWidth,
-    RunWithText, ScrollState, TextBuffer,
+    RunWithText, SmoothScroll, TextBuffer,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -139,7 +140,8 @@ pub(crate) fn produce_line_styles(
         (
             Entity,
             &TextBuffer<RopeBuffer>,
-            &ScrollState,
+            &ScrollPosition,
+            &SmoothScroll,
             &ComputedNode,
             &TextFont,
             &bevy::text::LineHeight,
@@ -166,7 +168,7 @@ pub(crate) fn produce_line_styles(
         (
             With<CodeEditor>,
             Or<(
-                Changed<ScrollState>,
+                Changed<ScrollPosition>,
                 Changed<ComputedNode>,
                 Changed<HiddenLines>,
                 Changed<EditorTheme>,
@@ -189,7 +191,7 @@ pub(crate) fn produce_line_styles(
         (
             With<CodeEditor>,
             Or<(
-                Changed<ScrollState>,
+                Changed<ScrollPosition>,
                 Changed<ComputedNode>,
                 Changed<HiddenLines>,
                 Changed<EditorTheme>,
@@ -264,7 +266,8 @@ pub(crate) fn produce_line_styles(
     for (
         entity,
         buffer,
-        scroll,
+        scroll_pos,
+        _smooth,
         computed,
         font,
         lh,
@@ -290,7 +293,7 @@ pub(crate) fn produce_line_styles(
         let text_area_top = computed.content_inset().min_inset.y * inv;
         let wrap = wrap.copied().unwrap_or_default();
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
-        let range = visible_buffer_range(&**buffer, scroll, viewport_height, text_area_top, line_height, mono.px, wrap, hidden);
+        let range = visible_buffer_range(&**buffer, scroll_pos.y, viewport_height, text_area_top, line_height, mono.px, wrap, hidden);
         if range.start >= range.end {
             *line_styles = LineStyles::new(HashMap::new(), 0..0);
             dirty_lines.remove(&entity);

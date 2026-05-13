@@ -18,7 +18,7 @@
 
 pub use bevy_instanced_text::view::{
     layout, overlay, render, snapshot, state, ContentMetrics, DisplayLayout,
-    GlyphBatchComponent, RectOverlay, RowVertical, ScrollState, ShapedLine,
+    GlyphBatchComponent, RectOverlay, RowVertical, SmoothScroll, ShapedLine,
     StyleRun, TextBuffer, TextViewBatchEntity, TextViewOverlays,
     TextViewRenderSet,
 };

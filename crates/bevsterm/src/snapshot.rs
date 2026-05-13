@@ -4,8 +4,9 @@ use std::collections::HashMap;
 
 use bevy::prelude::*;
 use bevy::ui::ComputedNode;
+use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{
-    LineStyles, MonoCellWidth, RunWithText, ScrollState, StyleRun, TextBackgroundColor, TextBuffer,
+    LineStyles, MonoCellWidth, RunWithText, SmoothScroll, StyleRun, TextBackgroundColor, TextBuffer,
     TextColor, TextSpan,
 };
 use wezterm_surface::SequenceNo;
@@ -65,7 +66,8 @@ type SnapshotQuery<'w, 's> = Query<
         &'static TextFont,
         &'static bevy::text::LineHeight,
         &'static MonoCellWidth,
-        &'static mut ScrollState,
+        &'static mut ScrollPosition,
+        &'static mut SmoothScroll,
         &'static TerminalColorPalette,
         &'static TextColor,
         &'static TextBackgroundColor,
@@ -85,7 +87,8 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         font,
         lh,
         _mono,
-        mut scroll,
+        mut scroll_pos,
+        mut smooth,
         palette,
         fg_color,
         bg_color,
@@ -107,7 +110,7 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         let needs_rebuild = cache_entry.last_seqno != Some(seqno) || cache_entry.last_rows != rows;
 
         if !needs_rebuild {
-            anchor_scroll_to_bottom(&mut scroll, computed, line_height, total_lines, &mut follow);
+            anchor_scroll_to_bottom(&mut scroll_pos, &mut smooth, computed, line_height, total_lines, &mut follow);
             continue;
         }
 
@@ -172,20 +175,19 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         cache_entry.last_cols = cols;
         cache_entry.last_total_lines = total_lines;
         cache_entry.lines = next_lines;
-        anchor_scroll_to_bottom(&mut scroll, computed, line_height, total_lines, &mut follow);
+        anchor_scroll_to_bottom(&mut scroll_pos, &mut smooth, computed, line_height, total_lines, &mut follow);
     }
 }
 
 /// Keep the bottom of the buffer pinned to the bottom of the viewport when the
-/// user is already at (or within one row of) the bottom — terminals follow the
-/// latest output by default. If they've wheeled up into scrollback we leave
-/// the scroll position alone so they can read history. Wheeling back to within
-/// one row of the bottom re-engages follow.
+/// user is already at (or within one row of) the bottom. Wheeling back to
+/// within one row of the bottom re-engages follow.
 ///
-/// Convention (from `on_pointer_scroll`): `scroll_offset` is in `[max_scroll, 0]`,
-/// where `0` = top of buffer and `max_scroll` (the most-negative value) = bottom.
+/// Convention: `scroll_pos.y` is in `[0, max_scroll]`, positive = scrolled down.
+/// `0` = top of buffer, `max_scroll` (positive) = bottom.
 fn anchor_scroll_to_bottom(
-    scroll: &mut ScrollState,
+    scroll_pos: &mut ScrollPosition,
+    smooth: &mut SmoothScroll,
     computed: &ComputedNode,
     line_height: f32,
     total_lines: usize,
@@ -201,29 +203,25 @@ fn anchor_scroll_to_bottom(
         .floor()
         .max(0.0) as usize;
     let hidden_rows = total_lines.saturating_sub(visible_rows);
-    let max_scroll = -(hidden_rows as f32 * line_height);
+    let max_scroll = hidden_rows as f32 * line_height;
     let stick_threshold = line_height;
 
-    // If the target moved away from where we last anchored, the user wheeled
-    // (or a host write moved it). `on_pointer_scroll` writes
-    // `target_scroll_offset` directly. The 0.5 px window keeps smooth-scroll
-    // floating-point jitter from tripping us.
-    if (scroll.target_scroll_offset - follow.last_applied_target).abs() > 0.5 {
-        follow.stick_to_bottom = scroll.target_scroll_offset - max_scroll <= stick_threshold;
+    // If the target moved away from where we last anchored, the user wheeled.
+    if (smooth.target_y - follow.last_applied_target).abs() > 0.5 {
+        follow.stick_to_bottom = max_scroll - smooth.target_y <= stick_threshold;
     }
 
     if follow.stick_to_bottom {
-        scroll.scroll_offset = max_scroll;
-        scroll.target_scroll_offset = max_scroll;
+        scroll_pos.y = max_scroll;
+        smooth.target_y = max_scroll;
         follow.last_applied_target = max_scroll;
-    } else if scroll.target_scroll_offset - max_scroll <= stick_threshold {
-        // Re-engage when the user wheeled back to within one row of the bottom.
+    } else if max_scroll - smooth.target_y <= stick_threshold {
         follow.stick_to_bottom = true;
-        scroll.scroll_offset = max_scroll;
-        scroll.target_scroll_offset = max_scroll;
+        scroll_pos.y = max_scroll;
+        smooth.target_y = max_scroll;
         follow.last_applied_target = max_scroll;
     } else {
-        follow.last_applied_target = scroll.target_scroll_offset;
+        follow.last_applied_target = smooth.target_y;
     }
 }
 

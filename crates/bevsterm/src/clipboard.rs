@@ -4,7 +4,8 @@ use std::collections::HashMap;
 
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy_instanced_text::{MonoCellWidth, ScrollState, TextBuffer, TextSpan};
+use bevy::ui::ScrollPosition;
+use bevy_instanced_text::{MonoCellWidth, SmoothScroll, TextBuffer, TextSpan};
 use bevy_instanced_text_edit::{ClipboardResource, SelectionState};
 
 use crate::messages::{
@@ -102,16 +103,16 @@ pub fn handle_resize(
 
 pub fn handle_scroll_to(
     mut events: MessageReader<TerminalScrollTo>,
-    mut q: Query<(&mut ScrollState, &mut TerminalScrollFollow, &TextFont, &bevy::text::LineHeight, &MonoCellWidth)>,
+    mut q: Query<(&mut ScrollPosition, &mut SmoothScroll, &mut TerminalScrollFollow, &TextFont, &bevy::text::LineHeight, &MonoCellWidth)>,
 ) {
     for ev in events.read() {
-        let Ok((mut scroll, mut follow, font, lh, _mono)) = q.get_mut(ev.entity) else {
+        let Ok((mut scroll_pos, mut smooth, mut follow, font, lh, _mono)) = q.get_mut(ev.entity) else {
             continue;
         };
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
-        let target = -(ev.line.max(0) as f32 * line_height);
-        scroll.scroll_offset = target;
-        scroll.target_scroll_offset = target;
+        let target = ev.line.max(0) as f32 * line_height;
+        scroll_pos.y = target;
+        smooth.target_y = target;
         follow.stick_to_bottom = false;
         follow.last_applied_target = target;
     }
@@ -131,14 +132,14 @@ pub fn handle_scroll_to_bottom(
 
 pub fn handle_scroll_to_top(
     mut events: MessageReader<TerminalScrollToTop>,
-    mut q: Query<(&mut ScrollState, &mut TerminalScrollFollow)>,
+    mut q: Query<(&mut ScrollPosition, &mut SmoothScroll, &mut TerminalScrollFollow)>,
 ) {
     for ev in events.read() {
-        let Ok((mut scroll, mut follow)) = q.get_mut(ev.entity) else {
+        let Ok((mut scroll_pos, mut smooth, mut follow)) = q.get_mut(ev.entity) else {
             continue;
         };
-        scroll.scroll_offset = 0.0;
-        scroll.target_scroll_offset = 0.0;
+        scroll_pos.y = 0.0;
+        smooth.target_y = 0.0;
         follow.stick_to_bottom = false;
         follow.last_applied_target = 0.0;
     }

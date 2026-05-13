@@ -36,8 +36,9 @@ use bevy_instanced_text::view::layout_builder::produce_layouts;
 use bevy_instanced_text::view::plugin::update_text_views;
 use bevy_instanced_text::view::render::{GlyphBatchComponent, GlyphInstance};
 use bevy_instanced_text::view::tuning::LayoutTuning;
+use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{
-    DisplayLayout, LineStyles, MonoCellWidth, ScrollState, TextBounds, TextBuffer,
+    DisplayLayout, LineStyles, MonoCellWidth, SmoothScroll, TextBounds, TextBuffer,
     TextViewBatchEntity, TextViewOverlays,
 };
 use bevy_instanced_text_edit::{RopeBuffer, BlinkPhase, EditDelta, EditPoint};
@@ -82,7 +83,8 @@ fn spawn_test_editor(app: &mut App, text: &str) -> Entity {
 
     let engine_bundle = (
         TextBuffer::new(RopeBuffer::new(text)),
-        ScrollState::default(),
+        ScrollPosition::default(),
+        SmoothScroll::default(),
         bevy_instanced_text::ContentMetrics::default(),
         computed,
         TextFont::from_font_size(14.0),

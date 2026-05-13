@@ -9,7 +9,8 @@ use bevy::prelude::*;
 use bevy_instanced_text_edit::RopeBuffer;
 use lsp_types::*;
 
-use crate::text_view::{ScrollState, TextBuffer};
+use crate::text_view::TextBuffer;
+use bevy::ui::ScrollPosition;
 use bevy::ui::ComputedNode;
 use crate::types::{CodeEditor, CursorState};
 use bevy_instanced_text::MonoCellWidth;
@@ -49,7 +50,7 @@ type RequestInlayHintsQuery<'w, 's> = Query<
         &'static LspClient,
         &'static ServerCapabilities,
         Ref<'static, TextBuffer<RopeBuffer>>,
-        Ref<'static, ScrollState>,
+        Ref<'static, ScrollPosition>,
         Ref<'static, ComputedNode>,
         Option<&'static LspDocument>,
         &'static mut LspInlayHints,
@@ -622,7 +623,7 @@ pub fn request_inlay_hints(mut query: RequestInlayHintsQuery, mut lsp_w: Message
     // Calculate visible range with some buffer
     let inv = computed.inverse_scale_factor();
     let viewport_height = computed.size().y * inv;
-    let visible_start_line = (scroll.scroll_offset / line_height) as u32;
+    let visible_start_line = (scroll.y / line_height) as u32;
     let visible_lines = (viewport_height / line_height) as u32 + 10;
     let visible_end_line = (visible_start_line + visible_lines).min(buffer.len_lines() as u32);
 

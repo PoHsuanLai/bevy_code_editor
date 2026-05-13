@@ -16,8 +16,8 @@ use bevy::prelude::*;
 use bevy::ui::ui_transform::UiGlobalTransform;
 use ropey::Rope;
 
-use bevy::ui::ComputedNode;
-use bevy_instanced_text::{ContentMetrics, DisplayLayout, MonoCellWidth, ScrollState, TextBuffer};
+use bevy::ui::{ComputedNode, ScrollPosition};
+use bevy_instanced_text::{ContentMetrics, DisplayLayout, MonoCellWidth, SmoothScroll, TextBuffer};
 
 use crate::components::{ScrollConfig, TextViewDragState};
 use crate::state::{CursorState, SelectionState};
@@ -27,7 +27,8 @@ type ScrollQuery<'w, 's> = Query<
     's,
     (
         &'static TextBuffer<RopeBuffer>,
-        &'static mut ScrollState,
+        &'static mut SmoothScroll,
+        &'static mut ScrollPosition,
         &'static ContentMetrics,
         &'static ComputedNode,
         &'static TextFont,
@@ -44,7 +45,8 @@ type PressQuery<'w, 's> = Query<
     (
         &'static mut TextViewDragState,
         &'static TextBuffer<RopeBuffer>,
-        &'static ScrollState,
+        &'static ScrollPosition,
+        &'static SmoothScroll,
         &'static TextFont,
         &'static bevy::text::LineHeight,
         &'static MonoCellWidth,
@@ -63,7 +65,8 @@ type DragQuery<'w, 's> = Query<
     (
         &'static mut TextViewDragState,
         &'static TextBuffer<RopeBuffer>,
-        &'static ScrollState,
+        &'static ScrollPosition,
+        &'static SmoothScroll,
         &'static TextFont,
         &'static bevy::text::LineHeight,
         &'static MonoCellWidth,
@@ -93,16 +96,17 @@ pub fn screen_to_char_pos(
     screen_pos: Vec2,
     rope: &Rope,
     layout: Option<&DisplayLayout>,
-    current_scroll_offset: f32,
+    current_scroll_y: f32,
     mono: &MonoCellWidth,
     line_height: f32,
     text_area_left: f32,
     text_area_top: f32,
-    scroll_offset_override: Option<f32>,
+    scroll_y_override: Option<f32>,
 ) -> usize {
     let relative_x = screen_pos.x - text_area_left;
-    let scroll_offset = scroll_offset_override.unwrap_or(current_scroll_offset);
-    let relative_y = screen_pos.y - text_area_top - scroll_offset;
+    let scroll_y = scroll_y_override.unwrap_or(current_scroll_y);
+    // scroll_y is positive-downward: subtract to shift content up relative to viewport.
+    let relative_y = screen_pos.y - text_area_top + scroll_y;
 
     let display_row = (relative_y / line_height).max(0.0) as usize;
 
@@ -239,7 +243,7 @@ fn block_slice(rope: &Rope, start: usize, end: usize) -> String {
 /// display-map producer maintains that field as it shapes lines.
 pub fn on_pointer_scroll(trigger: On<Pointer<Scroll>>, mut views: ScrollQuery) {
     let entity = trigger.event().entity;
-    let Ok((buffer, mut scroll, metrics, computed, font, lh, mono, scroll_cfg)) = views.get_mut(entity)
+    let Ok((buffer, mut smooth, mut scroll_pos, metrics, computed, font, lh, mono, scroll_cfg)) = views.get_mut(entity)
     else {
         return;
     };
@@ -276,26 +280,26 @@ pub fn on_pointer_scroll(trigger: On<Pointer<Scroll>>, mut views: ScrollQuery) {
             let scroll_delta = dx * h_delta_per_dx;
             let max_h = (metrics.max_content_width - available_text_width).max(0.0);
             if scroll_cfg.smooth {
-                scroll.target_horizontal_scroll_offset =
-                    (scroll.target_horizontal_scroll_offset + scroll_delta).clamp(0.0, max_h);
+                smooth.target_x = (smooth.target_x + scroll_delta).clamp(0.0, max_h);
             } else {
-                scroll.horizontal_scroll_offset =
-                    (scroll.horizontal_scroll_offset + scroll_delta).clamp(0.0, max_h);
+                smooth.horizontal = (smooth.horizontal + scroll_delta).clamp(0.0, max_h);
+                smooth.target_x = smooth.horizontal;
             }
         }
     }
 
-    // Vertical scroll.
+    // Vertical scroll. scroll_pos.y is positive-downward; max_scroll is the
+    // maximum positive value (content bottom - viewport bottom).
     if dy.abs() > 0.0 {
         let scroll_delta = dy * v_delta_per_dy;
         let line_count = buffer.len_lines();
         let content_height = line_count as f32 * line_height;
-        let max_scroll = (-(content_height - viewport_height + text_area_top)).min(0.0);
+        let max_scroll = (content_height - viewport_height + text_area_top).max(0.0);
         if scroll_cfg.smooth {
-            scroll.target_scroll_offset =
-                (scroll.target_scroll_offset + scroll_delta).clamp(max_scroll, 0.0);
+            smooth.target_y = (smooth.target_y + scroll_delta).clamp(0.0, max_scroll);
         } else {
-            scroll.scroll_offset = (scroll.scroll_offset + scroll_delta).clamp(max_scroll, 0.0);
+            scroll_pos.y = (scroll_pos.y + scroll_delta).clamp(0.0, max_scroll);
+            smooth.target_y = scroll_pos.y;
         }
     }
 }
@@ -321,7 +325,7 @@ pub fn on_pointer_press(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((mut drag_state, buffer, scroll, font, lh, mono, computed, layout, sel, cursor, settings)) =
+    let Ok((mut drag_state, buffer, scroll_pos, _smooth, font, lh, mono, computed, layout, sel, cursor, settings)) =
         views.get_mut(entity)
     else {
         return;
@@ -344,7 +348,7 @@ pub fn on_pointer_press(
         local_pos,
         buffer.rope(),
         layout,
-        scroll.scroll_offset,
+        scroll_pos.y,
         mono,
         line_height,
         text_area_left,
@@ -423,7 +427,7 @@ pub fn on_pointer_press(
     }
     drag_state.is_dragging = true;
     drag_state.drag_start_pos = Some(char_pos);
-    drag_state.drag_start_scroll_offset = scroll.scroll_offset;
+    drag_state.drag_start_scroll_offset = scroll_pos.y;
     drag_state.last_screen_pos = Some(trigger.event().pointer_location.position);
     input_focus.set(entity);
 }
@@ -466,7 +470,7 @@ pub fn on_pointer_drag(trigger: On<Pointer<Drag>>, mut views: DragQuery) {
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((mut drag_state, buffer, scroll, font, lh, mono, computed, ui_transform, layout, sel, cursor)) =
+    let Ok((mut drag_state, buffer, scroll_pos, _smooth, font, lh, mono, computed, ui_transform, layout, sel, cursor)) =
         views.get_mut(entity)
     else {
         return;
@@ -496,7 +500,7 @@ pub fn on_pointer_drag(trigger: On<Pointer<Drag>>, mut views: DragQuery) {
         local_pos,
         buffer.rope(),
         layout,
-        scroll.scroll_offset,
+        scroll_pos.y,
         mono,
         line_height,
         text_area_left,

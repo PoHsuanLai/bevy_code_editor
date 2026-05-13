@@ -21,14 +21,14 @@
 
 use crate::settings::GutterConfig;
 use bevy_instanced_text_edit::RopeBuffer;
-use crate::text_view::{ScrollState, TextBuffer};
+use crate::text_view::TextBuffer;
 use crate::types::*;
 #[cfg(feature = "lsp")]
 use bevy::picking::events::Move;
 use bevy::picking::events::{Pointer, Press};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
-use bevy::ui::ComputedNode;
+use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::{DisplayLayout, MonoCellWidth};
 use ropey::Rope;
 
@@ -39,7 +39,7 @@ type AltClickQuery<'w, 's> = Query<
         &'static mut SelectionState,
         &'static mut CursorState,
         &'static TextBuffer<RopeBuffer>,
-        &'static ScrollState,
+        &'static ScrollPosition,
         &'static ComputedNode,
         &'static FoldState,
         &'static TextFont,
@@ -56,7 +56,7 @@ type CtrlClickQuery<'w, 's> = Query<
     's,
     (
         &'static TextBuffer<RopeBuffer>,
-        &'static ScrollState,
+        &'static ScrollPosition,
         &'static ComputedNode,
         &'static FoldState,
         &'static TextFont,
@@ -73,7 +73,7 @@ type HoverMoveQuery<'w, 's> = Query<
     's,
     (
         &'static TextBuffer<RopeBuffer>,
-        &'static ScrollState,
+        &'static ScrollPosition,
         &'static ComputedNode,
         &'static FoldState,
         &'static TextFont,
@@ -99,7 +99,7 @@ struct HitTestCtx<'a> {
     text_area_left: f32,
     text_area_top: f32,
     fold_state: &'a FoldState,
-    current_scroll_offset: f32,
+    scroll_y: f32,
 }
 
 /// Convert a viewport-local pixel position to a character index in the rope,
@@ -107,7 +107,8 @@ struct HitTestCtx<'a> {
 /// editor mouse observer that needs to know which character was clicked.
 fn screen_to_char_pos(screen_pos: Vec2, ctx: &HitTestCtx<'_>) -> usize {
     let relative_x = screen_pos.x - ctx.text_area_left;
-    let relative_y = screen_pos.y - ctx.text_area_top - ctx.current_scroll_offset;
+    // scroll_y is positive-downward: add to shift content up relative to viewport.
+    let relative_y = screen_pos.y - ctx.text_area_top + ctx.scroll_y;
 
     let display_row = (relative_y / ctx.line_height).max(0.0) as usize;
     let buffer_line = ctx.fold_state.display_to_actual_line(display_row);
@@ -150,7 +151,7 @@ fn screen_to_char_pos(screen_pos: Vec2, ctx: &HitTestCtx<'_>) -> usize {
 pub fn on_fold_gutter_press(
     trigger: On<Pointer<Press>>,
     mut editor_query: Query<
-        (&ScrollState, &ComputedNode, &GutterConfig, &mut FoldState, &TextFont, &bevy::text::LineHeight, &MonoCellWidth),
+        (&ScrollPosition, &ComputedNode, &GutterConfig, &mut FoldState, &TextFont, &bevy::text::LineHeight, &MonoCellWidth),
         With<CodeEditor>,
     >,
 ) {
@@ -158,7 +159,7 @@ pub fn on_fold_gutter_press(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((scroll, computed, gutter, mut fold_state, font, lh, _mono)) = editor_query.get_mut(entity) else {
+    let Ok((scroll_pos, computed, gutter, mut fold_state, font, lh, _mono)) = editor_query.get_mut(entity) else {
         return;
     };
     let Some(local_pos) = trigger.event().hit.position.map(|p| Vec2::new(p.x, p.y)) else {
@@ -174,7 +175,7 @@ pub fn on_fold_gutter_press(
     let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
     let inv = computed.inverse_scale_factor();
     let text_area_top = computed.content_inset().min_inset.y * inv;
-    let relative_y = local_pos.y - text_area_top + scroll.scroll_offset;
+    let relative_y = local_pos.y - text_area_top + scroll_pos.y;
     let display_row = (relative_y / line_height).max(0.0) as usize;
     let buffer_line = fold_state.display_to_actual_line(display_row);
 
@@ -205,7 +206,7 @@ pub fn on_alt_click(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((mut sel, mut cursor, buffer, scroll, computed, fold_state, font, lh, mono, layout)) =
+    let Ok((mut sel, mut cursor, buffer, scroll_pos, computed, fold_state, font, lh, mono, layout)) =
         editor_query.get_mut(entity)
     else {
         return;
@@ -225,7 +226,7 @@ pub fn on_alt_click(
             text_area_left: computed.content_inset().min_inset.x * inv,
             text_area_top: computed.content_inset().min_inset.y * inv,
             fold_state,
-            current_scroll_offset: scroll.scroll_offset,
+            scroll_y: scroll_pos.y,
         },
     );
 
@@ -257,7 +258,7 @@ pub fn on_ctrl_click_goto_definition(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((buffer, scroll, computed, fold_state, font, lh, mono, layout)) = editor_query.get(entity) else {
+    let Ok((buffer, scroll_pos, computed, fold_state, font, lh, mono, layout)) = editor_query.get(entity) else {
         return;
     };
     let Ok((lsp_client, lsp_document)) = lsp_query.get(entity) else {
@@ -281,7 +282,7 @@ pub fn on_ctrl_click_goto_definition(
             text_area_left: computed.content_inset().min_inset.x * inv,
             text_area_top: computed.content_inset().min_inset.y * inv,
             fold_state,
-            current_scroll_offset: scroll.scroll_offset,
+            scroll_y: scroll_pos.y,
         },
     );
 
@@ -311,7 +312,7 @@ pub fn on_pointer_move_for_hover(
     mut hover_query: Query<&mut crate::lsp_ui::state::LspHoverPopup, With<CodeEditor>>,
 ) {
     let entity = trigger.event().entity;
-    let Ok((buffer, scroll, computed, fold_state, font, lh, mono, layout, hover_settings)) =
+    let Ok((buffer, scroll_pos, computed, fold_state, font, lh, mono, layout, hover_settings)) =
         editor_query.get(entity)
     else {
         return;
@@ -348,7 +349,7 @@ pub fn on_pointer_move_for_hover(
             text_area_left: computed.content_inset().min_inset.x * inv,
             text_area_top: computed.content_inset().min_inset.y * inv,
             fold_state,
-            current_scroll_offset: scroll.scroll_offset,
+            scroll_y: scroll_pos.y,
         },
     );
 

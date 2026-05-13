@@ -3,11 +3,11 @@
 use crate::settings::*;
 use bevy_instanced_text_edit::RopeBuffer;
 use crate::text_view::{
-    DisplayLayout, RectOverlay, RowVertical, ScrollState, TextBuffer, TextViewOverlays,
+    DisplayLayout, RectOverlay, RowVertical, SmoothScroll, TextBuffer, TextViewOverlays,
 };
 use crate::types::*;
 use bevy::prelude::*;
-use bevy::ui::ComputedNode;
+use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::{visible_buffer_range, HiddenLines, MonoCellWidth, TextBounds};
 
 type AutoScrollQuery<'w, 's> = Query<
@@ -15,7 +15,8 @@ type AutoScrollQuery<'w, 's> = Query<
     's,
     (
         &'static TextBuffer<RopeBuffer>,
-        &'static mut ScrollState,
+        &'static mut SmoothScroll,
+        &'static mut ScrollPosition,
         &'static crate::text_view::ContentMetrics,
         &'static mut CursorState,
         &'static ComputedNode,
@@ -47,7 +48,8 @@ pub(crate) fn update_selection_highlight(
             Entity,
             &TextBuffer<RopeBuffer>,
             &ComputedNode,
-            &ScrollState,
+            &ScrollPosition,
+            &SmoothScroll,
             &SelectionState,
             &mut TextViewOverlays,
             &FoldState,
@@ -67,7 +69,7 @@ pub(crate) fn update_selection_highlight(
             With<CodeEditor>,
             Or<(
                 Changed<SelectionState>,
-                Changed<ScrollState>,
+                Changed<ScrollPosition>,
                 Changed<ComputedNode>,
                 Changed<TextBuffer<RopeBuffer>>,
                 Changed<FoldState>,
@@ -86,7 +88,8 @@ pub(crate) fn update_selection_highlight(
         editor_entity,
         buffer,
         computed,
-        scroll,
+        scroll_pos,
+        _smooth,
         sel,
         mut overlays,
         fold_state,
@@ -116,7 +119,7 @@ pub(crate) fn update_selection_highlight(
         let viewport_height = computed.size().y * inv;
         let text_area_top = computed.content_inset().min_inset.y * inv;
         let wrap_cfg = wrap.copied().unwrap_or_default();
-        let visible = visible_buffer_range(&**buffer, scroll, viewport_height, text_area_top, line_height, char_width, wrap_cfg, hidden);
+        let visible = visible_buffer_range(&**buffer, scroll_pos.y, viewport_height, text_area_top, line_height, char_width, wrap_cfg, hidden);
         if visible.start >= visible.end {
             overlays.version = overlays.version.wrapping_add(1);
             continue;
@@ -323,7 +326,7 @@ pub(crate) fn update_indent_guides(
         (
             Entity,
             &TextBuffer<RopeBuffer>,
-            &ScrollState,
+            &ScrollPosition,
             &ComputedNode,
             &FoldState,
             &TextFont,
@@ -337,7 +340,7 @@ pub(crate) fn update_indent_guides(
         With<CodeEditor>,
     >,
 ) {
-    for (_editor_entity, buffer, scroll, computed, fold_state, font, lh, mono, theme, mut overlays, ui, indentation) in
+    for (_editor_entity, buffer, scroll_pos, computed, fold_state, font, lh, mono, theme, mut overlays, ui, indentation) in
         editor_query.iter_mut()
     {
         // z lanes: -2 indent guides, -1 selection, +1 caret.
@@ -354,7 +357,7 @@ pub(crate) fn update_indent_guides(
         let char_width = mono.px;
         let viewport_height = computed.size().y * inv;
 
-        let visible_start_row = ((-scroll.scroll_offset) / line_height).floor().max(0.0) as usize;
+        let visible_start_row = (scroll_pos.y / line_height).floor().max(0.0) as usize;
         let visible_lines = ((viewport_height / line_height).ceil() as usize) + 2;
         let visible_end_row = visible_start_row + visible_lines;
 
@@ -454,11 +457,8 @@ pub(crate) fn should_auto_scroll(
 }
 
 pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
-    for (buffer, mut scroll, metrics, mut cursor, computed, font, lh, mono) in editor_query.iter_mut() {
-        // Get cursor position
+    for (buffer, mut smooth, mut scroll_pos, metrics, mut cursor, computed, font, lh, mono) in editor_query.iter_mut() {
         let cursor_pos = cursor.cursor_pos.min(buffer.len_chars());
-
-        // Update last cursor position
         cursor.last_cursor_pos = cursor_pos;
         let line_index = buffer.char_to_line(cursor_pos);
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
@@ -469,69 +469,55 @@ pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
         let text_area_left = computed.content_inset().min_inset.x * inv;
 
         // === VERTICAL AUTO-SCROLL ===
+        // cursor_y in node-local px (positive = down from top).
+        // y_top = text_area_top - scroll_pos.y + row * line_height
+        let cursor_y = text_area_top - scroll_pos.y + line_index as f32 * line_height;
 
-        // Calculate cursor's Y position
-        let cursor_y = text_area_top + scroll.scroll_offset + (line_index as f32 * line_height);
-
-        // Define visible range (with some margin)
         let margin_vertical = line_height * 2.0;
         let visible_top = margin_vertical;
         let visible_bottom = viewport_height - margin_vertical;
 
-        // Adjust target scroll if cursor is outside visible range
         if cursor_y < visible_top {
-            // Cursor is above visible area - scroll up
-            scroll.target_scroll_offset += visible_top - cursor_y;
+            // Cursor above visible area — scroll up (decrease target_y).
+            smooth.target_y -= visible_top - cursor_y;
         } else if cursor_y > visible_bottom {
-            // Cursor is below visible area - scroll down
-            scroll.target_scroll_offset -= cursor_y - visible_bottom;
+            // Cursor below visible area — scroll down (increase target_y).
+            smooth.target_y += cursor_y - visible_bottom;
         } else {
-            // Cursor is visible, no auto-scroll needed
             continue;
         }
 
-        // Clamp target_scroll_offset to valid range
-        scroll.target_scroll_offset = scroll.target_scroll_offset.min(0.0);
+        // Clamp: [0, max_scroll] where max_scroll is positive.
+        smooth.target_y = smooth.target_y.max(0.0);
         let line_count = buffer.len_lines();
         let content_height = line_count as f32 * line_height;
-        let max_scroll = -(content_height - viewport_height + text_area_top);
-        scroll.target_scroll_offset = scroll.target_scroll_offset.max(max_scroll.min(0.0));
+        let max_scroll = (content_height - viewport_height + text_area_top).max(0.0);
+        smooth.target_y = smooth.target_y.min(max_scroll);
+
+        // For instant (non-animated) case, also snap scroll_pos.
+        if (scroll_pos.y - smooth.target_y).abs() > 0.5 {
+            // Animation system will handle it; just ensure target is correct.
+            let _ = &mut scroll_pos;
+        }
 
         // === HORIZONTAL AUTO-SCROLL ===
-
-        // Calculate cursor's X position (column within line)
         let line_start = buffer.line_to_char(line_index);
         let col_index = cursor_pos - line_start;
         let char_width = mono.px;
-
-        // Cursor X position relative to code area (before scrolling)
         let cursor_x = col_index as f32 * char_width;
 
-        // Define horizontal visible range (with some margin)
-        let margin_horizontal = char_width * 5.0; // 5 characters of margin
-        let visible_left = scroll.horizontal_scroll_offset;
-        let visible_right = scroll.horizontal_scroll_offset + viewport_width
-            - text_area_left
-            - margin_horizontal;
+        let margin_horizontal = char_width * 5.0;
+        let visible_left = smooth.horizontal;
+        let visible_right = smooth.horizontal + viewport_width - text_area_left - margin_horizontal;
 
-        // Adjust horizontal target scroll if cursor is outside visible range
         if cursor_x < visible_left {
-            // Cursor is left of visible area - scroll left
-            scroll.target_horizontal_scroll_offset = cursor_x.max(0.0);
+            smooth.target_x = cursor_x.max(0.0);
         } else if cursor_x > visible_right {
-            // Cursor is right of visible area - scroll right
-            scroll.target_horizontal_scroll_offset =
-                cursor_x - (viewport_width - text_area_left - margin_horizontal);
+            smooth.target_x = cursor_x - (viewport_width - text_area_left - margin_horizontal);
         }
 
-        // Clamp target_horizontal_scroll_offset to valid range
-        // Minimum is 0.0 (don't scroll past the left edge)
-        scroll.target_horizontal_scroll_offset = scroll.target_horizontal_scroll_offset.max(0.0);
-
-        // Maximum is when rightmost content reaches viewport edge
+        smooth.target_x = smooth.target_x.max(0.0);
         let max_horizontal_scroll = (metrics.max_content_width - viewport_width).max(0.0);
-        scroll.target_horizontal_scroll_offset = scroll
-            .target_horizontal_scroll_offset
-            .min(max_horizontal_scroll);
+        smooth.target_x = smooth.target_x.min(max_horizontal_scroll);
     }
 }

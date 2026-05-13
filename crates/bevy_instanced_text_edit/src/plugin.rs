@@ -66,20 +66,21 @@ impl Plugin for InstancedTextInteractionPlugin {
     }
 }
 
-fn apply_instant_scroll(mut q: Query<(&mut bevy_instanced_text::ScrollState, &ScrollConfig)>) {
-    for (mut scroll, cfg) in q.iter_mut() {
-        if (scroll.smooth_scroll_duration - cfg.smooth_scroll_duration).abs() > f32::EPSILON {
-            scroll.smooth_scroll_duration = cfg.smooth_scroll_duration;
+fn apply_instant_scroll(
+    mut q: Query<(&mut bevy_instanced_text::SmoothScroll, &mut bevy::ui::ScrollPosition, &ScrollConfig)>,
+) {
+    for (mut smooth, mut scroll_pos, cfg) in q.iter_mut() {
+        if (smooth.duration - cfg.smooth_scroll_duration).abs() > f32::EPSILON {
+            smooth.duration = cfg.smooth_scroll_duration;
         }
         if cfg.smooth {
             continue;
         }
-        if (scroll.target_scroll_offset - scroll.scroll_offset).abs() > 0.001 {
-            scroll.scroll_offset = scroll.target_scroll_offset;
+        if (smooth.target_y - scroll_pos.y).abs() > 0.001 {
+            scroll_pos.y = smooth.target_y;
         }
-        if (scroll.target_horizontal_scroll_offset - scroll.horizontal_scroll_offset).abs() > 0.001
-        {
-            scroll.horizontal_scroll_offset = scroll.target_horizontal_scroll_offset;
+        if (smooth.target_x - smooth.horizontal).abs() > 0.001 {
+            smooth.horizontal = smooth.target_x;
         }
     }
 }
