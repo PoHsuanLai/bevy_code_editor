@@ -3,7 +3,7 @@
 //! onto the message bus as `FoldStateChanged`.
 
 use std::collections::HashMap;
-use bevy_instanced_text_edit::RopeBuffer;
+use bevy_text_editor::RopeBuffer;
 
 use crate::input::action_events::*;
 use crate::types::events::FoldStateChanged;

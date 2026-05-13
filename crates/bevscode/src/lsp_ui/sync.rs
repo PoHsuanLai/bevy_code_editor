@@ -13,7 +13,7 @@
 //! reads live engine state.
 
 use bevy::prelude::*;
-use bevy_instanced_text_edit::RopeBuffer;
+use bevy_text_editor::RopeBuffer;
 
 use crate::settings::*;
 use crate::text_view::TextBuffer;

@@ -1,7 +1,7 @@
 //! UI elements: selection, indent guides
 
 use crate::settings::*;
-use bevy_instanced_text_edit::RopeBuffer;
+use bevy_text_editor::RopeBuffer;
 use crate::text_view::{
     DisplayLayout, RectOverlay, RowVertical, SmoothScroll, TextBuffer, TextViewOverlays,
 };
@@ -439,7 +439,7 @@ pub(crate) fn should_auto_scroll(
         (
             &TextBuffer<RopeBuffer>,
             &CursorState,
-            &bevy_instanced_text_edit::TextViewDragState,
+            &bevy_text_editor::TextViewDragState,
         ),
         With<CodeEditor>,
     >,

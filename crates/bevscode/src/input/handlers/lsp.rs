@@ -6,7 +6,7 @@
 //! arm.
 
 use crate::input::action_events::*;
-use bevy_instanced_text_edit::RopeBuffer;
+use bevy_text_editor::RopeBuffer;
 use crate::input::actions::request_completion;
 use crate::types::*;
 use bevy::input_focus::InputFocus;

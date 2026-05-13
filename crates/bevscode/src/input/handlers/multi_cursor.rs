@@ -2,7 +2,7 @@
 //! ClearSecondaryCursors.
 
 use crate::input::action_events::*;
-use bevy_instanced_text_edit::RopeBuffer;
+use bevy_text_editor::RopeBuffer;
 use crate::input::editor_ops::add_cursor_at_next_occurrence;
 use crate::types::*;
 use bevy::input_focus::InputFocus;
@@ -109,7 +109,7 @@ fn add_cursor_above(
     let prev_line_len = buffer.line(line_idx - 1).len_chars().saturating_sub(1);
     let new_pos = prev_line_start + col_offset.min(prev_line_len);
 
-    sel.add_cursor_at(buffer, new_pos);
+    sel.add_cursor_at(&**buffer, new_pos);
     sel.refresh_primary_cursor(cursor);
 }
 
@@ -133,6 +133,6 @@ fn add_cursor_below(
     let next_line_len = buffer.line(line_idx + 1).len_chars().saturating_sub(1);
     let new_pos = next_line_start + col_offset.min(next_line_len);
 
-    sel.add_cursor_at(buffer, new_pos);
+    sel.add_cursor_at(&**buffer, new_pos);
     sel.refresh_primary_cursor(cursor);
 }

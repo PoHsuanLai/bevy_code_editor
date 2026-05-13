@@ -12,7 +12,7 @@ categories = ["game-development", "text-editors"]
 
 [dependencies]
 bevy_instanced_text = { path = "../bevy_instanced_text", version = "0.1.1" }
-bevy_instanced_text_edit = { path = "../bevy_instanced_text_edit", version = "0.1.1", default-features = false }
+bevy_text_editor = { path = "../bevy_text_editor", version = "0.1.1" }
 bevy_tree_sitter = { path = "../bevy_tree_sitter", version = "0.1.1", optional = true }
 bevy_lsp = { path = "../bevy_lsp", version = "0.1.1", optional = true }
 
@@ -51,8 +51,8 @@ tree-sitter-rust = "0.23"
 default = ["tree-sitter", "clipboard"]
 
 tree-sitter = ["dep:bevy_tree_sitter"]
-clipboard = ["bevy_instanced_text_edit/arboard"]
-clipboard-wasm = ["bevy_instanced_text_edit/clipboard-wasm"]
+clipboard = ["bevy_text_editor/arboard"]
+clipboard-wasm = ["bevy_text_editor/clipboard-wasm"]
 lsp = ["dep:bevy_lsp", "lsp-types", "serde_json", "fuzzy-matcher"]
 # Dynamic linking for fast dev iteration (not for release builds)
 dynamic_linking = ["bevy/dynamic_linking"]

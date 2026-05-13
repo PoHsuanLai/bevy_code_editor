@@ -14,7 +14,7 @@ use bevy_instanced_text::{
     view::snapshot::TextDecoration, HiddenLines, LineStyles, MonoFontFaces, RunWithText,
     SmoothScroll, StyleRun, TextBuffer, TextSpan,
 };
-use bevy_instanced_text_edit::RopeBuffer;
+use bevy_text_editor::RopeBuffer;
 
 use crate::settings::*;
 use crate::types::*;

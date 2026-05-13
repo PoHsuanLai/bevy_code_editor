@@ -1,14 +1,14 @@
 //! Editor-specific mouse interactions, observer-driven via `bevy_picking`.
 //!
 //! The plain-click cursor placement, drag-extend selection, and scroll wheel
-//! handling are owned by `bevy_instanced_text_edit`'s picking observers (which apply
+//! handling are owned by `bevy_text_editor`'s picking observers (which apply
 //! to any `TextView` entity). The editor adds **modifier-click** behavior on
 //! top: alt-click adds a secondary cursor, ctrl-click triggers LSP
 //! goto-definition, and the fold-gutter strip toggles fold regions.
 //!
 //! Each behavior lives in its own observer; there's no monolithic mouse
 //! handler. Selection state is the unified `SelectionState.selections` —
-//! `bevy_instanced_text_edit::TextViewDragState` is the unified drag-tracking
+//! `bevy_text_editor::TextViewDragState` is the unified drag-tracking
 //! Component.
 //!
 //! LSP hover is similarly an observer on `Pointer<Move>`: when the cursor
@@ -20,7 +20,7 @@
 //! click land on the right buffer line.
 
 use crate::settings::GutterConfig;
-use bevy_instanced_text_edit::RopeBuffer;
+use bevy_text_editor::RopeBuffer;
 use crate::text_view::TextBuffer;
 use crate::types::*;
 #[cfg(feature = "lsp")]
@@ -186,7 +186,7 @@ pub fn on_fold_gutter_press(
 
 /// Alt+click observer: add a secondary cursor at the clicked character.
 ///
-/// `bevy_instanced_text_edit::interaction::on_pointer_press` already skips writing
+/// `bevy_text_interaction::on_pointer_press` already skips writing
 /// selection when Alt is held, so this observer owns the alt-click semantic
 /// exclusively — no fight with the plain-click path.
 #[allow(clippy::too_many_arguments)]
@@ -230,7 +230,7 @@ pub fn on_alt_click(
         },
     );
 
-    sel.add_cursor_at(buffer, char_pos);
+    sel.add_cursor_at(&**buffer, char_pos);
     sel.refresh_primary_cursor(&mut cursor);
 
     #[cfg(feature = "lsp")]

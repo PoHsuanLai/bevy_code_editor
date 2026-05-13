@@ -1,7 +1,7 @@
 //! Text search and cursor operations on the editor's rope buffer.
 
 use crate::text_view::TextBuffer;
-use bevy_instanced_text_edit::RopeBuffer;
+use bevy_text_editor::RopeBuffer;
 use crate::types::*;
 use ropey::Rope;
 
@@ -134,7 +134,7 @@ pub fn add_cursor_at_next_occurrence(
         });
 
         if !already_covered {
-            sel.add_cursor_with_range(buffer, end, start);
+            sel.add_cursor_with_range(&**buffer, end, start);
             sel.refresh_primary_cursor(cursor);
             return true;
         }

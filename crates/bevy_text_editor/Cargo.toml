@@ -9,9 +9,16 @@ repository = "https://github.com/PoHsuanLai/bevscode"
 keywords = ["bevy", "text", "editor", "ropey", "undo"]
 categories = ["game-development"]
 
+[features]
+default = ["arboard"]
+# Forward to bevy_text_interaction so editor consumers can toggle the
+# clipboard backend through bevy_text_editor's feature flag.
+arboard = ["bevy_text_interaction/arboard"]
+clipboard-wasm = ["bevy_text_interaction/clipboard-wasm"]
+
 [dependencies]
 bevy_instanced_text = { path = "../bevy_instanced_text", version = "0.1.1" }
-bevy_text_interaction = { path = "../bevy_text_interaction", version = "0.1.1" }
+bevy_text_interaction = { path = "../bevy_text_interaction", version = "0.1.1", default-features = false }
 
 bevy = { version = "0.18", default-features = false, features = [
     "bevy_render",

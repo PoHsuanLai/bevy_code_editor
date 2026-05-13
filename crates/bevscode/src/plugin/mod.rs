@@ -110,15 +110,15 @@ impl Plugin for CodeEditorPlugin {
         // BracketMatchState, GotoLineState, FoldState, and KeyRepeatState are
         // per-editor / per-input-manager components (cascaded via #[require]);
         // no global resource init. Mouse drag tracking lives on
-        // `bevy_instanced_text_edit::TextViewDragState`, written by the picking-driven
-        // press/drag observers in `bevy_instanced_text_edit::interaction`.
+        // `bevy_text_editor::TextViewDragState`, written by the picking-driven
+        // press/drag observers in `bevy_text_editor::interaction`.
 
         app.configure_sets(
             Update,
             (
                 InputSet,
-                bevy_instanced_text_edit::EditEmitSet.after(InputSet),
-                ApplyStateSet.after(bevy_instanced_text_edit::EditEmitSet),
+                bevy_text_editor::EditEmitSet.after(InputSet),
+                ApplyStateSet.after(bevy_text_editor::EditEmitSet),
             )
                 .chain(),
         );
@@ -165,7 +165,7 @@ impl Plugin for CodeEditorPlugin {
         // Editor-specific mouse interactions are observer-driven via
         // `bevy_picking`. Plain-click cursor placement, drag-extend
         // selection, and scroll wheel are handled by
-        // `bevy_instanced_text_edit::interaction`'s observers (registered by
+        // `bevy_text_editor::interaction`'s observers (registered by
         // `InstancedTextInteractionPlugin`); the editor adds modifier-click
         // behaviors and the LSP hover trigger on top.
         #[cfg(feature = "tree-sitter")]
@@ -188,7 +188,7 @@ impl Plugin for CodeEditorPlugin {
         // All handlers run in `InputSet` after the dispatcher.
         register_handler_systems(app);
 
-        // `bevy_instanced_text_edit` fires `OnEdit` triggers per editor entity after
+        // `bevy_text_editor` fires `OnEdit` triggers per editor entity after
         // every edit op. The editor crate observes those triggers to drive
         // incremental tree-sitter reparse and LSP `did_change` via the
         // `TextEdited` bus.
@@ -196,7 +196,7 @@ impl Plugin for CodeEditorPlugin {
 
         // Auto-scroll-to-cursor sets target_scroll_offset; the actual
         // animation toward target lives in `bevy_instanced_text` (smooth) and
-        // `bevy_instanced_text_edit::apply_instant_scroll` (instant when
+        // `bevy_text_editor::apply_instant_scroll` (instant when
         // `ScrollConfig.smooth = false`). Both already run for any TextView,
         // so the editor only needs the cursor-target setter.
         app.add_systems(
@@ -225,7 +225,7 @@ impl PluginGroup for CodeEditorPlugins {
             .add(bevy_instanced_text::gpu::InstancedTextRenderPlugin)
             .add(bevy_instanced_text::view::plugin::InstancedTextPlugin)
             .add(bevy::input_focus::InputDispatchPlugin)
-            .add(bevy_instanced_text_edit::InstancedTextEditPlugin::without_typing_observer())
+            .add(bevy_text_editor::InstancedTextEditPlugin::without_typing_observer())
             .add(leafwing_input_manager::plugin::InputManagerPlugin::<
                 crate::input::EditorAction,
             >::default())
@@ -243,7 +243,7 @@ impl PluginGroup for CodeEditorPlugins {
 }
 
 /// Register the IDE-only `*Requested` events. The 33 editing events are
-/// registered by `bevy_instanced_text_edit::InstancedTextEditPlugin`.
+/// registered by `bevy_text_editor::InstancedTextEditPlugin`.
 fn register_ide_action_events(app: &mut App) {
     use crate::input::action_events::*;
 
@@ -276,7 +276,7 @@ fn register_ide_action_events(app: &mut App) {
 
 /// Register IDE-only per-action handler systems. The basic editing handlers
 /// (cursor / selection / delete / clipboard / undo) are registered by
-/// `bevy_instanced_text_edit::InstancedTextEditPlugin`. Handlers here cover multi-cursor,
+/// `bevy_text_editor::InstancedTextEditPlugin`. Handlers here cover multi-cursor,
 /// folding, goto-line, LSP requests, and the LSP follow-up.
 fn register_handler_systems(app: &mut App) {
     use crate::input::handlers::*;

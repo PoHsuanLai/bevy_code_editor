@@ -3,7 +3,7 @@
 //! Polls leafwing's `ActionState`, picks the just-pressed-or-repeating
 //! action for the focused editor, and emits the corresponding
 //! `*Requested` event. Per-action handler systems consume those events
-//! one-by-one elsewhere (basic editing handlers in `bevy_instanced_text_edit`,
+//! one-by-one elsewhere (basic editing handlers in `bevy_text_editor`,
 //! IDE-specific handlers in this crate).
 //!
 //! The dispatcher orchestrates a small chain of responsibilities:
@@ -30,7 +30,7 @@
 //! 6. **Emit the typed `*Requested` event** via `ActionEventWriters::emit`.
 
 use super::action_events::*;
-use bevy_instanced_text_edit::RopeBuffer;
+use bevy_text_editor::RopeBuffer;
 #[cfg(feature = "lsp")]
 use super::handlers::lsp_followup::PendingActionFollowup;
 use super::keybindings::EditorAction;
@@ -172,7 +172,7 @@ pub struct ActionEventWriters<'w> {
 
     // Programmatic edits (LSP completion application, etc.)
     #[cfg(feature = "lsp")]
-    replace_range: MessageWriter<'w, bevy_instanced_text_edit::ReplaceRangeRequested>,
+    replace_range: MessageWriter<'w, bevy_text_editor::ReplaceRangeRequested>,
 }
 
 impl<'w> ActionEventWriters<'w> {
@@ -435,7 +435,7 @@ pub fn dispatch_action_events(
 
     // Feature-owned interceptors get first crack at the action. Each returns
     // `true` if it consumed the action; the dispatcher early-returns and the
-    // bevy_instanced_text_edit / IDE handlers never see the event.
+    // bevy_text_editor / IDE handlers never see the event.
     #[cfg(feature = "lsp")]
     if let Ok((lsp_client, mut lsp_document, mut completion_state, _, lsp_settings)) =
         lsp_q.get_mut(focused)

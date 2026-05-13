@@ -7,20 +7,20 @@ use bevy::prelude::*;
 /// don't need the pre-edit rope for tree-sitter style byte-keyed edits.
 ///
 /// `pre_edit_rope` is `Some` when the editor entity has the
-/// [`bevy_instanced_text_edit::SnapshotPreEdit`] marker (LSP attaches it). LSP
+/// [`bevy_text_editor::SnapshotPreEdit`] marker (LSP attaches it). LSP
 /// incremental sync needs the pre-edit rope to convert byte offsets
 /// into LSP positions in the server's negotiated encoding.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct TextEdited {
-    pub delta: bevy_instanced_text_edit::EditDelta,
+    pub delta: bevy_text_editor::EditDelta,
     pub content_version: u64,
     #[reflect(ignore)]
     pub pre_edit_rope: Option<ropey::Rope>,
 }
 
 impl TextEdited {
-    pub fn new(delta: bevy_instanced_text_edit::EditDelta, content_version: u64) -> Self {
+    pub fn new(delta: bevy_text_editor::EditDelta, content_version: u64) -> Self {
         Self {
             delta,
             content_version,

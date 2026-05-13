@@ -45,8 +45,8 @@
 //!   context extraction, or custom overlays.
 //! - [`crate::types::editor::BracketMatchState`] — the matched bracket pair
 //!   under the cursor, if any.
-//! - [`bevy_instanced_text_edit::CursorState`], [`bevy_instanced_text_edit::SelectionState`],
-//!   [`bevy_instanced_text_edit::EditHistoryState`] — cursor position, selections, and
+//! - [`bevy_text_editor::CursorState`], [`bevy_text_editor::SelectionState`],
+//!   [`bevy_text_editor::EditHistoryState`] — cursor position, selections, and
 //!   undo stack from the editing layer.
 //! - [`bevy_instanced_text::DisplayLayout`] — the shaped-line snapshot used for
 //!   rendering; also useful for hit-testing and overlay placement.
@@ -172,9 +172,9 @@ pub mod prelude {
     #[cfg(feature = "tree-sitter")]
     pub use bevy_tree_sitter::TreeSitterGrammar;
 
-    // Editable-text widget types from `bevy_instanced_text_edit`. Re-exported so
+    // Editable-text widget types from `bevy_text_editor`. Re-exported so
     // prelude users get them without a separate import.
-    pub use bevy_instanced_text_edit::{RopeBuffer, 
+    pub use bevy_text_editor::{RopeBuffer, 
         InstancedTextEditPlugin, InstancedTextInteractionPlugin, ScrollConfig, SetTextRequested,
         TextEditor,
     };

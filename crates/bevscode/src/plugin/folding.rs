@@ -13,7 +13,7 @@
 #![allow(dead_code)]
 
 use crate::text_view::TextBuffer;
-use bevy_instanced_text_edit::RopeBuffer;
+use bevy_text_editor::RopeBuffer;
 use crate::types::*;
 use bevy::prelude::*;
 

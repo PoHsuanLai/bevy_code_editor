@@ -3,11 +3,11 @@
 //! Hosted by the LSP UI feature so the dispatcher (`crate::input::dispatch`)
 //! doesn't need to know about popup state details — each interceptor
 //! returns `true` when it consumed the action and the dispatcher early-
-//! returns. The editing handlers in `bevy_instanced_text_edit` never see the
+//! returns. The editing handlers in `bevy_text_editor` never see the
 //! consumed event.
 
 use crate::input::actions;
-use bevy_instanced_text_edit::RopeBuffer;
+use bevy_text_editor::RopeBuffer;
 use crate::input::keybindings::EditorAction;
 use crate::lsp_ui::state::LspCompletionPopup;
 use crate::settings::LspConfig;
@@ -43,7 +43,7 @@ pub fn completion_popup_intercept(
         With<CodeEditor>,
     >,
     lsp_settings: &LspConfig,
-    replace_writer: &mut MessageWriter<bevy_instanced_text_edit::ReplaceRangeRequested>,
+    replace_writer: &mut MessageWriter<bevy_text_editor::ReplaceRangeRequested>,
 ) -> bool {
     let filtered_count = completion_state.filtered_items().len();
     let max_visible = lsp_settings.completion.max_items;

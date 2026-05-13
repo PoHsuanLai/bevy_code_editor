@@ -1,7 +1,7 @@
 //! Editor-side cursor settings.
 //!
 //! `CursorSettings` and `CursorStyle` (caret shape, blink, key-repeat
-//! timing) live in `bevy_instanced_text_edit`; the terminal needs them too. We
+//! timing) live in `bevy_text_editor`; the terminal needs them too. We
 //! re-export them here so `crate::settings::*` callers don't notice.
 //!
 //! `CursorLine` (the editor's VSCode-style line-highlight band)
@@ -10,7 +10,7 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-pub use bevy_instanced_text_edit::{CursorSettings, CursorStyle};
+pub use bevy_text_editor::{CursorSettings, CursorStyle};
 
 /// Per-editor VSCode-style cursor-line highlighting.
 #[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]

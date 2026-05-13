@@ -17,7 +17,7 @@
 
 #[cfg(feature = "tree-sitter")]
 use crate::text_view::TextBuffer;
-use bevy_instanced_text_edit::RopeBuffer;
+use bevy_text_editor::RopeBuffer;
 use crate::types::CodeEditor;
 use crate::types::LineSegment;
 use bevy::prelude::*;

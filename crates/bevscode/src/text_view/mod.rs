@@ -8,11 +8,11 @@
 //!
 //! Interaction (`TextViewDragState`, `ScrollConfig`,
 //! `InstancedTextInteractionPlugin`, `screen_to_char_pos`, `copy_selection`)
-//! lives in [`bevy_instanced_text_edit`] and is re-exported here so the same
+//! lives in [`bevy_text_editor`] and is re-exported here so the same
 //! `use bevy_code_editor::text_view::…;` paths continue to resolve.
 //!
 //! Selection state for editor entities lives on `SelectionState` (also in
-//! `bevy_instanced_text_edit`). Pre-Phase 30A there was a parallel
+//! `bevy_text_editor`). Pre-Phase 30A there was a parallel
 //! `TextViewSelectionState` Component for picking-driven selection; both
 //! stores have been collapsed into the unified `SelectionState`.
 
@@ -23,7 +23,7 @@ pub use bevy_instanced_text::view::{
     TextViewRenderSet,
 };
 
-pub use bevy_instanced_text_edit::{RopeBuffer, 
+pub use bevy_text_editor::{RopeBuffer, 
     copy_selection, screen_to_char_pos, InstancedTextInteractionPlugin, ScrollConfig,
     TextViewDragState,
 };
