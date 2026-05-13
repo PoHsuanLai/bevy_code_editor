@@ -17,7 +17,7 @@
 //! `EditorTheme` and `SyntaxColors` follow the same pattern and are defined
 //! in `core` and `syntax` respectively.
 
-mod core;
+mod theme;
 mod cursor;
 mod performance;
 mod syntax;
@@ -27,7 +27,7 @@ mod wrapping;
 #[cfg(feature = "lsp")]
 mod lsp;
 
-pub use core::*;
+pub use theme::*;
 pub use cursor::*;
 pub use performance::*;
 pub use syntax::*;

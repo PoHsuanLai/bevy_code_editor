@@ -12,7 +12,7 @@ pub trait ShellIntegration: Send + Sync {
     fn inject(&self, pty_input: &SharedWriter);
 }
 
-/// Per-entity shell integration. Insert alongside [`crate::types::BevyTerminal`]
+/// Per-entity shell integration. Insert alongside [`crate::text::BevyTerminal`]
 /// to enable OSC 133 command blocks for that terminal:
 ///
 /// ```rust,no_run

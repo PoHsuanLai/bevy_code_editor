@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 
-use crate::parse::parse_dirty;
+use crate::pipeline::parse_dirty;
 
 /// Contains `parse_dirty`. Schedule before to sync a `ParseSource`'s buffer;
 /// after to react to `Changed<SyntaxTree>`.

@@ -4,7 +4,7 @@ use bevy::prelude::*;
 
 use crate::backend;
 use crate::messages::*;
-use crate::types::{
+use crate::text::{
     TerminalEventChannel, TerminalGridSnapshot, TerminalInputMode, TerminalSession,
     TerminalShellInfo,
 };

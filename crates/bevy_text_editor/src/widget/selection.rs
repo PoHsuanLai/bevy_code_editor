@@ -8,9 +8,9 @@ use crate::cursor_movement::{
     move_cursor, move_cursor_down, move_cursor_line_end, move_cursor_line_start, move_cursor_up,
     move_cursor_word_left, move_cursor_word_right,
 };
-use crate::rope_content::RopeBuffer;
-use crate::editing_events::*;
-use crate::state::TextEditor;
+use crate::text::RopeBuffer;
+use crate::text_edit::*;
+use crate::text_state::TextEditor;
 use bevy_text_interaction::{CursorState, SelectionState};
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;

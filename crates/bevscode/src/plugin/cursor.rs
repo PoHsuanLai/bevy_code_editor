@@ -78,7 +78,7 @@ impl Plugin for CursorPlugin {
             .register_type::<SelectionHighlight>()
             .register_type::<Separator>()
             .register_type::<crate::types::events::TextEdited>()
-            .register_type::<super::editor_ui_plugin::AutoResizeViewport>()
+            .register_type::<super::editor_ui::AutoResizeViewport>()
             .register_type::<crate::input::EditorAction>()
             .register_type::<GutterTextView>();
 

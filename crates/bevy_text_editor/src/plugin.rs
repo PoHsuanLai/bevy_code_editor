@@ -6,10 +6,10 @@
 use bevy::prelude::*;
 use bevy_text_interaction::{CursorState, InstancedTextInteractionPlugin, SelectionState};
 
-use crate::editing_events::{self, *};
-use crate::handlers;
-use crate::rope_content::RopeBuffer;
-use crate::state::{
+use crate::text_edit::{self, CursorMoved as EditorCursorMoved, SelectionChanged, *};
+use crate::widget;
+use crate::text::RopeBuffer;
+use crate::text_state::{
     EditHistoryState, IndentConfig, OnEdit, SnapshotPreEdit, TextEditor,
 };
 use crate::typing::on_focused_keyboard_typing;
@@ -65,11 +65,11 @@ impl Plugin for InstancedTextEditPlugin {
         app.register_type::<IndentConfig>();
         app.register_type::<OnEdit>();
         app.register_type::<SnapshotPreEdit>();
-        app.register_type::<editing_events::CursorMoved>();
-        app.register_type::<editing_events::SelectionChanged>();
+        app.register_type::<EditorCursorMoved>();
+        app.register_type::<SelectionChanged>();
         app.add_message::<OnEdit>();
-        app.add_message::<editing_events::CursorMoved>();
-        app.add_message::<editing_events::SelectionChanged>();
+        app.add_message::<EditorCursorMoved>();
+        app.add_message::<SelectionChanged>();
 
         register_editing_events(app);
 
@@ -130,7 +130,7 @@ pub fn emit_edit_triggers(
 /// auto-scroll detector's field; we keep our own tracker so we don't race
 /// with that system's reads.
 pub fn emit_cursor_moved(
-    mut writer: MessageWriter<editing_events::CursorMoved>,
+    mut writer: MessageWriter<EditorCursorMoved>,
     q: ChangedCursorQuery,
     all: Query<Entity, With<TextEditor>>,
     mut last: Local<std::collections::HashMap<Entity, usize>>,
@@ -138,7 +138,7 @@ pub fn emit_cursor_moved(
     for (entity, cursor) in q.iter() {
         let prev = last.insert(entity, cursor.cursor_pos);
         if prev != Some(cursor.cursor_pos) {
-            writer.write(editing_events::CursorMoved {
+            writer.write(EditorCursorMoved {
                 entity,
                 from: prev.unwrap_or(cursor.cursor_pos),
                 to: cursor.cursor_pos,
@@ -236,59 +236,59 @@ fn register_editing_events(app: &mut App) {
 }
 
 fn register_handler_systems(app: &mut App) {
-    use handlers::*;
+
 
     app.add_systems(
         Update,
         (
-            cursor_move::handle_move_cursor_left,
-            cursor_move::handle_move_cursor_right,
-            cursor_move::handle_move_cursor_up,
-            cursor_move::handle_move_cursor_down,
-            cursor_move::handle_move_cursor_word_left,
-            cursor_move::handle_move_cursor_word_right,
-            cursor_move::handle_move_cursor_line_start,
-            cursor_move::handle_move_cursor_line_end,
-            cursor_move::handle_move_cursor_document_start,
-            cursor_move::handle_move_cursor_document_end,
-            cursor_move::handle_move_cursor_page_up,
-            cursor_move::handle_move_cursor_page_down,
+            widget::cursor_move::handle_move_cursor_left,
+            widget::cursor_move::handle_move_cursor_right,
+            widget::cursor_move::handle_move_cursor_up,
+            widget::cursor_move::handle_move_cursor_down,
+            widget::cursor_move::handle_move_cursor_word_left,
+            widget::cursor_move::handle_move_cursor_word_right,
+            widget::cursor_move::handle_move_cursor_line_start,
+            widget::cursor_move::handle_move_cursor_line_end,
+            widget::cursor_move::handle_move_cursor_document_start,
+            widget::cursor_move::handle_move_cursor_document_end,
+            widget::cursor_move::handle_move_cursor_page_up,
+            widget::cursor_move::handle_move_cursor_page_down,
         ),
     );
 
     app.add_systems(
         Update,
         (
-            selection::handle_select_left,
-            selection::handle_select_right,
-            selection::handle_select_up,
-            selection::handle_select_down,
-            selection::handle_select_word_left,
-            selection::handle_select_word_right,
-            selection::handle_select_line_start,
-            selection::handle_select_line_end,
-            selection::handle_select_all,
-            selection::handle_clear_selection,
+            widget::selection::handle_select_left,
+            widget::selection::handle_select_right,
+            widget::selection::handle_select_up,
+            widget::selection::handle_select_down,
+            widget::selection::handle_select_word_left,
+            widget::selection::handle_select_word_right,
+            widget::selection::handle_select_line_start,
+            widget::selection::handle_select_line_end,
+            widget::selection::handle_select_all,
+            widget::selection::handle_clear_selection,
         ),
     );
 
     app.add_systems(
         Update,
         (
-            edit::handle_insert_newline,
-            edit::handle_insert_tab,
-            edit::handle_delete_backward,
-            edit::handle_delete_forward,
-            edit::handle_delete_word_backward,
-            edit::handle_delete_word_forward,
-            edit::handle_delete_line,
-            edit::handle_undo,
-            edit::handle_redo,
-            edit::handle_replace_range,
-            edit::handle_set_text,
-            clipboard::handle_copy,
-            clipboard::handle_cut,
-            clipboard::handle_paste,
+            widget::text_input::handle_insert_newline,
+            widget::text_input::handle_insert_tab,
+            widget::text_input::handle_delete_backward,
+            widget::text_input::handle_delete_forward,
+            widget::text_input::handle_delete_word_backward,
+            widget::text_input::handle_delete_word_forward,
+            widget::text_input::handle_delete_line,
+            widget::text_input::handle_undo,
+            widget::text_input::handle_redo,
+            widget::text_input::handle_replace_range,
+            widget::text_input::handle_set_text,
+            widget::clipboard::handle_copy,
+            widget::clipboard::handle_cut,
+            widget::clipboard::handle_paste,
         ),
     );
 }

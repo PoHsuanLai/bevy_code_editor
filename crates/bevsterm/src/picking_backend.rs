@@ -7,7 +7,7 @@ use bevy::ui::ScrollPosition;
 use bevy_instanced_text::DisplayLayout;
 
 use crate::messages::TerminalBlockSelected;
-use crate::types::TerminalBlockState;
+use crate::text::TerminalBlockState;
 
 pub fn on_terminal_block_press(
     trigger: On<Pointer<Press>>,

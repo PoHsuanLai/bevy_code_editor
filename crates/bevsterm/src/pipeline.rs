@@ -13,7 +13,7 @@ use wezterm_surface::SequenceNo;
 use wezterm_term::Line as VtLine;
 
 use crate::backend::{ColorAttribute, CursorVisibility, Intensity, Underline as VtUnderline};
-use crate::types::{
+use crate::text::{
     TerminalColorPalette, TerminalGridSnapshot, TerminalScrollFollow, TerminalSession,
 };
 

@@ -7,7 +7,7 @@ use bevy::prelude::*;
 
 use crate::backend::{SemanticType, SemanticZone};
 use crate::messages::TerminalBlockFinished;
-use crate::types::{BlockStatus, TerminalBlock, TerminalBlockState, TerminalSession};
+use crate::text::{BlockStatus, TerminalBlock, TerminalBlockState, TerminalSession};
 
 pub fn extract_blocks(
     mut q: Query<(Entity, &TerminalSession, &mut TerminalBlockState)>,

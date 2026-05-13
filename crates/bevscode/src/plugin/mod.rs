@@ -4,11 +4,11 @@ use bevy::prelude::*;
 
 pub mod brackets;
 pub mod cursor;
-pub mod editor_ui_plugin;
+pub mod editor_ui;
 pub mod folding;
 pub mod line_numbers;
 #[cfg(feature = "lsp")]
-pub mod lsp_plugin;
+pub mod lsp;
 pub mod syntax_highlighting;
 pub mod ui_elements;
 
@@ -17,7 +17,7 @@ pub use self::lsp_plugin::LspPlugin;
 
 pub use self::brackets::BracketPlugin;
 pub use self::cursor::CursorPlugin;
-pub use self::editor_ui_plugin::{AutoResizeViewport, EditorUiPlugin};
+pub use self::editor_ui::{AutoResizeViewport, EditorUiPlugin};
 pub use self::folding::FoldingPlugin;
 
 // Re-export syntax highlighting resources publicly for external use

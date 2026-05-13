@@ -400,7 +400,6 @@ pub(crate) fn record_edits_for_incremental_parsing(
 ) {
     let collected_events: Vec<_> = events.read().cloned().collect();
     for mut syntax_tree in editor_query.iter_mut() {
-        let mut forced_full_rebuild = false;
         for event in collected_events.iter() {
             let d = &event.delta;
             let edit = bevy_tree_sitter::ts::InputEdit {
@@ -431,19 +430,12 @@ pub(crate) fn record_edits_for_incremental_parsing(
                 if let Some(tree) = st.tree.as_mut() {
                     tree.edit(&edit);
                 }
-                let line_count_changed =
-                    edit.old_end_position.row != edit.new_end_position.row;
-                if line_count_changed {
-                    forced_full_rebuild = true;
-                    st.dirty_rows = None;
-                } else if !forced_full_rebuild {
-                    let start_row = edit.start_position.row as u32;
-                    let end_row = edit.new_end_position.row as u32;
-                    st.dirty_rows = Some(match st.dirty_rows {
-                        Some((lo, hi)) => (lo.min(start_row), hi.max(end_row)),
-                        None => (start_row, end_row),
-                    });
-                }
+                let start_row = edit.start_position.row as u32;
+                let end_row = edit.new_end_position.row as u32;
+                st.dirty_rows = Some(match st.dirty_rows {
+                    Some((lo, hi)) => (lo.min(start_row), hi.max(end_row)),
+                    None => (start_row, end_row),
+                });
             } else {
                 let st = syntax_tree.bypass_change_detection();
                 st.tree = None;

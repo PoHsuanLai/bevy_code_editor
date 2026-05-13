@@ -1,10 +1,10 @@
 use bevy::app::PluginGroupBuilder;
 use bevy::prelude::*;
-use bevy_instanced_text::view::layout_builder::LayoutProduceSet;
+use bevy_instanced_text::view::text_access::LayoutProduceSet;
 
 use crate::drain::drain_pty_events;
 use crate::messages::*;
-use crate::types::{
+use crate::text::{
     BevyTerminal, TerminalBlockState, TerminalColorPalette, TerminalConfig, TerminalGridSnapshot,
     TerminalInputMode, TerminalScrollFollow, TerminalScrollback, TerminalShellInfo,
 };
@@ -21,8 +21,8 @@ pub struct TerminalSnapshotSet;
 /// Terminal renderer plugin. Handles VT parsing, grid snapshotting, input,
 /// selection, and all ECS state. Does not spawn any PTY — add
 /// [`BevyTerminalPtyPlugin`] alongside this for native PTY support, or supply
-/// your own [`crate::types::TerminalSession`] and
-/// [`crate::types::TerminalEventChannel`] for WASM / custom IO backends.
+/// your own [`crate::text::TerminalSession`] and
+/// [`crate::text::TerminalEventChannel`] for WASM / custom IO backends.
 #[derive(Default)]
 pub struct BevyTerminalPlugin;
 
@@ -130,17 +130,17 @@ impl Plugin for BevyTerminalPlugin {
             Update,
             crate::clipboard::emit_scroll_follow_changed
                 .in_set(TerminalSnapshotSet)
-                .after(crate::snapshot::sync_grid_snapshot),
+                .after(crate::pipeline::sync_grid_snapshot),
         );
         app.add_systems(
             Update,
-            crate::snapshot::sync_grid_snapshot.in_set(TerminalSnapshotSet),
+            crate::pipeline::sync_grid_snapshot.in_set(TerminalSnapshotSet),
         );
         app.add_systems(
             Update,
             crate::blocks::extract_blocks
                 .in_set(TerminalSnapshotSet)
-                .after(crate::snapshot::sync_grid_snapshot),
+                .after(crate::pipeline::sync_grid_snapshot),
         );
 
         app.register_type::<crate::cursor::TerminalCursorCell>();
@@ -153,11 +153,11 @@ impl Plugin for BevyTerminalPlugin {
             )
                 .chain()
                 .in_set(TerminalSnapshotSet)
-                .after(crate::snapshot::sync_grid_snapshot),
+                .after(crate::pipeline::sync_grid_snapshot),
         );
 
         app.add_observer(crate::input::on_focused_terminal_keyboard);
-        app.add_observer(crate::blocks_pick::on_terminal_block_press);
+        app.add_observer(crate::picking_backend::on_terminal_block_press);
     }
 }
 

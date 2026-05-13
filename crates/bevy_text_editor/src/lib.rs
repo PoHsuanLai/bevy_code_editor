@@ -26,22 +26,22 @@
 //! ```
 
 pub mod cursor_movement;
-pub mod edit;
-pub mod editing_events;
-pub mod handlers;
+pub mod editing;
+pub mod text_edit;
+pub mod widget;
 pub mod history;
 pub mod plugin;
-pub mod rope_content;
-pub mod state;
+pub mod text;
+pub mod text_state;
 pub mod typing;
 
 pub use cursor_movement::*;
-pub use edit::{point_at_byte, EditOutcome};
-pub use editing_events::*;
+pub use editing::{point_at_byte, EditOutcome};
+pub use text_edit::*;
 pub use history::{EditHistory, EditKind, EditOperation, EditTransaction};
 pub use plugin::{EditEmitSet, InstancedTextEditPlugin};
-pub use rope_content::RopeBuffer;
-pub use state::{
+pub use text::RopeBuffer;
+pub use text_state::{
     EditDelta, EditHistoryState, EditPoint, IndentConfig, OnEdit, SnapshotPreEdit, TextEditor,
 };
 

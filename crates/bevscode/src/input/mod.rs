@@ -16,7 +16,7 @@ pub mod action_events;
 pub mod actions;
 pub mod dispatch;
 pub mod editing;
-pub mod editor_ops;
+pub mod picking_backend;
 pub mod handlers;
 pub mod keybindings;
 pub mod keyboard;

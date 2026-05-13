@@ -13,7 +13,7 @@ use crate::messages::{
     TerminalResize, TerminalRunCommand, TerminalScrollFollowChanged, TerminalScrollTo,
     TerminalScrollToBottom, TerminalScrollToTop, TerminalWriteBytes,
 };
-use crate::types::{TerminalGridSnapshot, TerminalScrollFollow, TerminalSession};
+use crate::text::{TerminalGridSnapshot, TerminalScrollFollow, TerminalSession};
 
 pub fn handle_copy_selection(
     mut events: MessageReader<TerminalCopySelection>,

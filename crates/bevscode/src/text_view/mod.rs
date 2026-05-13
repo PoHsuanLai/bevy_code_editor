@@ -17,7 +17,7 @@
 //! stores have been collapsed into the unified `SelectionState`.
 
 pub use bevy_instanced_text::view::{
-    layout, overlay, render, snapshot, state, ContentMetrics, DisplayLayout,
+    pipeline, overlay, render, glyph, text, ContentMetrics, DisplayLayout,
     GlyphBatchComponent, RectOverlay, RowVertical, SmoothScroll, ShapedLine,
     StyleRun, TextBuffer, TextViewBatchEntity, TextViewOverlays,
     TextViewRenderSet,

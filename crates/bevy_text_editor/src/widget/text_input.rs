@@ -6,10 +6,10 @@
 //! involved handler ahead of this one — or skip emitting the event when
 //! their indentation policy is non-default.
 
-use crate::editing_events::*;
-use crate::rope_content::RopeBuffer;
+use crate::text_edit::*;
+use crate::text::RopeBuffer;
 use crate::history::EditKind;
-use crate::state::{EditHistoryState, IndentConfig, TextEditor};
+use crate::text_state::{EditHistoryState, IndentConfig, TextEditor};
 use bevy_text_interaction::{CursorState, SelectionState};
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;

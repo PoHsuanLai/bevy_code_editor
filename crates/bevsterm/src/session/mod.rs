@@ -17,7 +17,7 @@ use crate::backend;
 use crate::messages::{TerminalReady, TerminalSpawnFailed};
 use crate::plugin::TerminalApplyStateSet;
 use crate::shell_integration::ShellIntegrationComponent;
-use crate::types::{
+use crate::text::{
     BevyTerminal, TerminalConfig, TerminalEventChannel, TerminalScrollback, TerminalSession,
 };
 use crate::viewport::{cells_from_viewport, MIN_COLS, MIN_ROWS};

@@ -200,50 +200,56 @@ pub(crate) fn produce_line_styles(
         ),
     >,
     mut edit_events: MessageReader<TextEdited>,
-    // Per-entity dirty line range from the last edit. None = full rebuild needed.
-    mut dirty_lines: Local<HashMap<Entity, Option<(u32, u32)>>>,
+    // Per-entity pending edit: (dirty_range, line_shift, shift_pivot).
+    // `None` dirty_range = full rebuild; line_shift != 0 means keys in by_line
+    // at or after shift_pivot must be relocated before re-highlighting.
+    mut dirty_lines: Local<HashMap<Entity, (Option<(u32, u32)>, i32, u32)>>,
 ) {
     let _span = bevy::prelude::info_span!("produce_line_styles").entered();
-    // Collect edit events: record the changed line range per entity.
-    // Multiple edits in one frame are unioned. `None` means full rebuild.
     for event in edit_events.read() {
-        // Line-count edits shift every buffer-line index after the edit point.
-        // LineStyles.by_line is keyed by index so incremental rebuild leaves
-        // stale entries under wrong keys. Force a full rebuild (None).
-        let line_count_changed =
-            event.delta.old_end_position.row != event.delta.new_end_position.row;
-        let dirty = if line_count_changed {
-            None
-        } else {
-            let start_row = event.delta.start_position.row;
-            let end_row = event.delta.new_end_position.row;
-            Some((start_row, end_row))
-        };
+        let start_row = event.delta.start_position.row;
+        let old_end_row = event.delta.old_end_position.row;
+        let new_end_row = event.delta.new_end_position.row;
+        let line_delta = new_end_row as i32 - old_end_row as i32;
+        // Dirty range covers the lines that changed content. For line-count
+        // edits (Enter / backspace-over-newline) that's start_row..=new_end_row.
+        let dirty_range = Some((start_row, new_end_row));
+        let incoming = (dirty_range, line_delta, start_row);
         for entity in content_changed.iter() {
-            let entry = dirty_lines.entry(entity).or_insert(dirty);
-            match (entry.as_mut(), dirty) {
-                (Some((lo, hi)), Some((new_lo, new_hi))) => {
-                    *lo = (*lo).min(new_lo);
-                    *hi = (*hi).max(new_hi);
+            match dirty_lines.entry(entity) {
+                std::collections::hash_map::Entry::Vacant(v) => {
+                    v.insert(incoming);
                 }
-                // Either side is None → full rebuild.
-                _ => *entry = None,
+                std::collections::hash_map::Entry::Occupied(mut o) => {
+                    let entry = o.get_mut();
+                    match (entry.0.as_mut(), dirty_range) {
+                        (Some((lo, hi)), Some((new_lo, new_hi))) => {
+                            *lo = (*lo).min(new_lo);
+                            *hi = (*hi).max(new_hi);
+                            entry.1 += line_delta;
+                            entry.2 = entry.2.min(start_row);
+                        }
+                        _ => *entry = (None, 0, 0),
+                    }
+                }
             }
         }
     }
 
     // When an async parse completes, union SyntaxTree::dirty_rows into our
     // dirty_lines map. `None` dirty_rows = full rebuild (first parse / huge edit).
+    // Syntax completions don't shift line indices, so line_delta stays 0.
     #[cfg(feature = "tree-sitter")]
     for (entity, syntax_tree) in syntax_tree_changed.iter() {
-        let entry = dirty_lines.entry(entity).or_insert(syntax_tree.dirty_rows);
-        match (entry.as_mut(), syntax_tree.dirty_rows) {
+        let incoming = (syntax_tree.dirty_rows, 0i32, 0u32);
+        let entry = dirty_lines.entry(entity).or_insert(incoming);
+        match (entry.0.as_mut(), syntax_tree.dirty_rows) {
             (Some((lo, hi)), Some((new_lo, new_hi))) => {
                 *lo = (*lo).min(new_lo);
                 *hi = (*hi).max(new_hi);
             }
             // Either side is None → full rebuild needed.
-            _ => *entry = None,
+            _ => entry.0 = None,
         }
     }
 
@@ -262,6 +268,7 @@ pub(crate) fn produce_line_styles(
         });
         return;
     }
+
 
     for (
         entity,
@@ -306,8 +313,8 @@ pub(crate) fn produce_line_styles(
         // Determine which lines to (re)highlight this frame.
         // `None` = full rebuild. Content edits without a matching edit event
         // (e.g. set_text) also get a full rebuild.
-        let dirty_range: Option<(u32, u32)> = if needs_full {
-            None
+        let (dirty_range, line_shift, shift_pivot) = if needs_full {
+            (None, 0i32, 0u32)
         } else {
             dirty_lines.get(&entity).copied().unwrap_or_default()
         };
@@ -329,8 +336,31 @@ pub(crate) fn produce_line_styles(
         let mut by_line: HashMap<u32, Vec<RunWithText>> = if !is_incremental {
             HashMap::new()
         } else {
-            // Clone the existing Arc'd map so we can patch it.
-            (*line_styles.by_line).clone()
+            // Clone the existing Arc'd map so we can patch it, then apply any
+            // line-index shift caused by insertions/deletions of newlines.
+            let mut map = (*line_styles.by_line).clone();
+            if line_shift != 0 {
+                // Collect keys that need to move, in the right order to avoid
+                // clobbering: shift down (negative delta) → process ascending,
+                // shift up (positive delta) → process descending.
+                let mut to_shift: Vec<u32> = map
+                    .keys()
+                    .copied()
+                    .filter(|&k| k >= shift_pivot)
+                    .collect();
+                if line_shift < 0 {
+                    to_shift.sort_unstable();
+                } else {
+                    to_shift.sort_unstable_by(|a, b| b.cmp(a));
+                }
+                for old_key in to_shift {
+                    if let Some(val) = map.remove(&old_key) {
+                        let new_key = (old_key as i32 + line_shift) as u32;
+                        map.insert(new_key, val);
+                    }
+                }
+            }
+            map
         };
 
         // On a full rebuild the covered range expands to the full window.
@@ -342,7 +372,11 @@ pub(crate) fn produce_line_styles(
             old.start.min(range.start as u32)..old.end.max(range.end as u32)
         };
 
-        let mut map_changed = false;
+        // Batch all dirty lines into one highlight_range call — one tree-sitter
+        // query instead of N. Collect (line_index, line_text) for visible,
+        // non-hidden lines; build a single contiguous text block; call once;
+        // distribute results back into by_line.
+        let mut batch: Vec<(usize, String)> = Vec::new();
         for buffer_line in highlight_lines {
             if buffer_line >= total_lines {
                 break;
@@ -350,44 +384,72 @@ pub(crate) fn produce_line_styles(
             if let Some(h) = hidden {
                 if !h.is_visible(buffer_line) {
                     if by_line.remove(&(buffer_line as u32)).is_some() {
-                        map_changed = true;
+                        // map_changed handled below
                     }
                     continue;
                 }
             }
             let line_text: String = buffer.line(buffer_line).to_string();
-            let line_no_nl = line_text.strip_suffix('\n').unwrap_or(&line_text);
-            let start_byte = buffer.line_to_byte(buffer_line);
+            batch.push((buffer_line, line_text));
+        }
 
-            let _hl_span = bevy::prelude::info_span!("highlight_line").entered();
-            let mut per_line = {
-                #[cfg(feature = "tree-sitter")]
-                {
-                    if let Some(st) = syntax_tree {
-                        syntax.highlight_range(
-                            line_no_nl,
-                            start_byte,
-                            st,
-                            buffer.rope(),
-                            syntax_theme,
-                            theme.foreground,
-                        )
-                    } else {
-                        vec![vec![]]
+        let mut map_changed = false;
+
+        // Remove hidden lines that were in the dirty range.
+        if let Some(h) = hidden {
+            for &(li, _) in &batch {
+                if !h.is_visible(li) {
+                    if by_line.remove(&(li as u32)).is_some() {
+                        map_changed = true;
                     }
                 }
-                #[cfg(not(feature = "tree-sitter"))]
-                syntax.highlight_range(line_no_nl, start_byte, syntax_theme, theme.foreground)
+            }
+        }
+
+        if !batch.is_empty() {
+            // Build a single text block: lines joined with \n, no trailing \n.
+            // Record each line's start byte in the block for splitting results.
+            let batch_start_byte = buffer.line_to_byte(batch[0].0);
+            let mut block = String::new();
+            let mut line_offsets: Vec<usize> = Vec::with_capacity(batch.len());
+            for (_, line_text) in &batch {
+                line_offsets.push(block.len());
+                let no_nl = line_text.strip_suffix('\n').unwrap_or(line_text);
+                block.push_str(no_nl);
+                block.push('\n');
+            }
+            // Strip the trailing \n added above.
+            block.pop();
+
+            let _hl_span = bevy::prelude::info_span!("highlight_line").entered();
+            #[cfg(feature = "tree-sitter")]
+            let per_line_segs = if let Some(st) = syntax_tree {
+                syntax.highlight_range(
+                    &block,
+                    batch_start_byte,
+                    st,
+                    buffer.rope(),
+                    syntax_theme,
+                    theme.foreground,
+                )
+            } else {
+                vec![vec![]; batch.len()]
             };
-            let segs = per_line.pop().unwrap_or_default();
-            if segs.iter().all(|s| s.text.trim().is_empty()) {
-                if by_line.remove(&(buffer_line as u32)).is_some() {
+            #[cfg(not(feature = "tree-sitter"))]
+            let per_line_segs =
+                syntax.highlight_range(&block, batch_start_byte, syntax_theme, theme.foreground);
+
+            for (i, (buffer_line, _)) in batch.iter().enumerate() {
+                let segs = per_line_segs.get(i).cloned().unwrap_or_default();
+                if segs.iter().all(|s| s.text.trim().is_empty()) {
+                    if by_line.remove(&(*buffer_line as u32)).is_some() {
+                        map_changed = true;
+                    }
+                } else {
+                    by_line.insert(*buffer_line as u32, segs_to_runs(&segs));
                     map_changed = true;
                 }
-                continue;
             }
-            by_line.insert(buffer_line as u32, segs_to_runs(&segs));
-            map_changed = true;
         }
 
         // Only write LineStyles when content actually changed. An unconditional

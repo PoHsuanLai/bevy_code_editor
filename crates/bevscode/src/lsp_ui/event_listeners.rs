@@ -11,7 +11,7 @@
 
 use super::snippet;
 use bevy_text_editor::RopeBuffer;
-use super::state::{
+use super::text::{
     LspCompletionPopup, LspDebounceTimers, LspDidChangeBatcher, LspRenamePopup,
     LspSignatureHelpPopup, PendingLspRequest, SessionTabstop, TabstopSession,
     UnifiedCompletionItem,

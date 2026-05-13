@@ -3,20 +3,20 @@
 //! Runs on `bevy::input_focus::FocusedInput<KeyboardInput>`. When the focused
 //! entity carries `TextEditor` and the keystroke is a printable character
 //! (no Ctrl / Cmd / Alt held), the character is inserted via
-//! [`crate::handlers::edit::insert_char`].
+//! [`crate::widget::edit::insert_char`].
 //!
 //! Modifier keys (Ctrl+C, Cmd+S, …) skip insertion — they're meant to be
 //! handled by the host's editing-event dispatcher (e.g. the code editor's
 //! leafwing keymap fan-out).
 
 use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
-use crate::rope_content::RopeBuffer;
+use crate::text::RopeBuffer;
 use bevy::input_focus::FocusedInput;
 use bevy::prelude::*;
 use bevy_instanced_text::TextBuffer;
 
-use crate::handlers::edit::insert_char;
-use crate::state::{EditHistoryState, TextEditor};
+use crate::widget::text_input::insert_char;
+use crate::text_state::{EditHistoryState, TextEditor};
 use bevy_text_interaction::{CursorState, SelectionState};
 
 /// `true` when any modifier key is held — used by the typing observer to

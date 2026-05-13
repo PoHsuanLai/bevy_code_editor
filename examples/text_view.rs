@@ -11,7 +11,7 @@
 use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
 use bevy_instanced_text::prelude::*;
-use bevy_instanced_text::view::snapshot::StyleRun;
+use bevy_instanced_text::view::glyph::StyleRun;
 use bevy::text::TextFont;
 
 fn main() {

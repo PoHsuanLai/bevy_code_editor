@@ -12,7 +12,7 @@ use bevy::prelude::*;
 
 use crate::backend;
 use crate::messages::{TerminalCopySelection, TerminalKeyInput, TerminalPaste};
-use crate::types::TerminalSession;
+use crate::text::TerminalSession;
 use bevy_text_interaction::ClipboardResource;
 
 pub fn on_focused_terminal_keyboard(

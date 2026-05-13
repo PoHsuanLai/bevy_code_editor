@@ -5,10 +5,10 @@
 //! via [`crate::clipboard::ClipboardResource`].
 
 use bevy_text_interaction::{ClipboardResource, CursorState, SelectionState};
-use crate::rope_content::RopeBuffer;
-use crate::editing_events::*;
+use crate::text::RopeBuffer;
+use crate::text_edit::*;
 use crate::history::EditKind;
-use crate::state::{EditHistoryState, TextEditor};
+use crate::text_state::{EditHistoryState, TextEditor};
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy_instanced_text::TextBuffer;

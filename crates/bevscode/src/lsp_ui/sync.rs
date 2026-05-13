@@ -21,7 +21,7 @@ use crate::types::{CodeEditor, CursorState};
 use bevy_instanced_text::MonoCellWidth;
 
 use super::components::*;
-use super::state::{
+use super::text::{
     LspCodeActionsPopup, LspCompletionPopup, LspDocumentHighlights, LspHoverPopup, LspInlayHints,
     LspRenamePopup, LspSignatureHelpPopup,
 };

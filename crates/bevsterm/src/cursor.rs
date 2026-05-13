@@ -11,7 +11,7 @@ use bevy_text_interaction::{
     caret_overlay, cursor_blink_visible, BlinkPhase, CursorSettings, TextCursorColor,
 };
 
-use crate::types::TerminalGridSnapshot;
+use crate::text::TerminalGridSnapshot;
 
 /// Per-terminal grid-cell cache used to detect cursor moves. Paired with
 /// [`bevy_text_interaction::BlinkPhase`] on the same entity, which holds the

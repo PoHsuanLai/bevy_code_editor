@@ -15,7 +15,7 @@ use bevy::ui::ComputedNode;
 use crate::types::{CodeEditor, CursorState};
 use bevy_instanced_text::MonoCellWidth;
 
-use super::state::{
+use super::text::{
     LspCodeActionsPopup, LspCompletionPopup, LspDidChangeBatcher, LspDocumentHighlights,
     LspHoverPopup, LspInlayHints, LspRenamePopup, LspSignatureHelpPopup,
 };

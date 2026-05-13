@@ -3,7 +3,7 @@ use bevy::ui::ComputedNode;
 use bevy_instanced_text::MonoCellWidth;
 
 use crate::backend;
-use crate::types::TerminalSession;
+use crate::text::TerminalSession;
 
 pub const MIN_COLS: u16 = 2;
 pub const MIN_ROWS: u16 = 1;

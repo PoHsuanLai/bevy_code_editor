@@ -11,7 +11,7 @@ use bevy::prelude::*;
 use bevy::text::Justify;
 use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{
-    view::snapshot::TextDecoration, HiddenLines, LineStyles, MonoFontFaces, RunWithText,
+    view::glyph::TextDecoration, HiddenLines, LineStyles, MonoFontFaces, RunWithText,
     SmoothScroll, StyleRun, TextBuffer, TextSpan,
 };
 use bevy_text_editor::RopeBuffer;
@@ -154,30 +154,78 @@ pub(crate) fn sync_gutter_text_view(
             g_smooth.target_y = scroll_pos.y;
         }
 
-        // Rebuild content when line count or fold state changes.
-        let line_count = buffer.len_lines();
-        let content_stale = fold_state.is_changed()
-            || g_buffer.0.0.is_empty()
-            || bevy_instanced_text::TextContent::line_count(&g_buffer.0).saturating_sub(1) != line_count.saturating_sub(1);
+        // Ropey counts a phantom empty line after a trailing '\n'; subtract it
+        // so the gutter shows exactly as many numbers as there are real lines.
+        let raw_line_count = buffer.len_lines();
+        let line_count = if raw_line_count > 0 && bevy_instanced_text::TextContent::line(&**buffer, raw_line_count - 1).trim().is_empty() {
+            raw_line_count - 1
+        } else {
+            raw_line_count
+        }.max(1);
 
-        if content_stale {
-            let mut text = String::with_capacity(line_count * 4);
-            for i in 1..=line_count {
-                if i > 1 {
-                    text.push('\n');
+        // Update line-number string when line count changes (never on fold-only changes).
+        let old_count = if g_buffer.0.0.is_empty() {
+            0
+        } else {
+            bevy_instanced_text::TextContent::line_count(&g_buffer.0)
+        };
+        let count_stale = old_count != line_count;
+
+        if count_stale {
+            if old_count > 0 && line_count > old_count {
+                // Lines added: append the new numbers.
+                let s = &mut g_buffer.0.0;
+                for i in (old_count + 1)..=line_count {
+                    s.push('\n');
+                    s.push_str(&i.to_string());
                 }
-                text.push_str(&i.to_string());
+            } else if old_count > line_count && line_count > 0 {
+                // Lines removed: find the byte offset of line `line_count` and truncate.
+                // Scan forward to find the Nth '\n' rather than repeated rfind.
+                let s = &mut g_buffer.0.0;
+                let cut = s
+                    .char_indices()
+                    .filter(|&(_, c)| c == '\n')
+                    .nth(line_count - 1)
+                    .map(|(i, _)| i)
+                    .unwrap_or(s.len());
+                s.truncate(cut);
+            } else {
+                // Initial population or edge case.
+                let mut text = String::with_capacity(line_count * 4);
+                for i in 1..=line_count {
+                    if i > 1 {
+                        text.push('\n');
+                    }
+                    text.push_str(&i.to_string());
+                }
+                g_buffer.0 = TextSpan(text);
             }
-            g_buffer.0 = TextSpan(text);
+        }
 
-            // Collect hidden lines using the fold API that works with and without tree-sitter.
-            let hidden: HashSet<usize> = (0..line_count)
-                .filter(|&l| fold_state.is_line_hidden(l))
-                .collect();
+        // Update hidden lines when fold state changes (independent of line count).
+        if fold_state.is_changed() || count_stale {
+            // Walk folded regions directly. The previous form scanned every
+            // line and asked each region — O(line_count × regions), which
+            // froze the editor for seconds on large files with many folds.
+            let mut hidden: HashSet<usize> = HashSet::new();
+            for region in &fold_state.regions {
+                if !region.is_folded {
+                    continue;
+                }
+                let start = region.start_line.saturating_add(1);
+                let end = region.end_line.min(line_count.saturating_sub(1));
+                for line in start..=end {
+                    hidden.insert(line);
+                }
+            }
             *g_hidden = HiddenLines::new(hidden);
         }
 
         // Per-line styles: active line number color for cursor lines.
+        // Only rewrite g_styles when the set of cursor lines changes — an
+        // unconditional write creates a fresh Arc every frame, triggering
+        // layout_miss_styles in the gutter's produce_layouts on every tick.
         let cursor_lines: HashSet<usize> = sel
             .selections
             .iter()
@@ -187,34 +235,41 @@ pub(crate) fn sync_gutter_text_view(
             })
             .collect();
 
-        let active_color = theme.line_numbers_active;
-        let mut by_line: HashMap<u32, Vec<RunWithText>> = HashMap::new();
-        for &line in &cursor_lines {
-            if line < line_count {
-                let num_str = (line + 1).to_string();
-                let byte_len = num_str.len();
-                by_line.insert(
-                    line as u32,
-                    vec![RunWithText {
-                        text: num_str,
-                        run: StyleRun {
-                            byte_range: 0..byte_len,
-                            fg: active_color,
-                            bg: None,
-                            font_scale: 0.0,
-                            skew: 0.0,
-                            corner_radius: 0.0,
-                            font_weight: None,
-                            italic: false,
-                            font: None,
-                            decoration: TextDecoration::empty(),
-                            link: None,
-                        },
-                    }],
-                );
-            }
-        }
+        let current_active: HashSet<usize> = g_styles
+            .by_line
+            .keys()
+            .map(|&k| k as usize)
+            .collect();
 
-        *g_styles = LineStyles::new(by_line);
+        if cursor_lines != current_active || count_stale {
+            let active_color = theme.line_numbers_active;
+            let mut by_line: HashMap<u32, Vec<RunWithText>> = HashMap::new();
+            for &line in &cursor_lines {
+                if line < line_count {
+                    let num_str = (line + 1).to_string();
+                    let byte_len = num_str.len();
+                    by_line.insert(
+                        line as u32,
+                        vec![RunWithText {
+                            text: num_str,
+                            run: StyleRun {
+                                byte_range: 0..byte_len,
+                                fg: active_color,
+                                bg: None,
+                                font_scale: 0.0,
+                                skew: 0.0,
+                                corner_radius: 0.0,
+                                font_weight: None,
+                                italic: false,
+                                font: None,
+                                decoration: TextDecoration::empty(),
+                                link: None,
+                            },
+                        }],
+                    );
+                }
+            }
+            *g_styles = LineStyles::new(by_line);
+        }
     }
 }

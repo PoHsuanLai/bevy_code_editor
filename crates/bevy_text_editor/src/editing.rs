@@ -8,14 +8,14 @@
 //! every edit op for incremental tree-sitter reparse) then clear it.
 
 use bevy_instanced_text::{ContentMetrics, TextBuffer};
-use crate::rope_content::RopeBuffer;
+use crate::text::RopeBuffer;
 use ropey::Rope;
 
 use bevy_text_interaction::{
     Anchor, AnchorBias, CursorState, SelectionCollection, SelectionState, TextEdit,
 };
 use crate::history::{EditKind, EditOperation};
-use crate::state::{EditDelta, EditHistoryState, EditPoint};
+use crate::text_state::{EditDelta, EditHistoryState, EditPoint};
 
 /// Compute (row, byte_column) for a given byte offset in `rope`.
 pub fn point_at_byte(rope: &Rope, byte_offset: usize) -> EditPoint {

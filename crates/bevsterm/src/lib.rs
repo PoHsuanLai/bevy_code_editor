@@ -52,7 +52,7 @@
 
 pub mod backend;
 pub mod blocks;
-pub mod blocks_pick;
+pub mod picking_backend;
 pub mod clipboard;
 pub mod cursor;
 pub mod drain;
@@ -62,15 +62,15 @@ pub mod plugin;
 #[cfg(feature = "pty")]
 pub mod session;
 pub mod shell_integration;
-pub mod snapshot;
-pub mod types;
+pub mod pipeline;
+pub mod text;
 pub mod viewport;
 
 pub use crate::messages::*;
 pub use crate::plugin::{BevyTerminalPlugin, BevyTerminalPlugins};
 #[cfg(feature = "pty")]
 pub use crate::session::BevyTerminalPtyPlugin;
-pub use crate::types::{
+pub use crate::text::{
     BevyTerminal, BlockStatus, TerminalBlock, TerminalBlockState, TerminalColorPalette,
     TerminalConfig, TerminalEventChannel, TerminalGridSnapshot, TerminalInputMode,
     TerminalScrollFollow, TerminalScrollback, TerminalSession, TerminalShellInfo,
@@ -82,7 +82,7 @@ pub mod prelude {
         BevyTerminalPlugin, BevyTerminalPlugins, TerminalApplyStateSet, TerminalPtyDrainSet,
         TerminalSnapshotSet,
     };
-    pub use crate::types::{
+    pub use crate::text::{
         BevyTerminal, BlockStatus, TerminalBlock, TerminalBlockState, TerminalColorPalette,
         TerminalConfig, TerminalGridSnapshot, TerminalInputMode, TerminalScrollFollow,
         TerminalScrollback, TerminalShellInfo,

@@ -32,10 +32,10 @@ use bevy::time::TimePlugin;
 use bevy::ui::ui_transform::UiGlobalTransform;
 use bevy::ui::ComputedNode;
 use bevy_instanced_text::gpu::{GlyphAtlas, GlyphAtlasPlugin};
-use bevy_instanced_text::view::layout_builder::produce_layouts;
+use bevy_instanced_text::view::text_access::produce_layouts;
 use bevy_instanced_text::view::plugin::update_text_views;
 use bevy_instanced_text::view::render::{GlyphBatchComponent, GlyphInstance};
-use bevy_instanced_text::view::tuning::LayoutTuning;
+use bevy_instanced_text::view::measurement::LayoutTuning;
 use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{
     DisplayLayout, LineStyles, MonoCellWidth, SmoothScroll, TextBounds, TextBuffer,

@@ -9,7 +9,7 @@
 use bevy::prelude::*;
 use ropey::Rope;
 
-use bevy_text_interaction::anchor::AnchorSet;
+use bevy_text_interaction::text_edit::AnchorSet;
 use crate::history::EditHistory;
 
 /// Marker requesting that [`EditHistoryState`] keep a clone of the rope
@@ -123,7 +123,7 @@ impl Default for IndentConfig {
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 #[require(
-    bevy_instanced_text::TextBuffer<crate::rope_content::RopeBuffer>,
+    bevy_instanced_text::TextBuffer<crate::text::RopeBuffer>,
     bevy_text_interaction::CursorState,
     bevy_text_interaction::SelectionState,
     EditHistoryState,
