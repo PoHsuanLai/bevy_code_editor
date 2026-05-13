@@ -81,6 +81,10 @@ name = "editor_perf"
 path = "editor_perf.rs"
 
 [[example]]
+name = "editor_perf_screenshot"
+path = "editor_perf_screenshot.rs"
+
+[[example]]
 name = "editor_multi"
 path = "editor_multi.rs"
 
