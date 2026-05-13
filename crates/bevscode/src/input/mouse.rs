@@ -248,7 +248,7 @@ pub fn on_alt_click(
 pub fn on_ctrl_click_goto_definition(
     trigger: On<Pointer<Press>>,
     editor_query: CtrlClickQuery,
-    lsp_query: Query<(&bevy_lsp::LspClient, Option<&bevy_lsp::LspDocument>), With<CodeEditor>>,
+    mut lsp_query: Query<(&mut bevy_lsp::LspClient, Option<&bevy_lsp::LspDocument>), With<CodeEditor>>,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     if trigger.event().button != PointerButton::Primary {
@@ -261,7 +261,7 @@ pub fn on_ctrl_click_goto_definition(
     let Ok((buffer, scroll_pos, computed, fold_state, font, lh, mono, layout)) = editor_query.get(entity) else {
         return;
     };
-    let Ok((lsp_client, lsp_document)) = lsp_query.get(entity) else {
+    let Ok((mut lsp_client, lsp_document)) = lsp_query.get_mut(entity) else {
         return;
     };
     let Some(doc) = lsp_document else {
@@ -388,7 +388,7 @@ pub fn tick_lsp_hover_timer(
     mut state_query: Query<
         (
             Entity,
-            &bevy_lsp::LspClient,
+            &mut bevy_lsp::LspClient,
             Option<&bevy_lsp::LspDocument>,
             &mut crate::lsp_ui::state::LspHoverPopup,
         ),
@@ -396,7 +396,7 @@ pub fn tick_lsp_hover_timer(
     >,
     time: Res<Time>,
 ) {
-    for (entity, lsp_client, lsp_document, mut hover_state) in state_query.iter_mut() {
+    for (entity, mut lsp_client, lsp_document, mut hover_state) in state_query.iter_mut() {
         let Ok(buffer) = editor_query.get(entity) else {
             continue;
         };

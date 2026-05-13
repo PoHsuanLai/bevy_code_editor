@@ -140,7 +140,7 @@ pub fn listen_text_edit_events(
             let new_start_char = buffer.byte_to_char(delta.start_byte);
             let new_end_char = buffer.byte_to_char(delta.new_end_byte);
             buffer
-                .rope
+                .rope()
                 .slice(new_start_char..new_end_char)
                 .chars()
                 .collect()

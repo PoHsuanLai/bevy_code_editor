@@ -209,7 +209,7 @@ fn insert_typed_char(
     #[cfg(feature = "lsp")] completion_state: &mut crate::lsp_ui::state::LspCompletionPopup,
     #[cfg(feature = "lsp")] lsp_document: Option<&mut bevy_lsp::LspDocument>,
     #[cfg(feature = "lsp")] syntax_tree: Option<&bevy_tree_sitter::SyntaxTree>,
-    #[cfg(feature = "lsp")] lsp_w: &mut MessageWriter<bevy_lsp::LspRequest>,
+    #[cfg(feature = "lsp")] mut lsp_w: &mut MessageWriter<bevy_lsp::LspRequest>,
 ) {
     if brackets.auto_close_quotes
         && get_closing_quote(c).is_some()

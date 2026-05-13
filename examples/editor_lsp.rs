@@ -28,7 +28,8 @@ use bevy::prelude::*;
 use bevy::ui::ComputedNode;
 use bevy::sprite::Anchor;
 use bevy_egui::{egui, EguiContexts};
-use bevscode::lsp_ui::{CodeActionOrCommand, LspClient, LspDocument, LspMessage};
+use bevscode::lsp_ui::{CodeActionOrCommand, LspClient, LspDocument, LspMessage, LspRequest};
+use bevscode::prelude::{BufferAnchorParam, RopeBuffer};
 use egui::Color32;
 
 fn main() {
@@ -119,6 +120,25 @@ impl Plugin for LspEguiUiPlugin {
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 struct LspUiRenderSet;
 
+/// Bundle of components every popup-rendering system needs to size and
+/// position itself: monospace cell width (for popup widths), font (for
+/// font_size), and a resolved line height. Use [`EditorMetrics::resolve`]
+/// to extract the precomputed line-height.
+#[derive(bevy::ecs::query::QueryData)]
+struct EditorMetricsQuery {
+    font: &'static TextFont,
+    mono: &'static MonoCellWidth,
+    line_height: &'static bevy::text::LineHeight,
+}
+
+/// Resolved-from-the-asset line height for a single editor entity. The
+/// raw `LineHeight` component carries either a px value or a multiplier;
+/// callers want a single `f32`.
+#[inline]
+fn editor_line_height(m: &EditorMetricsQueryItem<'_, '_>) -> f32 {
+    resolve_line_height(*m.line_height, m.font.font_size)
+}
+
 /// Marker for inlay hint visual entities (sprite path).
 #[derive(Component)]
 struct InlayHintText {
@@ -195,14 +215,15 @@ fn render_inlay_hints(
     // even when the data is unchanged. See `render_document_highlights`
     // for the same pattern.
     hint_query: Query<(Entity, &InlayHintData)>,
-    editors: Query<(Entity, &TextFont), With<CodeEditor>>,
+    editors: Query<(Entity, &TextFont, &bevy::text::LineHeight), With<CodeEditor>>,
     metrics: RowMetricsParam,
     theme: Res<InlineDecorationsTheme>,
 ) {
-    let Ok((editor_entity, font)) = editors.single() else {
+    let Ok((editor_entity, font, _lh)) = editors.single() else {
         return;
     };
     let m = metrics.get_or_panic(editor_entity);
+    let _ = font; // sizing taken from `m` (the resolved metrics) rather than the font asset
 
     for (entity, hint) in hint_query.iter() {
         let color = match hint.kind {
@@ -216,7 +237,7 @@ fn render_inlay_hints(
         // the hint extend rightward from this point.
         let band = m.row_glyph_band(hint.line);
         let cell_left = m
-            .cell_world_pos_at_x(hint.line, hint.character as f32 * font.char_width)
+            .cell_top_left_at_x(hint.line, hint.character as f32 * m.cell_width())
             .x;
         let pos = Vec3::new(
             cell_left,
@@ -272,7 +293,7 @@ fn render_document_highlights(
     highlight_query: Query<&DocumentHighlightData>,
     mut editors: Query<
         (
-            &TextFont,
+            &MonoCellWidth,
             &DisplayLayout,
             &mut TextViewOverlays,
         ),
@@ -280,7 +301,7 @@ fn render_document_highlights(
     >,
     theme: Res<InlineDecorationsTheme>,
 ) {
-    let Ok((font, layout, mut overlays)) = editors.single_mut() else {
+    let Ok((mono, layout, mut overlays)) = editors.single_mut() else {
         return;
     };
 
@@ -313,7 +334,7 @@ fn render_document_highlights(
 
         let start_x = layout
             .x_at_byte(display_row, start_byte_in_row)
-            .unwrap_or(highlight.start_character as f32 * font.char_width);
+            .unwrap_or(highlight.start_character as f32 * mono.px);
 
         // Resolve the end x. `u32::MAX` (multi-line range continuation)
         // means "to end of line" — use the row's measured text width.
@@ -332,7 +353,7 @@ fn render_document_highlights(
                             .end_character
                             .saturating_sub(highlight.start_character)
                             .min(200) as f32
-                            * font.char_width
+                            * mono.px
                 })
         } else {
             let end_byte = highlight.end_character as usize;
@@ -346,7 +367,7 @@ fn render_document_highlights(
                 .unwrap_or(
                     start_x
                         + (highlight.end_character - highlight.start_character) as f32
-                            * font.char_width,
+                            * mono.px,
                 )
         };
 
@@ -393,18 +414,18 @@ struct LspEguiViewportOffset {
 fn cursor_screen_pos(
     char_index: usize,
     editor: Entity,
-    anchors: &BufferAnchorParam,
+    anchors: &BufferAnchorParam<RopeBuffer>,
     viewport_offset: &LspEguiViewportOffset,
 ) -> (f32, f32) {
-    let Some(anchor) = anchors.at_rope_char_index(editor, char_index) else {
+    let Some(anchor) = anchors.at_char_index(editor, char_index) else {
         return (
             viewport_offset.screen_offset.x,
             viewport_offset.screen_offset.y,
         );
     };
     (
-        viewport_offset.screen_offset.x + anchor.screen_top_left.x,
-        viewport_offset.screen_offset.y + anchor.screen_top_left.y,
+        viewport_offset.screen_offset.x + anchor.top_left.x,
+        viewport_offset.screen_offset.y + anchor.top_left.y,
     )
 }
 
@@ -496,14 +517,20 @@ fn kind_badge(item: &UnifiedCompletionItem, ui: &mut egui::Ui, size: f32) {
 /// Render the completion popup as an egui overlay using armas styling.
 fn render_completion_egui(
     mut contexts: EguiContexts,
-    query: Query<(Entity, &LspCompletionPopup, &CursorState, &TextFont), With<CodeEditor>>,
+    query: Query<
+        (Entity, &LspCompletionPopup, &CursorState, EditorMetricsQuery),
+        With<CodeEditor>,
+    >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&ComputedNode, With<CodeEditor>>,
-    anchors: BufferAnchorParam,
+    anchors: BufferAnchorParam<RopeBuffer>,
 ) {
-    let Ok((editor, completion_state, cursor_state, font)) = query.single() else {
+    let Ok((editor, completion_state, cursor_state, metrics)) = query.single() else {
         return;
     };
+    let line_height = editor_line_height(&metrics);
+    let mono = metrics.mono;
+    let font = metrics.font;
     let filtered_items = completion_state.filtered_items();
     if !completion_state.visible || filtered_items.is_empty() {
         return;
@@ -523,7 +550,7 @@ fn render_completion_egui(
     let theme = ctx.armas_theme();
     let max_visible = 10;
     let visible_count = filtered_items.len().min(max_visible);
-    let item_height = font.line_height.max(20.0);
+    let item_height = line_height.max(20.0);
     let popup_height = visible_count as f32 * item_height + 8.0;
 
     let max_label_width = filtered_items
@@ -536,14 +563,14 @@ fn render_completion_egui(
         })
         .max()
         .unwrap_or(20);
-    let popup_width = (max_label_width as f32 * font.char_width + 40.0).clamp(200.0, 500.0);
+    let popup_width = (max_label_width as f32 * mono.px + 40.0).clamp(200.0, 500.0);
 
     let pos = position_popup(
         cursor_x,
         cursor_y,
         popup_width,
         popup_height,
-        font.line_height,
+        line_height,
         &viewport_offset,
         *viewport,
         false,
@@ -663,14 +690,19 @@ fn render_completion_egui(
 /// and Markdown) is displayed as plain text via egui.
 fn render_hover_egui(
     mut contexts: EguiContexts,
-    query: Query<(Entity, &LspHoverPopup, &LspCompletionPopup, &TextFont), With<CodeEditor>>,
+    query: Query<
+        (Entity, &LspHoverPopup, &LspCompletionPopup, EditorMetricsQuery),
+        With<CodeEditor>,
+    >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&ComputedNode, With<CodeEditor>>,
-    anchors: BufferAnchorParam,
+    anchors: BufferAnchorParam<RopeBuffer>,
 ) {
-    let Ok((editor, hover_state, completion_state, font)) = query.single() else {
+    let Ok((editor, hover_state, completion_state, metrics)) = query.single() else {
         return;
     };
+    let line_height = editor_line_height(&metrics);
+    let font = metrics.font;
     if !hover_state.visible || hover_state.content.is_empty() {
         return;
     }
@@ -692,7 +724,7 @@ fn render_hover_egui(
     let theme = ctx.armas_theme();
 
     let hover_line_count = hover_state.content.lines().count().max(1) as f32;
-    let estimated_height = hover_line_count * font.line_height + 24.0;
+    let estimated_height = hover_line_count * line_height + 24.0;
 
     // If completion is visible, prefer showing hover above cursor to avoid overlap
     let prefer_above = completion_state.visible;
@@ -702,7 +734,7 @@ fn render_hover_egui(
         cursor_y,
         500.0,
         estimated_height,
-        font.line_height,
+        line_height,
         &viewport_offset,
         *viewport,
         prefer_above,
@@ -732,14 +764,19 @@ fn render_hover_egui(
 /// Render the signature help popup as an egui overlay.
 fn render_signature_help_egui(
     mut contexts: EguiContexts,
-    query: Query<(Entity, &LspSignatureHelpPopup, &CursorState, &TextFont), With<CodeEditor>>,
+    query: Query<
+        (Entity, &LspSignatureHelpPopup, &CursorState, EditorMetricsQuery),
+        With<CodeEditor>,
+    >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&ComputedNode, With<CodeEditor>>,
-    anchors: BufferAnchorParam,
+    anchors: BufferAnchorParam<RopeBuffer>,
 ) {
-    let Ok((editor, sig_state, cursor_state, font)) = query.single() else {
+    let Ok((editor, sig_state, cursor_state, metrics)) = query.single() else {
         return;
     };
+    let line_height = editor_line_height(&metrics);
+    let font = metrics.font;
     if !sig_state.visible || sig_state.signatures.is_empty() {
         return;
     }
@@ -762,13 +799,13 @@ fn render_signature_help_egui(
     let theme = ctx.armas_theme();
 
     // Signature help prefers above cursor (like VS Code)
-    let estimated_height = font.line_height + 20.0;
+    let estimated_height = line_height + 20.0;
     let pos = position_popup(
         cursor_x,
         cursor_y,
         400.0,
         estimated_height,
-        font.line_height,
+        line_height,
         &viewport_offset,
         *viewport,
         true,
@@ -857,14 +894,19 @@ fn render_signature_help_egui(
 /// Render the code actions popup as an egui overlay.
 fn render_code_actions_egui(
     mut contexts: EguiContexts,
-    query: Query<(Entity, &LspCodeActionsPopup, &CursorState, &TextFont), With<CodeEditor>>,
+    query: Query<
+        (Entity, &LspCodeActionsPopup, &CursorState, EditorMetricsQuery),
+        With<CodeEditor>,
+    >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&ComputedNode, With<CodeEditor>>,
-    anchors: BufferAnchorParam,
+    anchors: BufferAnchorParam<RopeBuffer>,
 ) {
-    let Ok((editor, action_state, cursor_state, font)) = query.single() else {
+    let Ok((editor, action_state, cursor_state, metrics)) = query.single() else {
         return;
     };
+    let line_height = editor_line_height(&metrics);
+    let font = metrics.font;
     if !action_state.visible || action_state.actions.is_empty() {
         return;
     }
@@ -877,7 +919,7 @@ fn render_code_actions_egui(
         cursor_screen_pos(cursor_state.cursor_pos, editor, &anchors, &viewport_offset);
 
     let theme = ctx.armas_theme();
-    let item_height = font.line_height.max(22.0);
+    let item_height = line_height.max(22.0);
 
     // Position near the gutter, below cursor
     let text_area_left = viewport.content_inset().min_inset.x * viewport.inverse_scale_factor();
@@ -890,7 +932,7 @@ fn render_code_actions_egui(
         cursor_y,
         300.0,
         popup_height,
-        font.line_height,
+        line_height,
         &viewport_offset,
         *viewport,
         false,
@@ -970,18 +1012,21 @@ fn render_rename_egui(
             Entity,
             &mut LspRenamePopup,
             Option<&LspDocument>,
-            &TextFont,
+            EditorMetricsQuery,
         ),
         With<CodeEditor>,
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
     viewport: Single<&ComputedNode, With<CodeEditor>>,
-    anchors: BufferAnchorParam,
+    anchors: BufferAnchorParam<RopeBuffer>,
     mut lsp_w: MessageWriter<LspRequest>,
 ) {
-    let Ok((editor, mut rename_state, lsp_document, font)) = query.single_mut() else {
+    let Ok((editor, mut rename_state, lsp_document, metrics)) = query.single_mut() else {
         return;
     };
+    let line_height = editor_line_height(&metrics);
+    let mono = metrics.mono;
+    let font = metrics.font;
     if !rename_state.visible {
         return;
     }
@@ -1001,17 +1046,17 @@ fn render_rename_egui(
     else {
         return;
     };
-    let cursor_x = viewport_offset.screen_offset.x + anchor.screen_top_left.x;
-    let cursor_y = viewport_offset.screen_offset.y + anchor.screen_top_left.y;
+    let cursor_x = viewport_offset.screen_offset.x + anchor.top_left.x;
+    let cursor_y = viewport_offset.screen_offset.y + anchor.top_left.y;
 
     let theme = ctx.armas_theme();
-    let rename_width = (rename_state.new_name.len() as f32 * font.char_width + 40.0).max(150.0);
+    let rename_width = (rename_state.new_name.len() as f32 * mono.px + 40.0).max(150.0);
     let pos = position_popup(
         cursor_x,
         cursor_y,
         rename_width,
-        font.line_height + 10.0,
-        font.line_height,
+        line_height + 10.0,
+        line_height,
         &viewport_offset,
         *viewport,
         false,
@@ -1159,7 +1204,7 @@ fn display_lsp_info(query: Query<&LspClient, (With<CodeEditor>, Changed<LspClien
 /// The input system doesn't emit CompletionRequested yet, so this bridges
 /// the gap by watching for content changes and firing completion at the cursor.
 fn auto_request_completion(
-    editor_query: Query<(&CursorState, Ref<TextBuffer>), With<CodeEditor>>,
+    editor_query: Query<(&CursorState, Ref<TextBuffer<RopeBuffer>>), With<CodeEditor>>,
     mut writer: MessageWriter<bevscode::types::events::CompletionRequested>,
 ) {
     let Ok((cursor, buffer)) = editor_query.single() else {
@@ -1173,7 +1218,7 @@ fn auto_request_completion(
         return;
     }
 
-    let cursor_pos = cursor.cursor_pos.min(buffer.rope.len_chars());
+    let cursor_pos = cursor.cursor_pos.min(buffer.rope().len_chars());
     if cursor_pos == 0 {
         return;
     }
