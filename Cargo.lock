@@ -573,7 +573,7 @@ dependencies = [
  "bevscode",
  "bevy",
  "bevy_instanced_text",
- "bevy_instanced_text_edit",
+ "bevy_text_interaction",
  "crossbeam-channel",
  "leafwing-input-manager",
  "libc",

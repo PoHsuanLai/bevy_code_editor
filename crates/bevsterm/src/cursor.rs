@@ -1,20 +1,20 @@
 //! Push the terminal caret into the engine's `TextViewOverlays`.
 //!
-//! Reuses [`bevy_instanced_text_edit::caret_overlay`] so blink + shape match the
+//! Reuses [`bevy_text_interaction::caret_overlay`] so blink + shape match the
 //! editor. Drains z=1 caret rects from prior frames before pushing fresh
 //! ones (same convention the editor uses).
 
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy_instanced_text::{MonoCellWidth, TextViewOverlays};
-use bevy_instanced_text_edit::{
+use bevy_text_interaction::{
     caret_overlay, cursor_blink_visible, BlinkPhase, CursorSettings, TextCursorColor,
 };
 
 use crate::types::TerminalGridSnapshot;
 
 /// Per-terminal grid-cell cache used to detect cursor moves. Paired with
-/// [`bevy_instanced_text_edit::BlinkPhase`] on the same entity, which holds the
+/// [`bevy_text_interaction::BlinkPhase`] on the same entity, which holds the
 /// shared timestamp the blink helper reads.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
