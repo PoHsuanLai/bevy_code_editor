@@ -13,6 +13,7 @@
 //!   `.before(LayoutProduceSet)`.
 
 use crate::types::events::TextEdited;
+use bevy_instanced_text_edit::RopeBuffer;
 use bevy::prelude::*;
 use bevy::ui::ComputedNode;
 use bevy_instanced_text::{
@@ -127,7 +128,7 @@ pub(crate) fn produce_hidden_lines(mut editors: ProduceHiddenLinesQuery) {
 /// Recompute styled runs for each editor's visible buffer-line window and
 /// write them into the entity's `LineStyles` Component.
 ///
-/// On a pure content edit (only `TextBuffer` changed), only the lines
+/// On a pure content edit (only `TextBuffer<RopeBuffer>` changed), only the lines
 /// touched by the edit are re-highlighted and merged into the existing map —
 /// unchanged lines keep their cached runs. On any other change (scroll,
 /// viewport resize, theme swap, new parse tree, hidden-lines update) the
@@ -137,7 +138,7 @@ pub(crate) fn produce_line_styles(
     mut editors: Query<
         (
             Entity,
-            &TextBuffer,
+            &TextBuffer<RopeBuffer>,
             &ScrollState,
             &ComputedNode,
             &TextFont,
@@ -155,7 +156,7 @@ pub(crate) fn produce_line_styles(
     >,
     #[cfg(feature = "tree-sitter")] content_changed: Query<
         Entity,
-        (With<CodeEditor>, Changed<TextBuffer>),
+        (With<CodeEditor>, Changed<TextBuffer<RopeBuffer>>),
     >,
     // Full viewport rebuild: layout/theme/viewport changes that invalidate
     // the entire visible window. Does NOT include Changed<SyntaxTree> —
@@ -181,7 +182,7 @@ pub(crate) fn produce_line_styles(
     >,
     #[cfg(not(feature = "tree-sitter"))] content_changed: Query<
         Entity,
-        (With<CodeEditor>, Changed<TextBuffer>),
+        (With<CodeEditor>, Changed<TextBuffer<RopeBuffer>>),
     >,
     #[cfg(not(feature = "tree-sitter"))] full_rebuild_changed: Query<
         Entity,
@@ -289,14 +290,14 @@ pub(crate) fn produce_line_styles(
         let text_area_top = computed.content_inset().min_inset.y * inv;
         let wrap = wrap.copied().unwrap_or_default();
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
-        let range = visible_buffer_range(buffer, scroll, viewport_height, text_area_top, line_height, mono.px, wrap, hidden);
+        let range = visible_buffer_range(&**buffer, scroll, viewport_height, text_area_top, line_height, mono.px, wrap, hidden);
         if range.start >= range.end {
             *line_styles = LineStyles::new(HashMap::new(), 0..0);
             dirty_lines.remove(&entity);
             continue;
         }
 
-        let total_lines = buffer.line_count();
+        let total_lines = buffer.len_lines();
 
         // Determine which lines to (re)highlight this frame.
         // `None` = full rebuild. Content edits without a matching edit event
@@ -350,9 +351,9 @@ pub(crate) fn produce_line_styles(
                     continue;
                 }
             }
-            let line_text: String = buffer.rope.line(buffer_line).to_string();
+            let line_text: String = buffer.line(buffer_line).to_string();
             let line_no_nl = line_text.strip_suffix('\n').unwrap_or(&line_text);
-            let start_byte = buffer.rope.line_to_byte(buffer_line);
+            let start_byte = buffer.line_to_byte(buffer_line);
 
             let _hl_span = bevy::prelude::info_span!("highlight_line").entered();
             let mut per_line = {
@@ -363,7 +364,7 @@ pub(crate) fn produce_line_styles(
                             line_no_nl,
                             start_byte,
                             st,
-                            &buffer.rope,
+                            buffer.rope(),
                             syntax_theme,
                             theme.foreground,
                         )

@@ -43,7 +43,7 @@
 //! ```rust,no_run
 //! use bevy::prelude::*;
 //! use bevy_instanced_text::prelude::*;
-//! use bevy_instanced_text_edit::InstancedTextEditPlugin;
+//! use bevy_instanced_text_edit::{InstancedTextEditPlugin, RopeBuffer};
 //!
 //! App::new()
 //!     .add_plugins(DefaultPlugins)
@@ -52,7 +52,7 @@
 //!     .add_systems(Startup, |mut commands: Commands| {
 //!         commands.spawn((
 //!             bevy_instanced_text_edit::TextEditor,
-//!             TextBuffer::new("edit me"),
+//!             TextBuffer::new(RopeBuffer::new("edit me")),
 //!             TextFont::default(),
 //!         ));
 //!     })
@@ -61,6 +61,7 @@
 
 pub mod anchor;
 pub mod clipboard;
+pub mod rope_content;
 pub mod components;
 pub mod cursor_movement;
 pub mod cursor_settings;
@@ -78,6 +79,7 @@ pub mod theme;
 pub mod typing;
 
 pub use anchor::{Anchor, AnchorBias, AnchorSet, TextEdit};
+pub use rope_content::RopeBuffer;
 #[cfg(feature = "arboard")]
 pub use clipboard::SystemClipboard;
 pub use clipboard::{ClipboardProvider, ClipboardResource, NullClipboard};

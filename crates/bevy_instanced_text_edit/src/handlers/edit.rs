@@ -7,6 +7,7 @@
 //! their indentation policy is non-default.
 
 use crate::editing_events::*;
+use crate::rope_content::RopeBuffer;
 use crate::history::EditKind;
 use crate::state::{CursorState, EditHistoryState, IndentConfig, SelectionState, TextEditor};
 use bevy::input_focus::InputFocus;
@@ -20,7 +21,7 @@ type EditorBufQuery<'w, 's> = Query<
         &'static mut SelectionState,
         &'static mut EditHistoryState,
         &'static mut CursorState,
-        &'static mut TextBuffer,
+        &'static mut TextBuffer<RopeBuffer>,
     ),
     With<TextEditor>,
 >;
@@ -32,7 +33,7 @@ type EditorSetTextQuery<'w, 's> = Query<
         &'static mut SelectionState,
         &'static mut EditHistoryState,
         &'static mut CursorState,
-        &'static mut TextBuffer,
+        &'static mut TextBuffer<RopeBuffer>,
         &'static mut ContentMetrics,
     ),
     With<TextEditor>,
@@ -45,7 +46,7 @@ pub fn insert_char(
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
     cursor: &mut CursorState,
-    buffer: &mut TextBuffer,
+    buffer: &mut TextBuffer<RopeBuffer>,
     c: char,
 ) {
     if sel.selections.primary().has_selection() {
@@ -59,7 +60,7 @@ pub fn delete_selection(
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
     cursor: &mut CursorState,
-    buffer: &mut TextBuffer,
+    buffer: &mut TextBuffer<RopeBuffer>,
 ) {
     let Some((start, end)) = sel.primary_range() else {
         return;
@@ -249,10 +250,10 @@ pub fn delete_word_backward(
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
     cursor: &mut CursorState,
-    buffer: &mut TextBuffer,
+    buffer: &mut TextBuffer<RopeBuffer>,
 ) {
     let word_start =
-        crate::cursor_movement::find_word_boundary_left(&buffer.rope, cursor.cursor_pos);
+        crate::cursor_movement::find_word_boundary_left(buffer.rope(), cursor.cursor_pos);
     if word_start >= cursor.cursor_pos {
         return;
     }
@@ -273,10 +274,10 @@ pub fn delete_word_forward(
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
     cursor: &mut CursorState,
-    buffer: &mut TextBuffer,
+    buffer: &mut TextBuffer<RopeBuffer>,
 ) {
     let word_end =
-        crate::cursor_movement::find_word_boundary_right(&buffer.rope, cursor.cursor_pos);
+        crate::cursor_movement::find_word_boundary_right(buffer.rope(), cursor.cursor_pos);
     if word_end <= cursor.cursor_pos {
         return;
     }

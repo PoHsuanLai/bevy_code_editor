@@ -10,6 +10,7 @@
 //! capabilities` we'll thread that through here instead.
 
 use super::snippet;
+use bevy_instanced_text_edit::RopeBuffer;
 use super::state::{
     LspCompletionPopup, LspDebounceTimers, LspDidChangeBatcher, LspRenamePopup,
     LspSignatureHelpPopup, PendingLspRequest, SessionTabstop, TabstopSession,
@@ -33,7 +34,7 @@ type CompletionRequestQuery<'w, 's> = Query<
     'w,
     's,
     (
-        &'static TextBuffer,
+        &'static TextBuffer<RopeBuffer>,
         Option<&'static LspDocument>,
         &'static bevy_lsp::ServerCapabilities,
         &'static mut LspDebounceTimers,
@@ -46,7 +47,7 @@ type HoverRequestQuery<'w, 's> = Query<
     'w,
     's,
     (
-        &'static TextBuffer,
+        &'static TextBuffer<RopeBuffer>,
         Option<&'static LspDocument>,
         &'static bevy_lsp::ServerCapabilities,
         &'static mut LspDebounceTimers,
@@ -60,7 +61,7 @@ type RenameRequestQuery<'w, 's> = Query<
     's,
     (
         Entity,
-        &'static TextBuffer,
+        &'static TextBuffer<RopeBuffer>,
         Option<&'static LspDocument>,
         &'static bevy_lsp::ServerCapabilities,
         &'static mut LspRenamePopup,
@@ -73,7 +74,7 @@ type SignatureHelpRequestQuery<'w, 's> = Query<
     's,
     (
         Entity,
-        &'static TextBuffer,
+        &'static TextBuffer<RopeBuffer>,
         Option<&'static LspDocument>,
         &'static bevy_lsp::ServerCapabilities,
         &'static mut LspSignatureHelpPopup,
@@ -88,7 +89,7 @@ type ApplyCompletionQuery<'w, 's> = Query<
         &'static mut bevy_instanced_text_edit::SelectionState,
         &'static mut bevy_instanced_text_edit::EditHistoryState,
         &'static mut CursorState,
-        &'static mut TextBuffer,
+        &'static mut TextBuffer<RopeBuffer>,
         &'static mut LspCompletionPopup,
         &'static mut TabstopSession,
     ),
@@ -109,7 +110,7 @@ pub fn listen_text_edit_events(
     mut events: MessageReader<TextEdited>,
     mut query: Query<
         (
-            &TextBuffer,
+            &TextBuffer<RopeBuffer>,
             &bevy_lsp::ServerCapabilities,
             &mut LspDidChangeBatcher,
             &LspConfig,
@@ -136,8 +137,8 @@ pub fn listen_text_edit_events(
         let new_text = if delta.start_byte == delta.new_end_byte {
             String::new()
         } else {
-            let new_start_char = buffer.rope.byte_to_char(delta.start_byte);
-            let new_end_char = buffer.rope.byte_to_char(delta.new_end_byte);
+            let new_start_char = buffer.byte_to_char(delta.start_byte);
+            let new_end_char = buffer.byte_to_char(delta.new_end_byte);
             buffer
                 .rope
                 .slice(new_start_char..new_end_char)
@@ -174,7 +175,7 @@ pub fn listen_completion_requests(
     for event in events.read() {
         debounce.pending_completion = Some(PendingLspRequest {
             uri: lsp_document.uri.clone(),
-            position: rope_char_to_lsp_position(&buffer.rope, event.cursor_char, enc),
+            position: rope_char_to_lsp_position(buffer.rope(), event.cursor_char, enc),
         });
         debounce
             .completion_timer
@@ -199,7 +200,7 @@ pub fn listen_hover_requests(
     for event in events.read() {
         debounce.pending_hover = Some(PendingLspRequest {
             uri: lsp_document.uri.clone(),
-            position: rope_char_to_lsp_position(&buffer.rope, event.cursor_char, enc),
+            position: rope_char_to_lsp_position(buffer.rope(), event.cursor_char, enc),
         });
         debounce
             .hover_timer
@@ -221,7 +222,7 @@ pub fn listen_rename_requests(
     };
     let enc = caps.position_encoding();
     for event in events.read() {
-        let position = rope_char_to_lsp_position(&buffer.rope, event.cursor_char, enc);
+        let position = rope_char_to_lsp_position(buffer.rope(), event.cursor_char, enc);
         rename_state.start_prepare(position);
         lsp_w.write(LspRequest {
             entity,
@@ -252,7 +253,7 @@ pub fn listen_signature_help_requests(
             entity,
             msg: LspMessage::SignatureHelp {
                 uri: lsp_document.uri.clone(),
-                position: rope_char_to_lsp_position(&buffer.rope, event.cursor_char, enc),
+                position: rope_char_to_lsp_position(buffer.rope(), event.cursor_char, enc),
                 id: sig_help_state.request_id,
             },
         });
@@ -336,7 +337,7 @@ pub fn drive_completion_resolve(
 /// (clicked elsewhere, typed `;` / `(` / space, hit Backspace past the
 /// anchor) hides the menu immediately.
 pub fn dismiss_completion_on_cursor_move(
-    mut query: Query<(Ref<CursorState>, &TextBuffer, &mut LspCompletionPopup), With<CodeEditor>>,
+    mut query: Query<(Ref<CursorState>, &TextBuffer<RopeBuffer>, &mut LspCompletionPopup), With<CodeEditor>>,
 ) {
     let Ok((cursor, buffer, mut completion_state)) = query.single_mut() else {
         return;
@@ -347,8 +348,8 @@ pub fn dismiss_completion_on_cursor_move(
     let start = completion_state.start_char_index;
     let pos = cursor.cursor_pos;
     let is_word = |c: char| c.is_alphanumeric() || c == '_';
-    let in_anchor_range = pos >= start && pos <= buffer.rope.len_chars();
-    let prev_is_word = pos > 0 && is_word(buffer.rope.char(pos - 1));
+    let in_anchor_range = pos >= start && pos <= buffer.len_chars();
+    let prev_is_word = pos > 0 && is_word(buffer.char(pos - 1));
     if !in_anchor_range || !prev_is_word {
         completion_state.dismiss();
     }
@@ -420,7 +421,7 @@ pub fn advance_tabstop_session(
             &mut bevy_instanced_text_edit::SelectionState,
             &mut bevy_instanced_text_edit::EditHistoryState,
             &mut CursorState,
-            &TextBuffer,
+            &TextBuffer<RopeBuffer>,
             &mut TabstopSession,
         ),
         With<CodeEditor>,
@@ -468,8 +469,8 @@ pub fn advance_tabstop_session(
     }
     session.current = next;
     let stop = session.stops[next].clone();
-    let s = hist.resolve_anchor(&buffer.rope, &stop.start);
-    let e = hist.resolve_anchor(&buffer.rope, &stop.end);
+    let s = hist.resolve_anchor(buffer.rope(), &stop.start);
+    let e = hist.resolve_anchor(buffer.rope(), &stop.end);
     cursor.cursor_pos = e;
     if s != e {
         sel.selections = bevy_instanced_text_edit::SelectionCollection::with_selection(e, s);
@@ -485,7 +486,7 @@ pub fn end_tabstop_session_on_cursor_leave(
     mut query: Query<
         (
             Ref<CursorState>,
-            &TextBuffer,
+            &TextBuffer<RopeBuffer>,
             &mut bevy_instanced_text_edit::EditHistoryState,
             &mut TabstopSession,
         ),
@@ -503,8 +504,8 @@ pub fn end_tabstop_session_on_cursor_leave(
     let mut min_start = usize::MAX;
     let mut max_end = 0;
     for stop in session.stops.iter().skip(session.current) {
-        let s = hist.resolve_anchor(&buffer.rope, &stop.start);
-        let e = hist.resolve_anchor(&buffer.rope, &stop.end);
+        let s = hist.resolve_anchor(buffer.rope(), &stop.start);
+        let e = hist.resolve_anchor(buffer.rope(), &stop.end);
         min_start = min_start.min(s);
         max_end = max_end.max(e);
     }
@@ -535,9 +536,9 @@ pub fn listen_apply_completion(
         }
         let item = &filtered[event.item_index];
 
-        let cursor_pos = cursor_state.cursor_pos.min(buffer.rope.len_chars());
-        let line = buffer.rope.char_to_line(cursor_pos);
-        let line_start = buffer.rope.line_to_char(line);
+        let cursor_pos = cursor_state.cursor_pos.min(buffer.len_chars());
+        let line = buffer.char_to_line(cursor_pos);
+        let line_start = buffer.line_to_char(line);
         let start_pos = completion_state
             .start_char_index
             .max(line_start)
@@ -585,12 +586,12 @@ pub fn listen_apply_completion(
                     let abs_start = inserted_start + stop.start;
                     let abs_end = inserted_start + stop.end;
                     let start_anchor = hist.create_anchor(
-                        &buffer.rope,
+                        buffer.rope(),
                         abs_start,
                         bevy_instanced_text_edit::AnchorBias::Left,
                     );
                     let end_anchor = hist.create_anchor(
-                        &buffer.rope,
+                        buffer.rope(),
                         abs_end,
                         bevy_instanced_text_edit::AnchorBias::Right,
                     );
@@ -605,8 +606,8 @@ pub fn listen_apply_completion(
                 // Move cursor to first tabstop and select its placeholder
                 // range (if any).
                 if let Some(first) = session.stops.first() {
-                    let s = hist.resolve_anchor(&buffer.rope, &first.start);
-                    let e = hist.resolve_anchor(&buffer.rope, &first.end);
+                    let s = hist.resolve_anchor(buffer.rope(), &first.start);
+                    let e = hist.resolve_anchor(buffer.rope(), &first.end);
                     cursor_state.cursor_pos = e;
                     if s != e {
                         sel.selections =

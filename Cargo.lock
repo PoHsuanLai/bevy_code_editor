@@ -579,7 +579,6 @@ dependencies = [
  "libc",
  "parking_lot",
  "portable-pty",
- "ropey",
  "serde",
  "termwiz",
  "wezterm-surface",
@@ -1231,7 +1230,6 @@ dependencies = [
  "bitflags 2.10.0",
  "bytemuck",
  "cosmic-text 0.12.1",
- "ropey",
  "swash 0.1.19",
 ]
 

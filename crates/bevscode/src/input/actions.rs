@@ -2,6 +2,7 @@
 //! handlers — bracket auto-close predicates and LSP completion glue.
 
 use crate::text_view::TextBuffer;
+use bevy_instanced_text_edit::RopeBuffer;
 use crate::types::*;
 #[cfg(feature = "lsp")]
 use bevy::prelude::{Entity, MessageWriter};
@@ -15,10 +16,10 @@ use bevy::log::trace;
 use bevy_lsp::{LspDocument, LspMessage, LspRequest};
 
 /// Insert a closing bracket / quote without moving the cursor (auto-close).
-pub fn insert_closing_char(cursor: &CursorState, buffer: &mut TextBuffer, c: char) {
-    let cursor_pos = cursor.cursor_pos.min(buffer.rope.len_chars());
-    buffer.rope.insert_char(cursor_pos, c);
-    buffer.content_version += 1;
+pub fn insert_closing_char(cursor: &CursorState, buffer: &mut TextBuffer<RopeBuffer>, c: char) {
+    let cursor_pos = cursor.cursor_pos.min(buffer.len_chars());
+    buffer.insert_char(cursor_pos, c);
+    // Mutation through DerefMut auto-bumps Bevy's change detection.
 }
 
 /// Get the closing bracket for an opening bracket.

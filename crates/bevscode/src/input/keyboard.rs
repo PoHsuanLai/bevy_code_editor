@@ -13,6 +13,7 @@
 
 #[cfg(feature = "lsp")]
 use super::actions::{find_word_start, request_completion, update_completion_filter};
+use bevy_instanced_text_edit::RopeBuffer;
 use super::actions::{
     get_closing_bracket, get_closing_quote, insert_closing_char, should_skip_auto_close,
 };
@@ -65,7 +66,7 @@ pub fn on_focused_keyboard(
             &mut SelectionState,
             &mut EditHistoryState,
             &mut CursorState,
-            &mut crate::text_view::TextBuffer,
+            &mut crate::text_view::TextBuffer<RopeBuffer>,
             &BracketConfig,
         ),
         With<CodeEditor>,
@@ -200,7 +201,7 @@ fn insert_typed_char(
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
     cursor: &mut CursorState,
-    buffer: &mut crate::text_view::TextBuffer,
+    buffer: &mut crate::text_view::TextBuffer<RopeBuffer>,
     brackets: &BracketConfig,
     #[cfg(feature = "lsp")] lsp: &LspConfig,
     #[cfg(feature = "lsp")] entity: Entity,
@@ -212,15 +213,15 @@ fn insert_typed_char(
 ) {
     if brackets.auto_close_quotes
         && get_closing_quote(c).is_some()
-        && should_skip_auto_close(cursor, &buffer.rope, c)
+        && should_skip_auto_close(cursor, buffer.rope(), c)
     {
-        move_cursor(cursor, &buffer.rope, 1);
+        move_cursor(cursor, buffer.rope(), 1);
         return;
     }
     if brackets.auto_close {
         let is_closing_bracket = brackets.pairs.iter().any(|(_, close)| *close == c);
-        if is_closing_bracket && should_skip_auto_close(cursor, &buffer.rope, c) {
-            move_cursor(cursor, &buffer.rope, 1);
+        if is_closing_bracket && should_skip_auto_close(cursor, buffer.rope(), c) {
+            move_cursor(cursor, buffer.rope(), 1);
             return;
         }
     }
@@ -237,7 +238,7 @@ fn insert_typed_char(
             let should_close = if c == '\'' {
                 let cur_pos = cursor.cursor_pos;
                 if cur_pos >= 2 {
-                    !buffer.rope.char(cur_pos - 2).is_alphanumeric()
+                    !buffer.char(cur_pos - 2).is_alphanumeric()
                 } else {
                     true
                 }
@@ -264,7 +265,7 @@ fn insert_typed_char(
             let in_completion_context = match syntax_tree.and_then(|st| st.tree.as_ref()) {
                 #[cfg(feature = "tree-sitter")]
                 Some(tree) => {
-                    let byte = buffer.rope.char_to_byte(cursor_pos);
+                    let byte = buffer.char_to_byte(cursor_pos);
                     crate::plugin::syntax_highlighting::EditorSyntaxState::is_completion_context(
                         tree, byte,
                     )
@@ -291,7 +292,7 @@ fn insert_typed_char(
                 } else if cursor_pos >= trigger.len() {
                     let start = cursor_pos - trigger.len();
                     let recent_text: String =
-                        buffer.rope.slice(start..cursor_pos).chars().collect();
+                        buffer.slice(start..cursor_pos).chars().collect();
                     if recent_text == *trigger {
                         is_trigger = true;
                         break;
@@ -304,23 +305,23 @@ fn insert_typed_char(
                 request_completion(
                     entity,
                     cursor,
-                    &buffer.rope,
+                    buffer.rope(),
                     completion_state,
                     lsp_document.as_deref(),
                     &mut lsp_w,
                 );
             } else if (c.is_alphanumeric() || c == '_') && in_completion_context {
                 if completion_state.visible {
-                    update_completion_filter(cursor, &buffer.rope, completion_state);
+                    update_completion_filter(cursor, buffer.rope(), completion_state);
                 } else {
-                    let word_start = find_word_start(&buffer.rope, cursor.cursor_pos);
+                    let word_start = find_word_start(buffer.rope(), cursor.cursor_pos);
                     let word_len = cursor.cursor_pos - word_start;
                     if word_len >= lsp.completion.min_word_length {
                         completion_state.start_char_index = word_start;
                         request_completion(
                             entity,
                             cursor,
-                            &buffer.rope,
+                            buffer.rope(),
                             completion_state,
                             lsp_document.as_deref(),
                             &mut lsp_w,

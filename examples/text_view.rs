@@ -12,7 +12,7 @@ use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
 use bevy_instanced_text::prelude::*;
 use bevy_instanced_text::view::snapshot::StyleRun;
-use bevy_instanced_text::TextFont;
+use bevy::text::TextFont;
 
 fn main() {
     let mut app = App::new();
@@ -198,8 +198,7 @@ fn setup_text_view(
     let line_styles = LineStyles::new(by_line, 0..line_count);
 
     commands.spawn((
-        TextView,
-        TextBuffer::new(&full_text),
+        TextBuffer::new(bevy_instanced_text::TextSpan::new(full_text.clone())),
         line_styles,
         TextFont::from_font_size(16.0)
             .with_font(asset_server.load("fonts/FiraMono-Regular.ttf")),
@@ -217,7 +216,7 @@ fn setup_text_view(
 
 /// Handle mouse wheel scrolling for the text view
 fn handle_scroll(
-    mut text_views: Query<&mut ScrollState, With<TextView>>,
+    mut text_views: Query<&mut ScrollState, With<bevy_instanced_text::DisplayLayout>>,
     mut mouse_wheel: MessageReader<bevy::input::mouse::MouseWheel>,
 ) {
     let scroll_speed = 40.0;

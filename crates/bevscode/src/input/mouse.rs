@@ -20,6 +20,7 @@
 //! click land on the right buffer line.
 
 use crate::settings::GutterConfig;
+use bevy_instanced_text_edit::RopeBuffer;
 use crate::text_view::{ScrollState, TextBuffer};
 use crate::types::*;
 #[cfg(feature = "lsp")]
@@ -37,7 +38,7 @@ type AltClickQuery<'w, 's> = Query<
     (
         &'static mut SelectionState,
         &'static mut CursorState,
-        &'static TextBuffer,
+        &'static TextBuffer<RopeBuffer>,
         &'static ScrollState,
         &'static ComputedNode,
         &'static FoldState,
@@ -54,7 +55,7 @@ type CtrlClickQuery<'w, 's> = Query<
     'w,
     's,
     (
-        &'static TextBuffer,
+        &'static TextBuffer<RopeBuffer>,
         &'static ScrollState,
         &'static ComputedNode,
         &'static FoldState,
@@ -71,7 +72,7 @@ type HoverMoveQuery<'w, 's> = Query<
     'w,
     's,
     (
-        &'static TextBuffer,
+        &'static TextBuffer<RopeBuffer>,
         &'static ScrollState,
         &'static ComputedNode,
         &'static FoldState,
@@ -217,7 +218,7 @@ pub fn on_alt_click(
     let char_pos = screen_to_char_pos(
         local_pos,
         &HitTestCtx {
-            rope: &buffer.rope,
+            rope: buffer.rope(),
             layout,
             mono,
             line_height: bevy_instanced_text::resolve_line_height(*lh, font.font_size),
@@ -273,7 +274,7 @@ pub fn on_ctrl_click_goto_definition(
     let char_pos = screen_to_char_pos(
         local_pos,
         &HitTestCtx {
-            rope: &buffer.rope,
+            rope: buffer.rope(),
             layout,
             mono,
             line_height: bevy_instanced_text::resolve_line_height(*lh, font.font_size),
@@ -285,7 +286,7 @@ pub fn on_ctrl_click_goto_definition(
     );
 
     let lsp_position = bevy_lsp::rope_char_to_lsp_position(
-        &buffer.rope,
+        buffer.rope(),
         char_pos,
         bevy_lsp::PositionEncoding::Utf16,
     );
@@ -340,7 +341,7 @@ pub fn on_pointer_move_for_hover(
     let char_pos = screen_to_char_pos(
         local_pos,
         &HitTestCtx {
-            rope: &buffer.rope,
+            rope: buffer.rope(),
             layout,
             mono,
             line_height,
@@ -382,7 +383,7 @@ pub fn on_pointer_out_for_hover(
 /// Editor crate only; under `feature = "lsp"`.
 #[cfg(feature = "lsp")]
 pub fn tick_lsp_hover_timer(
-    editor_query: Query<&TextBuffer, With<CodeEditor>>,
+    editor_query: Query<&TextBuffer<RopeBuffer>, With<CodeEditor>>,
     mut state_query: Query<
         (
             Entity,
@@ -408,13 +409,13 @@ pub fn tick_lsp_hover_timer(
         let Some(doc) = lsp_document else { continue };
 
         // Clamp to last char of line (exclude newline).
-        let current_char_pos = hover_state.trigger_char_index.min(buffer.rope.len_chars());
-        let line_index = buffer.rope.char_to_line(current_char_pos);
-        let line_start = buffer.rope.line_to_char(line_index);
-        let line_len = buffer.rope.line(line_index).len_chars();
+        let current_char_pos = hover_state.trigger_char_index.min(buffer.len_chars());
+        let line_index = buffer.char_to_line(current_char_pos);
+        let line_start = buffer.line_to_char(line_index);
+        let line_len = buffer.line(line_index).len_chars();
         let clamped = line_start + (current_char_pos - line_start).min(line_len.saturating_sub(1));
         let lsp_position = bevy_lsp::rope_char_to_lsp_position(
-            &buffer.rope,
+            buffer.rope(),
             clamped,
             bevy_lsp::PositionEncoding::Utf16,
         );

@@ -5,6 +5,7 @@
 //! via [`crate::clipboard::ClipboardResource`].
 
 use crate::clipboard::ClipboardResource;
+use crate::rope_content::RopeBuffer;
 use crate::editing_events::*;
 use crate::history::EditKind;
 use crate::state::{CursorState, EditHistoryState, SelectionState, TextEditor};
@@ -16,7 +17,7 @@ pub fn handle_copy(
     mut events: MessageReader<CopyRequested>,
     input_focus: Res<InputFocus>,
     clipboard: Res<ClipboardResource>,
-    q: Query<(&SelectionState, &TextBuffer), With<TextEditor>>,
+    q: Query<(&SelectionState, &TextBuffer<RopeBuffer>), With<TextEditor>>,
 ) {
     if events.read().next().is_none() {
         return;
@@ -28,9 +29,9 @@ pub fn handle_copy(
         return;
     };
     if let Some((start, end)) = sel.primary_range() {
-        let start = start.min(buffer.rope.len_chars());
-        let end = end.min(buffer.rope.len_chars());
-        let text = buffer.rope.slice(start..end).to_string();
+        let start = start.min(buffer.len_chars());
+        let end = end.min(buffer.len_chars());
+        let text = buffer.slice(start..end).to_string();
         clipboard.set_text(&text);
     }
 }
@@ -44,7 +45,7 @@ pub fn handle_cut(
             &mut SelectionState,
             &mut EditHistoryState,
             &mut CursorState,
-            &mut TextBuffer,
+            &mut TextBuffer<RopeBuffer>,
         ),
         With<TextEditor>,
     >,
@@ -62,8 +63,7 @@ pub fn handle_cut(
         return;
     };
     let selected_text = buffer
-        .rope
-        .slice(start.min(buffer.rope.len_chars())..end.min(buffer.rope.len_chars()))
+        .slice(start.min(buffer.len_chars())..end.min(buffer.len_chars()))
         .to_string();
 
     clipboard.set_text(&selected_text);
@@ -82,7 +82,7 @@ pub fn handle_paste(
             &mut SelectionState,
             &mut EditHistoryState,
             &mut CursorState,
-            &mut TextBuffer,
+            &mut TextBuffer<RopeBuffer>,
         ),
         With<TextEditor>,
     >,

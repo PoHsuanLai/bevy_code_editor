@@ -9,6 +9,7 @@ use crate::cursor_movement::{
     move_cursor, move_cursor_down, move_cursor_line_end, move_cursor_line_start, move_cursor_lines,
     move_cursor_up, move_cursor_word_left, move_cursor_word_right,
 };
+use crate::rope_content::RopeBuffer;
 use crate::editing_events::*;
 use crate::state::{CursorState, SelectionState, TextEditor};
 use bevy::input_focus::InputFocus;
@@ -22,7 +23,7 @@ type EditorView<'w, 's> = Query<
     (
         &'static mut SelectionState,
         &'static mut CursorState,
-        &'static TextBuffer,
+        &'static TextBuffer<RopeBuffer>,
     ),
     With<TextEditor>,
 >;
@@ -45,7 +46,7 @@ pub fn handle_move_cursor_left(
     let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor(&mut cursor, &buffer.rope, -1);
+    move_cursor(&mut cursor, buffer.rope(), -1);
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -63,7 +64,7 @@ pub fn handle_move_cursor_right(
     let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor(&mut cursor, &buffer.rope, 1);
+    move_cursor(&mut cursor, buffer.rope(), 1);
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -81,7 +82,7 @@ pub fn handle_move_cursor_up(
     let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor_up(&mut cursor, &buffer.rope);
+    move_cursor_up(&mut cursor, buffer.rope());
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -99,7 +100,7 @@ pub fn handle_move_cursor_down(
     let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor_down(&mut cursor, &buffer.rope);
+    move_cursor_down(&mut cursor, buffer.rope());
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -117,7 +118,7 @@ pub fn handle_move_cursor_word_left(
     let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor_word_left(&mut cursor, &buffer.rope);
+    move_cursor_word_left(&mut cursor, buffer.rope());
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -135,7 +136,7 @@ pub fn handle_move_cursor_word_right(
     let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor_word_right(&mut cursor, &buffer.rope);
+    move_cursor_word_right(&mut cursor, buffer.rope());
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -153,7 +154,7 @@ pub fn handle_move_cursor_line_start(
     let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor_line_start(&mut cursor, &buffer.rope);
+    move_cursor_line_start(&mut cursor, buffer.rope());
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -171,7 +172,7 @@ pub fn handle_move_cursor_line_end(
     let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor_line_end(&mut cursor, &buffer.rope);
+    move_cursor_line_end(&mut cursor, buffer.rope());
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -207,7 +208,7 @@ pub fn handle_move_cursor_document_end(
     let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
         return;
     };
-    cursor.cursor_pos = buffer.rope.len_chars();
+    cursor.cursor_pos = buffer.len_chars();
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -217,7 +218,7 @@ type PagingView<'w, 's> = Query<
     (
         &'static mut SelectionState,
         &'static mut CursorState,
-        &'static TextBuffer,
+        &'static TextBuffer<RopeBuffer>,
         &'static ComputedNode,
         &'static TextFont,
         &'static bevy::text::LineHeight,
@@ -252,7 +253,7 @@ pub fn handle_move_cursor_page_up(
     let Ok((mut sel, mut cursor, buffer, computed, font, lh, _mono)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor_lines(&mut cursor, &buffer.rope, -page_lines(computed, bevy_instanced_text::resolve_line_height(*lh, font.font_size)));
+    move_cursor_lines(&mut cursor, buffer.rope(), -page_lines(computed, bevy_instanced_text::resolve_line_height(*lh, font.font_size)));
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -270,6 +271,6 @@ pub fn handle_move_cursor_page_down(
     let Ok((mut sel, mut cursor, buffer, computed, font, lh, _mono)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor_lines(&mut cursor, &buffer.rope, page_lines(computed, bevy_instanced_text::resolve_line_height(*lh, font.font_size)));
+    move_cursor_lines(&mut cursor, buffer.rope(), page_lines(computed, bevy_instanced_text::resolve_line_height(*lh, font.font_size)));
     sel.apply_primary_cursor(&cursor);
 }

@@ -7,7 +7,7 @@
 //!   (the compiled query + cursor). No Arc, no RwLock — it's an ordinary ECS
 //!   component queried directly by the systems that need it.
 //! - `EditorParseSource` / `EditorBufferSnapshot`: bridge between the editor's
-//!   `TextBuffer` and `bevy_tree_sitter`'s `ParseSource` trait. Drives async parses.
+//!   `TextBuffer<RopeBuffer>` and `bevy_tree_sitter`'s `ParseSource` trait. Drives async parses.
 //! - [`init_editor_syntax`]: startup system that attaches `EditorSyntaxState` +
 //!   `ParseSourceComp` + `SyntaxTree` and configures the provider's highlights
 //!   query from a `TreeSitterGrammar` component when one is present.
@@ -17,6 +17,7 @@
 
 #[cfg(feature = "tree-sitter")]
 use crate::text_view::TextBuffer;
+use bevy_instanced_text_edit::RopeBuffer;
 use crate::types::CodeEditor;
 use crate::types::LineSegment;
 use bevy::prelude::*;
@@ -47,7 +48,7 @@ type ReactLanguageChangedQuery<'w, 's> = Query<
 type SyncEditorParseSourceQuery<'w, 's> = Query<
     'w,
     's,
-    (&'static TextBuffer, &'static EditorParseBufferRef),
+    (Ref<'static, TextBuffer<RopeBuffer>>, &'static EditorParseBufferRef),
     With<CodeEditor>,
 >;
 
@@ -368,16 +369,18 @@ pub(crate) fn react_language_changed(mut editors: ReactLanguageChangedQuery) {
 }
 
 #[cfg(feature = "tree-sitter")]
-/// Mirror `TextBuffer.rope` + `content_version` into the per-entity
-/// `EditorBufferSnapshot` so the next `parse_dirty` tick sees the latest content.
+/// Mirror `TextBuffer<RopeBuffer>` into the per-entity `EditorBufferSnapshot`
+/// so the next `parse_dirty` tick sees the latest content. Bumps an internal
+/// `content_version` counter on every change so `ParseSource::content_version`
+/// keeps returning a strictly-increasing value (tree-sitter cache key).
 pub(crate) fn sync_editor_parse_source(editors: SyncEditorParseSourceQuery) {
     for (buffer, buf_ref) in editors.iter() {
-        let mut buf = buf_ref.0.write().unwrap();
-        if buf.content_version == buffer.content_version {
+        if !buffer.is_changed() {
             continue;
         }
-        buf.rope = buffer.rope.clone();
-        buf.content_version = buffer.content_version;
+        let mut buf = buf_ref.0.write().unwrap();
+        buf.rope = buffer.rope().clone();
+        buf.content_version = buf.content_version.wrapping_add(1);
     }
 }
 

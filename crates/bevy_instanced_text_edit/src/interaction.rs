@@ -6,6 +6,7 @@
 //! so `ComputedNode::contains_point` handles it for free.
 
 use bevy::input::keyboard::{KeyCode, KeyboardInput};
+use crate::rope_content::RopeBuffer;
 use bevy::input::mouse::MouseScrollUnit;
 use bevy::input::ButtonState;
 use bevy::input_focus::{FocusedInput, InputFocus};
@@ -16,7 +17,7 @@ use bevy::ui::ui_transform::UiGlobalTransform;
 use ropey::Rope;
 
 use bevy::ui::ComputedNode;
-use bevy_instanced_text::{ContentMetrics, DisplayLayout, MonoCellWidth, ScrollState, TextBuffer, TextView};
+use bevy_instanced_text::{ContentMetrics, DisplayLayout, MonoCellWidth, ScrollState, TextBuffer};
 
 use crate::components::{ScrollConfig, TextViewDragState};
 use crate::state::{CursorState, SelectionState};
@@ -25,7 +26,7 @@ type ScrollQuery<'w, 's> = Query<
     'w,
     's,
     (
-        &'static TextBuffer,
+        &'static TextBuffer<RopeBuffer>,
         &'static mut ScrollState,
         &'static ContentMetrics,
         &'static ComputedNode,
@@ -34,7 +35,7 @@ type ScrollQuery<'w, 's> = Query<
         &'static MonoCellWidth,
         Option<&'static ScrollConfig>,
     ),
-    With<TextView>,
+    With<DisplayLayout>,
 >;
 
 type PressQuery<'w, 's> = Query<
@@ -42,7 +43,7 @@ type PressQuery<'w, 's> = Query<
     's,
     (
         &'static mut TextViewDragState,
-        &'static TextBuffer,
+        &'static TextBuffer<RopeBuffer>,
         &'static ScrollState,
         &'static TextFont,
         &'static bevy::text::LineHeight,
@@ -53,7 +54,7 @@ type PressQuery<'w, 's> = Query<
         Option<&'static mut CursorState>,
         Option<&'static InteractionSettings>,
     ),
-    With<TextView>,
+    With<DisplayLayout>,
 >;
 
 type DragQuery<'w, 's> = Query<
@@ -61,7 +62,7 @@ type DragQuery<'w, 's> = Query<
     's,
     (
         &'static mut TextViewDragState,
-        &'static TextBuffer,
+        &'static TextBuffer<RopeBuffer>,
         &'static ScrollState,
         &'static TextFont,
         &'static bevy::text::LineHeight,
@@ -72,14 +73,14 @@ type DragQuery<'w, 's> = Query<
         Option<&'static mut SelectionState>,
         Option<&'static mut CursorState>,
     ),
-    With<TextView>,
+    With<DisplayLayout>,
 >;
 
 type CopyQuery<'w, 's> = Query<
     'w,
     's,
-    (&'static SelectionState, &'static TextBuffer),
-    (With<TextView>, Without<crate::state::TextEditor>),
+    (&'static SelectionState, &'static TextBuffer<RopeBuffer>),
+    (With<DisplayLayout>, Without<crate::state::TextEditor>),
 >;
 
 /// Convert screen coordinates (viewport-local, 0,0 at top-left) to a character
@@ -151,18 +152,18 @@ pub fn screen_to_char_pos(
 ///   `expand_to_lines`).
 ///
 /// Callers feed the returned string to [`crate::ClipboardResource::set_text`].
-pub fn selection_text(sel: &SelectionState, buffer: &TextBuffer) -> Option<String> {
+pub fn selection_text(sel: &SelectionState, buffer: &TextBuffer<RopeBuffer>) -> Option<String> {
     let (start, end) = sel.primary_range()?;
     let mode = sel.selections.primary().mode;
-    let len = buffer.rope.len_chars();
+    let len = buffer.len_chars();
     let start = start.min(len);
     let end = end.min(len);
     if start == end {
         return None;
     }
     let text = match mode {
-        crate::selection::SelectionMode::Block => block_slice(&buffer.rope, start, end),
-        _ => buffer.rope.slice(start..end).to_string(),
+        crate::selection::SelectionMode::Block => block_slice(buffer.rope(), start, end),
+        _ => buffer.slice(start..end).to_string(),
     };
     if text.is_empty() {
         None
@@ -177,7 +178,7 @@ pub fn selection_text(sel: &SelectionState, buffer: &TextBuffer) -> Option<Strin
 /// in hand.
 pub fn copy_selection(
     sel: &SelectionState,
-    buffer: &TextBuffer,
+    buffer: &TextBuffer<RopeBuffer>,
     clipboard: &crate::clipboard::ClipboardResource,
 ) -> bool {
     if let Some(text) = selection_text(sel, buffer) {
@@ -287,7 +288,7 @@ pub fn on_pointer_scroll(trigger: On<Pointer<Scroll>>, mut views: ScrollQuery) {
     // Vertical scroll.
     if dy.abs() > 0.0 {
         let scroll_delta = dy * v_delta_per_dy;
-        let line_count = buffer.rope.len_lines();
+        let line_count = buffer.len_lines();
         let content_height = line_count as f32 * line_height;
         let max_scroll = (-(content_height - viewport_height + text_area_top)).min(0.0);
         if scroll_cfg.smooth {
@@ -341,7 +342,7 @@ pub fn on_pointer_press(
     let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
     let char_pos = screen_to_char_pos(
         local_pos,
-        &buffer.rope,
+        buffer.rope(),
         layout,
         scroll.scroll_offset,
         mono,
@@ -399,7 +400,7 @@ pub fn on_pointer_press(
             crate::selection::SelectionMode::Semantic => {
                 let mut s = crate::selection::Selection::cursor(char_pos);
                 s.expand_semantic(
-                    &buffer.rope,
+                    buffer.rope(),
                     crate::selection::DEFAULT_SEMANTIC_ESCAPE_CHARS,
                 );
                 sel.selections.clear_secondary();
@@ -407,7 +408,7 @@ pub fn on_pointer_press(
             }
             crate::selection::SelectionMode::Line => {
                 let mut s = crate::selection::Selection::cursor(char_pos);
-                s.expand_to_lines(&buffer.rope);
+                s.expand_to_lines(buffer.rope());
                 sel.selections.clear_secondary();
                 *sel.selections.primary_mut() = s;
             }
@@ -493,7 +494,7 @@ pub fn on_pointer_drag(trigger: On<Pointer<Drag>>, mut views: DragQuery) {
     let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
     let char_pos = screen_to_char_pos(
         local_pos,
-        &buffer.rope,
+        buffer.rope(),
         layout,
         scroll.scroll_offset,
         mono,
@@ -512,12 +513,12 @@ pub fn on_pointer_drag(trigger: On<Pointer<Drag>>, mut views: DragQuery) {
             match mode {
                 crate::selection::SelectionMode::Semantic => {
                     s.expand_semantic(
-                        &buffer.rope,
+                        buffer.rope(),
                         crate::selection::DEFAULT_SEMANTIC_ESCAPE_CHARS,
                     );
                 }
                 crate::selection::SelectionMode::Line => {
-                    s.expand_to_lines(&buffer.rope);
+                    s.expand_to_lines(buffer.rope());
                 }
                 _ => {}
             }
@@ -534,7 +535,7 @@ pub fn on_pointer_drag(trigger: On<Pointer<Drag>>, mut views: DragQuery) {
 /// Release observer: clear the drag flag.
 pub fn on_pointer_release(
     trigger: On<Pointer<Release>>,
-    mut views: Query<&mut TextViewDragState, With<TextView>>,
+    mut views: Query<&mut TextViewDragState, With<DisplayLayout>>,
 ) {
     if trigger.event().button != PointerButton::Primary {
         return;

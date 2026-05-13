@@ -13,6 +13,7 @@
 //! reads live engine state.
 
 use bevy::prelude::*;
+use bevy_instanced_text_edit::RopeBuffer;
 
 use crate::settings::*;
 use crate::text_view::TextBuffer;
@@ -27,10 +28,10 @@ use super::state::{
 use bevy_lsp::CodeActionOrCommand;
 
 /// Resolve a char index into `(line, character)`.
-fn buffer_position(buffer: &TextBuffer, char_index: usize) -> (u32, u32) {
-    let char_index = char_index.min(buffer.rope.len_chars());
-    let line = buffer.rope.char_to_line(char_index);
-    let line_start = buffer.rope.line_to_char(line);
+fn buffer_position(buffer: &TextBuffer<RopeBuffer>, char_index: usize) -> (u32, u32) {
+    let char_index = char_index.min(buffer.len_chars());
+    let line = buffer.char_to_line(char_index);
+    let line_start = buffer.line_to_char(line);
     let col = char_index - line_start;
     (line as u32, col as u32)
 }
@@ -42,7 +43,7 @@ pub fn sync_completion_popup(
         (
             &LspCompletionPopup,
             &CursorState,
-            &TextBuffer,
+            &TextBuffer<RopeBuffer>,
             &TextFont,
             &bevy::text::LineHeight,
             &MonoCellWidth,
@@ -137,7 +138,7 @@ pub fn sync_completion_popup(
 /// Sync hover state to marker entity
 pub fn sync_hover_popup(
     mut commands: Commands,
-    query: Query<(&LspHoverPopup, &TextBuffer, &TextFont, &MonoCellWidth), With<CodeEditor>>,
+    query: Query<(&LspHoverPopup, &TextBuffer<RopeBuffer>, &TextFont, &MonoCellWidth), With<CodeEditor>>,
     existing: Query<Entity, With<HoverPopupData>>,
 ) {
     let Ok((hover_state, buffer, font, mono)) = query.single() else {
@@ -196,7 +197,7 @@ pub fn sync_hover_popup(
 /// Sync signature help state to marker entity
 pub fn sync_signature_help_popup(
     mut commands: Commands,
-    query: Query<(&LspSignatureHelpPopup, &CursorState, &TextBuffer, &TextFont, &MonoCellWidth), With<CodeEditor>>,
+    query: Query<(&LspSignatureHelpPopup, &CursorState, &TextBuffer<RopeBuffer>, &TextFont, &MonoCellWidth), With<CodeEditor>>,
     existing: Query<Entity, With<SignatureHelpPopupData>>,
 ) {
     let Ok((sig_state, cursor_state, buffer, font, mono)) = query.single() else {
@@ -281,7 +282,7 @@ pub fn sync_code_actions_popup(
         (
             &LspCodeActionsPopup,
             &CursorState,
-            &TextBuffer,
+            &TextBuffer<RopeBuffer>,
             &TextFont,
             &bevy::text::LineHeight,
             &MonoCellWidth,

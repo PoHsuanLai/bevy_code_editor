@@ -13,6 +13,7 @@
 #![allow(dead_code)]
 
 use crate::text_view::TextBuffer;
+use bevy_instanced_text_edit::RopeBuffer;
 use crate::types::*;
 use bevy::prelude::*;
 
@@ -51,7 +52,7 @@ type FoldDetectQuery<'w, 's> = Query<
     (
         Entity,
         &'static FoldState,
-        &'static TextBuffer,
+        &'static TextBuffer<RopeBuffer>,
         &'static bevy_tree_sitter::SyntaxTree,
     ),
     (With<CodeEditor>, Changed<bevy_tree_sitter::SyntaxTree>),
@@ -81,7 +82,7 @@ pub(crate) fn spawn_fold_detect_tasks(
         // chunks via Arc. Both are `Send + 'static`, suitable for the
         // worker.
         let tree_clone = tree.clone();
-        let rope_clone = buffer.rope.clone();
+        let rope_clone = buffer.rope().clone();
         let task = AsyncComputeTaskPool::get().spawn(async move {
             let mut regions: Vec<FoldRegion> = Vec::new();
             let root = tree_clone.root_node();

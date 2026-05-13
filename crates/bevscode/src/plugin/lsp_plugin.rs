@@ -21,6 +21,7 @@
 //!   `LspMessage::DidChange` / `LspMessage::Completion` / etc.
 
 use bevy::prelude::*;
+use bevy_instanced_text_edit::RopeBuffer;
 
 use crate::lsp_ui::event_listeners::{
     advance_tabstop_session, dismiss_completion_on_cursor_move, drive_completion_resolve,
@@ -107,7 +108,7 @@ impl Plugin for LspPlugin {
         app.add_message::<crate::types::events::CompletionApplied>();
 
         // Core LSP-driven systems. These query each editor entity for both
-        // editor state (CursorState, TextBuffer) and per-editor LSP
+        // editor state (CursorState, TextBuffer<RopeBuffer>) and per-editor LSP
         // Components (LspClient, LspDocument, popup state, debounce timers).
         // The `on_lsp_*` systems each consume one outbound message from
         // `bevy_lsp` and apply it to per-editor Components. They run

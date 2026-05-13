@@ -33,6 +33,7 @@
 //! let size = bevsterm::backend::TerminalSize { rows: 24, cols: 80, ..Default::default() };
 //! let config = std::sync::Arc::new(bevsterm::backend::DefaultConfig::default());
 //! let (terminal, _, pty_input) = bevsterm::backend::make_terminal(size, config, writer);
+//! let terminal = std::sync::Arc::new(parking_lot::Mutex::new(terminal));
 //! commands.spawn((
 //!     BevyTerminal,
 //!     TerminalSession { terminal, pty_input, size },

@@ -3,6 +3,7 @@
 //! onto the message bus as `FoldStateChanged`.
 
 use std::collections::HashMap;
+use bevy_instanced_text_edit::RopeBuffer;
 
 use crate::input::action_events::*;
 use crate::types::events::FoldStateChanged;
@@ -13,7 +14,7 @@ use bevy::prelude::*;
 pub fn handle_toggle_fold(
     mut events: MessageReader<ToggleFoldRequested>,
     input_focus: Res<InputFocus>,
-    mut q: Query<(&CursorState, &crate::text_view::TextBuffer, &mut FoldState), With<CodeEditor>>,
+    mut q: Query<(&CursorState, &crate::text_view::TextBuffer<RopeBuffer>, &mut FoldState), With<CodeEditor>>,
 ) {
     if events.read().next().is_none() {
         return;
@@ -24,14 +25,14 @@ pub fn handle_toggle_fold(
     let Ok((cursor, buffer, mut fold_state)) = q.get_mut(entity) else {
         return;
     };
-    let line = buffer.rope.char_to_line(cursor.cursor_pos);
+    let line = buffer.char_to_line(cursor.cursor_pos);
     fold_state.toggle_fold_at_line(line);
 }
 
 pub fn handle_fold(
     mut events: MessageReader<FoldRequested>,
     input_focus: Res<InputFocus>,
-    mut q: Query<(&CursorState, &crate::text_view::TextBuffer, &mut FoldState), With<CodeEditor>>,
+    mut q: Query<(&CursorState, &crate::text_view::TextBuffer<RopeBuffer>, &mut FoldState), With<CodeEditor>>,
 ) {
     if events.read().next().is_none() {
         return;
@@ -42,14 +43,14 @@ pub fn handle_fold(
     let Ok((cursor, buffer, mut fold_state)) = q.get_mut(entity) else {
         return;
     };
-    let line = buffer.rope.char_to_line(cursor.cursor_pos);
+    let line = buffer.char_to_line(cursor.cursor_pos);
     fold_state.fold_at_line(line);
 }
 
 pub fn handle_unfold(
     mut events: MessageReader<UnfoldRequested>,
     input_focus: Res<InputFocus>,
-    mut q: Query<(&CursorState, &crate::text_view::TextBuffer, &mut FoldState), With<CodeEditor>>,
+    mut q: Query<(&CursorState, &crate::text_view::TextBuffer<RopeBuffer>, &mut FoldState), With<CodeEditor>>,
 ) {
     if events.read().next().is_none() {
         return;
@@ -60,7 +61,7 @@ pub fn handle_unfold(
     let Ok((cursor, buffer, mut fold_state)) = q.get_mut(entity) else {
         return;
     };
-    let line = buffer.rope.char_to_line(cursor.cursor_pos);
+    let line = buffer.char_to_line(cursor.cursor_pos);
     fold_state.unfold_at_line(line);
 }
 

@@ -6,6 +6,7 @@
 //! arm.
 
 use crate::input::action_events::*;
+use bevy_instanced_text_edit::RopeBuffer;
 use crate::input::actions::request_completion;
 use crate::types::*;
 use bevy::input_focus::InputFocus;
@@ -14,7 +15,7 @@ use bevy::prelude::*;
 pub fn handle_request_completion(
     mut events: MessageReader<RequestCompletionRequested>,
     input_focus: Res<InputFocus>,
-    editor_q: Query<(&CursorState, &crate::text_view::TextBuffer), With<CodeEditor>>,
+    editor_q: Query<(&CursorState, &crate::text_view::TextBuffer<RopeBuffer>), With<CodeEditor>>,
     mut lsp_q: Query<
         (
             Option<&bevy_lsp::LspDocument>,
@@ -39,7 +40,7 @@ pub fn handle_request_completion(
     request_completion(
         entity,
         cursor,
-        &buffer.rope,
+        buffer.rope(),
         &mut completion_state,
         lsp_document,
         &mut lsp_w,
@@ -55,7 +56,7 @@ pub fn handle_goto_definition(mut events: MessageReader<GotoDefinitionRequested>
 pub fn handle_rename_symbol(
     mut events: MessageReader<RenameSymbolRequested>,
     input_focus: Res<InputFocus>,
-    editor_q: Query<(&CursorState, &crate::text_view::TextBuffer), With<CodeEditor>>,
+    editor_q: Query<(&CursorState, &crate::text_view::TextBuffer<RopeBuffer>), With<CodeEditor>>,
     mut lsp_q: Query<
         (
             Option<&bevy_lsp::LspDocument>,
@@ -85,7 +86,7 @@ pub fn handle_rename_symbol(
         return;
     };
     let position = bevy_lsp::rope_char_to_lsp_position(
-        &buffer.rope,
+        buffer.rope(),
         cursor.cursor_pos,
         bevy_lsp::PositionEncoding::Utf16,
     );

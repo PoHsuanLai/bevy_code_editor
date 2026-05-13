@@ -2,6 +2,7 @@
 //! ClearSecondaryCursors.
 
 use crate::input::action_events::*;
+use bevy_instanced_text_edit::RopeBuffer;
 use crate::input::editor_ops::add_cursor_at_next_occurrence;
 use crate::types::*;
 use bevy::input_focus::InputFocus;
@@ -13,7 +14,7 @@ type EditorView<'w, 's> = Query<
     (
         &'static mut SelectionState,
         &'static mut CursorState,
-        &'static crate::text_view::TextBuffer,
+        &'static crate::text_view::TextBuffer<RopeBuffer>,
     ),
     With<CodeEditor>,
 >;
@@ -92,20 +93,20 @@ pub fn handle_clear_secondary_cursors(
 fn add_cursor_above(
     sel: &mut SelectionState,
     cursor: &mut CursorState,
-    buffer: &crate::text_view::TextBuffer,
+    buffer: &crate::text_view::TextBuffer<RopeBuffer>,
 ) {
     let primary_pos = sel.selections.primary().head_offset();
-    let line_idx = buffer.rope.char_to_line(primary_pos);
+    let line_idx = buffer.char_to_line(primary_pos);
 
     if line_idx == 0 {
         return;
     }
 
-    let line_start = buffer.rope.line_to_char(line_idx);
+    let line_start = buffer.line_to_char(line_idx);
     let col_offset = primary_pos - line_start;
 
-    let prev_line_start = buffer.rope.line_to_char(line_idx - 1);
-    let prev_line_len = buffer.rope.line(line_idx - 1).len_chars().saturating_sub(1);
+    let prev_line_start = buffer.line_to_char(line_idx - 1);
+    let prev_line_len = buffer.line(line_idx - 1).len_chars().saturating_sub(1);
     let new_pos = prev_line_start + col_offset.min(prev_line_len);
 
     sel.add_cursor_at(buffer, new_pos);
@@ -116,20 +117,20 @@ fn add_cursor_above(
 fn add_cursor_below(
     sel: &mut SelectionState,
     cursor: &mut CursorState,
-    buffer: &crate::text_view::TextBuffer,
+    buffer: &crate::text_view::TextBuffer<RopeBuffer>,
 ) {
     let primary_pos = sel.selections.primary().head_offset();
-    let line_idx = buffer.rope.char_to_line(primary_pos);
+    let line_idx = buffer.char_to_line(primary_pos);
 
-    if line_idx + 1 >= buffer.rope.len_lines() {
+    if line_idx + 1 >= buffer.len_lines() {
         return;
     }
 
-    let line_start = buffer.rope.line_to_char(line_idx);
+    let line_start = buffer.line_to_char(line_idx);
     let col_offset = primary_pos - line_start;
 
-    let next_line_start = buffer.rope.line_to_char(line_idx + 1);
-    let next_line_len = buffer.rope.line(line_idx + 1).len_chars().saturating_sub(1);
+    let next_line_start = buffer.line_to_char(line_idx + 1);
+    let next_line_len = buffer.line(line_idx + 1).len_chars().saturating_sub(1);
     let new_pos = next_line_start + col_offset.min(next_line_len);
 
     sel.add_cursor_at(buffer, new_pos);

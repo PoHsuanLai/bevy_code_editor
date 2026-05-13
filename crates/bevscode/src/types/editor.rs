@@ -85,6 +85,15 @@ pub struct EditorCursor {
 #[reflect(Component, Default)]
 pub struct LineNumbers;
 
+/// Marker for the `TextView` entity that renders line numbers in the gutter.
+/// Spawned as a child of the `CodeEditor` entity; managed by `sync_gutter_text_view`.
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+pub struct GutterTextView {
+    /// Editor entity this gutter belongs to.
+    pub editor: Entity,
+}
+
 /// Marker for the vertical separator sprite between the gutter and the code area.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
@@ -103,16 +112,6 @@ pub struct SelectionHighlight {
 #[derive(Component, Reflect)]
 #[reflect(Component)]
 pub struct BracketMatchHighlight;
-
-/// Component marker for indent guide entities
-#[derive(Component, Reflect)]
-#[reflect(Component)]
-pub struct IndentGuide {
-    /// The indentation level (0 = first indent, 1 = second indent, etc.)
-    pub level: usize,
-    /// The line index this guide is on
-    pub line_index: usize,
-}
 
 /// Per-input-manager key-repeat state for editor actions.
 ///

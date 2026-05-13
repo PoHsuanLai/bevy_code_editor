@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 use crate::settings::*;
+use bevy_instanced_text_edit::RopeBuffer;
 use crate::text_view::{DisplayLayout, TextBuffer, TextViewOverlays};
 use crate::types::*;
 use bevy::prelude::*;
@@ -12,13 +13,13 @@ type BracketMatchQuery<'w, 's> = Query<
     's,
     (
         &'static CursorState,
-        &'static TextBuffer,
+        &'static TextBuffer<RopeBuffer>,
         &'static mut BracketMatchState,
         &'static BracketConfig,
     ),
     (
         With<CodeEditor>,
-        Or<(Changed<CursorState>, Changed<TextBuffer>)>,
+        Or<(Changed<CursorState>, Changed<TextBuffer<RopeBuffer>>)>,
     ),
 >;
 
@@ -26,7 +27,7 @@ type BracketHighlightQuery<'w, 's> = Query<
     'w,
     's,
     (
-        &'static TextBuffer,
+        &'static TextBuffer<RopeBuffer>,
         &'static BracketMatchState,
         &'static FoldState,
         &'static MonoCellWidth,
@@ -161,9 +162,9 @@ pub(crate) fn update_bracket_match(mut editor_query: BracketMatchQuery) {
             continue;
         }
 
-        let cursor_pos = cursor.cursor_pos.min(buffer.rope.len_chars());
+        let cursor_pos = cursor.cursor_pos.min(buffer.len_chars());
         bracket_state.current_match =
-            find_matching_bracket(&buffer.rope, cursor_pos, &brackets.pairs);
+            find_matching_bracket(buffer.rope(), cursor_pos, &brackets.pairs);
     }
 }
 
@@ -196,17 +197,17 @@ pub(crate) fn update_bracket_highlight(mut editor_query: BracketHighlightQuery) 
             bracket_match.cursor_bracket_pos,
             bracket_match.matching_bracket_pos,
         ] {
-            if bracket_pos >= buffer.rope.len_chars() {
+            if bracket_pos >= buffer.len_chars() {
                 continue;
             }
-            let line_idx = buffer.rope.char_to_line(bracket_pos);
+            let line_idx = buffer.char_to_line(bracket_pos);
             if fold_state.is_line_hidden(line_idx) {
                 continue;
             }
 
-            let line_start = buffer.rope.line_to_char(line_idx);
+            let line_start = buffer.line_to_char(line_idx);
             let col_idx = bracket_pos - line_start;
-            let line = buffer.rope.line(line_idx);
+            let line = buffer.line(line_idx);
             let col_clamped = col_idx.min(line.len_chars());
             let next_col = (col_idx + 1).min(line.len_chars());
             let start_byte = line.slice(..col_clamped).len_bytes();

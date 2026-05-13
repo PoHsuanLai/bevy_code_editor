@@ -32,22 +32,11 @@ fn main() {
 
 /// Debug actions on mouse-button input.
 ///
-/// - Mouse Back  : toggle main text batch visibility
-/// - Mouse Forward : toggle line-numbers GPU batch visibility
+/// - Mouse Back  : toggle every TextView batch visibility
 /// - Middle click : dump every glyph instance (position/size/uv) to stderr
 fn debug_toggles(
     mouse: Res<ButtonInput<MouseButton>>,
-    mut text_batches: Query<
-        &mut Visibility,
-        (
-            With<GlyphBatchComponent>,
-            Without<bevscode::plugin::gpu_line_numbers::GpuLineNumbersBatch>,
-        ),
-    >,
-    mut line_batches: Query<
-        &mut Visibility,
-        With<bevscode::plugin::gpu_line_numbers::GpuLineNumbersBatch>,
-    >,
+    mut all_batches_vis: Query<&mut Visibility, With<GlyphBatchComponent>>,
     all_batches: Query<(
         Entity,
         Option<&Name>,
@@ -55,23 +44,13 @@ fn debug_toggles(
     )>,
 ) {
     if mouse.just_pressed(MouseButton::Back) {
-        for mut vis in text_batches.iter_mut() {
+        for mut vis in all_batches_vis.iter_mut() {
             *vis = match *vis {
                 Visibility::Hidden => Visibility::Visible,
                 _ => Visibility::Hidden,
             };
         }
-        eprintln!("[debug] toggled main text batch visibility");
-    }
-
-    if mouse.just_pressed(MouseButton::Forward) {
-        for mut vis in line_batches.iter_mut() {
-            *vis = match *vis {
-                Visibility::Hidden => Visibility::Visible,
-                _ => Visibility::Hidden,
-            };
-        }
-        eprintln!("[debug] toggled line-numbers batch visibility");
+        eprintln!("[debug] toggled every TextView batch visibility");
     }
 
     if mouse.just_pressed(MouseButton::Middle) {

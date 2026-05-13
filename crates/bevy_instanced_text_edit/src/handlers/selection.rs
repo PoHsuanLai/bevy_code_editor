@@ -8,6 +8,7 @@ use crate::cursor_movement::{
     move_cursor, move_cursor_down, move_cursor_line_end, move_cursor_line_start, move_cursor_up,
     move_cursor_word_left, move_cursor_word_right,
 };
+use crate::rope_content::RopeBuffer;
 use crate::editing_events::*;
 use crate::state::{CursorState, SelectionState, TextEditor};
 use bevy::input_focus::InputFocus;
@@ -20,7 +21,7 @@ type EditorView<'w, 's> = Query<
     (
         &'static mut SelectionState,
         &'static mut CursorState,
-        &'static TextBuffer,
+        &'static TextBuffer<RopeBuffer>,
     ),
     With<TextEditor>,
 >;
@@ -40,7 +41,7 @@ pub fn handle_select_left(
         return;
     };
     let anchor = cursor.cursor_pos;
-    move_cursor(&mut cursor, &buffer.rope, -1);
+    move_cursor(&mut cursor, buffer.rope(), -1);
     sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
@@ -59,7 +60,7 @@ pub fn handle_select_right(
         return;
     };
     let anchor = cursor.cursor_pos;
-    move_cursor(&mut cursor, &buffer.rope, 1);
+    move_cursor(&mut cursor, buffer.rope(), 1);
     sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
@@ -78,7 +79,7 @@ pub fn handle_select_up(
         return;
     };
     let anchor = cursor.cursor_pos;
-    move_cursor_up(&mut cursor, &buffer.rope);
+    move_cursor_up(&mut cursor, buffer.rope());
     sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
@@ -97,7 +98,7 @@ pub fn handle_select_down(
         return;
     };
     let anchor = cursor.cursor_pos;
-    move_cursor_down(&mut cursor, &buffer.rope);
+    move_cursor_down(&mut cursor, buffer.rope());
     sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
@@ -116,7 +117,7 @@ pub fn handle_select_word_left(
         return;
     };
     let anchor = cursor.cursor_pos;
-    move_cursor_word_left(&mut cursor, &buffer.rope);
+    move_cursor_word_left(&mut cursor, buffer.rope());
     sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
@@ -135,7 +136,7 @@ pub fn handle_select_word_right(
         return;
     };
     let anchor = cursor.cursor_pos;
-    move_cursor_word_right(&mut cursor, &buffer.rope);
+    move_cursor_word_right(&mut cursor, buffer.rope());
     sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
@@ -154,7 +155,7 @@ pub fn handle_select_line_start(
         return;
     };
     let anchor = cursor.cursor_pos;
-    move_cursor_line_start(&mut cursor, &buffer.rope);
+    move_cursor_line_start(&mut cursor, buffer.rope());
     sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
@@ -173,7 +174,7 @@ pub fn handle_select_line_end(
         return;
     };
     let anchor = cursor.cursor_pos;
-    move_cursor_line_end(&mut cursor, &buffer.rope);
+    move_cursor_line_end(&mut cursor, buffer.rope());
     sel.apply_primary_with_anchor(&cursor, anchor);
 }
 
@@ -197,7 +198,7 @@ pub fn handle_select_all(
     // `cursor.cursor_pos`; if we don't move it, the scroll offset stays
     // put. The selection rect renderer is clipped to the visible window
     // already, so the off-screen extent is free.
-    let end = buffer.rope.len_chars();
+    let end = buffer.len_chars();
     sel.selections.set_selection(end, 0);
 }
 

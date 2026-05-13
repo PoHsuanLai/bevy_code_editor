@@ -135,7 +135,7 @@ impl Default for IndentConfig {
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 #[require(
-    bevy_instanced_text::TextView,
+
     CursorState,
     SelectionState,
     EditHistoryState,

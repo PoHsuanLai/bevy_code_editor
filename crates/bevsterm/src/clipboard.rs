@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy_instanced_text::{MonoCellWidth, ScrollState, TextBuffer};
-use bevy_instanced_text_edit::{copy_selection, ClipboardResource, SelectionState};
+use bevy_instanced_text::{MonoCellWidth, ScrollState, TextBuffer, TextSpan};
+use bevy_instanced_text_edit::{ClipboardResource, SelectionState};
 
 use crate::messages::{
     TerminalClear, TerminalCopySelection, TerminalFocus, TerminalKeyInput, TerminalPaste,
@@ -17,13 +17,25 @@ use crate::types::{TerminalGridSnapshot, TerminalScrollFollow, TerminalSession};
 pub fn handle_copy_selection(
     mut events: MessageReader<TerminalCopySelection>,
     clipboard: Res<ClipboardResource>,
-    q: Query<(&SelectionState, &TextBuffer)>,
+    q: Query<(&SelectionState, &TextBuffer<TextSpan>)>,
 ) {
     for ev in events.read() {
         let Ok((sel, buffer)) = q.get(ev.entity) else {
             continue;
         };
-        let _ = copy_selection(sel, buffer, &clipboard);
+        let primary = sel.selections.primary();
+        if !primary.has_selection() {
+            continue;
+        }
+        let (start, end) = (primary.start(), primary.end());
+        let text = &buffer.0.0;
+        let chars: Vec<char> = text.chars().collect();
+        let s = start.min(chars.len());
+        let e = end.min(chars.len());
+        if s < e {
+            let selected: String = chars[s..e].iter().collect();
+            clipboard.set_text(&selected);
+        }
     }
 }
 

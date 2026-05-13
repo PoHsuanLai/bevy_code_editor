@@ -37,10 +37,10 @@ use bevy_instanced_text::view::plugin::update_text_views;
 use bevy_instanced_text::view::render::{GlyphBatchComponent, GlyphInstance};
 use bevy_instanced_text::view::tuning::LayoutTuning;
 use bevy_instanced_text::{
-    DisplayLayout, LineStyles, MonoCellWidth, ScrollState, TextBounds, TextBuffer, TextView,
+    DisplayLayout, LineStyles, MonoCellWidth, ScrollState, TextBounds, TextBuffer,
     TextViewBatchEntity, TextViewOverlays,
 };
-use bevy_instanced_text_edit::{BlinkPhase, EditDelta, EditPoint};
+use bevy_instanced_text_edit::{RopeBuffer, BlinkPhase, EditDelta, EditPoint};
 use bevy_tree_sitter::{SyntaxTree, TreeSitterGrammar, TreeSitterPlugin};
 use std::time::{Duration, Instant};
 
@@ -81,9 +81,9 @@ fn spawn_test_editor(app: &mut App, text: &str) -> Entity {
     computed.inverse_scale_factor = 1.0;
 
     let engine_bundle = (
-        TextView,
-        TextBuffer::new(text),
+        TextBuffer::new(RopeBuffer::new(text)),
         ScrollState::default(),
+        bevy_instanced_text::ContentMetrics::default(),
         computed,
         TextFont::from_font_size(14.0),
         bevy::text::LineHeight::Px(21.0),
@@ -92,6 +92,9 @@ fn spawn_test_editor(app: &mut App, text: &str) -> Entity {
         TextViewOverlays::default(),
         TextBounds::default(),
         LayoutTuning::default(),
+        UiGlobalTransform::from(Affine2::from_translation(Vec2::new(400.0, 300.0))),
+        bevy::text::TextLayout::default(),
+        bevy_instanced_text::MonoFontFaces::default(),
     );
     let settings_bundle = (
         EditorTheme::default(),
@@ -184,7 +187,7 @@ fn await_initial_parse(app: &mut App, entity: Entity) -> usize {
 /// Used after seeding state for tests that don't run a full PostUpdate
 /// schedule.
 fn drive_layout_and_render_once(app: &mut App) {
-    app.world_mut().run_system_once(produce_layouts).unwrap();
+    app.world_mut().run_system_once(produce_layouts::<RopeBuffer>).unwrap();
     app.world_mut().run_system_once(update_text_views).unwrap();
     app.update();
 }
@@ -215,8 +218,9 @@ fn cluster_instances_to_display_rows<'a>(
     layout: &DisplayLayout,
     line_height: f32,
 ) -> Vec<(u32, Vec<&'a GlyphInstance>)> {
+    // Sort ascending Y so cluster N maps to display row N (+Y down).
     let mut sorted: Vec<&_> = instances.iter().collect();
-    sorted.sort_by(|a, b| b.position.y.partial_cmp(&a.position.y).unwrap());
+    sorted.sort_by(|a, b| a.position.y.partial_cmp(&b.position.y).unwrap());
 
     let gap_threshold = line_height * 0.5;
     let mut clusters: Vec<Vec<&_>> = Vec::new();
@@ -284,9 +288,9 @@ fn dump_layout_and_batch(
         );
     }
     let mut sorted: Vec<_> = batch.instances.iter().collect();
-    sorted.sort_by(|a, b| b.position.y.partial_cmp(&a.position.y).unwrap());
+    sorted.sort_by(|a, b| a.position.y.partial_cmp(&b.position.y).unwrap());
     eprintln!(
-        "\nGlyphBatch has {} instances (sorted by y desc, top 40):",
+        "\nGlyphBatch has {} instances (sorted by y asc, top 40):",
         batch.instances.len(),
     );
     for inst in sorted.iter().take(40) {
@@ -530,9 +534,8 @@ fn pipeline_consistency_after_newline_insert() {
     // EDIT: insert `\n` at byte 0 → `fn` moves from buffer_row=0 to row 1.
     let new_source = "\nfn main() {\n    let x = 42;\n}\n";
     {
-        let mut buf = app.world_mut().get_mut::<TextBuffer>(entity).unwrap();
-        buf.rope = ropey::Rope::from_str(new_source);
-        buf.content_version += 1;
+        let mut buf = app.world_mut().get_mut::<TextBuffer<RopeBuffer>>(entity).unwrap();
+        buf.0 = RopeBuffer(ropey::Rope::from_str(new_source));
     }
     app.world_mut()
         .resource_mut::<Messages<TextEdited>>()
@@ -623,9 +626,8 @@ fn pipeline_consistency_after_backspace_join() {
     // EDIT: delete the leading `\n` (backspace-join row 1 into row 0).
     let new_source = "fn main() {\n    let x = 42;\n}\n";
     {
-        let mut buf = app.world_mut().get_mut::<TextBuffer>(entity).unwrap();
-        buf.rope = ropey::Rope::from_str(new_source);
-        buf.content_version += 1;
+        let mut buf = app.world_mut().get_mut::<TextBuffer<RopeBuffer>>(entity).unwrap();
+        buf.0 = RopeBuffer(ropey::Rope::from_str(new_source));
     }
     app.world_mut()
         .resource_mut::<Messages<TextEdited>>()
@@ -730,9 +732,8 @@ fn pipeline_consistency_after_repeated_line_deletion() {
                                        content_version: u64,
                                        expected_total_lines: usize| {
         {
-            let mut buf = app.world_mut().get_mut::<TextBuffer>(entity).unwrap();
-            buf.rope = ropey::Rope::from_str(to_rope);
-            buf.content_version = content_version;
+            let mut buf = app.world_mut().get_mut::<TextBuffer<RopeBuffer>>(entity).unwrap();
+            buf.0 = RopeBuffer(ropey::Rope::from_str(to_rope));
         }
         let newline_byte = from_rope
             .split('\n')
@@ -878,7 +879,7 @@ fn full_postupdate_schedule_with_real_overlays() {
     app.add_systems(
         PostUpdate,
         (
-            produce_layouts.run_if(bevy_instanced_text::gpu::atlas_ready),
+            produce_layouts::<RopeBuffer>.run_if(bevy_instanced_text::gpu::atlas_ready),
             (
                 update_selection_highlight,
                 update_cursor_line_highlight,

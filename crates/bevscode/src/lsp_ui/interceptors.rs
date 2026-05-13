@@ -7,6 +7,7 @@
 //! consumed event.
 
 use crate::input::actions;
+use bevy_instanced_text_edit::RopeBuffer;
 use crate::input::keybindings::EditorAction;
 use crate::lsp_ui::state::LspCompletionPopup;
 use crate::settings::LspConfig;
@@ -36,7 +37,7 @@ pub fn completion_popup_intercept(
     editor_q: &mut Query<
         (
             &mut CursorState,
-            &mut TextBuffer,
+            &mut TextBuffer<RopeBuffer>,
             &mut crate::types::fold::GotoLineState,
         ),
         With<CodeEditor>,

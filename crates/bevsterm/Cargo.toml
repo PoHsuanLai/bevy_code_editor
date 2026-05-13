@@ -46,7 +46,6 @@ parking_lot = "0.12"
 
 leafwing-input-manager = "0.20"
 
-ropey = "1.6"
 serde = { version = "1.0", features = ["derive"] }
 
 [target.'cfg(unix)'.dependencies]

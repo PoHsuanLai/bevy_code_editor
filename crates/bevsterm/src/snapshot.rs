@@ -1,4 +1,4 @@
-//! Wezterm grid → `TextBuffer.rope` + per-line `LineStyles`.
+//! Wezterm grid → `TextBuffer<TextSpan>` (string buffer) + per-line `LineStyles`.
 
 use std::collections::HashMap;
 
@@ -6,9 +6,8 @@ use bevy::prelude::*;
 use bevy::ui::ComputedNode;
 use bevy_instanced_text::{
     LineStyles, MonoCellWidth, RunWithText, ScrollState, StyleRun, TextBackgroundColor, TextBuffer,
-    TextColor,
+    TextColor, TextSpan,
 };
-use ropey::Rope;
 use wezterm_surface::SequenceNo;
 use wezterm_term::Line as VtLine;
 
@@ -61,7 +60,7 @@ type SnapshotQuery<'w, 's> = Query<
     (
         Entity,
         &'static TerminalSession,
-        &'static mut TextBuffer,
+        &'static mut TextBuffer<TextSpan>,
         &'static ComputedNode,
         &'static TextFont,
         &'static bevy::text::LineHeight,
@@ -147,10 +146,10 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
             });
         });
 
-        let new_rope = Rope::from_str(&text);
-        if rope_text_differs(&buffer.rope, &new_rope) {
-            buffer.rope = new_rope;
-            buffer.content_version = buffer.content_version.wrapping_add(1);
+        // Replace buffer text if it changed. DerefMut triggers Bevy's
+        // change detection automatically — no manual version bump needed.
+        if buffer.0.0 != text {
+            buffer.0 = TextSpan(text);
         }
 
         *line_styles = LineStyles::new(by_line, 0..total_lines as u32);
@@ -308,10 +307,6 @@ fn style_run_matches(a: &StyleRun, b: &StyleRun) -> bool {
         && a.font_weight == b.font_weight
         && a.italic == b.italic
         && a.decoration == b.decoration
-}
-
-fn rope_text_differs(rope: &Rope, candidate: &Rope) -> bool {
-    rope.len_chars() != candidate.len_chars() || rope != candidate
 }
 
 fn resolve_color(

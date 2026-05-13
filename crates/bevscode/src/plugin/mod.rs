@@ -6,7 +6,7 @@ pub mod brackets;
 pub mod cursor;
 pub mod editor_ui_plugin;
 pub mod folding;
-pub mod gpu_line_numbers;
+pub mod line_numbers;
 #[cfg(feature = "lsp")]
 pub mod lsp_plugin;
 pub mod syntax_highlighting;
@@ -26,7 +26,7 @@ pub use self::syntax_highlighting::{EditorSyntaxState, SyntaxPlugin};
 // Re-export helper functions and systems for internal plugin use (crate-visible only)
 pub(crate) use self::brackets::{update_bracket_highlight, update_bracket_match};
 pub(crate) use self::cursor::update_cursor_line_highlight;
-pub(crate) use self::gpu_line_numbers::update_gpu_line_numbers;
+pub(crate) use self::line_numbers::{setup_gutter_text_view, sync_gutter_text_view};
 pub(crate) use self::ui_elements::{update_indent_guides, update_selection_highlight};
 
 /// Marker component for the entity that handles editor input (InputManager).

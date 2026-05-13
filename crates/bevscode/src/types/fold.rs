@@ -1,6 +1,7 @@
 //! Code folding types
 
 use bevy::prelude::*;
+use bevy_instanced_text_edit::RopeBuffer;
 
 use crate::text_view::TextBuffer;
 use crate::types::{CursorState, SelectionState};
@@ -23,15 +24,15 @@ impl GotoLineState {
         &self,
         sel: &mut SelectionState,
         cursor: &mut CursorState,
-        buffer: &TextBuffer,
+        buffer: &TextBuffer<RopeBuffer>,
     ) -> bool {
         if let Some(line_num) = self.parse_line_number() {
-            let total_lines = buffer.rope.len_lines();
+            let total_lines = buffer.len_lines();
             // 1-indexed input → 0-indexed, clamped
             let target_line = line_num
                 .saturating_sub(1)
                 .min(total_lines.saturating_sub(1));
-            let char_pos = buffer.rope.line_to_char(target_line);
+            let char_pos = buffer.line_to_char(target_line);
             cursor.cursor_pos = char_pos;
             sel.apply_primary_cursor(cursor);
 

@@ -13,6 +13,7 @@
 //! fires the same three side-effects. Behavior matches the original.
 
 use crate::types::*;
+use bevy_instanced_text_edit::RopeBuffer;
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 
@@ -30,7 +31,7 @@ pub struct PendingActionFollowup {
 pub fn lsp_followup(
     mut pending: ResMut<PendingActionFollowup>,
     input_focus: Res<InputFocus>,
-    editor_q: Query<(&CursorState, &crate::text_view::TextBuffer), With<CodeEditor>>,
+    editor_q: Query<(&CursorState, &crate::text_view::TextBuffer<RopeBuffer>), With<CodeEditor>>,
     mut lsp_q: Query<
         (
             &bevy_lsp::LspClient,
@@ -63,7 +64,7 @@ pub fn lsp_followup(
         if cursor.cursor_pos > completion_state.start_char_index {
             crate::input::actions::update_completion_filter(
                 cursor,
-                &buffer.rope,
+                buffer.rope(),
                 &mut completion_state,
             );
         } else if cursor.cursor_pos == completion_state.start_char_index {

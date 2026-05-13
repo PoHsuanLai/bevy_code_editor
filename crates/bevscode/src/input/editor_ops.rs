@@ -1,6 +1,7 @@
 //! Text search and cursor operations on the editor's rope buffer.
 
 use crate::text_view::TextBuffer;
+use bevy_instanced_text_edit::RopeBuffer;
 use crate::types::*;
 use ropey::Rope;
 
@@ -103,13 +104,13 @@ pub fn find_next_occurrence(rope: &Rope, text: &str, after_pos: usize) -> Option
 pub fn add_cursor_at_next_occurrence(
     sel: &mut SelectionState,
     cursor: &mut CursorState,
-    buffer: &TextBuffer,
+    buffer: &TextBuffer<RopeBuffer>,
 ) -> bool {
     let primary = sel.selections.primary();
     let search_text = if primary.has_selection() {
         let (start, end) = primary.range();
-        buffer.rope.slice(start..end).to_string()
-    } else if let Some((start, end)) = word_at_position(&buffer.rope, primary.head_offset()) {
+        buffer.slice(start..end).to_string()
+    } else if let Some((start, end)) = word_at_position(buffer.rope(), primary.head_offset()) {
         // First Cmd+D on a bare cursor: select the word under the cursor.
         // Match the legacy behavior of placing the head at `end` (so the
         // caret sits at the end of the word) and the anchor at `start`.
@@ -126,7 +127,7 @@ pub fn add_cursor_at_next_occurrence(
 
     let search_from = sel.selections.iter().map(|s| s.end()).max().unwrap_or(0);
 
-    if let Some((start, end)) = find_next_occurrence(&buffer.rope, &search_text, search_from) {
+    if let Some((start, end)) = find_next_occurrence(buffer.rope(), &search_text, search_from) {
         let already_covered = sel.selections.iter().any(|s| {
             let (cs, ce) = s.range();
             start >= cs && end <= ce

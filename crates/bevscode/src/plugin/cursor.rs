@@ -6,6 +6,7 @@
 //! system.
 
 use crate::settings::{CursorLine, CursorSettings, EditorTheme};
+use bevy_instanced_text_edit::RopeBuffer;
 use crate::text_view::{
     DisplayLayout, RectOverlay, RowVertical, TextBuffer, TextViewOverlays,
 };
@@ -22,7 +23,7 @@ type PushCursorOverlaysQuery<'w, 's> = Query<
         &'static SelectionState,
         &'static CursorState,
         &'static bevy_instanced_text_edit::BlinkPhase,
-        &'static TextBuffer,
+        &'static TextBuffer<RopeBuffer>,
         &'static mut TextViewOverlays,
         &'static FoldState,
         &'static MonoCellWidth,
@@ -39,7 +40,7 @@ type CursorLineHighlightQuery<'w, 's> = Query<
     (
         &'static SelectionState,
         &'static CursorState,
-        &'static TextBuffer,
+        &'static TextBuffer<RopeBuffer>,
         &'static ComputedNode,
         &'static mut TextViewOverlays,
         &'static FoldState,
@@ -66,7 +67,6 @@ impl Plugin for CursorPlugin {
             .register_type::<CodeEditor>()
             .register_type::<crate::types::events::CompletionDismissed>()
             .register_type::<EditorCursor>()
-            .register_type::<IndentGuide>()
             .register_type::<KeyRepeatState>()
             .register_type::<LineNumbers>()
             .register_type::<OpenRequested>()
@@ -80,7 +80,7 @@ impl Plugin for CursorPlugin {
             .register_type::<crate::types::events::TextEdited>()
             .register_type::<super::editor_ui_plugin::AutoResizeViewport>()
             .register_type::<crate::input::EditorAction>()
-            .register_type::<super::gpu_line_numbers::GpuLineNumbersBatch>();
+            .register_type::<GutterTextView>();
 
         // Settings resources.
         app.register_type::<crate::settings::BracketHighlightStyle>()
@@ -182,16 +182,16 @@ pub(crate) fn push_cursor_overlays(
         let _ = cursor; // unused under the SelectionCollection-driven path
 
         for selection in sel.selections.iter() {
-            let cursor_pos = selection.head_offset().min(buffer.rope.len_chars());
-            let line_index = buffer.rope.char_to_line(cursor_pos);
-            let line_start = buffer.rope.line_to_char(line_index);
+            let cursor_pos = selection.head_offset().min(buffer.len_chars());
+            let line_index = buffer.char_to_line(cursor_pos);
+            let line_start = buffer.line_to_char(line_index);
             let col_index = cursor_pos - line_start;
 
             // Convert to display coordinates via the layout. With wrap on,
             // multiple display rows may share a buffer line; the layout's
             // `buffer_to_display` walks them. With wrap off, fold-state still
             // gives the right answer for off-viewport rows.
-            let line = buffer.rope.line(line_index);
+            let line = buffer.line(line_index);
             let col_clamped = col_index.min(line.len_chars());
             let byte_in_line = line.slice(..col_clamped).len_bytes();
             let (display_row, byte_in_row) = layout
@@ -242,16 +242,16 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
         let _ = cursor; // legacy field kept for blink tracking; iteration uses `sel`
 
         for selection in sel.selections.iter() {
-            let cursor_pos = selection.head_offset().min(buffer.rope.len_chars());
-            let line_index = buffer.rope.char_to_line(cursor_pos);
+            let cursor_pos = selection.head_offset().min(buffer.len_chars());
+            let line_index = buffer.char_to_line(cursor_pos);
 
             if fold_state.is_line_hidden(line_index) {
                 continue;
             }
 
-            let line_start = buffer.rope.line_to_char(line_index);
+            let line_start = buffer.line_to_char(line_index);
             let col_in_line = cursor_pos - line_start;
-            let line_for_byte = buffer.rope.line(line_index);
+            let line_for_byte = buffer.line(line_index);
             let col_clamped = col_in_line.min(line_for_byte.len_chars());
             let cursor_byte = line_for_byte.slice(..col_clamped).len_bytes();
             let display_row = layout
@@ -286,9 +286,9 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
                 continue;
             }
 
-            let line_start = buffer.rope.line_to_char(line_index);
+            let line_start = buffer.line_to_char(line_index);
             let col = cursor_pos - line_start;
-            let line = buffer.rope.line(line_index);
+            let line = buffer.line(line_index);
             let line_chars: Vec<char> = line.chars().collect();
             let is_word_char = |ch: char| ch.is_alphanumeric() || ch == '_';
             let on_word = if col < line_chars.len() && is_word_char(line_chars[col]) {

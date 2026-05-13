@@ -1,7 +1,7 @@
 //! Editor-side text-view module.
 //!
 //! The generic primitives (`TextView`, `DisplayLayout`, `ShapedLine`,
-//! `StyleRun`, `RectOverlay`, `TextBuffer`, `ScrollState`, `ContentMetrics`,
+//! `StyleRun`, `RectOverlay`, `TextBuffer<RopeBuffer>`, `ScrollState`, `ContentMetrics`,
 //! `render_layout`, `InstancedTextPlugin`,
 //! `InstancedTextPlugins`, …) live in [`bevy_instanced_text`] and are re-exported
 //! here so existing `use bevy_code_editor::text_view::…;` paths keep resolving.
@@ -18,12 +18,12 @@
 
 pub use bevy_instanced_text::view::{
     layout, overlay, render, snapshot, state, ContentMetrics, DisplayLayout,
-    GlyphBatchComponent, GlyphInstance, RectOverlay, RowVertical, ScrollState, ShapedLine,
-    StyleRun, TextBuffer, TextView, TextViewBatch, TextViewBatchEntity, TextViewOverlays,
+    GlyphBatchComponent, RectOverlay, RowVertical, ScrollState, ShapedLine,
+    StyleRun, TextBuffer, TextViewBatchEntity, TextViewOverlays,
     TextViewRenderSet,
 };
 
-pub use bevy_instanced_text_edit::{
+pub use bevy_instanced_text_edit::{RopeBuffer, 
     copy_selection, screen_to_char_pos, InstancedTextInteractionPlugin, ScrollConfig,
     TextViewDragState,
 };

@@ -117,6 +117,9 @@ impl Plugin for InstancedTextEditPlugin {
             app.add_plugins(InstancedTextInteractionPlugin);
         }
 
+        // Register the RopeBuffer content type so TextBuffer<RopeBuffer> entities get layouts.
+        app.add_plugins(bevy_instanced_text::TextContentPlugin::<crate::rope_content::RopeBuffer>::default());
+
         app.register_type::<TextEditor>();
         app.register_type::<IndentConfig>();
         app.register_type::<OnEdit>();

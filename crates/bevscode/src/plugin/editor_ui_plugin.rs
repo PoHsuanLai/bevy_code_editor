@@ -7,8 +7,8 @@ use crate::settings::*;
 use crate::types::{CodeEditor, Separator};
 
 use super::{
-    to_bevy_coords_left_aligned, update_cursor_line_highlight, update_gpu_line_numbers,
-    update_indent_guides, update_selection_highlight, EditorSetupSet,
+    setup_gutter_text_view, sync_gutter_text_view, to_bevy_coords_left_aligned,
+    update_cursor_line_highlight, update_indent_guides, update_selection_highlight, EditorSetupSet,
 };
 use bevy_instanced_text::gpu::GlyphAtlas;
 
@@ -21,10 +21,12 @@ pub struct EditorUiPlugin;
 
 impl Plugin for EditorUiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            Startup,
-            setup_editor_ui.after(EditorSetupSet),
-        );
+        app.add_systems(Startup, setup_editor_ui.after(EditorSetupSet));
+
+        // Gutter setup runs every frame because the editor's required
+        // components may not all be present during Startup; idempotent
+        // via its `existing` guard.
+        app.add_systems(Update, setup_gutter_text_view);
 
         // AutoResizeViewport: keep Node::width/height in Val::Px sync with the window.
         // This runs every frame so window resizes are picked up automatically.
@@ -35,7 +37,11 @@ impl Plugin for EditorUiPlugin {
 
         app.add_systems(
             PostUpdate,
-            sync_gutter_width.before(bevy_instanced_text::LayoutProduceSet),
+            (
+                sync_gutter_width,
+                sync_gutter_text_view.after(sync_gutter_width),
+            )
+                .before(bevy_instanced_text::LayoutProduceSet),
         );
 
         app.add_systems(
@@ -47,21 +53,12 @@ impl Plugin for EditorUiPlugin {
 
         app.add_systems(
             PostUpdate,
-            update_gpu_line_numbers
-                .run_if(bevy_instanced_text::gpu::atlas_ready)
-                .in_set(super::RenderingSet),
-        );
-
-        app.add_systems(
-            PostUpdate,
             (update_selection_highlight, update_cursor_line_highlight).in_set(super::RenderingSet),
         );
 
         app.add_systems(
             PostUpdate,
-            update_indent_guides
-                .after(update_gpu_line_numbers)
-                .in_set(super::RenderingSet),
+            update_indent_guides.in_set(super::RenderingSet),
         );
 
         // State update stays in Update; overlay producer reads DisplayLayout so it runs in PostUpdate.

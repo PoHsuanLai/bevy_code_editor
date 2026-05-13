@@ -10,6 +10,7 @@
 //! leafwing keymap fan-out).
 
 use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
+use crate::rope_content::RopeBuffer;
 use bevy::input_focus::FocusedInput;
 use bevy::prelude::*;
 use bevy_instanced_text::TextBuffer;
@@ -37,7 +38,7 @@ pub fn on_focused_keyboard_typing(
             &mut SelectionState,
             &mut EditHistoryState,
             &mut CursorState,
-            &mut TextBuffer,
+            &mut TextBuffer<RopeBuffer>,
         ),
         With<TextEditor>,
     >,
