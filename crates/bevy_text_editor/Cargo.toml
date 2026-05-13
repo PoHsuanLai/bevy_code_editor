@@ -1,0 +1,36 @@
+[package]
+name = "bevy_text_editor"
+version = "0.1.1"
+edition = "2021"
+authors = ["PoHsuanLai"]
+license = "MIT OR Apache-2.0"
+description = "Rope-backed text editor primitives on top of bevy_text_interaction: edit history, undo/redo, cursor movement, typing observer."
+repository = "https://github.com/PoHsuanLai/bevscode"
+keywords = ["bevy", "text", "editor", "ropey", "undo"]
+categories = ["game-development"]
+
+[dependencies]
+bevy_instanced_text = { path = "../bevy_instanced_text", version = "0.1.1" }
+bevy_text_interaction = { path = "../bevy_text_interaction", version = "0.1.1" }
+
+bevy = { version = "0.18", default-features = false, features = [
+    "bevy_render",
+    "bevy_core_pipeline",
+    "bevy_asset",
+    "bevy_text",
+    "default_font",
+    "bevy_sprite",
+    "bevy_sprite_render",
+    "bevy_color",
+    "bevy_mesh",
+    "bevy_camera",
+    "bevy_input_focus",
+    "bevy_picking",
+    "bevy_ui",
+] }
+
+ropey = "1.6"
+serde = { version = "1.0", features = ["derive"] }
+
+[dev-dependencies]
+bevy = { version = "0.18", features = ["bevy_window", "bevy_winit"] }

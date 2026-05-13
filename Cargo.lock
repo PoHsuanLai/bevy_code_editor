@@ -1817,6 +1817,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_text_editor"
+version = "0.1.1"
+dependencies = [
+ "bevy",
+ "bevy_instanced_text",
+ "bevy_text_interaction",
+ "ropey",
+ "serde",
+]
+
+[[package]]
+name = "bevy_text_interaction"
+version = "0.1.1"
+dependencies = [
+ "arboard",
+ "bevy",
+ "bevy_instanced_text",
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "bevy_time"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
