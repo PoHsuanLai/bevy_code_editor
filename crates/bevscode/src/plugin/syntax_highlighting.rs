@@ -64,6 +64,10 @@ type SyncEditorParseSourceQuery<'w, 's> = Query<
 pub struct EditorSyntaxState {
     #[cfg(feature = "tree-sitter")]
     pub(crate) provider: Option<bevy_tree_sitter::TreeSitterProvider>,
+    /// Buffer-line range covered by the last `produce_line_styles` pass.
+    /// Tracked here (not on `LineStyles`) because it's producer state, not
+    /// renderer input — the engine never reads it.
+    pub(crate) covered: std::ops::Range<u32>,
 }
 
 impl EditorSyntaxState {

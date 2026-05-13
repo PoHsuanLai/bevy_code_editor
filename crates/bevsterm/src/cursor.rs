@@ -62,7 +62,6 @@ pub fn push_terminal_caret(
 
         let focused = input_focus.get() == Some(entity);
         if !focused || snapshot.cursor_hidden {
-            overlays.version = overlays.version.wrapping_add(1);
             continue;
         }
         if !cursor_blink_visible(
@@ -71,7 +70,6 @@ pub fn push_terminal_caret(
             time.elapsed_secs_f64(),
             blink.last_change_secs,
         ) {
-            overlays.version = overlays.version.wrapping_add(1);
             continue;
         }
 
@@ -82,6 +80,5 @@ pub fn push_terminal_caret(
             cursor_settings,
             **theme,
         ));
-        overlays.version = overlays.version.wrapping_add(1);
     }
 }

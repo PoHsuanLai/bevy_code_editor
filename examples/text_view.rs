@@ -195,7 +195,7 @@ fn setup_text_view(
         by_line.insert(i as u32, row_runs);
     }
     let line_count = lines.len() as u32;
-    let line_styles = LineStyles::new(by_line, 0..line_count);
+    let line_styles = LineStyles::new(by_line);
 
     commands.spawn((
         TextBuffer::new(bevy_instanced_text::TextSpan::new(full_text.clone())),

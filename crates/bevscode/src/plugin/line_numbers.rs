@@ -215,7 +215,6 @@ pub(crate) fn sync_gutter_text_view(
             }
         }
 
-        let covered = 0..line_count as u32;
-        *g_styles = LineStyles::new(by_line, covered);
+        *g_styles = LineStyles::new(by_line);
     }
 }

@@ -181,7 +181,6 @@ pub(crate) fn update_bracket_highlight(mut editor_query: BracketHighlightQuery) 
 
         let Some(bracket_match) = &bracket_state.current_match else {
             if had {
-                overlays.version = overlays.version.wrapping_add(1);
             }
             continue;
         };
@@ -293,7 +292,6 @@ pub(crate) fn update_bracket_highlight(mut editor_query: BracketHighlightQuery) 
         }
 
         if pushed > 0 || had {
-            overlays.version = overlays.version.wrapping_add(1);
         }
     }
 }

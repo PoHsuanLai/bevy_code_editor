@@ -295,7 +295,8 @@ pub(crate) fn produce_line_styles(
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
         let range = visible_buffer_range(&**buffer, scroll_pos.y, viewport_height, text_area_top, line_height, mono.px, wrap, hidden);
         if range.start >= range.end {
-            *line_styles = LineStyles::new(HashMap::new(), 0..0);
+            *line_styles = LineStyles::new(HashMap::new());
+            syntax.covered = 0..0;
             dirty_lines.remove(&entity);
             continue;
         }
@@ -337,7 +338,7 @@ pub(crate) fn produce_line_styles(
         let new_covered = if !is_incremental {
             range.start as u32..range.end as u32
         } else {
-            let old = &line_styles.covered;
+            let old = &syntax.covered;
             old.start.min(range.start as u32)..old.end.max(range.end as u32)
         };
 
@@ -392,9 +393,10 @@ pub(crate) fn produce_line_styles(
         // Only write LineStyles when content actually changed. An unconditional
         // write creates a fresh Arc every frame, changing the Arc address and
         // triggering layout_miss_styles on every idle frame.
-        let covered_changed = line_styles.covered != new_covered;
+        let covered_changed = syntax.covered != new_covered;
         if map_changed || covered_changed || !is_incremental {
-            *line_styles = LineStyles::new(by_line, new_covered);
+            *line_styles = LineStyles::new(by_line);
+            syntax.covered = new_covered;
         }
         dirty_lines.remove(&entity);
     }

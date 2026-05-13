@@ -121,7 +121,6 @@ pub(crate) fn update_selection_highlight(
         let wrap_cfg = wrap.copied().unwrap_or_default();
         let visible = visible_buffer_range(&**buffer, scroll_pos.y, viewport_height, text_area_top, line_height, char_width, wrap_cfg, hidden);
         if visible.start >= visible.end {
-            overlays.version = overlays.version.wrapping_add(1);
             continue;
         }
 
@@ -194,7 +193,6 @@ pub(crate) fn update_selection_highlight(
             }
         }
 
-        overlays.version = overlays.version.wrapping_add(1);
     }
 }
 
@@ -347,7 +345,6 @@ pub(crate) fn update_indent_guides(
         overlays.rects.retain(|r| r.z != -2);
 
         if !ui.show_indent_guides {
-            overlays.version = overlays.version.wrapping_add(1);
             continue;
         }
 
@@ -425,7 +422,6 @@ pub(crate) fn update_indent_guides(
             current_display_row += 1;
         }
 
-        overlays.version = overlays.version.wrapping_add(1);
     }
 }
 

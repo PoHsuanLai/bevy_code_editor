@@ -155,7 +155,7 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
             buffer.0 = TextSpan(text);
         }
 
-        *line_styles = LineStyles::new(by_line, 0..total_lines as u32);
+        *line_styles = LineStyles::new(by_line);
 
         let cursor = term.cursor_pos();
         drop(term);

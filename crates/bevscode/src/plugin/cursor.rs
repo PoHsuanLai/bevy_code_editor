@@ -174,7 +174,6 @@ pub(crate) fn push_cursor_overlays(
                 blink.last_change_secs,
             )
         {
-            overlays.version = overlays.version.wrapping_add(1);
             continue;
         }
 
@@ -210,7 +209,6 @@ pub(crate) fn push_cursor_overlays(
             ));
         }
 
-        overlays.version = overlays.version.wrapping_add(1);
     }
 }
 pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlightQuery) {
@@ -221,7 +219,6 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
         overlays.rects.retain(|r| r.z != 0);
 
         if !cursor_line.enabled || theme.line_highlight.is_none() {
-            overlays.version = overlays.version.wrapping_add(1);
             continue;
         }
 
@@ -363,6 +360,5 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
             }
         }
 
-        overlays.version = overlays.version.wrapping_add(1);
     }
 }
