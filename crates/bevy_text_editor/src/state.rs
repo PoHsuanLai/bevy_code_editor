@@ -111,9 +111,19 @@ impl Default for IndentConfig {
 
 /// Marker for an editable text widget. `#[require]` cascades all supporting
 /// state. Pair with [`crate::InstancedTextEditPlugin`].
+///
+/// **Includes [`bevy_instanced_text::TextBuffer<crate::RopeBuffer>`]** in
+/// the cascade, which in turn (via the renderer's
+/// `register_required_components` for `TextBuffer<T>`) brings in every
+/// renderer component a text view needs: `DisplayLayout`, `TextFont`,
+/// `MonoFontFaces`, `MonoCellWidth`, `bevy::ui::ScrollPosition`,
+/// `SmoothScroll`, `ContentMetrics`, `LineStyles`, `HiddenLines`,
+/// `LayoutTuning`, `Node`, `Transform`, `Visibility`, `Pickable`.
+/// Spawning just `TextEditor` is enough to get a fully-rendered editor.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 #[require(
+    bevy_instanced_text::TextBuffer<crate::rope_content::RopeBuffer>,
     bevy_text_interaction::CursorState,
     bevy_text_interaction::SelectionState,
     EditHistoryState,
