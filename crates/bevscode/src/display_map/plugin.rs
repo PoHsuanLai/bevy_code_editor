@@ -297,8 +297,8 @@ pub(crate) fn produce_line_styles(
         let text_area_top = computed.content_inset().min_inset.y * inv;
         let wrap = wrap.copied().unwrap_or_default();
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
-        let range = visible_buffer_range(&**buffer, smooth.offset_y, viewport_height, text_area_top, line_height, mono.px, wrap, hidden);
-        if range.start >= range.end {
+        let visible = visible_buffer_range(&**buffer, smooth.offset_y, viewport_height, text_area_top, line_height, mono.px, wrap, hidden);
+        if visible.start >= visible.end {
             *line_styles = LineStyles::new(HashMap::new());
             syntax.covered = 0..0;
             dirty_lines.remove(&entity);
@@ -306,6 +306,13 @@ pub(crate) fn produce_line_styles(
         }
 
         let total_lines = buffer.len_lines();
+
+        // Extend the highlight window past the engine's render window so
+        // `by_line` stays warm across small scroll deltas — same idea as
+        // Zed's syntax-cache margin: render tight, cache wide.
+        const HIGHLIGHT_LOOKAHEAD_LINES: usize = 64;
+        let range = visible.start.saturating_sub(HIGHLIGHT_LOOKAHEAD_LINES)
+            ..visible.end.saturating_add(HIGHLIGHT_LOOKAHEAD_LINES).min(total_lines);
 
         // Determine which lines to (re)highlight this frame.
         // `None` = full rebuild. Content edits without a matching edit event
