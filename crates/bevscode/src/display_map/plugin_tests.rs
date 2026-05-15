@@ -93,7 +93,7 @@ fn spawn_test_editor(app: &mut App, text: &str) -> Entity {
         bevy::text::TextBackgroundColor::default(),
     );
     let layout_bundle = (
-        TextBuffer::new(RopeBuffer::new(text)),
+        TextBuffer::<RopeBuffer>::new(RopeBuffer::new(text)),
         bevy_instanced_text::ContentMetrics::default(),
         computed,
         DisplayLayout::default(),

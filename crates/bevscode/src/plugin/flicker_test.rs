@@ -76,7 +76,7 @@ fn spawn_editor(app: &mut App, text: &str) -> Entity {
         ScrollAnimator::default(),
     );
     let layout_bundle = (
-        TextBuffer::new(RopeBuffer::new(text)),
+        TextBuffer::<RopeBuffer>::new(RopeBuffer::new(text)),
         ContentMetrics::default(),
         computed,
         DisplayLayout::default(),

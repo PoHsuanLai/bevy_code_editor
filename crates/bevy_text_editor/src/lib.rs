@@ -18,7 +18,7 @@
 //!     .add_systems(Startup, |mut commands: Commands| {
 //!         commands.spawn((
 //!             TextEditor,
-//!             TextBuffer::new(RopeBuffer::new("edit me")),
+//!             TextBuffer::<RopeBuffer>::new(RopeBuffer::new("edit me")),
 //!             TextFont::default(),
 //!         ));
 //!     })

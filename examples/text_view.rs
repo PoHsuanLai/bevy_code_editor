@@ -198,7 +198,7 @@ fn setup_text_view(
     let line_styles = LineStyles::new(by_line);
 
     commands.spawn((
-        TextBuffer::new(bevy_instanced_text::TextSpan::new(full_text.clone())),
+        TextBuffer::<bevy_instanced_text::TextSpan>::new(full_text.clone()),
         line_styles,
         TextFont::from_font_size(16.0)
             .with_font(asset_server.load("fonts/FiraMono-Regular.ttf")),

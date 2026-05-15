@@ -201,9 +201,7 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>, mut state: R
                 let sidebar_underlays = build_sidebar_underlays(0);
 
                 sidebar.spawn((
-                    // DOGFOOD NOTE: it would be ergonomic to accept &str / String directly
-                    // in TextBuffer::new — the TextSpan wrapper is a tiny stumbling block.
-                    TextBuffer::new(TextSpan::new(sidebar_text)),
+                    TextBuffer::<TextSpan>::new(sidebar_text),
                     sidebar_styles,
                     sidebar_underlays,
                     TextFont::from_font_size(font_size).with_font(font.clone()),
@@ -249,7 +247,7 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>, mut state: R
                 let props_styles = build_props_styles(&OBJECTS[0]);
 
                 right.spawn((
-                    TextBuffer::new(TextSpan::new(props_text)),
+                    TextBuffer::<TextSpan>::new(props_text),
                     props_styles,
                     TextFont::from_font_size(font_size).with_font(font.clone()),
                     TextColor(Color::srgb(0.82, 0.82, 0.82)),
@@ -279,7 +277,7 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>, mut state: R
 
                 // Log text view
                 right.spawn((
-                    TextBuffer::new(TextSpan::new("[00:00:00] Inspector started\n[00:00:00] Scene loaded: 5 objects")),
+                    TextBuffer::<TextSpan>::new("[00:00:00] Inspector started\n[00:00:00] Scene loaded: 5 objects"),
                     LineStyles::default(),
                     TextFont::from_font_size(font_size).with_font(font.clone()),
                     TextColor(Color::srgb(0.6, 0.7, 0.6)),
