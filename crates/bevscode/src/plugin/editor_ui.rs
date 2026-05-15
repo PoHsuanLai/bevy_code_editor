@@ -1,10 +1,13 @@
 //! Editor UI plugin for rendering editor visual elements
 
 use bevy::prelude::*;
-use bevy_instanced_text::MonoCellWidth;
+use bevy_instanced_text::{MonoCellWidth, TextOverlays, TextUnderlays};
 
 use crate::settings::*;
-use crate::types::{CodeEditor, Separator};
+use crate::types::{
+    BracketMatchRects, CaretRects, CodeEditor, CursorLineRects, IndentGuideRects, SelectionRects,
+    Separator,
+};
 
 use super::{
     setup_gutter_text_view, sync_gutter_text_view, to_bevy_coords_left_aligned,
@@ -72,6 +75,52 @@ impl Plugin for EditorUiPlugin {
                 .after(update_indent_guides)
                 .in_set(super::RenderingSet),
         );
+
+        app.add_systems(
+            PostUpdate,
+            merge_overlay_components
+                .after(super::RenderingSet)
+                .before(bevy_instanced_text::TextViewRenderSet),
+        );
+    }
+}
+
+#[allow(clippy::type_complexity)]
+/// Assemble per-producer typed components into the two engine overlay components.
+/// Only runs for editors where at least one source component changed.
+#[allow(clippy::type_complexity)]
+fn merge_overlay_components(
+    mut query: Query<
+        (
+            &SelectionRects,
+            &IndentGuideRects,
+            &CursorLineRects,
+            &CaretRects,
+            &BracketMatchRects,
+            &mut TextUnderlays,
+            &mut TextOverlays,
+        ),
+        (
+            With<CodeEditor>,
+            Or<(
+                Changed<SelectionRects>,
+                Changed<IndentGuideRects>,
+                Changed<CursorLineRects>,
+                Changed<CaretRects>,
+                Changed<BracketMatchRects>,
+            )>,
+        ),
+    >,
+) {
+    for (sel, guides, cursor_line, carets, brackets, mut underlays, mut overlays) in &mut query {
+        underlays.0.clear();
+        underlays.0.extend_from_slice(&guides.0);
+        underlays.0.extend_from_slice(&sel.0);
+
+        overlays.0.clear();
+        overlays.0.extend_from_slice(&cursor_line.0);
+        overlays.0.extend_from_slice(&carets.0);
+        overlays.0.extend_from_slice(&brackets.0);
     }
 }
 

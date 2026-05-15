@@ -1,21 +1,14 @@
-//! Push the terminal caret into the engine's `TextViewOverlays`.
-//!
-//! Reuses [`bevy_text_interaction::caret_overlay`] so blink + shape match the
-//! editor. Drains z=1 caret rects from prior frames before pushing fresh
-//! ones (same convention the editor uses).
+//! Push the terminal caret into the engine's `TextOverlays`.
 
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy_instanced_text::{MonoCellWidth, TextViewOverlays};
+use bevy_instanced_text::{MonoCellWidth, RectOverlay, TextOverlays};
 use bevy_text_interaction::{
     caret_overlay, cursor_blink_visible, BlinkPhase, CursorSettings, TextCursorColor,
 };
 
 use crate::text::TerminalGridSnapshot;
 
-/// Per-terminal grid-cell cache used to detect cursor moves. Paired with
-/// [`bevy_text_interaction::BlinkPhase`] on the same entity, which holds the
-/// shared timestamp the blink helper reads.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 pub struct TerminalCursorCell {
@@ -23,8 +16,6 @@ pub struct TerminalCursorCell {
     pub last_col: u16,
 }
 
-/// Track cursor moves so the blink phase resets on movement (matches the
-/// editor's behavior: cursor stays solid for half a second after a move).
 pub fn track_cursor_blink(
     time: Res<Time>,
     mut q: Query<(
@@ -42,7 +33,6 @@ pub fn track_cursor_blink(
     }
 }
 
-/// Push the caret rect into the engine's overlays.
 pub fn push_terminal_caret(
     time: Res<Time>,
     input_focus: Res<InputFocus>,
@@ -53,32 +43,38 @@ pub fn push_terminal_caret(
         &MonoCellWidth,
         &TextCursorColor,
         &CursorSettings,
-        &mut TextViewOverlays,
+        &mut TextOverlays,
     )>,
 ) {
     for (entity, snapshot, blink, mono, theme, cursor_settings, mut overlays) in q.iter_mut() {
-        // Drain previous-frame caret (z=1) — same convention as the editor.
-        overlays.rects.retain(|r| r.z != 1);
-
         let focused = input_focus.get() == Some(entity);
-        if !focused || snapshot.cursor_hidden {
-            continue;
-        }
-        if !cursor_blink_visible(
-            cursor_settings.blink_rate,
-            cursor_settings.blink_pause_secs,
-            time.elapsed_secs_f64(),
-            blink.last_change_secs,
-        ) {
-            continue;
-        }
+        let visible = focused
+            && !snapshot.cursor_hidden
+            && cursor_blink_visible(
+                cursor_settings.blink_rate,
+                cursor_settings.blink_pause_secs,
+                time.elapsed_secs_f64(),
+                blink.last_change_secs,
+            );
 
-        let x_left = snapshot.cursor_col as f32 * mono.px;
-        overlays.rects.push(caret_overlay(
-            snapshot.cursor_row,
-            x_left,
-            cursor_settings,
-            **theme,
-        ));
+        let new_rect: Option<RectOverlay> = if visible {
+            let x_left = snapshot.cursor_col as f32 * mono.px;
+            Some(caret_overlay(snapshot.cursor_row, x_left, cursor_settings, **theme))
+        } else {
+            None
+        };
+
+        let current: Option<&RectOverlay> = overlays.0.first();
+        let same = match (&new_rect, current) {
+            (None, None) => true,
+            (Some(a), Some(b)) => a == b,
+            _ => false,
+        };
+        if !same {
+            overlays.0.clear();
+            if let Some(rect) = new_rect {
+                overlays.0.push(rect);
+            }
+        }
     }
 }

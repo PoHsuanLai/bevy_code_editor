@@ -3,7 +3,7 @@
 
 use crate::settings::*;
 use bevy_text_editor::RopeBuffer;
-use crate::text_view::{DisplayLayout, TextBuffer, TextViewOverlays};
+use crate::text_view::{DisplayLayout, TextBuffer};
 use crate::types::*;
 use bevy::prelude::*;
 use bevy_instanced_text::{CornerRadii, MonoCellWidth, RectOverlay, RowVertical};
@@ -34,7 +34,7 @@ type BracketHighlightQuery<'w, 's> = Query<
         Option<&'static DisplayLayout>,
         &'static EditorTheme,
         &'static BracketConfig,
-        &'static mut TextViewOverlays,
+        &'static mut BracketMatchRects,
     ),
     With<CodeEditor>,
 >;
@@ -170,17 +170,13 @@ pub(crate) fn update_bracket_match(mut editor_query: BracketMatchQuery) {
 
 pub(crate) fn update_bracket_highlight(mut editor_query: BracketHighlightQuery) {
     const BORDER: f32 = 2.0;
-    const Z: i8 = 2;
 
-    for (buffer, bracket_state, fold_state, mono, layout, theme, brackets, mut overlays) in
+    for (buffer, bracket_state, fold_state, mono, layout, theme, brackets, mut bracket_rects) in
         editor_query.iter_mut()
     {
-        // Drain previous-frame bracket rects (z = 0, reserved for bracket highlights).
-        let had = overlays.rects.iter().any(|r| r.z == Z);
-        overlays.rects.retain(|r| r.z != Z);
-
         let Some(bracket_match) = &bracket_state.current_match else {
-            if had {
+            if !bracket_rects.0.is_empty() {
+                bracket_rects.0.clear();
             }
             continue;
         };
@@ -191,7 +187,7 @@ pub(crate) fn update_bracket_highlight(mut editor_query: BracketHighlightQuery) 
         );
         let char_width = mono.px;
 
-        let mut pushed = 0usize;
+        let mut new_rects: Vec<RectOverlay> = Vec::new();
         for &bracket_pos in &[
             bracket_match.cursor_bracket_pos,
             bracket_match.matching_bracket_pos,
@@ -244,54 +240,17 @@ pub(crate) fn update_bracket_highlight(mut editor_query: BracketHighlightQuery) 
             let color = theme.bracket_match;
 
             if use_box_style {
-                // 4 thin edges: top, bottom, left, right
-                overlays.rects.push(RectOverlay {
-                    display_row: start_row,
-                    x_range: x0..x1,
-                    vertical: RowVertical::TopBand { thickness: BORDER },
-                    color,
-                    z: Z,
-                    corners: CornerRadii::ZERO,
-                });
-                overlays.rects.push(RectOverlay {
-                    display_row: start_row,
-                    x_range: x0..x1,
-                    vertical: RowVertical::BottomBand { thickness: BORDER },
-                    color,
-                    z: Z,
-                    corners: CornerRadii::ZERO,
-                });
-                overlays.rects.push(RectOverlay {
-                    display_row: start_row,
-                    x_range: x0..x0 + BORDER,
-                    vertical: RowVertical::Full,
-                    color,
-                    z: Z,
-                    corners: CornerRadii::ZERO,
-                });
-                overlays.rects.push(RectOverlay {
-                    display_row: start_row,
-                    x_range: x1 - BORDER..x1,
-                    vertical: RowVertical::Full,
-                    color,
-                    z: Z,
-                    corners: CornerRadii::ZERO,
-                });
-                pushed += 4;
+                new_rects.push(RectOverlay { display_row: start_row, x_range: x0..x1, vertical: RowVertical::TopBand { thickness: BORDER }, color, z: 0, corners: CornerRadii::ZERO });
+                new_rects.push(RectOverlay { display_row: start_row, x_range: x0..x1, vertical: RowVertical::BottomBand { thickness: BORDER }, color, z: 0, corners: CornerRadii::ZERO });
+                new_rects.push(RectOverlay { display_row: start_row, x_range: x0..x0 + BORDER, vertical: RowVertical::Full, color, z: 0, corners: CornerRadii::ZERO });
+                new_rects.push(RectOverlay { display_row: start_row, x_range: x1 - BORDER..x1, vertical: RowVertical::Full, color, z: 0, corners: CornerRadii::ZERO });
             } else {
-                overlays.rects.push(RectOverlay {
-                    display_row: start_row,
-                    x_range: x0..x1,
-                    vertical: RowVertical::Full,
-                    color,
-                    z: Z,
-                    corners: CornerRadii::ZERO,
-                });
-                pushed += 1;
+                new_rects.push(RectOverlay { display_row: start_row, x_range: x0..x1, vertical: RowVertical::Full, color, z: 0, corners: CornerRadii::ZERO });
             }
         }
 
-        if pushed > 0 || had {
+        if bracket_rects.0 != new_rects {
+            bracket_rects.0 = new_rects;
         }
     }
 }

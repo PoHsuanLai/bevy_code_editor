@@ -1,15 +1,8 @@
 //! Cursor rendering and animation.
-//!
-//! Cursor carets are pushed into `TextViewOverlays` as `RectOverlay`s; the
-//! engine's renderer paints them with the rest of the layer. Blink animation
-//! lives inside `push_cursor_overlays` itself — no separate `animate_cursor`
-//! system.
 
 use crate::settings::{CursorLine, CursorSettings, EditorTheme};
 use bevy_text_editor::RopeBuffer;
-use crate::text_view::{
-    DisplayLayout, RectOverlay, RowVertical, TextBuffer, TextViewOverlays,
-};
+use crate::text_view::{DisplayLayout, RectOverlay, RowVertical, TextBuffer};
 use bevy::ui::ComputedNode;
 use crate::types::*;
 use bevy::prelude::*;
@@ -24,7 +17,7 @@ type PushCursorOverlaysQuery<'w, 's> = Query<
         &'static CursorState,
         &'static bevy_text_editor::BlinkPhase,
         &'static TextBuffer<RopeBuffer>,
-        &'static mut TextViewOverlays,
+        &'static mut CaretRects,
         &'static FoldState,
         &'static MonoCellWidth,
         Option<&'static DisplayLayout>,
@@ -42,7 +35,7 @@ type CursorLineHighlightQuery<'w, 's> = Query<
         &'static CursorState,
         &'static TextBuffer<RopeBuffer>,
         &'static ComputedNode,
-        &'static mut TextViewOverlays,
+        &'static mut CursorLineRects,
         &'static FoldState,
         &'static MonoCellWidth,
         Option<&'static DisplayLayout>,
@@ -56,10 +49,6 @@ pub struct CursorPlugin;
 
 impl Plugin for CursorPlugin {
     fn build(&self, app: &mut App) {
-        // Group register_type calls for the editor's pure-data Component /
-        // Resource / Message types here. Internal state Components carrying
-        // cosmic-text / tree-sitter / lsp_types fields stay non-reflectable
-        // and are documented at their definition sites.
         app.register_type::<crate::types::events::CompletionApplied>()
             .register_type::<BracketMatch>()
             .register_type::<BracketMatchHighlight>()
@@ -82,7 +71,6 @@ impl Plugin for CursorPlugin {
             .register_type::<crate::input::EditorAction>()
             .register_type::<GutterTextView>();
 
-        // Settings resources.
         app.register_type::<crate::settings::BracketHighlightStyle>()
             .register_type::<crate::settings::BracketConfig>()
             .register_type::<crate::settings::GutterConfig>()
@@ -103,19 +91,10 @@ impl Plugin for CursorPlugin {
         app.register_type::<crate::settings::LspConfig>();
 
         app.add_systems(Update, track_cursor_movement.in_set(super::ApplyStateSet));
-
-        // Caret rects are pushed into `TextViewOverlays` during `RenderingSet`,
-        // which runs in PostUpdate after the engine's LayoutProduceSet and
-        // before TextViewRenderSet — so overlays reflect this frame's layout.
         app.add_systems(PostUpdate, push_cursor_overlays.in_set(super::RenderingSet));
-
-        // Note: update_cursor_line_highlight is registered by EditorUiPlugin
-        // where it's chained with other visual systems.
     }
 }
 
-/// Uses last_cursor_pos_for_blink (separate from last_cursor_pos) to avoid
-/// race conditions with auto_scroll_to_cursor.
 pub(crate) fn track_cursor_movement(
     mut editor_query: Query<
         (&mut CursorState, &mut bevy_text_editor::BlinkPhase),
@@ -132,119 +111,83 @@ pub(crate) fn track_cursor_movement(
     }
 }
 
-/// Push caret rectangles into `TextViewOverlays` for each cursor.
-///
-/// Blink and position collapse into one system that skips pushing during the
-/// off-phase of the blink cycle.
-///
-/// This is a *partial* writer of `TextViewOverlays` — selection and other
-/// overlay producers push too, so each producer drains only its own rects
-/// (identified by `z`: caret = +1, line-highlight = 0, selection = -1)
-/// before pushing fresh ones.
 pub(crate) fn push_cursor_overlays(
     mut editor_query: PushCursorOverlaysQuery,
     input_focus: Res<bevy::input_focus::InputFocus>,
     time: Res<Time>,
 ) {
-    for (
-        entity,
-        sel,
-        cursor,
-        blink,
-        buffer,
-        mut overlays,
-        fold_state,
-        mono,
-        layout,
-        theme,
-        cursor_settings,
-    ) in editor_query.iter_mut()
+    for (entity, sel, cursor, blink, buffer, mut carets, fold_state, mono, layout, theme, cursor_settings) in
+        editor_query.iter_mut()
     {
         let focused = input_focus.get() == Some(entity);
-        // Drain any caret rects from the previous frame. We mark them with
-        // `z = +1` so we can identify them; selection rects use `z = -1` and
-        // line-highlight uses `z = 0`.
-        overlays.rects.retain(|r| r.z != 1);
-
-        if !focused
-            || !bevy_text_editor::cursor_blink_visible(
+        let visible = focused
+            && bevy_text_editor::cursor_blink_visible(
                 cursor_settings.blink_rate,
                 cursor_settings.blink_pause_secs,
                 time.elapsed_secs_f64(),
                 blink.last_change_secs,
-            )
-        {
-            continue;
+            );
+
+        let mut new_rects: Vec<RectOverlay> = Vec::new();
+        if visible {
+            let char_width = mono.px;
+            let _ = cursor;
+            for selection in sel.selections.iter() {
+                let cursor_pos = selection.head_offset().min(buffer.len_chars());
+                let line_index = buffer.char_to_line(cursor_pos);
+                let line_start = buffer.line_to_char(line_index);
+                let col_index = cursor_pos - line_start;
+                let line = buffer.line(line_index);
+                let col_clamped = col_index.min(line.len_chars());
+                let byte_in_line = line.slice(..col_clamped).len_bytes();
+                let (display_row, byte_in_row) = layout
+                    .and_then(|l| l.buffer_to_display(line_index as u32, byte_in_line))
+                    .map(|(r, b)| (r as usize, b))
+                    .unwrap_or_else(|| (fold_state.actual_to_display_line(line_index), byte_in_line));
+                let glyph_x = layout.and_then(|l| l.x_at_byte(display_row as u32, byte_in_row));
+                let x_left = glyph_x.unwrap_or(col_index as f32 * char_width);
+                new_rects.push(bevy_text_editor::caret_overlay(
+                    display_row as u32,
+                    x_left,
+                    cursor_settings,
+                    theme.cursor,
+                ));
+            }
         }
 
-        let char_width = mono.px;
-        let _ = cursor; // unused under the SelectionCollection-driven path
-
-        for selection in sel.selections.iter() {
-            let cursor_pos = selection.head_offset().min(buffer.len_chars());
-            let line_index = buffer.char_to_line(cursor_pos);
-            let line_start = buffer.line_to_char(line_index);
-            let col_index = cursor_pos - line_start;
-
-            // Convert to display coordinates via the layout. With wrap on,
-            // multiple display rows may share a buffer line; the layout's
-            // `buffer_to_display` walks them. With wrap off, fold-state still
-            // gives the right answer for off-viewport rows.
-            let line = buffer.line(line_index);
-            let col_clamped = col_index.min(line.len_chars());
-            let byte_in_line = line.slice(..col_clamped).len_bytes();
-            let (display_row, byte_in_row) = layout
-                .and_then(|l| l.buffer_to_display(line_index as u32, byte_in_line))
-                .map(|(r, b)| (r as usize, b))
-                .unwrap_or_else(|| (fold_state.actual_to_display_line(line_index), byte_in_line));
-
-            let glyph_x = layout.and_then(|l| l.x_at_byte(display_row as u32, byte_in_row));
-            let x_left = glyph_x.unwrap_or(col_index as f32 * char_width);
-
-            overlays.rects.push(bevy_text_editor::caret_overlay(
-                display_row as u32,
-                x_left,
-                cursor_settings,
-                theme.cursor,
-            ));
+        if carets.0 != new_rects {
+            carets.0 = new_rects;
         }
-
     }
 }
+
 pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlightQuery) {
-    for (sel, cursor, buffer, computed, mut overlays, fold_state, mono, layout, theme, cursor_line) in
+    for (sel, cursor, buffer, computed, mut cursor_line_rects, fold_state, mono, layout, theme, cursor_line) in
         editor_query.iter_mut()
     {
-        // Drain previous-frame line-border / word rects (z = 0 reserved for cursor-line decoration).
-        overlays.rects.retain(|r| r.z != 0);
-
         if !cursor_line.enabled || theme.line_highlight.is_none() {
+            if !cursor_line_rects.0.is_empty() {
+                cursor_line_rects.0.clear();
+            }
             continue;
         }
 
         let char_width = mono.px;
-
         let border_thickness = cursor_line.border_thickness;
         let border_color = cursor_line.border_color;
         let word_highlight_color = cursor_line.word_highlight_color;
-
-        // Full-line-width band, in pixels relative to the row's text origin.
-        // text_area_left is already the row's "x = 0" anchor in render_layout, so the
-        // band stretches from the negative gutter edge to the viewport's right edge.
         let inv = computed.inverse_scale_factor();
         let text_area_left = computed.content_inset().min_inset.x * inv;
         let viewport_width = computed.size().x * inv;
         let band_x_left = -text_area_left;
         let band_x_right = viewport_width - text_area_left;
-        let _ = cursor; // legacy field kept for blink tracking; iteration uses `sel`
+        let _ = cursor;
 
+        let mut new_rects: Vec<RectOverlay> = Vec::new();
         for selection in sel.selections.iter() {
             let cursor_pos = selection.head_offset().min(buffer.len_chars());
             let line_index = buffer.char_to_line(cursor_pos);
-
-            if fold_state.is_line_hidden(line_index) {
-                continue;
-            }
+            if fold_state.is_line_hidden(line_index) { continue; }
 
             let line_start = buffer.line_to_char(line_index);
             let col_in_line = cursor_pos - line_start;
@@ -257,33 +200,26 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
                 .unwrap_or_else(|| fold_state.actual_to_display_line(line_index));
 
             if cursor_line.show_border {
-                overlays.rects.push(RectOverlay {
+                new_rects.push(RectOverlay {
                     display_row: display_row as u32,
                     x_range: band_x_left..band_x_right,
-                    vertical: RowVertical::TopBand {
-                        thickness: border_thickness,
-                    },
+                    vertical: RowVertical::TopBand { thickness: border_thickness },
                     color: border_color,
                     z: 0,
                     corners: bevy_instanced_text::CornerRadii::ZERO,
                 });
-                overlays.rects.push(RectOverlay {
+                new_rects.push(RectOverlay {
                     display_row: display_row as u32,
                     x_range: band_x_left..band_x_right,
-                    vertical: RowVertical::BottomBand {
-                        thickness: border_thickness,
-                    },
+                    vertical: RowVertical::BottomBand { thickness: border_thickness },
                     color: border_color,
                     z: 0,
                     corners: bevy_instanced_text::CornerRadii::ZERO,
                 });
             }
 
-            if !cursor_line.highlight_word {
-                continue;
-            }
+            if !cursor_line.highlight_word { continue; }
 
-            let line_start = buffer.line_to_char(line_index);
             let col = cursor_pos - line_start;
             let line = buffer.line(line_index);
             let line_chars: Vec<char> = line.chars().collect();
@@ -294,28 +230,17 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
                 col > 0 && col <= line_chars.len() && is_word_char(line_chars[col - 1])
             };
             let (word_start, word_end) = if on_word {
-                let start_col = if col < line_chars.len() && is_word_char(line_chars[col]) {
-                    col
-                } else {
-                    col - 1
-                };
+                let start_col = if col < line_chars.len() && is_word_char(line_chars[col]) { col } else { col - 1 };
                 let mut ws = start_col;
-                while ws > 0 && is_word_char(line_chars[ws - 1]) {
-                    ws -= 1;
-                }
+                while ws > 0 && is_word_char(line_chars[ws - 1]) { ws -= 1; }
                 let mut we = start_col;
-                while we < line_chars.len() && is_word_char(line_chars[we]) {
-                    we += 1;
-                }
+                while we < line_chars.len() && is_word_char(line_chars[we]) { we += 1; }
                 (ws, we)
             } else {
                 (col, col)
             };
 
             if word_end > word_start {
-                // Translate the word's char-range to bytes, then to (display_row,
-                // byte_in_row) for each endpoint. With wrap on, a word spanning
-                // a soft break lands on different rows; emit one rect per row.
                 let ws_clamped = word_start.min(line_for_byte.len_chars());
                 let we_clamped = word_end.min(line_for_byte.len_chars());
                 let ws_byte = line_for_byte.slice(..ws_clamped).len_bytes();
@@ -327,13 +252,9 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
                     .and_then(|l| l.buffer_to_display(line_index as u32, we_byte))
                     .unwrap_or((display_row as u32, we_byte));
                 if start_row == end_row {
-                    let xl = layout
-                        .and_then(|l| l.x_at_byte(start_row, start_byte))
-                        .unwrap_or(word_start as f32 * char_width);
-                    let xr = layout
-                        .and_then(|l| l.x_at_byte(end_row, end_byte))
-                        .unwrap_or(word_end as f32 * char_width);
-                    overlays.rects.push(RectOverlay {
+                    let xl = layout.and_then(|l| l.x_at_byte(start_row, start_byte)).unwrap_or(word_start as f32 * char_width);
+                    let xr = layout.and_then(|l| l.x_at_byte(end_row, end_byte)).unwrap_or(word_end as f32 * char_width);
+                    new_rects.push(RectOverlay {
                         display_row: start_row,
                         x_range: xl..xr,
                         vertical: RowVertical::Full,
@@ -342,13 +263,8 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
                         corners: bevy_instanced_text::CornerRadii::ZERO,
                     });
                 } else {
-                    // Multi-row word (rare in practice — only happens if a wrap
-                    // break lands inside a word). Highlight just the start-row
-                    // portion to its right edge; skip continuation rows.
-                    let xl = layout
-                        .and_then(|l| l.x_at_byte(start_row, start_byte))
-                        .unwrap_or(word_start as f32 * char_width);
-                    overlays.rects.push(RectOverlay {
+                    let xl = layout.and_then(|l| l.x_at_byte(start_row, start_byte)).unwrap_or(word_start as f32 * char_width);
+                    new_rects.push(RectOverlay {
                         display_row: start_row,
                         x_range: xl..f32::MAX,
                         vertical: RowVertical::Full,
@@ -360,5 +276,8 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
             }
         }
 
+        if cursor_line_rects.0 != new_rects {
+            cursor_line_rects.0 = new_rects;
+        }
     }
 }

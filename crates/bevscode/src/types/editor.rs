@@ -68,7 +68,14 @@ use bevy::prelude::*;
         crate::lsp_ui::state::TabstopSession,
     )
 )]
-#[require(crate::types::fold::FoldState)]
+#[require(
+    crate::types::fold::FoldState,
+    SelectionRects,
+    IndentGuideRects,
+    CaretRects,
+    CursorLineRects,
+    BracketMatchRects,
+)]
 pub struct CodeEditor;
 
 /// Marker for a cursor sprite entity. `cursor_index` 0 is the primary cursor;
@@ -137,6 +144,38 @@ pub struct BracketMatchState {
     /// Current bracket match (if any)
     pub current_match: Option<BracketMatch>,
 }
+
+// ── Per-producer overlay components ─────────────────────────────────────────
+// Each system writes only to its own component. The engine reads `TextUnderlays`
+// and `TextOverlays` from `bevy_instanced_text`; a merge system in EditorUiPlugin
+// assembles these into those two engine components each frame (only when changed).
+
+use bevy_instanced_text::RectOverlay;
+
+/// Selection background rects — written by `update_selection_highlight`.
+#[derive(Component, Default, Clone, Reflect)]
+#[reflect(Component, Default)]
+pub struct SelectionRects(pub Vec<RectOverlay>);
+
+/// Indent guide rects — written by `update_indent_guides`.
+#[derive(Component, Default, Clone, Reflect)]
+#[reflect(Component, Default)]
+pub struct IndentGuideRects(pub Vec<RectOverlay>);
+
+/// Caret rects — written by `push_cursor_overlays`.
+#[derive(Component, Default, Clone, Reflect)]
+#[reflect(Component, Default)]
+pub struct CaretRects(pub Vec<RectOverlay>);
+
+/// Cursor-line border and word-highlight rects — written by `update_cursor_line_highlight`.
+#[derive(Component, Default, Clone, Reflect)]
+#[reflect(Component, Default)]
+pub struct CursorLineRects(pub Vec<RectOverlay>);
+
+/// Bracket match rects — written by `update_bracket_highlight`.
+#[derive(Component, Default, Clone, Reflect)]
+#[reflect(Component, Default)]
+pub struct BracketMatchRects(pub Vec<RectOverlay>);
 
 /// Event emitted when save is requested (Ctrl+S)
 /// The host application should handle this event to save the buffer contents.
