@@ -5,18 +5,18 @@ use bevy_text_editor::RopeBuffer;
 use crate::text_view::{DisplayLayout, RectOverlay, RowVertical, TextBuffer};
 use crate::types::*;
 use bevy::prelude::*;
-use bevy::ui::ComputedNode;
-use bevy_instanced_text::{
-    visible_buffer_range, HiddenLines, HorizontalScroll, MonoCellWidth, TextBounds, VerticalScroll,
-};
+use bevy::ui::{ComputedNode, ScrollPosition};
+use bevy_instanced_text::{visible_buffer_range, HiddenLines, MonoCellWidth, TextBounds};
+
+use crate::plugin::scroll_animator::ScrollAnimator;
 
 type AutoScrollQuery<'w, 's> = Query<
     'w,
     's,
     (
         &'static TextBuffer<RopeBuffer>,
-        &'static mut VerticalScroll,
-        &'static mut HorizontalScroll,
+        &'static ScrollPosition,
+        &'static mut ScrollAnimator,
         &'static crate::text_view::ContentMetrics,
         &'static mut CursorState,
         &'static ComputedNode,
@@ -48,7 +48,7 @@ pub(crate) fn update_selection_highlight(
             Entity,
             &TextBuffer<RopeBuffer>,
             &ComputedNode,
-            &VerticalScroll,
+            &ScrollPosition,
             &SelectionState,
             &mut SelectionRects,
             &FoldState,
@@ -68,7 +68,7 @@ pub(crate) fn update_selection_highlight(
             With<CodeEditor>,
             Or<(
                 Changed<SelectionState>,
-                Changed<VerticalScroll>,
+                Changed<ScrollPosition>,
                 Changed<ComputedNode>,
                 Changed<TextBuffer<RopeBuffer>>,
                 Changed<FoldState>,
@@ -87,7 +87,7 @@ pub(crate) fn update_selection_highlight(
         editor_entity,
         buffer,
         computed,
-        v_scroll,
+        scroll,
         sel,
         mut sel_rects,
         fold_state,
@@ -115,7 +115,7 @@ pub(crate) fn update_selection_highlight(
         let viewport_height = computed.size().y * inv;
         let text_area_top = computed.content_inset().min_inset.y * inv;
         let wrap_cfg = wrap.copied().unwrap_or_default();
-        let visible = visible_buffer_range(&**buffer, v_scroll.current, viewport_height, text_area_top, line_height, char_width, wrap_cfg, hidden);
+        let visible = visible_buffer_range(&**buffer, scroll.y, viewport_height, text_area_top, line_height, char_width, wrap_cfg, hidden);
         if visible.start >= visible.end {
             continue;
         }
@@ -320,7 +320,7 @@ pub(crate) fn update_indent_guides(
         (
             Entity,
             &TextBuffer<RopeBuffer>,
-            &VerticalScroll,
+            &ScrollPosition,
             &ComputedNode,
             &FoldState,
             &TextFont,
@@ -334,7 +334,7 @@ pub(crate) fn update_indent_guides(
         With<CodeEditor>,
     >,
 ) {
-    for (_editor_entity, buffer, v_scroll, computed, fold_state, font, lh, mono, theme, mut guide_rects, ui, indentation) in
+    for (_editor_entity, buffer, scroll, computed, fold_state, font, lh, mono, theme, mut guide_rects, ui, indentation) in
         editor_query.iter_mut()
     {
         if !ui.show_indent_guides {
@@ -350,7 +350,7 @@ pub(crate) fn update_indent_guides(
         let char_width = mono.px;
         let viewport_height = computed.size().y * inv;
 
-        let visible_start_row = (v_scroll.current / line_height).floor().max(0.0) as usize;
+        let visible_start_row = (scroll.y / line_height).floor().max(0.0) as usize;
         let visible_lines = ((viewport_height / line_height).ceil() as usize) + 2;
         let visible_end_row = visible_start_row + visible_lines;
 
@@ -452,7 +452,7 @@ pub(crate) fn should_auto_scroll(
 }
 
 pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
-    for (buffer, mut v_scroll, mut h_scroll, metrics, mut cursor, computed, font, lh, mono) in editor_query.iter_mut() {
+    for (buffer, scroll, mut animator, metrics, mut cursor, computed, font, lh, mono) in editor_query.iter_mut() {
         let cursor_pos = cursor.cursor_pos.min(buffer.len_chars());
         cursor.last_cursor_pos = cursor_pos;
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
@@ -466,26 +466,37 @@ pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
         let text_area_top = computed.content_inset().min_inset.y * inv;
         let text_area_left = computed.content_inset().min_inset.x * inv;
 
-        // Use `target` (where we want to land) not `current` (mid-animation) so
-        // repeated cursor moves stack monotonically instead of fighting the animator.
-        let cursor_y = text_area_top - v_scroll.target + line_index as f32 * line_height;
+        // Animator-target-relative cursor pos: where the cursor *will be*
+        // after the current animation lands. Stacks repeated cursor moves
+        // monotonically instead of fighting the animator.
+        // When the animator has no in-flight target (just woke up), seed from
+        // the current ScrollPosition so we don't snap.
+        let mut target = if animator.target == Vec2::ZERO && scroll.0 != Vec2::ZERO {
+            scroll.0
+        } else {
+            animator.target
+        };
+        let cursor_y = text_area_top - target.y + line_index as f32 * line_height;
 
         let margin_vertical = line_height * 2.0;
         let visible_top = margin_vertical;
         let visible_bottom = viewport_height - margin_vertical;
 
+        let mut vertical_changed = true;
         if cursor_y < visible_top {
-            v_scroll.target -= visible_top - cursor_y;
+            target.y -= visible_top - cursor_y;
         } else if cursor_y > visible_bottom {
-            v_scroll.target += cursor_y - visible_bottom;
+            target.y += cursor_y - visible_bottom;
         } else {
-            continue;
+            vertical_changed = false;
         }
 
-        let line_count = buffer.len_lines();
-        let content_height = line_count as f32 * line_height;
-        let max_scroll = (content_height - viewport_height + text_area_top).max(0.0);
-        v_scroll.target = v_scroll.target.clamp(0.0, max_scroll);
+        if vertical_changed {
+            let line_count = buffer.len_lines();
+            let content_height = line_count as f32 * line_height;
+            let max_scroll = (content_height - viewport_height + text_area_top).max(0.0);
+            target.y = target.y.clamp(0.0, max_scroll);
+        }
 
         // === HORIZONTAL AUTO-SCROLL ===
         let line_start = buffer.line_to_char(line_index);
@@ -494,16 +505,21 @@ pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
         let cursor_x = col_index as f32 * char_width;
 
         let margin_horizontal = char_width * 5.0;
-        let visible_left = h_scroll.target;
-        let visible_right = h_scroll.target + viewport_width - text_area_left - margin_horizontal;
+        let visible_left = target.x;
+        let visible_right = target.x + viewport_width - text_area_left - margin_horizontal;
 
         if cursor_x < visible_left {
-            h_scroll.target = cursor_x.max(0.0);
+            target.x = cursor_x.max(0.0);
         } else if cursor_x > visible_right {
-            h_scroll.target = cursor_x - (viewport_width - text_area_left - margin_horizontal);
+            target.x = cursor_x - (viewport_width - text_area_left - margin_horizontal);
         }
 
         let max_horizontal_scroll = (metrics.max_content_width - viewport_width).max(0.0);
-        h_scroll.target = h_scroll.target.clamp(0.0, max_horizontal_scroll);
+        target.x = target.x.clamp(0.0, max_horizontal_scroll);
+
+        if !vertical_changed && (target.x - animator.target.x).abs() < f32::EPSILON {
+            continue;
+        }
+        animator.target = target;
     }
 }

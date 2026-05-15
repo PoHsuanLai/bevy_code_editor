@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 
-use bevy_instanced_text::{MonoCellWidth, TextBuffer, TextSpan, VerticalScroll};
+use bevy::ui::ScrollPosition;
+use bevy_instanced_text::{MonoCellWidth, TextBuffer, TextSpan};
 use bevy_text_interaction::{ClipboardResource, SelectionState};
 
 use crate::messages::{
@@ -103,18 +104,15 @@ pub fn handle_resize(
 
 pub fn handle_scroll_to(
     mut events: MessageReader<TerminalScrollTo>,
-    mut q: Query<(&mut VerticalScroll, &mut TerminalScrollFollow, &TextFont, &bevy::text::LineHeight, &MonoCellWidth)>,
+    mut q: Query<(&mut ScrollPosition, &mut TerminalScrollFollow, &TextFont, &bevy::text::LineHeight, &MonoCellWidth)>,
 ) {
     for ev in events.read() {
-        let Ok((mut v_scroll, mut follow, font, lh, _mono)) = q.get_mut(ev.entity) else {
+        let Ok((mut scroll, mut follow, font, lh, _mono)) = q.get_mut(ev.entity) else {
             continue;
         };
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
         let target = ev.line.max(0) as f32 * line_height;
-        // Snap both target and current — terminal "scroll to row N" is a jump,
-        // not a smooth animation, so users don't see the easing tail.
-        v_scroll.target = target;
-        v_scroll.current = target;
+        scroll.y = target;
         follow.stick_to_bottom = false;
         follow.last_applied_target = target;
     }
@@ -134,14 +132,13 @@ pub fn handle_scroll_to_bottom(
 
 pub fn handle_scroll_to_top(
     mut events: MessageReader<TerminalScrollToTop>,
-    mut q: Query<(&mut VerticalScroll, &mut TerminalScrollFollow)>,
+    mut q: Query<(&mut ScrollPosition, &mut TerminalScrollFollow)>,
 ) {
     for ev in events.read() {
-        let Ok((mut v_scroll, mut follow)) = q.get_mut(ev.entity) else {
+        let Ok((mut scroll, mut follow)) = q.get_mut(ev.entity) else {
             continue;
         };
-        v_scroll.target = 0.0;
-        v_scroll.current = 0.0;
+        scroll.y = 0.0;
         follow.stick_to_bottom = false;
         follow.last_applied_target = 0.0;
     }

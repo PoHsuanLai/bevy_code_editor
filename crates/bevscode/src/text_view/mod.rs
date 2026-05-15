@@ -18,9 +18,8 @@
 
 pub use bevy_instanced_text::view::{
     pipeline, overlay, render, glyph, text, ContentMetrics, DisplayLayout,
-    GlyphBatchComponent, HorizontalScroll, RectOverlay, RowVertical, ShapedLine, StyleRun,
+    GlyphBatchComponent, RectOverlay, RowVertical, ShapedLine, StyleRun,
     TextBuffer, TextOverlays, TextUnderlays, TextViewBatchEntity, TextViewRenderSet,
-    VerticalScroll,
 };
 
 pub use bevy_text_editor::{RopeBuffer, 

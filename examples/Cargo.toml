@@ -114,3 +114,7 @@ path = "terminal_editor.rs"
 name = "text_input"
 path = "text_input.rs"
 
+[[example]]
+name = "ui_inspector"
+path = "ui_inspector.rs"
+

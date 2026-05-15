@@ -2,8 +2,8 @@
 //! against `TerminalBlockState` and emit `TerminalBlockSelected`.
 
 use bevy::prelude::*;
-use bevy::ui::ComputedNode;
-use bevy_instanced_text::{DisplayLayout, VerticalScroll};
+use bevy::ui::{ComputedNode, ScrollPosition};
+use bevy_instanced_text::DisplayLayout;
 
 use crate::messages::TerminalBlockSelected;
 use crate::text::TerminalBlockState;
@@ -13,7 +13,7 @@ pub fn on_terminal_block_press(
     q: Query<(
         &TerminalBlockState,
         &DisplayLayout,
-        &VerticalScroll,
+        &ScrollPosition,
         &ComputedNode,
     )>,
     mut selected_w: MessageWriter<TerminalBlockSelected>,
@@ -22,7 +22,7 @@ pub fn on_terminal_block_press(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((state, layout, v_scroll, computed)) = q.get(entity) else {
+    let Ok((state, layout, scroll, computed)) = q.get(entity) else {
         return;
     };
     // Bevy UI hit position: normalized (-0.5,-0.5)→(0.5,0.5) from node center.
@@ -34,7 +34,7 @@ pub fn on_terminal_block_press(
     let logical_size = computed.size() * inv_scale;
     let text_area_top = computed.content_inset().min_inset.y * inv_scale;
     let local_y = (norm.y + 0.5) * logical_size.y;
-    let click_y = local_y - text_area_top + v_scroll.current;
+    let click_y = local_y - text_area_top + scroll.y;
     let default_lh = layout.line_height;
     let Some(line) = layout.lines.iter().find(|l| {
         let lh = l.line_height.unwrap_or(default_lh);

@@ -1,9 +1,9 @@
 //! Regression tests for scroll-state flicker bugs.
 //!
 //! These tests spawn a `CodeEditor` entity, drive it through a few frames,
-//! and assert invariants on `VerticalScroll.target` / `.current`. When a
-//! test fails, the diagnostic output names the tick at which an invariant
-//! was violated — enough to identify which system wrote a bad value.
+//! and assert invariants on `ScrollAnimator.target` / `ScrollPosition.y`.
+//! When a test fails, the diagnostic output names the tick at which an
+//! invariant was violated — enough to identify which system wrote a bad value.
 
 #![cfg(test)]
 #![allow(clippy::field_reassign_with_default)]
@@ -15,13 +15,15 @@ use bevy::picking::pointer::{Location, PointerId};
 use bevy::input::mouse::MouseScrollUnit;
 use bevy::prelude::*;
 use bevy::ui::ui_transform::UiGlobalTransform;
-use bevy::ui::ComputedNode;
+use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::view::measurement::LayoutTuning;
 use bevy_instanced_text::{
-    ContentMetrics, DisplayLayout, HiddenLines, HorizontalScroll, LineStyles, MonoCellWidth,
-    TextBounds, TextBuffer, TextOverlays, TextUnderlays, VerticalScroll,
+    ContentMetrics, DisplayLayout, HiddenLines, LineStyles, MonoCellWidth, TextBounds, TextBuffer,
+    TextOverlays, TextUnderlays,
 };
 use bevy_text_editor::{RopeBuffer, TextViewDragState};
+
+use crate::plugin::scroll_animator::ScrollAnimator;
 
 use crate::plugin::{ApplyStateSet, InputSet};
 use crate::settings::{
@@ -70,8 +72,8 @@ fn spawn_editor(app: &mut App, text: &str) -> Entity {
         bevy::text::TextLayout::default(),
     );
     let scroll_bundle = (
-        VerticalScroll::default(),
-        HorizontalScroll::default(),
+        ScrollPosition::default(),
+        ScrollAnimator::default(),
     );
     let layout_bundle = (
         TextBuffer::new(RopeBuffer::new(text)),
@@ -162,8 +164,8 @@ fn auto_scroll_settles_after_single_cursor_move() {
     let mut history: Vec<f32> = Vec::new();
     for _ in 0..10 {
         app.update();
-        let st = app.world().get::<VerticalScroll>(entity).unwrap();
-        history.push(st.target);
+        let animator = app.world().get::<ScrollAnimator>(entity).unwrap();
+        history.push(animator.target.y);
     }
 
     let first = history[0];
@@ -174,10 +176,10 @@ fn auto_scroll_settles_after_single_cursor_move() {
         .map(|(i, w)| (i + 1, w[0], w[1]))
         .collect();
 
-    assert!(first > 0.0, "Tick 1 should have moved VerticalScroll.target off zero (got {first})");
+    assert!(first > 0.0, "Tick 1 should have moved ScrollAnimator.target.y off zero (got {first})");
     assert!(
         later_changes.is_empty(),
-        "VerticalScroll.target kept changing after tick 1 — auto_scroll_to_cursor doesn't settle.\n\
+        "ScrollAnimator.target.y kept changing after tick 1 — auto_scroll_to_cursor doesn't settle.\n\
          Changes: {later_changes:?}\nFull history: {history:?}",
     );
 }
@@ -200,8 +202,8 @@ fn auto_scroll_does_not_move_scroll_target_on_idle_frames() {
     let mut history: Vec<f32> = vec![0.0];
     for _ in 0..10 {
         app.update();
-        let st = app.world().get::<VerticalScroll>(entity).unwrap();
-        history.push(st.target);
+        let animator = app.world().get::<ScrollAnimator>(entity).unwrap();
+        history.push(animator.target.y);
     }
 
     let moved: Vec<(usize, f32)> = history
@@ -214,7 +216,7 @@ fn auto_scroll_does_not_move_scroll_target_on_idle_frames() {
 
     assert!(
         moved.is_empty(),
-        "VerticalScroll.target moved on idle frames: {moved:?}\nFull history: {history:?}",
+        "ScrollAnimator.target.y moved on idle frames: {moved:?}\nFull history: {history:?}",
     );
 }
 
@@ -246,8 +248,8 @@ fn full_code_editor_plugin_does_not_move_scroll_target_on_idle_frames() {
     let mut history: Vec<f32> = vec![0.0];
     for _ in 0..10 {
         app.update();
-        let st = app.world().get::<VerticalScroll>(entity).unwrap();
-        history.push(st.target);
+        let animator = app.world().get::<ScrollAnimator>(entity).unwrap();
+        history.push(animator.target.y);
     }
 
     let moved: Vec<(usize, f32)> = history
@@ -260,14 +262,14 @@ fn full_code_editor_plugin_does_not_move_scroll_target_on_idle_frames() {
 
     assert!(
         moved.is_empty(),
-        "VerticalScroll.target moved on idle frames under full plugin set: {moved:?}\nFull history: {history:?}",
+        "ScrollAnimator.target.y moved on idle frames under full plugin set: {moved:?}\nFull history: {history:?}",
     );
 }
 
 /// Fire a `Pointer<Scroll>` at the editor and verify `on_pointer_scroll`
-/// accumulates the delta into `VerticalScroll.target`. This is the input
-/// boundary; the monotonic-easing-toward-target part lives in
-/// [`animator_drives_current_to_target_within_duration`].
+/// accumulates the delta into `ScrollPosition.y`. Wheel writes are instant —
+/// `bevy_text_interaction` writes `ScrollPosition` directly so the wheel
+/// stays out of the host animator path.
 #[test]
 fn pointer_scroll_event_accumulates_into_target() {
     let mut app = make_test_app();
@@ -311,25 +313,22 @@ fn pointer_scroll_event_accumulates_into_target() {
         app.world_mut().trigger(scroll_event);
     }
 
-    let target = app.world().get::<VerticalScroll>(entity).unwrap().target;
+    let scroll_y = app.world().get::<ScrollPosition>(entity).unwrap().y;
     assert!(
-        (target - 30.0).abs() < 0.01,
-        "Three Pixel scrolls of dy=-10 should accumulate target to 30.0, got {target}"
+        (scroll_y - 30.0).abs() < 0.01,
+        "Three Pixel scrolls of dy=-10 should accumulate ScrollPosition.y to 30.0, got {scroll_y}"
     );
 }
 
-/// Set `VerticalScroll.target` once and tick the animator forward. `current`
-/// must (a) move monotonically toward `target`, (b) actually reach it within
+/// Set `ScrollAnimator.target` once and tick. `ScrollPosition.y` must
+/// (a) move monotonically toward `target.y`, (b) actually reach it within
 /// roughly `duration` seconds of frames.
 ///
-/// This is the test we wished we had — it would have caught the missing
-/// `vertical_anim` write-back in the previous animator on the very first run,
-/// because `current` froze partway and never reached `target`.
+/// Regression test for the host animator that replaced the engine's
+/// built-in smooth scroll.
 #[test]
 fn animator_drives_current_to_target_within_duration() {
     let mut app = make_test_app();
-    // `InstancedTextPlugin` registers `animate_vertical_scroll` /
-    // `animate_horizontal_scroll` — without it the axis just sits at 0.
     app.add_plugins(bevy_instanced_text::view::plugin::InstancedTextPlugin);
     app.add_plugins(bevy::input_focus::InputDispatchPlugin);
     app.add_plugins(bevy_text_editor::InstancedTextEditPlugin::without_typing_observer());
@@ -338,27 +337,24 @@ fn animator_drives_current_to_target_within_duration() {
     >::default());
     app.add_plugins(crate::plugin::CodeEditorPlugin);
     app.add_plugins(crate::plugin::EditorUiPlugin);
+    app.add_plugins(crate::plugin::ScrollAnimatorPlugin);
 
     let entity = spawn_editor(&mut app, "fn main() {}\n");
-
-    // Run one tick so apply_instant_scroll syncs the duration from
-    // ScrollConfig (default 0.125s) into the axis.
     app.update();
 
     let target_y = 200.0;
     {
-        let mut axis = app.world_mut().get_mut::<VerticalScroll>(entity).unwrap();
-        axis.target = target_y;
+        let mut animator = app.world_mut().get_mut::<ScrollAnimator>(entity).unwrap();
+        animator.duration = 0.125;
+        animator.target = Vec2::new(0.0, target_y);
     }
 
     let mut history: Vec<f32> = Vec::new();
-    // 30 frames at ~16ms ≈ 0.48s — well past the 0.125s default duration.
     for _ in 0..30 {
         app.update();
-        history.push(app.world().get::<VerticalScroll>(entity).unwrap().current);
+        history.push(app.world().get::<ScrollPosition>(entity).unwrap().y);
     }
 
-    // (a) Monotonic non-decreasing.
     let regressions: Vec<(usize, f32, f32)> = history
         .windows(2)
         .enumerate()
@@ -374,15 +370,14 @@ fn animator_drives_current_to_target_within_duration() {
     };
     assert!(
         regressions.is_empty(),
-        "current regressed during animation (target={target_y}):\n{}\nRegressions: {regressions:?}",
+        "ScrollPosition.y regressed during animation (target={target_y}):\n{}\nRegressions: {regressions:?}",
         dump(),
     );
 
-    // (b) Reaches `target` by the end. Allow 0.5px slop for f32 jitter.
     let final_v = *history.last().unwrap();
     assert!(
         (final_v - target_y).abs() < 0.5,
-        "current never reached target after 30 frames: final={final_v:.2}, target={target_y:.2}\n{}",
+        "ScrollPosition.y never reached target after 30 frames: final={final_v:.2}, target={target_y:.2}\n{}",
         dump(),
     );
 }

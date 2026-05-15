@@ -9,9 +9,10 @@ use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::*;
 use bevy::text::{Justify, TextLayout};
+use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{
     view::glyph::TextDecoration, HiddenLines, LineStyles, MonoFontFaces, RunWithText, StyleRun,
-    TextBuffer, TextSpan, VerticalScroll,
+    TextBuffer, TextSpan,
 };
 use bevy_text_editor::RopeBuffer;
 
@@ -78,7 +79,7 @@ pub(crate) fn sync_gutter_text_view(
             Entity,
             &SelectionState,
             &TextBuffer<RopeBuffer>,
-            &VerticalScroll,
+            &ScrollPosition,
             &GutterConfig,
             Ref<FoldState>,
             &EditorTheme,
@@ -90,7 +91,7 @@ pub(crate) fn sync_gutter_text_view(
         (
             &GutterTextView,
             &mut TextBuffer<TextSpan>,
-            &mut VerticalScroll,
+            &mut ScrollPosition,
             &mut HiddenLines,
             &mut LineStyles,
             &mut Node,
@@ -141,12 +142,10 @@ pub(crate) fn sync_gutter_text_view(
             *g_color = default_color;
         }
 
-        // Mirror the editor's animated `current` onto the gutter's `target`
-        // and `current`. The gutter doesn't animate independently — it just
-        // tracks whatever the editor is showing right now.
-        if (g_scroll.target - editor_scroll.current).abs() > 1e-4 {
-            g_scroll.target = editor_scroll.current;
-            g_scroll.current = editor_scroll.current;
+        // Mirror the editor's scroll onto the gutter's. The gutter doesn't
+        // animate independently — it tracks the editor's current position.
+        if (g_scroll.y - editor_scroll.y).abs() > 1e-4 {
+            g_scroll.y = editor_scroll.y;
         }
 
         // Ropey counts a phantom empty line after a trailing '\n'; subtract it

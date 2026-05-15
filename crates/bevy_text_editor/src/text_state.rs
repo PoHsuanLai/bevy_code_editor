@@ -116,7 +116,7 @@ impl Default for IndentConfig {
 /// the cascade, which in turn (via the renderer's
 /// `register_required_components` for `TextBuffer<T>`) brings in every
 /// renderer component a text view needs: `DisplayLayout`, `TextFont`,
-/// `MonoFontFaces`, `MonoCellWidth`, `VerticalScroll`, `HorizontalScroll`,
+/// `MonoFontFaces`, `MonoCellWidth`, `ScrollPosition`,
 /// `ContentMetrics`, `LineStyles`, `HiddenLines`,
 /// `LayoutTuning`, `Node`, `Transform`, `Visibility`, `Pickable`.
 /// Spawning just `TextEditor` is enough to get a fully-rendered editor.

@@ -9,6 +9,7 @@ pub mod folding;
 pub mod line_numbers;
 #[cfg(feature = "lsp")]
 pub mod lsp;
+pub mod scroll_animator;
 pub mod syntax_highlighting;
 pub mod ui_elements;
 
@@ -22,6 +23,7 @@ pub use self::brackets::BracketPlugin;
 pub use self::cursor::CursorPlugin;
 pub use self::editor_ui::{AutoResizeViewport, EditorUiPlugin};
 pub use self::folding::FoldingPlugin;
+pub use self::scroll_animator::{ScrollAnimator, ScrollAnimatorPlugin};
 
 // Re-export syntax highlighting resources publicly for external use
 pub use self::syntax_highlighting::{EditorSyntaxState, SyntaxPlugin};
@@ -238,6 +240,7 @@ impl PluginGroup for CodeEditorPlugins {
             .add(FoldingPlugin)
             .add(BracketPlugin)
             .add(EditorUiPlugin)
+            .add(ScrollAnimatorPlugin)
             .add(crate::display_map::DisplayMapPlugin);
         #[cfg(feature = "lsp")]
         let group = group.add(LspPlugin);

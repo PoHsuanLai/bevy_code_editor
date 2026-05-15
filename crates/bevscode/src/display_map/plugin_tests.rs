@@ -30,15 +30,15 @@ use bevy::prelude::*;
 use bevy::text::{Font, DEFAULT_FONT_DATA};
 use bevy::time::TimePlugin;
 use bevy::ui::ui_transform::UiGlobalTransform;
-use bevy::ui::ComputedNode;
+use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::gpu::{GlyphAtlas, GlyphAtlasPlugin};
 use bevy_instanced_text::view::text_access::produce_layouts;
 use bevy_instanced_text::view::plugin::update_text_views;
 use bevy_instanced_text::view::render::{GlyphBatchComponent, GlyphInstance};
 use bevy_instanced_text::view::measurement::LayoutTuning;
 use bevy_instanced_text::{
-    DisplayLayout, HorizontalScroll, LineStyles, MonoCellWidth, TextBounds, TextBuffer,
-    TextOverlays, TextUnderlays, TextViewBatchEntity, VerticalScroll,
+    DisplayLayout, LineStyles, MonoCellWidth, TextBounds, TextBuffer, TextOverlays, TextUnderlays,
+    TextViewBatchEntity,
 };
 use bevy_text_editor::{RopeBuffer, BlinkPhase, EditDelta, EditPoint};
 use bevy_tree_sitter::{SyntaxTree, TreeSitterGrammar, TreeSitterPlugin};
@@ -87,9 +87,10 @@ fn spawn_test_editor(app: &mut App, text: &str) -> Entity {
         bevy_instanced_text::MonoFontFaces::default(),
         bevy::text::TextLayout::default(),
     );
-    let scroll_bundle = (
-        VerticalScroll::default(),
-        HorizontalScroll::default(),
+    let scroll_bundle = (ScrollPosition::default(),);
+    let color_bundle = (
+        bevy::text::TextColor::default(),
+        bevy::text::TextBackgroundColor::default(),
     );
     let layout_bundle = (
         TextBuffer::new(RopeBuffer::new(text)),
@@ -126,6 +127,7 @@ fn spawn_test_editor(app: &mut App, text: &str) -> Entity {
         .spawn((CodeEditor, Name::new("TestEditor")))
         .insert(font_bundle)
         .insert(scroll_bundle)
+        .insert(color_bundle)
         .insert(layout_bundle)
         .insert(settings_bundle)
         .insert(editor_state_bundle)
