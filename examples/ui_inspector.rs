@@ -487,10 +487,13 @@ fn tick_log_panel(
     }
 }
 
-/// Per-panel mouse-wheel scrolling.
-/// DOGFOOD NOTE: this system has to manually identify which panel the cursor
-/// is over by checking node bounds. A picking-aware scroll helper that routes
-/// scroll events to the hovered panel would eliminate this boilerplate entirely.
+/// Per-panel mouse-wheel scrolling — kept here as a deliberate
+/// minimal example. Real apps should add
+/// [`bevy_text_interaction::InstancedTextInteractionPlugin`] (or its
+/// underlying [`bevy_text_interaction::on_pointer_scroll`] observer),
+/// which routes [`bevy::picking::events::Pointer<Scroll>`] events to the
+/// hovered text-view entity automatically — no cursor-vs-bounds math
+/// needed.
 fn handle_scroll(
     mut mouse_wheel: MessageReader<MouseWheel>,
     windows: Query<&Window>,
