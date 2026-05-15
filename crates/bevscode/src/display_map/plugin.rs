@@ -17,8 +17,8 @@ use bevy_text_editor::RopeBuffer;
 use bevy::prelude::*;
 use bevy::ui::ComputedNode;
 use bevy_instanced_text::{
-    visible_buffer_range, HiddenLines, LayoutProduceSet, TextBounds, LineStyles, MonoCellWidth,
-    RunWithText, SmoothScroll, TextBuffer,
+    visible_buffer_range, HiddenLines, LayoutProduceSet, LineStyles, MonoCellWidth, RunWithText,
+    TextBounds, TextBuffer, VerticalScroll,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -139,7 +139,7 @@ pub(crate) fn produce_line_styles(
         (
             Entity,
             &TextBuffer<RopeBuffer>,
-            &SmoothScroll,
+            &VerticalScroll,
             &ComputedNode,
             &TextFont,
             &bevy::text::LineHeight,
@@ -166,7 +166,7 @@ pub(crate) fn produce_line_styles(
         (
             With<CodeEditor>,
             Or<(
-                Changed<SmoothScroll>,
+                Changed<VerticalScroll>,
                 Changed<ComputedNode>,
                 Changed<HiddenLines>,
                 Changed<EditorTheme>,
@@ -189,7 +189,7 @@ pub(crate) fn produce_line_styles(
         (
             With<CodeEditor>,
             Or<(
-                Changed<SmoothScroll>,
+                Changed<VerticalScroll>,
                 Changed<ComputedNode>,
                 Changed<HiddenLines>,
                 Changed<EditorTheme>,
@@ -271,7 +271,7 @@ pub(crate) fn produce_line_styles(
     for (
         entity,
         buffer,
-        smooth,
+        v_scroll,
         computed,
         font,
         lh,
@@ -297,7 +297,7 @@ pub(crate) fn produce_line_styles(
         let text_area_top = computed.content_inset().min_inset.y * inv;
         let wrap = wrap.copied().unwrap_or_default();
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
-        let visible = visible_buffer_range(&**buffer, smooth.offset_y, viewport_height, text_area_top, line_height, mono.px, wrap, hidden);
+        let visible = visible_buffer_range(&**buffer, v_scroll.current, viewport_height, text_area_top, line_height, mono.px, wrap, hidden);
         if visible.start >= visible.end {
             *line_styles = LineStyles::new(HashMap::new());
             syntax.covered = 0..0;

@@ -116,8 +116,8 @@ impl Default for IndentConfig {
 /// the cascade, which in turn (via the renderer's
 /// `register_required_components` for `TextBuffer<T>`) brings in every
 /// renderer component a text view needs: `DisplayLayout`, `TextFont`,
-/// `MonoFontFaces`, `MonoCellWidth`, `bevy::ui::ScrollPosition`,
-/// `SmoothScroll`, `ContentMetrics`, `LineStyles`, `HiddenLines`,
+/// `MonoFontFaces`, `MonoCellWidth`, `VerticalScroll`, `HorizontalScroll`,
+/// `ContentMetrics`, `LineStyles`, `HiddenLines`,
 /// `LayoutTuning`, `Node`, `Transform`, `Visibility`, `Pickable`.
 /// Spawning just `TextEditor` is enough to get a fully-rendered editor.
 #[derive(Component, Default, Reflect)]

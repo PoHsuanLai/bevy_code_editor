@@ -6,8 +6,8 @@ use bevy::prelude::*;
 use bevy::ui::ComputedNode;
 
 use bevy_instanced_text::{
-    LineStyles, MonoCellWidth, RunWithText, SmoothScroll, StyleRun, TextBackgroundColor, TextBuffer,
-    TextColor, TextSpan,
+    LineStyles, MonoCellWidth, RunWithText, StyleRun, TextBackgroundColor, TextBuffer, TextColor,
+    TextSpan, VerticalScroll,
 };
 use wezterm_surface::SequenceNo;
 use wezterm_term::Line as VtLine;
@@ -66,7 +66,7 @@ type SnapshotQuery<'w, 's> = Query<
         &'static TextFont,
         &'static bevy::text::LineHeight,
         &'static MonoCellWidth,
-        &'static mut SmoothScroll,
+        &'static mut VerticalScroll,
         &'static TerminalColorPalette,
         &'static TextColor,
         &'static TextBackgroundColor,
@@ -86,7 +86,7 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         font,
         lh,
         _mono,
-        mut smooth,
+        mut v_scroll,
         palette,
         fg_color,
         bg_color,
@@ -108,7 +108,7 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         let needs_rebuild = cache_entry.last_seqno != Some(seqno) || cache_entry.last_rows != rows;
 
         if !needs_rebuild {
-            anchor_scroll_to_bottom(&mut smooth, computed, line_height, total_lines, &mut follow);
+            anchor_scroll_to_bottom(&mut v_scroll, computed, line_height, total_lines, &mut follow);
             continue;
         }
 
@@ -173,16 +173,15 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         cache_entry.last_cols = cols;
         cache_entry.last_total_lines = total_lines;
         cache_entry.lines = next_lines;
-        anchor_scroll_to_bottom(&mut smooth, computed, line_height, total_lines, &mut follow);
+        anchor_scroll_to_bottom(&mut v_scroll, computed, line_height, total_lines, &mut follow);
     }
 }
 
 /// Keep the bottom of the buffer pinned to the bottom of the viewport when the
 /// user is already at (or within one row of) the bottom. Wheeling back to
 /// within one row of the bottom re-engages follow.
-///
 fn anchor_scroll_to_bottom(
-    smooth: &mut SmoothScroll,
+    v_scroll: &mut VerticalScroll,
     computed: &ComputedNode,
     line_height: f32,
     total_lines: usize,
@@ -201,21 +200,19 @@ fn anchor_scroll_to_bottom(
     let max_scroll = hidden_rows as f32 * line_height;
     let stick_threshold = line_height;
 
-    if (smooth.target_y - follow.last_applied_target).abs() > 0.5 {
-        follow.stick_to_bottom = max_scroll - smooth.target_y <= stick_threshold;
+    if (v_scroll.target - follow.last_applied_target).abs() > 0.5 {
+        follow.stick_to_bottom = max_scroll - v_scroll.target <= stick_threshold;
     }
 
-    if follow.stick_to_bottom {
-        smooth.offset_y = max_scroll;
-        smooth.target_y = max_scroll;
-        follow.last_applied_target = max_scroll;
-    } else if max_scroll - smooth.target_y <= stick_threshold {
+    if follow.stick_to_bottom || max_scroll - v_scroll.target <= stick_threshold {
+        // Snap both target and current so output appears instantly without
+        // the smooth-scroll easing fighting the terminal data stream.
         follow.stick_to_bottom = true;
-        smooth.offset_y = max_scroll;
-        smooth.target_y = max_scroll;
+        v_scroll.target = max_scroll;
+        v_scroll.current = max_scroll;
         follow.last_applied_target = max_scroll;
     } else {
-        follow.last_applied_target = smooth.target_y;
+        follow.last_applied_target = v_scroll.target;
     }
 }
 

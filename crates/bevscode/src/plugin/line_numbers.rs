@@ -8,10 +8,10 @@
 use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::*;
-use bevy::text::Justify;
+use bevy::text::{Justify, TextLayout};
 use bevy_instanced_text::{
-    view::glyph::TextDecoration, HiddenLines, LineStyles, MonoFontFaces, RunWithText,
-    SmoothScroll, StyleRun, TextBuffer, TextSpan,
+    view::glyph::TextDecoration, HiddenLines, LineStyles, MonoFontFaces, RunWithText, StyleRun,
+    TextBuffer, TextSpan, VerticalScroll,
 };
 use bevy_text_editor::RopeBuffer;
 
@@ -43,10 +43,7 @@ pub(crate) fn setup_gutter_text_view(
             TextBuffer::<TextSpan>::default(),
             font.clone(),
             faces.clone(),
-            bevy::text::TextLayout {
-                justify: Justify::Right,
-                ..default()
-            },
+            TextLayout { justify: Justify::Right, ..default() },
             bevy_instanced_text::TextColor(theme.line_numbers),
             Node {
                 position_type: PositionType::Absolute,
@@ -81,7 +78,7 @@ pub(crate) fn sync_gutter_text_view(
             Entity,
             &SelectionState,
             &TextBuffer<RopeBuffer>,
-            &SmoothScroll,
+            &VerticalScroll,
             &GutterConfig,
             Ref<FoldState>,
             &EditorTheme,
@@ -93,7 +90,7 @@ pub(crate) fn sync_gutter_text_view(
         (
             &GutterTextView,
             &mut TextBuffer<TextSpan>,
-            &mut SmoothScroll,
+            &mut VerticalScroll,
             &mut HiddenLines,
             &mut LineStyles,
             &mut Node,
@@ -103,11 +100,11 @@ pub(crate) fn sync_gutter_text_view(
         Without<CodeEditor>,
     >,
 ) {
-    for (editor_entity, sel, buffer, smooth, gutter, fold_state, theme, ui) in editor_query.iter() {
+    for (editor_entity, sel, buffer, editor_scroll, gutter, fold_state, theme, ui) in editor_query.iter() {
         let Some((
             _,
             mut g_buffer,
-            mut g_smooth,
+            mut g_scroll,
             mut g_hidden,
             mut g_styles,
             mut g_node,
@@ -144,10 +141,12 @@ pub(crate) fn sync_gutter_text_view(
             *g_color = default_color;
         }
 
-        // Mirror vertical scroll.
-        if (g_smooth.offset_y - smooth.offset_y).abs() > 1e-4 {
-            g_smooth.offset_y = smooth.offset_y;
-            g_smooth.target_y = smooth.offset_y;
+        // Mirror the editor's animated `current` onto the gutter's `target`
+        // and `current`. The gutter doesn't animate independently — it just
+        // tracks whatever the editor is showing right now.
+        if (g_scroll.target - editor_scroll.current).abs() > 1e-4 {
+            g_scroll.target = editor_scroll.current;
+            g_scroll.current = editor_scroll.current;
         }
 
         // Ropey counts a phantom empty line after a trailing '\n'; subtract it

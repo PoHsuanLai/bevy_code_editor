@@ -2,21 +2,21 @@
 
 use crate::settings::*;
 use bevy_text_editor::RopeBuffer;
-use crate::text_view::{
-    DisplayLayout, RectOverlay, RowVertical, SmoothScroll, TextBuffer, TextViewOverlays,
-};
+use crate::text_view::{DisplayLayout, RectOverlay, RowVertical, TextBuffer};
 use crate::types::*;
 use bevy::prelude::*;
 use bevy::ui::ComputedNode;
-use bevy_instanced_text::{visible_buffer_range, HiddenLines, MonoCellWidth, TextBounds};
+use bevy_instanced_text::{
+    visible_buffer_range, HiddenLines, HorizontalScroll, MonoCellWidth, TextBounds, VerticalScroll,
+};
 
 type AutoScrollQuery<'w, 's> = Query<
     'w,
     's,
     (
         &'static TextBuffer<RopeBuffer>,
-        &'static mut SmoothScroll,
-        
+        &'static mut VerticalScroll,
+        &'static mut HorizontalScroll,
         &'static crate::text_view::ContentMetrics,
         &'static mut CursorState,
         &'static ComputedNode,
@@ -48,9 +48,9 @@ pub(crate) fn update_selection_highlight(
             Entity,
             &TextBuffer<RopeBuffer>,
             &ComputedNode,
-            &SmoothScroll,
+            &VerticalScroll,
             &SelectionState,
-            &mut TextViewOverlays,
+            &mut SelectionRects,
             &FoldState,
             &TextFont,
             &bevy::text::LineHeight,
@@ -68,7 +68,7 @@ pub(crate) fn update_selection_highlight(
             With<CodeEditor>,
             Or<(
                 Changed<SelectionState>,
-                Changed<SmoothScroll>,
+                Changed<VerticalScroll>,
                 Changed<ComputedNode>,
                 Changed<TextBuffer<RopeBuffer>>,
                 Changed<FoldState>,
@@ -87,9 +87,9 @@ pub(crate) fn update_selection_highlight(
         editor_entity,
         buffer,
         computed,
-        smooth,
+        v_scroll,
         sel,
-        mut overlays,
+        mut sel_rects,
         fold_state,
         font,
         lh,
@@ -103,9 +103,7 @@ pub(crate) fn update_selection_highlight(
         if !dirty.contains(&editor_entity) {
             continue;
         }
-        // Drain any selection rects from the previous frame (z = -1 marks selection;
-        // cursor caret uses z = +1; z = 0 is reserved for line-bg/highlight overlays).
-        overlays.rects.retain(|r| r.z != -1);
+        sel_rects.0.clear();
 
         let char_width = mono.px;
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
@@ -117,7 +115,7 @@ pub(crate) fn update_selection_highlight(
         let viewport_height = computed.size().y * inv;
         let text_area_top = computed.content_inset().min_inset.y * inv;
         let wrap_cfg = wrap.copied().unwrap_or_default();
-        let visible = visible_buffer_range(&**buffer, smooth.offset_y, viewport_height, text_area_top, line_height, char_width, wrap_cfg, hidden);
+        let visible = visible_buffer_range(&**buffer, v_scroll.current, viewport_height, text_area_top, line_height, char_width, wrap_cfg, hidden);
         if visible.start >= visible.end {
             continue;
         }
@@ -186,7 +184,7 @@ pub(crate) fn update_selection_highlight(
                     },
                     char_width,
                     theme.selection_background,
-                    &mut overlays.rects,
+                    &mut sel_rects.0,
                 );
             }
         }
@@ -322,27 +320,27 @@ pub(crate) fn update_indent_guides(
         (
             Entity,
             &TextBuffer<RopeBuffer>,
-            &SmoothScroll,
+            &VerticalScroll,
             &ComputedNode,
             &FoldState,
             &TextFont,
             &bevy::text::LineHeight,
             &MonoCellWidth,
             &EditorTheme,
-            &mut TextViewOverlays,
+            &mut IndentGuideRects,
             &EditorUi,
             &Indentation,
         ),
         With<CodeEditor>,
     >,
 ) {
-    for (_editor_entity, buffer, smooth, computed, fold_state, font, lh, mono, theme, mut overlays, ui, indentation) in
+    for (_editor_entity, buffer, v_scroll, computed, fold_state, font, lh, mono, theme, mut guide_rects, ui, indentation) in
         editor_query.iter_mut()
     {
-        // z lanes: -2 indent guides, -1 selection, +1 caret.
-        overlays.rects.retain(|r| r.z != -2);
-
         if !ui.show_indent_guides {
+            if !guide_rects.0.is_empty() {
+                guide_rects.0.clear();
+            }
             continue;
         }
 
@@ -352,14 +350,13 @@ pub(crate) fn update_indent_guides(
         let char_width = mono.px;
         let viewport_height = computed.size().y * inv;
 
-        let visible_start_row = (smooth.offset_y / line_height).floor().max(0.0) as usize;
+        let visible_start_row = (v_scroll.current / line_height).floor().max(0.0) as usize;
         let visible_lines = ((viewport_height / line_height).ceil() as usize) + 2;
         let visible_end_row = visible_start_row + visible_lines;
 
         let total_lines = buffer.len_lines();
         let has_folding = !fold_state.regions.is_empty();
 
-        // Skip non-visible prefix without scanning every rope line.
         let start_buffer_line = if has_folding {
             let mut display_row = 0;
             let mut buffer_line = 0;
@@ -386,6 +383,7 @@ pub(crate) fn update_indent_guides(
             start_buffer_line
         };
 
+        let mut new_rects: Vec<RectOverlay> = Vec::new();
         for buffer_line in start_buffer_line..total_lines {
             if fold_state.is_line_hidden(buffer_line) {
                 continue;
@@ -407,12 +405,12 @@ pub(crate) fn update_indent_guides(
 
             for level in 0..indent_levels {
                 let x = (level * indent_size) as f32 * char_width;
-                overlays.rects.push(RectOverlay {
+                new_rects.push(RectOverlay {
                     display_row: current_display_row as u32,
                     x_range: x..(x + 1.0),
                     vertical: RowVertical::FullLeaded,
                     color: theme.indent_guide,
-                    z: -2,
+                    z: 0,
                     corners: bevy_instanced_text::CornerRadii::ZERO,
                 });
             }
@@ -420,6 +418,9 @@ pub(crate) fn update_indent_guides(
             current_display_row += 1;
         }
 
+        if guide_rects.0 != new_rects {
+            guide_rects.0 = new_rects;
+        }
     }
 }
 
@@ -451,42 +452,40 @@ pub(crate) fn should_auto_scroll(
 }
 
 pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
-    for (buffer, mut smooth, metrics, mut cursor, computed, font, lh, mono) in editor_query.iter_mut() {
+    for (buffer, mut v_scroll, mut h_scroll, metrics, mut cursor, computed, font, lh, mono) in editor_query.iter_mut() {
         let cursor_pos = cursor.cursor_pos.min(buffer.len_chars());
         cursor.last_cursor_pos = cursor_pos;
-        let line_index = buffer.char_to_line(cursor_pos);
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
         let inv = computed.inverse_scale_factor();
         let viewport_height = computed.size().y * inv;
+        if viewport_height < 1.0 || line_height < 1.0 {
+            continue;
+        }
+        let line_index = buffer.char_to_line(cursor_pos);
         let viewport_width = computed.size().x * inv;
         let text_area_top = computed.content_inset().min_inset.y * inv;
         let text_area_left = computed.content_inset().min_inset.x * inv;
 
-        // === VERTICAL AUTO-SCROLL ===
-        // cursor_y in node-local px (positive = down from top).
-        let cursor_y = text_area_top - smooth.offset_y + line_index as f32 * line_height;
+        // Use `target` (where we want to land) not `current` (mid-animation) so
+        // repeated cursor moves stack monotonically instead of fighting the animator.
+        let cursor_y = text_area_top - v_scroll.target + line_index as f32 * line_height;
 
         let margin_vertical = line_height * 2.0;
         let visible_top = margin_vertical;
         let visible_bottom = viewport_height - margin_vertical;
 
         if cursor_y < visible_top {
-            // Cursor above visible area — scroll up (decrease target_y).
-            smooth.target_y -= visible_top - cursor_y;
+            v_scroll.target -= visible_top - cursor_y;
         } else if cursor_y > visible_bottom {
-            // Cursor below visible area — scroll down (increase target_y).
-            smooth.target_y += cursor_y - visible_bottom;
+            v_scroll.target += cursor_y - visible_bottom;
         } else {
             continue;
         }
 
-        // Clamp: [0, max_scroll] where max_scroll is positive.
-        smooth.target_y = smooth.target_y.max(0.0);
         let line_count = buffer.len_lines();
         let content_height = line_count as f32 * line_height;
         let max_scroll = (content_height - viewport_height + text_area_top).max(0.0);
-        smooth.target_y = smooth.target_y.min(max_scroll);
-
+        v_scroll.target = v_scroll.target.clamp(0.0, max_scroll);
 
         // === HORIZONTAL AUTO-SCROLL ===
         let line_start = buffer.line_to_char(line_index);
@@ -495,17 +494,16 @@ pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
         let cursor_x = col_index as f32 * char_width;
 
         let margin_horizontal = char_width * 5.0;
-        let visible_left = smooth.horizontal;
-        let visible_right = smooth.horizontal + viewport_width - text_area_left - margin_horizontal;
+        let visible_left = h_scroll.target;
+        let visible_right = h_scroll.target + viewport_width - text_area_left - margin_horizontal;
 
         if cursor_x < visible_left {
-            smooth.target_x = cursor_x.max(0.0);
+            h_scroll.target = cursor_x.max(0.0);
         } else if cursor_x > visible_right {
-            smooth.target_x = cursor_x - (viewport_width - text_area_left - margin_horizontal);
+            h_scroll.target = cursor_x - (viewport_width - text_area_left - margin_horizontal);
         }
 
-        smooth.target_x = smooth.target_x.max(0.0);
         let max_horizontal_scroll = (metrics.max_content_width - viewport_width).max(0.0);
-        smooth.target_x = smooth.target_x.min(max_horizontal_scroll);
+        h_scroll.target = h_scroll.target.clamp(0.0, max_horizontal_scroll);
     }
 }

@@ -216,14 +216,18 @@ fn setup_text_view(
 
 /// Handle mouse wheel scrolling for the text view
 fn handle_scroll(
-    mut text_views: Query<&mut SmoothScroll, With<bevy_instanced_text::DisplayLayout>>,
+    mut text_views: Query<&mut bevy::ui::ScrollPosition, With<bevy_instanced_text::DisplayLayout>>,
     mut mouse_wheel: MessageReader<bevy::input::mouse::MouseWheel>,
 ) {
-    let scroll_speed = 40.0;
+    use bevy::input::mouse::MouseScrollUnit;
+    let line_height = 24.0;
     for event in mouse_wheel.read() {
-        for mut smooth in text_views.iter_mut() {
-            smooth.target_y -= event.y * scroll_speed;
-            smooth.target_y = smooth.target_y.max(0.0);
+        let dy = match event.unit {
+            MouseScrollUnit::Pixel => event.y,
+            MouseScrollUnit::Line => event.y * line_height,
+        };
+        for mut scroll_pos in text_views.iter_mut() {
+            scroll_pos.y = (scroll_pos.y - dy).max(0.0);
         }
     }
 }

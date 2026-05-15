@@ -12,6 +12,9 @@ pub mod lsp;
 pub mod syntax_highlighting;
 pub mod ui_elements;
 
+#[cfg(test)]
+mod flicker_test;
+
 #[cfg(feature = "lsp")]
 pub use self::lsp_plugin::LspPlugin;
 

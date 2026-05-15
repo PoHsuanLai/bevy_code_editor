@@ -36,10 +36,9 @@ use bevy_instanced_text::view::text_access::produce_layouts;
 use bevy_instanced_text::view::plugin::update_text_views;
 use bevy_instanced_text::view::render::{GlyphBatchComponent, GlyphInstance};
 use bevy_instanced_text::view::measurement::LayoutTuning;
-use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{
-    DisplayLayout, LineStyles, MonoCellWidth, SmoothScroll, TextBounds, TextBuffer,
-    TextViewBatchEntity, TextViewOverlays,
+    DisplayLayout, HorizontalScroll, LineStyles, MonoCellWidth, TextBounds, TextBuffer,
+    TextOverlays, TextUnderlays, TextViewBatchEntity, VerticalScroll,
 };
 use bevy_text_editor::{RopeBuffer, BlinkPhase, EditDelta, EditPoint};
 use bevy_tree_sitter::{SyntaxTree, TreeSitterGrammar, TreeSitterPlugin};
@@ -81,22 +80,27 @@ fn spawn_test_editor(app: &mut App, text: &str) -> Entity {
     computed.size = Vec2::new(800.0, 600.0);
     computed.inverse_scale_factor = 1.0;
 
-    let engine_bundle = (
-        TextBuffer::new(RopeBuffer::new(text)),
-        ScrollPosition::default(),
-        SmoothScroll::default(),
-        bevy_instanced_text::ContentMetrics::default(),
-        computed,
+    let font_bundle = (
         TextFont::from_font_size(14.0),
         bevy::text::LineHeight::Px(21.0),
         MonoCellWidth { px: 8.0 },
+        bevy_instanced_text::MonoFontFaces::default(),
+        bevy::text::TextLayout::default(),
+    );
+    let scroll_bundle = (
+        VerticalScroll::default(),
+        HorizontalScroll::default(),
+    );
+    let layout_bundle = (
+        TextBuffer::new(RopeBuffer::new(text)),
+        bevy_instanced_text::ContentMetrics::default(),
+        computed,
         DisplayLayout::default(),
-        TextViewOverlays::default(),
+        TextUnderlays::default(),
+        TextOverlays::default(),
         TextBounds::default(),
         LayoutTuning::default(),
         UiGlobalTransform::from(Affine2::from_translation(Vec2::new(400.0, 300.0))),
-        bevy::text::TextLayout::default(),
-        bevy_instanced_text::MonoFontFaces::default(),
     );
     let settings_bundle = (
         EditorTheme::default(),
@@ -119,14 +123,13 @@ fn spawn_test_editor(app: &mut App, text: &str) -> Entity {
     );
     let entity = app
         .world_mut()
-        .spawn((
-            CodeEditor,
-            Name::new("TestEditor"),
-            engine_bundle,
-            settings_bundle,
-            editor_state_bundle,
-            language,
-        ))
+        .spawn((CodeEditor, Name::new("TestEditor")))
+        .insert(font_bundle)
+        .insert(scroll_bundle)
+        .insert(layout_bundle)
+        .insert(settings_bundle)
+        .insert(editor_state_bundle)
+        .insert(language)
         .id();
     // Run Startup once so `init_editor_syntax` attaches `EditorSyntaxState` /
     // `ParseSourceComp` / `SyntaxTree` to the entity.
