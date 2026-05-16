@@ -13,21 +13,16 @@
 //! - Multiple `TextBuffer<TextSpan>` views in a Bevy UI flex layout
 //! - `LineStyles` for per-row coloring (key column vs value column)
 //! - `TextOverlays` / `TextUnderlays` for hover highlight and selection band
-//! - `bevy::ui::ScrollPosition` driven from mouse wheel, per-panel
+//! - Per-panel mouse-wheel scrolling via `InstancedTextInteractionPlugin`
+//!   (Bevy picking routes `Pointer<Scroll>` to the hovered entity)
 //! - Live updates: clicking an object in the sidebar rebuilds the properties panel
 //! - A log panel that appends a new line each second
-//!
-//! ## Known rough edges (dogfood notes)
-//!
-//! These are intentionally left as comments so the author can see where the API
-//! creates friction before improving it.
 
-use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
-use bevy::ecs::message::MessageReader;
 use bevy_instanced_text::prelude::*;
 use bevy_instanced_text::view::glyph::TextFormat;
 use bevy_instanced_text::view::pipeline::DisplayLayout;
+use bevy_text_editor::InstancedTextInteractionPlugin;
 
 fn main() {
     App::new()
@@ -42,16 +37,15 @@ fn main() {
             }),
         )
         .add_plugins(InstancedTextPlugins)
+        // Routes Pointer<Scroll> to the hovered TextBuffer<TextSpan> entity,
+        // so per-panel mouse-wheel scrolling works without any custom system.
+        .add_plugins(InstancedTextInteractionPlugin::<TextSpan>::default())
         .init_resource::<InspectorState>()
         .add_systems(Startup, setup_camera)
         .add_systems(Startup, setup_ui.after(setup_camera))
         .add_systems(
             Update,
-            (
-                rebuild_properties_on_selection,
-                tick_log_panel,
-                handle_scroll,
-            ),
+            (rebuild_properties_on_selection, tick_log_panel),
         )
         .run();
 }
@@ -317,19 +311,22 @@ fn build_sidebar_text(selected: usize) -> String {
 fn build_sidebar_styles(text: &str, selected: usize) -> LineStyles {
     let accent = Color::srgb(0.4, 0.75, 1.0);
     let normal = Color::srgb(0.75, 0.75, 0.75);
-    let mut map = std::collections::HashMap::new();
-    for (i, line) in text.lines().enumerate() {
-        let color = if i == selected { accent } else { normal };
-        let len = line.len();
-        map.insert(
-            i as u32,
-            vec![FormattedSpan {
-                text: line.to_string(),
-                format: TextFormat::fg(0..len, color),
-            }],
-        );
-    }
-    LineStyles::new(map)
+    LineStyles::new(
+        text.lines()
+            .enumerate()
+            .map(|(i, line)| {
+                let color = if i == selected { accent } else { normal };
+                let len = line.len();
+                (
+                    i as u32,
+                    vec![FormattedSpan {
+                        text: line.to_string(),
+                        format: TextFormat::fg(0..len, color),
+                    }],
+                )
+            })
+            .collect(),
+    )
 }
 
 fn build_sidebar_underlays(selected: usize) -> TextUnderlays {
@@ -346,47 +343,47 @@ fn build_sidebar_underlays(selected: usize) -> TextUnderlays {
 fn build_props_text(obj: &SceneObject) -> String {
     let mut s = format!("{}  —  {} properties\n\n", obj.name, obj.props.len());
     for (k, v) in obj.props {
-        // Fixed-width key column using padding so the value column aligns.
-        // DOGFOOD NOTE: instanced text is monospace, which makes column alignment
-        // trivial — but we have no tab-stop API yet so we pad manually here.
+        // Monospace column alignment via fixed-width padding.
         s.push_str(&format!("  {:<20} {}\n", k, v));
     }
     s
 }
 
 fn build_props_styles(obj: &SceneObject) -> LineStyles {
-    let heading   = Color::srgb(1.0, 1.0, 1.0);
+    let heading = Color::srgb(1.0, 1.0, 1.0);
     let key_color = Color::srgb(0.55, 0.75, 0.95);
     let val_color = Color::srgb(0.88, 0.82, 0.65);
-    let mut map = std::collections::HashMap::new();
 
-    // Row 0: heading
     let heading_text = format!("{}  —  {} properties", obj.name, obj.props.len());
-    let len = heading_text.len();
-    map.insert(0u32, vec![FormattedSpan {
-        text: heading_text.clone(),
-        format: TextFormat::fg(0..len, heading),
-    }]);
+    let heading_len = heading_text.len();
 
-    // Row 1: blank
-    // Row 2+: key / value pairs
+    let mut map = std::collections::HashMap::from_iter([(
+        0u32,
+        vec![FormattedSpan {
+            text: heading_text,
+            format: TextFormat::fg(0..heading_len, heading),
+        }],
+    )]);
+
+    // Row 1 stays blank. Row 2+ is two non-overlapping spans: a padded key
+    // segment, then the value segment. The engine concatenates the texts
+    // and rebases each format's byte_range to match.
     for (i, (k, v)) in obj.props.iter().enumerate() {
-        let row = (i + 2) as u32;
-        let line = format!("  {:<20} {}", k, v);
-        // Key occupies "  " + k padded to 20 + " " = 23 bytes
-        let key_end = 2 + 20 + 1; // "  " + 20 chars + " "
-        let val_start = key_end;
-        let val_end = line.len();
-        map.insert(row, vec![
-            FormattedSpan {
-                text: line.clone(),
-                format: TextFormat::fg(0..key_end.min(line.len()), key_color),
-            },
-            FormattedSpan {
-                text: line.clone(),
-                format: TextFormat::fg(val_start.min(line.len())..val_end, val_color),
-            },
-        ]);
+        let key_part = format!("  {:<20} ", k);
+        let val_part = v.to_string();
+        map.insert(
+            (i + 2) as u32,
+            vec![
+                FormattedSpan {
+                    format: TextFormat::fg(0..key_part.len(), key_color),
+                    text: key_part,
+                },
+                FormattedSpan {
+                    format: TextFormat::fg(0..val_part.len(), val_color),
+                    text: val_part,
+                },
+            ],
+        );
     }
 
     LineStyles::new(map)
@@ -493,47 +490,3 @@ fn tick_log_panel(
     }
 }
 
-/// Per-panel mouse-wheel scrolling — kept here as a deliberate
-/// minimal example. Real apps should add
-/// [`bevy_text_interaction::InstancedTextInteractionPlugin`] (or its
-/// underlying [`bevy_text_interaction::on_pointer_scroll`] observer),
-/// which routes [`bevy::picking::events::Pointer<Scroll>`] events to the
-/// hovered text-view entity automatically — no cursor-vs-bounds math
-/// needed.
-fn handle_scroll(
-    mut mouse_wheel: MessageReader<MouseWheel>,
-    windows: Query<&Window>,
-    mut panels: Query<(&ComputedNode, &GlobalTransform, &mut bevy::ui::ScrollPosition), With<DisplayLayout>>,
-) {
-    let Ok(window) = windows.single() else { return };
-    let Some(cursor) = window.cursor_position() else { return };
-
-    let events: Vec<_> = mouse_wheel.read().cloned().collect();
-    if events.is_empty() {
-        return;
-    }
-
-    let line_height = 13.0 * 1.5;
-    let total_dy: f32 = events.iter().map(|e| {
-        match e.unit {
-            MouseScrollUnit::Pixel => -e.y,
-            MouseScrollUnit::Line  => -e.y * line_height,
-        }
-    }).sum();
-
-    // Find the hovered panel and scroll it.
-    for (computed, transform, mut scroll) in panels.iter_mut() {
-        let inv = computed.inverse_scale_factor();
-        let size = computed.size() * inv;
-        let center = transform.translation().truncate();
-        let top_left = center - size * 0.5;
-        let bottom_right = center + size * 0.5;
-
-        if cursor.x >= top_left.x && cursor.x <= bottom_right.x
-            && cursor.y >= top_left.y && cursor.y <= bottom_right.y
-        {
-            scroll.y = (scroll.y + total_dy).max(0.0);
-            break;
-        }
-    }
-}
