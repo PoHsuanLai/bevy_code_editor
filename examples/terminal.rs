@@ -27,7 +27,7 @@ fn main() {
                 ..default()
             }),
     )
-    .add_plugins(BevyTerminalPlugins)
+    .add_plugins(TerminalPlugins)
     .add_systems(Startup, (setup_camera, spawn_terminal))
     .add_systems(Update, log_events);
 

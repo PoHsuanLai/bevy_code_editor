@@ -104,17 +104,25 @@ pub fn handle_resize(
 
 pub fn handle_scroll_to(
     mut events: MessageReader<TerminalScrollTo>,
-    mut q: Query<(&mut ScrollPosition, &mut TerminalScrollFollow, &TextFont, &bevy::text::LineHeight, &MonoCellWidth)>,
+    mut q: Query<(
+        &mut ScrollPosition,
+        &mut TerminalScrollFollow,
+        &mut crate::text::ScrollFollowState,
+        &TextFont,
+        &bevy::text::LineHeight,
+        &MonoCellWidth,
+    )>,
 ) {
     for ev in events.read() {
-        let Ok((mut scroll, mut follow, font, lh, _mono)) = q.get_mut(ev.entity) else {
+        let Ok((mut scroll, mut follow, mut follow_state, font, lh, _mono)) = q.get_mut(ev.entity)
+        else {
             continue;
         };
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
         let target = ev.line.max(0) as f32 * line_height;
         scroll.y = target;
         follow.stick_to_bottom = false;
-        follow.last_applied_target = target;
+        follow_state.last_applied_target = target;
     }
 }
 
@@ -132,15 +140,19 @@ pub fn handle_scroll_to_bottom(
 
 pub fn handle_scroll_to_top(
     mut events: MessageReader<TerminalScrollToTop>,
-    mut q: Query<(&mut ScrollPosition, &mut TerminalScrollFollow)>,
+    mut q: Query<(
+        &mut ScrollPosition,
+        &mut TerminalScrollFollow,
+        &mut crate::text::ScrollFollowState,
+    )>,
 ) {
     for ev in events.read() {
-        let Ok((mut scroll, mut follow)) = q.get_mut(ev.entity) else {
+        let Ok((mut scroll, mut follow, mut follow_state)) = q.get_mut(ev.entity) else {
             continue;
         };
         scroll.y = 0.0;
         follow.stick_to_bottom = false;
-        follow.last_applied_target = 0.0;
+        follow_state.last_applied_target = 0.0;
     }
 }
 

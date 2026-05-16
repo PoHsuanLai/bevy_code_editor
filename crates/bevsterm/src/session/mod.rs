@@ -252,14 +252,14 @@ pub fn on_terminal_removed(
     }
 }
 
-/// Register PTY systems on an existing `BevyTerminalPlugin` app.
-pub struct BevyTerminalPtyPlugin;
+/// Register PTY systems on an existing `TerminalPlugin` app.
+pub struct TerminalPtyPlugin;
 
-impl Plugin for BevyTerminalPtyPlugin {
+impl Plugin for TerminalPtyPlugin {
     fn build(&self, app: &mut App) {
         assert!(
-            app.is_plugin_added::<crate::plugin::BevyTerminalPlugin>(),
-            "BevyTerminalPtyPlugin requires BevyTerminalPlugin to be added first"
+            app.is_plugin_added::<crate::plugin::TerminalPlugin>(),
+            "TerminalPtyPlugin requires TerminalPlugin to be added first"
         );
         app.init_resource::<TerminalEventLoopRegistry>()
             .add_systems(

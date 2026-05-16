@@ -4,7 +4,7 @@ use crate::backend::SharedWriter;
 
 /// Injects shell integration hooks into a freshly-opened PTY session.
 ///
-/// Called once by `BevyTerminalPtyPlugin` right after the PTY opens.
+/// Called once by `TerminalPtyPlugin` right after the PTY opens.
 /// Implementations write whatever bytes are needed to the PTY input —
 /// typically an `eval '...'` wrapped in a bootstrap guard so subshells
 /// don't re-inject.

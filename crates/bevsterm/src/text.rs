@@ -242,19 +242,26 @@ impl Default for TerminalScrollback {
 /// [`crate::messages::TerminalScrollToTop`] /
 /// [`crate::messages::TerminalScrollTo`] messages.
 #[derive(Component, Clone, Copy, Debug, Reflect)]
+#[require(ScrollFollowState)]
 #[reflect(Component, Default, Debug)]
 pub struct TerminalScrollFollow {
     pub stick_to_bottom: bool,
-    /// `target_scroll_offset` we last wrote — internal book-keeping the system
-    /// uses to detect wheel input. Hosts should leave this alone.
-    pub last_applied_target: f32,
 }
 
 impl Default for TerminalScrollFollow {
     fn default() -> Self {
         Self {
             stick_to_bottom: true,
-            last_applied_target: 0.0,
         }
     }
+}
+
+/// Internal book-keeping paired with [`TerminalScrollFollow`]. Carries the
+/// scroll offset the follower last wrote, so the apply system can tell a
+/// host-driven scroll (wheel, drag) apart from its own writes. Not part of
+/// the public surface — hosts never touch it.
+#[derive(Component, Clone, Copy, Debug, Default, Reflect)]
+#[reflect(Component, Default, Debug)]
+pub(crate) struct ScrollFollowState {
+    pub(crate) last_applied_target: f32,
 }

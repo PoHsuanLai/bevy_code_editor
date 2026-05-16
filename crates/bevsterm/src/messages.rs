@@ -7,7 +7,7 @@
 //!   out into the typed inbound messages by `crate::input::dispatch`.
 //!
 //! All `#[derive(Message, Reflect)]` and registered via `add_message` +
-//! `register_type` in `BevyTerminalPlugin::build`.
+//! `register_type` in `TerminalPlugin::build`.
 
 use bevy::prelude::*;
 use std::process::ExitStatus;

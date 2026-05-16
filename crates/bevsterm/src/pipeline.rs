@@ -73,6 +73,7 @@ type SnapshotQuery<'w, 's> = Query<
         &'static mut LineStyles,
         &'static mut TerminalGridSnapshot,
         &'static mut TerminalScrollFollow,
+        &'static mut crate::text::ScrollFollowState,
     ),
 >;
 
@@ -93,6 +94,7 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         mut line_styles,
         mut snapshot,
         mut follow,
+        mut follow_state,
     ) in q.iter_mut()
     {
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
@@ -108,7 +110,7 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         let needs_rebuild = cache_entry.last_seqno != Some(seqno) || cache_entry.last_rows != rows;
 
         if !needs_rebuild {
-            anchor_scroll_to_bottom(&mut scroll, computed, line_height, total_lines, &mut follow);
+            anchor_scroll_to_bottom(&mut scroll, computed, line_height, total_lines, &mut follow, &mut follow_state);
             continue;
         }
 
@@ -173,7 +175,7 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         cache_entry.last_cols = cols;
         cache_entry.last_total_lines = total_lines;
         cache_entry.lines = next_lines;
-        anchor_scroll_to_bottom(&mut scroll, computed, line_height, total_lines, &mut follow);
+        anchor_scroll_to_bottom(&mut scroll, computed, line_height, total_lines, &mut follow, &mut follow_state);
     }
 }
 
@@ -186,6 +188,7 @@ fn anchor_scroll_to_bottom(
     line_height: f32,
     total_lines: usize,
     follow: &mut TerminalScrollFollow,
+    follow_state: &mut crate::text::ScrollFollowState,
 ) {
     if line_height <= 0.0 {
         return;
@@ -200,16 +203,16 @@ fn anchor_scroll_to_bottom(
     let max_scroll = hidden_rows as f32 * line_height;
     let stick_threshold = line_height;
 
-    if (scroll.y - follow.last_applied_target).abs() > 0.5 {
+    if (scroll.y - follow_state.last_applied_target).abs() > 0.5 {
         follow.stick_to_bottom = max_scroll - scroll.y <= stick_threshold;
     }
 
     if follow.stick_to_bottom || max_scroll - scroll.y <= stick_threshold {
         follow.stick_to_bottom = true;
         scroll.y = max_scroll;
-        follow.last_applied_target = max_scroll;
+        follow_state.last_applied_target = max_scroll;
     } else {
-        follow.last_applied_target = scroll.y;
+        follow_state.last_applied_target = scroll.y;
     }
 }
 

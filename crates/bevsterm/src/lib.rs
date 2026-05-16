@@ -8,7 +8,7 @@
 //!
 //! App::new()
 //!     .add_plugins(DefaultPlugins)
-//!     .add_plugins(BevyTerminalPlugins)   // renderer + PTY backend
+//!     .add_plugins(TerminalPlugins)   // renderer + PTY backend
 //!     .add_systems(Startup, |mut commands: Commands| {
 //!         commands.spawn(BevyTerminal);
 //!     })
@@ -17,7 +17,7 @@
 //!
 //! ## WASM / custom IO
 //!
-//! Add only [`BevyTerminalPlugin`] (renderer), then insert
+//! Add only [`TerminalPlugin`] (renderer), then insert
 //! [`TerminalSession`] and [`TerminalEventChannel`] on the entity yourself
 //! with channels backed by a WebSocket or other transport:
 //!
@@ -67,9 +67,9 @@ pub mod text;
 pub mod viewport;
 
 pub use crate::messages::*;
-pub use crate::plugin::{BevyTerminalPlugin, BevyTerminalPlugins};
+pub use crate::plugin::{TerminalPlugin, TerminalPlugins};
 #[cfg(feature = "pty")]
-pub use crate::session::BevyTerminalPtyPlugin;
+pub use crate::session::TerminalPtyPlugin;
 pub use crate::text::{
     BevyTerminal, BlockStatus, TerminalBlock, TerminalBlockState, TerminalColorPalette,
     TerminalConfig, TerminalEventChannel, TerminalGridSnapshot, TerminalInputMode,
@@ -79,14 +79,17 @@ pub use crate::text::{
 pub mod prelude {
     pub use crate::messages::*;
     pub use crate::plugin::{
-        BevyTerminalPlugin, BevyTerminalPlugins, TerminalApplyStateSet, TerminalPtyDrainSet,
+        TerminalApplyStateSet, TerminalPlugin, TerminalPlugins, TerminalPtyDrainSet,
         TerminalSnapshotSet,
     };
     pub use crate::text::{
         BevyTerminal, BlockStatus, TerminalBlock, TerminalBlockState, TerminalColorPalette,
-        TerminalConfig, TerminalGridSnapshot, TerminalInputMode, TerminalScrollFollow,
-        TerminalScrollback, TerminalShellInfo,
+        TerminalConfig, TerminalEventChannel, TerminalGridSnapshot, TerminalInputMode,
+        TerminalScrollFollow, TerminalScrollback, TerminalSession, TerminalShellInfo,
     };
+    // Backend-side primitives hosts need when wiring their own IO (WASM,
+    // alternative PTY drivers, mock terminals for tests).
+    pub use crate::backend::{DefaultConfig, TerminalSize};
     pub use bevy_instanced_text::{MonoCellWidth, MonoFontFaces};
     pub use bevy::text::TextFont;
 }

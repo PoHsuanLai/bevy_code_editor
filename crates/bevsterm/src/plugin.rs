@@ -20,13 +20,13 @@ pub struct TerminalSnapshotSet;
 
 /// Terminal renderer plugin. Handles VT parsing, grid snapshotting, input,
 /// selection, and all ECS state. Does not spawn any PTY — add
-/// [`BevyTerminalPtyPlugin`] alongside this for native PTY support, or supply
+/// [`crate::TerminalPtyPlugin`] alongside this for native PTY support, or supply
 /// your own [`crate::text::TerminalSession`] and
 /// [`crate::text::TerminalEventChannel`] for WASM / custom IO backends.
 #[derive(Default)]
-pub struct BevyTerminalPlugin;
+pub struct TerminalPlugin;
 
-impl Plugin for BevyTerminalPlugin {
+impl Plugin for TerminalPlugin {
     fn build(&self, app: &mut App) {
         if !app.is_plugin_added::<bevy::input_focus::InputDispatchPlugin>() {
             app.add_plugins(bevy::input_focus::InputDispatchPlugin);
@@ -44,6 +44,7 @@ impl Plugin for BevyTerminalPlugin {
             .register_type::<TerminalColorPalette>()
             .register_type::<TerminalScrollback>()
             .register_type::<TerminalScrollFollow>()
+            .register_type::<crate::text::ScrollFollowState>()
             .register_type::<TerminalExited>()
             .register_type::<TerminalTitleChanged>()
             .register_type::<TerminalBell>()
@@ -166,9 +167,9 @@ impl Plugin for BevyTerminalPlugin {
 ///
 /// Disable individual entries with `.build().disable::<T>()` when composing
 /// with a host that already owns one of the dependencies.
-pub struct BevyTerminalPlugins;
+pub struct TerminalPlugins;
 
-impl PluginGroup for BevyTerminalPlugins {
+impl PluginGroup for TerminalPlugins {
     fn build(self) -> PluginGroupBuilder {
         let mut group = PluginGroupBuilder::start::<Self>()
             .add(bevy_instanced_text::gpu::GlyphAtlasPlugin)
@@ -176,10 +177,10 @@ impl PluginGroup for BevyTerminalPlugins {
             .add(bevy_instanced_text::view::plugin::InstancedTextPlugin)
             .add(bevy::input_focus::InputDispatchPlugin)
             .add(bevy_text_interaction::InstancedTextInteractionPlugin::<bevy_instanced_text::TextSpan>::default())
-            .add(BevyTerminalPlugin);
+            .add(TerminalPlugin);
         #[cfg(feature = "pty")]
         {
-            group = group.add(crate::session::BevyTerminalPtyPlugin);
+            group = group.add(crate::session::TerminalPtyPlugin);
         }
         group
     }

@@ -32,8 +32,8 @@ fn main() {
                 }),
         )
         .add_plugins(CodeEditorPlugins)
-        .add_plugins(BevyTerminalPlugin)
-        .add_plugins(bevsterm::BevyTerminalPtyPlugin)
+        .add_plugins(TerminalPlugin)
+        .add_plugins(bevsterm::TerminalPtyPlugin)
         .add_systems(Startup, layout_panes)
         .add_systems(PostStartup, setup_editor_content)
         .run();
