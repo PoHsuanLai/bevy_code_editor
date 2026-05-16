@@ -11,7 +11,7 @@ keywords = ["bevy", "editor", "code-editor", "syntax-highlighting"]
 categories = ["game-development", "text-editors"]
 
 [dependencies]
-bevy_instanced_text = { path = "../bevy_instanced_text", version = "0.1.1" }
+bevy_instanced_text = { path = "../../../bevy_instanced_text/crates/bevy_instanced_text", version = "0.1.1" }
 bevy_instanced_text_editor = { path = "../bevy_instanced_text_editor", version = "0.1.1" }
 bevy_tree_sitter = { path = "../bevy_tree_sitter", version = "0.1.1", optional = true }
 bevy_lsp = { path = "../bevy_lsp", version = "0.1.1", optional = true }

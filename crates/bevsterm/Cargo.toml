@@ -14,8 +14,8 @@ categories = ["game-development", "command-line-interface"]
 publish = false
 
 [dependencies]
-bevy_instanced_text = { path = "../bevy_instanced_text" }
-bevy_instanced_text_interaction = { path = "../bevy_instanced_text_interaction", default-features = false }
+bevy_instanced_text = { path = "../../../bevy_instanced_text/crates/bevy_instanced_text" }
+bevy_instanced_text_interaction = { path = "../../../bevy_instanced_text/crates/bevy_instanced_text_interaction", default-features = false }
 
 bevy = { version = "0.18", default-features = false, features = [
     "bevy_render",

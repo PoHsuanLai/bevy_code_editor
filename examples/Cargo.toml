@@ -27,7 +27,7 @@ bevy = { version = "0.18", default-features = false, features = [
 ] }
 bevy_camera = "0.18"
 
-bevy_instanced_text = { path = "../crates/bevy_instanced_text" }
+bevy_instanced_text = { path = "../../bevy_instanced_text/crates/bevy_instanced_text" }
 bevy_instanced_text_editor = { path = "../crates/bevy_instanced_text_editor" }
 bevscode = { path = "../crates/bevscode" }
 bevsterm = { path = "../crates/bevsterm" }
