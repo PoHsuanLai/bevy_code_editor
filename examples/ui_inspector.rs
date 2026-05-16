@@ -420,8 +420,14 @@ fn on_sidebar_click(
 /// When the selection changes, rewrite both the sidebar and properties panels.
 fn rebuild_properties_on_selection(
     mut state: ResMut<InspectorState>,
-    mut sidebar_q: Query<(&mut TextBuffer<TextSpan>, &mut LineStyles, &mut TextUnderlays), With<SidebarPanel>>,
-    mut props_q: Query<(&mut TextBuffer<TextSpan>, &mut LineStyles), With<PropertiesPanel>>,
+    mut sidebar_q: Query<
+        (&mut TextBuffer<TextSpan>, &mut LineStyles, &mut TextUnderlays),
+        (With<SidebarPanel>, Without<PropertiesPanel>),
+    >,
+    mut props_q: Query<
+        (&mut TextBuffer<TextSpan>, &mut LineStyles),
+        (With<PropertiesPanel>, Without<SidebarPanel>),
+    >,
 ) {
     if state.last_selected == Some(state.selected) {
         return;

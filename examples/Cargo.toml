@@ -71,6 +71,10 @@ profile = [
     "bevy/debug",
 ]
 
+# Resolve component / system names in B0001 / B0004 ECS error messages.
+# Without it, Bevy prints "<Enable the debug feature to see the name>".
+debug-names = ["bevy/debug"]
+
 [[example]]
 name = "editor"
 path = "editor.rs"
