@@ -185,11 +185,11 @@ fn setup_text_view(
     // Build LineStyles from the per-line runs.
     let mut by_line = std::collections::HashMap::new();
     for (i, (_text, runs)) in lines.iter().enumerate() {
-        let row_runs: Vec<RunWithText> = runs
+        let row_runs: Vec<FormattedSpan> = runs
             .iter()
-            .map(|r| RunWithText {
+            .map(|r| FormattedSpan {
                 text: _text.clone(),
-                run: r.clone(),
+                format: r.clone(),
             })
             .collect();
         by_line.insert(i as u32, row_runs);

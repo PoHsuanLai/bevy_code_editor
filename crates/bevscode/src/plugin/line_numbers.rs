@@ -11,7 +11,7 @@ use bevy::prelude::*;
 use bevy::text::{Justify, TextLayout};
 use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{
-    HiddenLines, LineStyles, MonoFontFaces, RunWithText, TextBuffer, TextFormat, TextSpan,
+    HiddenLines, LineStyles, MonoFontFaces, FormattedSpan, TextBuffer, TextFormat, TextSpan,
 };
 use bevy_text_editor::RopeBuffer;
 
@@ -236,16 +236,16 @@ pub(crate) fn sync_gutter_text_view(
 
         if cursor_lines != current_active || count_stale {
             let active_color = theme.line_numbers_active;
-            let mut by_line: HashMap<u32, Vec<RunWithText>> = HashMap::new();
+            let mut by_line: HashMap<u32, Vec<FormattedSpan>> = HashMap::new();
             for &line in &cursor_lines {
                 if line < line_count {
                     let num_str = (line + 1).to_string();
                     let byte_len = num_str.len();
                     by_line.insert(
                         line as u32,
-                        vec![RunWithText {
+                        vec![FormattedSpan {
                             text: num_str,
-                            run: TextFormat::fg(0..byte_len, active_color),
+                            format: TextFormat::fg(0..byte_len, active_color),
                         }],
                     );
                 }

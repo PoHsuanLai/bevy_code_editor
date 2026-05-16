@@ -17,7 +17,7 @@ use bevy_text_editor::RopeBuffer;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::{
-    visible_buffer_range, HiddenLines, LayoutProduceSet, LineStyles, MonoCellWidth, RunWithText,
+    visible_buffer_range, HiddenLines, LayoutProduceSet, LineStyles, MonoCellWidth, FormattedSpan,
     TextBounds, TextBuffer,
 };
 use std::collections::{HashMap, HashSet};
@@ -337,7 +337,7 @@ pub(crate) fn produce_line_styles(
 
         // On a full rebuild start fresh; on incremental reuse the existing map.
         let is_incremental = dirty_range.is_some();
-        let mut by_line: HashMap<u32, Vec<RunWithText>> = if !is_incremental {
+        let mut by_line: HashMap<u32, Vec<FormattedSpan>> = if !is_incremental {
             HashMap::new()
         } else {
             // Clone the existing Arc'd map so we can patch it, then apply any

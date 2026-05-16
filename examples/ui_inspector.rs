@@ -323,9 +323,9 @@ fn build_sidebar_styles(text: &str, selected: usize) -> LineStyles {
         let len = line.len();
         map.insert(
             i as u32,
-            vec![RunWithText {
+            vec![FormattedSpan {
                 text: line.to_string(),
-                run: TextFormat::fg(0..len, color),
+                format: TextFormat::fg(0..len, color),
             }],
         );
     }
@@ -363,9 +363,9 @@ fn build_props_styles(obj: &SceneObject) -> LineStyles {
     // Row 0: heading
     let heading_text = format!("{}  —  {} properties", obj.name, obj.props.len());
     let len = heading_text.len();
-    map.insert(0u32, vec![RunWithText {
+    map.insert(0u32, vec![FormattedSpan {
         text: heading_text.clone(),
-        run: TextFormat::fg(0..len, heading),
+        format: TextFormat::fg(0..len, heading),
     }]);
 
     // Row 1: blank
@@ -378,13 +378,13 @@ fn build_props_styles(obj: &SceneObject) -> LineStyles {
         let val_start = key_end;
         let val_end = line.len();
         map.insert(row, vec![
-            RunWithText {
+            FormattedSpan {
                 text: line.clone(),
-                run: TextFormat::fg(0..key_end.min(line.len()), key_color),
+                format: TextFormat::fg(0..key_end.min(line.len()), key_color),
             },
-            RunWithText {
+            FormattedSpan {
                 text: line.clone(),
-                run: TextFormat::fg(val_start.min(line.len())..val_end, val_color),
+                format: TextFormat::fg(val_start.min(line.len())..val_end, val_color),
             },
         ]);
     }

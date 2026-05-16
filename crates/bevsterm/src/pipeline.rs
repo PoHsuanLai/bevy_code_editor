@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition};
 
 use bevy_instanced_text::{
-    LineStyles, MonoCellWidth, RunWithText, TextFormat, TextBackgroundColor, TextBuffer, TextColor,
+    LineStyles, MonoCellWidth, FormattedSpan, TextFormat, TextBackgroundColor, TextBuffer, TextColor,
     TextSpan,
 };
 use wezterm_surface::SequenceNo;
@@ -20,14 +20,14 @@ use crate::text::{
 /// Cached shape of one phys row from a previous rebuild. We carry these forward
 /// across frames so unchanged rows (the common case during cursor blink, or
 /// when only one line of the prompt redraws) don't have to walk cells +
-/// rebuild `RunWithText` runs again.
+/// rebuild `FormattedSpan` runs again.
 #[derive(Clone)]
 struct CachedLine {
     /// Padded line text (cols chars, no trailing newline). Concatenated into
     /// the rope with `\n` separators on rebuild.
     text: String,
     /// Style runs covering `text`. Cloned out of the cache when reused.
-    runs: Vec<RunWithText>,
+    runs: Vec<FormattedSpan>,
 }
 
 /// Per-entity rebuild-cache for `sync_grid_snapshot`. Kept in a `Local` because
@@ -124,7 +124,7 @@ pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity,
         let prev_seqno = cache_entry.last_seqno.unwrap_or(0);
 
         let mut text = String::with_capacity(total_lines * (cols + 1));
-        let mut by_line: HashMap<u32, Vec<RunWithText>> = HashMap::with_capacity(total_lines);
+        let mut by_line: HashMap<u32, Vec<FormattedSpan>> = HashMap::with_capacity(total_lines);
         let mut next_lines: Vec<CachedLine> = Vec::with_capacity(total_lines);
 
         screen.for_each_phys_line(|phys_y, line| {
@@ -222,9 +222,9 @@ fn shape_phys_line(
     palette: &TerminalColorPalette,
     fg: &TextColor,
     bg: &TextBackgroundColor,
-) -> (String, Vec<RunWithText>) {
+) -> (String, Vec<FormattedSpan>) {
     let mut line_text = String::with_capacity(cols);
-    let mut runs: Vec<RunWithText> = Vec::new();
+    let mut runs: Vec<FormattedSpan> = Vec::new();
     let mut current: Option<(TextFormat, String)> = None;
 
     for cell in line.visible_cells() {
@@ -269,8 +269,8 @@ fn shape_phys_line(
         match current.as_mut() {
             Some((prev, buf)) if style_run_matches(prev, &run_proto) => buf.push(ch),
             _ => {
-                if let Some((run, buf)) = current.take() {
-                    runs.push(RunWithText { text: buf, run });
+                if let Some((format, buf)) = current.take() {
+                    runs.push(FormattedSpan { text: buf, format });
                 }
                 let mut buf = String::new();
                 buf.push(ch);
@@ -281,8 +281,8 @@ fn shape_phys_line(
     while line_text.chars().count() < cols {
         line_text.push(' ');
     }
-    if let Some((run, buf)) = current.take() {
-        runs.push(RunWithText { text: buf, run });
+    if let Some((format, buf)) = current.take() {
+        runs.push(FormattedSpan { text: buf, format });
     }
     (line_text, runs)
 }

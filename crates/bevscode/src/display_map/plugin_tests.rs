@@ -343,11 +343,11 @@ fn assert_pipeline_consistent_for_keyword(
                 expected_fn_buffer_row,
                 row_styled
                     .iter()
-                    .map(|r| (r.text.clone(), r.run.fg))
+                    .map(|r| (r.text.clone(), r.format.fg))
                     .collect::<Vec<_>>()
             );
         });
-    let kw_color = kw_styled.run.fg;
+    let kw_color = kw_styled.format.fg;
     assert_ne!(
         kw_color, default_fg,
         "{}: LAYER 1: `fn` on buffer_row={} is the default foreground color — \
@@ -638,7 +638,7 @@ fn pipeline_consistency_after_newline_insert() {
          (shifted down from pre-edit row 1). Got: {:?}",
         row2_styled
             .iter()
-            .map(|r| (r.text.clone(), r.run.fg))
+            .map(|r| (r.text.clone(), r.format.fg))
             .collect::<Vec<_>>()
     );
 }
@@ -728,7 +728,7 @@ fn pipeline_consistency_after_backspace_join() {
          backspace-join: {:?}",
         row1_styled
             .iter()
-            .map(|r| (r.text.clone(), r.run.fg))
+            .map(|r| (r.text.clone(), r.format.fg))
             .collect::<Vec<_>>()
     );
 }
@@ -881,7 +881,7 @@ fn pipeline_consistency_after_repeated_line_deletion() {
         row0.iter().any(|r| r.text == "fn"),
         "REGRESSION: row 0 lost `fn` color after repeated line-deleting backspaces. \
          Got runs: {:?}",
-        row0.iter().map(|r| (r.text.clone(), r.run.fg)).collect::<Vec<_>>()
+        row0.iter().map(|r| (r.text.clone(), r.format.fg)).collect::<Vec<_>>()
     );
 
     // No rows beyond 0 should have any styled content (buffer only has 1 line).
@@ -891,7 +891,7 @@ fn pipeline_consistency_after_repeated_line_deletion() {
             stale.is_empty(),
             "STALE RUNS: row {} has leftover styled runs after deletion: {:?}",
             row,
-            stale.iter().map(|r| (r.text.clone(), r.run.fg)).collect::<Vec<_>>()
+            stale.iter().map(|r| (r.text.clone(), r.format.fg)).collect::<Vec<_>>()
         );
     }
 }
