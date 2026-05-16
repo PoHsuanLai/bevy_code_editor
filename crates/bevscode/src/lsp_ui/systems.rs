@@ -14,7 +14,7 @@ use bevy::ui::{ComputedNode, ScrollPosition};
 use crate::types::{CodeEditor, CursorState};
 use bevy_instanced_text::MonoCellWidth;
 
-use super::text::{
+use super::state::{
     LspCodeActionsPopup, LspCompletionPopup, LspDidChangeBatcher, LspDocumentHighlights,
     LspHoverPopup, LspInlayHints, LspRenamePopup, LspSignatureHelpPopup,
 };
@@ -597,7 +597,7 @@ pub fn sync_lsp_document(
 
 /// System to request inlay hints for visible range
 pub fn request_inlay_hints(mut query: RequestInlayHintsQuery, mut lsp_w: MessageWriter<LspRequest>) {
-    let Ok((entity, lsp_client, capabilities, buffer, scroll, computed, lsp_document, mut hint_state, font, lh, mono)) =
+    let Ok((entity, lsp_client, capabilities, buffer, scroll, computed, lsp_document, mut hint_state, font, lh, _mono)) =
         query.single_mut()
     else {
         return;

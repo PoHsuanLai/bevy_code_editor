@@ -11,7 +11,7 @@
 
 use super::snippet;
 use bevy_instanced_text_editor::RopeBuffer;
-use super::text::{
+use super::state::{
     LspCompletionPopup, LspDebounceTimers, LspDidChangeBatcher, LspRenamePopup,
     LspSignatureHelpPopup, PendingLspRequest, SessionTabstop, TabstopSession,
     UnifiedCompletionItem,
@@ -25,7 +25,7 @@ use crate::types::events::{
 use crate::types::{CodeEditor, CursorState};
 use bevy::prelude::*;
 use bevy_lsp::{
-    rope_byte_to_lsp_position, rope_char_to_lsp_position, LspClient, LspDocument, LspMessage,
+    rope_byte_to_lsp_position, rope_char_to_lsp_position, LspDocument, LspMessage,
     LspRequest,
 };
 use lsp_types::{Range, TextDocumentContentChangeEvent};

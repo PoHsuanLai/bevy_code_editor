@@ -42,7 +42,7 @@ pub mod prelude {
     };
 
     // Per-editor LSP UI state Components.
-    pub use super::text::{
+    pub use super::state::{
         LspCodeActionsPopup, LspCompletionPopup, LspDebounceTimers, LspDidChangeBatcher,
         LspDocumentHighlights, LspHoverPopup, LspInlayHints, LspRenamePopup, LspSignatureHelpPopup,
         PendingLspRequest, UnifiedCompletionItem, WordCompletionItem,

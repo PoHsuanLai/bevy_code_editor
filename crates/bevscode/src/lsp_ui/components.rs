@@ -13,7 +13,7 @@
 
 use bevy::prelude::*;
 
-use super::text::UnifiedCompletionItem;
+use super::state::UnifiedCompletionItem;
 
 /// Completion popup data. Hosts query this and render however they prefer.
 ///

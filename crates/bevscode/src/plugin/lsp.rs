@@ -21,7 +21,6 @@
 //!   `LspMessage::DidChange` / `LspMessage::Completion` / etc.
 
 use bevy::prelude::*;
-use bevy_instanced_text_editor::RopeBuffer;
 
 use crate::lsp_ui::event_listeners::{
     advance_tabstop_session, dismiss_completion_on_cursor_move, drive_completion_resolve,
@@ -185,7 +184,7 @@ impl Plugin for LspPlugin {
         app.add_systems(
             Update,
             advance_tabstop_session
-                .before(bevy_instanced_text_editor::handlers::edit::handle_insert_tab),
+                .before(bevy_instanced_text_editor::widget::text_input::handle_insert_tab),
         );
     }
 }
