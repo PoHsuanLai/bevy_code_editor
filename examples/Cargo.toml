@@ -93,10 +93,6 @@ name = "editor_multi"
 path = "editor_multi.rs"
 
 [[example]]
-name = "text_view"
-path = "text_view.rs"
-
-[[example]]
 name = "editor_syntax"
 path = "editor_syntax.rs"
 required-features = ["tree-sitter"]
@@ -117,8 +113,4 @@ path = "terminal_editor.rs"
 [[example]]
 name = "text_input"
 path = "text_input.rs"
-
-[[example]]
-name = "ui_inspector"
-path = "ui_inspector.rs"
 
