@@ -497,7 +497,7 @@ pub(crate) fn sync_layout_wrap(
             None
         };
         let indent_px = if wrapping.enabled && wrapping.indent_wrapped_lines {
-            indentation.indent_size as f32 * char_width
+            indentation.tab_width as f32 * char_width
         } else {
             0.0
         };

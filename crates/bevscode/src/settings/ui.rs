@@ -68,9 +68,10 @@ impl Default for EditorUi {
 #[reflect(Component, Default, Debug)]
 pub struct Indentation {
     pub use_spaces: bool,
+    /// Width of one indent level in columns. Drives both tab rendering
+    /// (a `\t` advances this many cells) and the column count inserted
+    /// when `use_spaces` is true.
     pub tab_width: usize,
-    /// Alias of `tab_width` for compatibility.
-    pub indent_size: usize,
     pub auto_indent: bool,
 }
 
@@ -79,7 +80,6 @@ impl Default for Indentation {
         Self {
             use_spaces: true,
             tab_width: 4,
-            indent_size: 4,
             auto_indent: true,
         }
     }

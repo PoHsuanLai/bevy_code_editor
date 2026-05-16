@@ -179,10 +179,9 @@ pub mod prelude {
         TextEditor,
     };
 
-    // Rendering internals that host apps need for overlay ordering and batch tinting.
-    pub use bevy_instanced_text::{
-        GlyphBatchComponent, TextViewBatchEntity, TextViewRenderSet,
-    };
+    // System-set ordering anchor for hosts that schedule overlay-producing
+    // systems relative to the engine's rendering set.
+    pub use bevy_instanced_text::TextViewRenderSet;
 
     // Selection / multi-cursor types and the EditorAction enum.
     pub use crate::input::EditorAction;

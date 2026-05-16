@@ -345,7 +345,7 @@ pub(crate) fn update_indent_guides(
         }
 
         let inv = computed.inverse_scale_factor();
-        let indent_size = indentation.indent_size;
+        let indent_size = indentation.tab_width;
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
         let char_width = mono.px;
         let viewport_height = computed.size().y * inv;
