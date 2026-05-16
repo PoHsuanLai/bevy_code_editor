@@ -20,8 +20,6 @@
 
 use bevy::prelude::*;
 use bevy_instanced_text::prelude::*;
-use bevy_instanced_text::view::glyph::TextFormat;
-use bevy_instanced_text::view::pipeline::DisplayLayout;
 use bevy_text_editor::InstancedTextInteractionPlugin;
 
 fn main() {

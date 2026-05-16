@@ -4,15 +4,14 @@
 //! can render styled text independently, without `CodeEditorPlugin`, cursor,
 //! selection, syntax highlighting, or keybindings.
 //!
-//! Mouse-wheel scrolling is handled by a tiny demo-local system; real consumers
-//! that want the editor's scroll/drag/copy behaviour also add
-//! `InstancedTextInteractionPlugin`.
+//! `InstancedTextInteractionPlugin::<TextSpan>` is added for mouse-wheel
+//! scrolling — it routes `Pointer<Scroll>` events to the hovered text view
+//! automatically, so no custom system is needed.
 
-use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
-use bevy_instanced_text::prelude::*;
-use bevy_instanced_text::view::glyph::TextFormat;
 use bevy::text::TextFont;
+use bevy_instanced_text::prelude::*;
+use bevy_text_editor::InstancedTextInteractionPlugin;
 
 fn main() {
     let mut app = App::new();
@@ -33,8 +32,8 @@ fn main() {
     );
 
     app.add_plugins(InstancedTextPlugins)
+        .add_plugins(InstancedTextInteractionPlugin::<TextSpan>::default())
         .add_systems(Startup, (setup_camera, setup_text_view))
-        .add_systems(Update, handle_scroll)
         .run();
 }
 
@@ -194,11 +193,10 @@ fn setup_text_view(
             .collect();
         by_line.insert(i as u32, row_runs);
     }
-    let line_count = lines.len() as u32;
     let line_styles = LineStyles::new(by_line);
 
     commands.spawn((
-        TextBuffer::<bevy_instanced_text::TextSpan>::new(full_text.clone()),
+        TextBuffer::<TextSpan>::new(full_text.clone()),
         line_styles,
         TextFont::from_font_size(16.0)
             .with_font(asset_server.load("fonts/FiraMono-Regular.ttf")),
@@ -212,24 +210,6 @@ fn setup_text_view(
             ..default()
         },
     ));
-}
-
-/// Handle mouse wheel scrolling for the text view
-fn handle_scroll(
-    mut text_views: Query<&mut bevy::ui::ScrollPosition, With<bevy_instanced_text::DisplayLayout>>,
-    mut mouse_wheel: MessageReader<bevy::input::mouse::MouseWheel>,
-) {
-    use bevy::input::mouse::MouseScrollUnit;
-    let line_height = 24.0;
-    for event in mouse_wheel.read() {
-        let dy = match event.unit {
-            MouseScrollUnit::Pixel => event.y,
-            MouseScrollUnit::Line => event.y * line_height,
-        };
-        for mut scroll_pos in text_views.iter_mut() {
-            scroll_pos.y = (scroll_pos.y - dy).max(0.0);
-        }
-    }
 }
 
 fn styled_line(text: &str, color: Color) -> (String, Vec<TextFormat>) {
