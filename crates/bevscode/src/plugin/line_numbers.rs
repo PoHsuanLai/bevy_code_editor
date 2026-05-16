@@ -11,8 +11,7 @@ use bevy::prelude::*;
 use bevy::text::{Justify, TextLayout};
 use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{
-    view::glyph::TextDecoration, HiddenLines, LineStyles, MonoFontFaces, RunWithText, StyleRun,
-    TextBuffer, TextSpan,
+    HiddenLines, LineStyles, MonoFontFaces, RunWithText, TextBuffer, TextFormat, TextSpan,
 };
 use bevy_text_editor::RopeBuffer;
 
@@ -246,19 +245,7 @@ pub(crate) fn sync_gutter_text_view(
                         line as u32,
                         vec![RunWithText {
                             text: num_str,
-                            run: StyleRun {
-                                byte_range: 0..byte_len,
-                                fg: active_color,
-                                bg: None,
-                                font_scale: 0.0,
-                                skew: 0.0,
-                                corner_radius: 0.0,
-                                font_weight: None,
-                                italic: false,
-                                font: None,
-                                decoration: TextDecoration::empty(),
-                                link: None,
-                            },
+                            run: TextFormat::fg(0..byte_len, active_color),
                         }],
                     );
                 }

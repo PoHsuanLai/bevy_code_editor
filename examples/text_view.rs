@@ -11,7 +11,7 @@
 use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
 use bevy_instanced_text::prelude::*;
-use bevy_instanced_text::view::glyph::StyleRun;
+use bevy_instanced_text::view::glyph::TextFormat;
 use bevy::text::TextFont;
 
 fn main() {
@@ -232,25 +232,25 @@ fn handle_scroll(
     }
 }
 
-fn styled_line(text: &str, color: Color) -> (String, Vec<StyleRun>) {
+fn styled_line(text: &str, color: Color) -> (String, Vec<TextFormat>) {
     (
         text.to_string(),
-        vec![StyleRun::fg_only(0..text.len(), color)],
+        vec![TextFormat::fg(0..text.len(), color)],
     )
 }
 
-fn plain_line(text: &str) -> (String, Vec<StyleRun>) {
+fn plain_line(text: &str) -> (String, Vec<TextFormat>) {
     (text.to_string(), vec![])
 }
 
-fn multi_segment_line(segments: Vec<(&str, Color)>) -> (String, Vec<StyleRun>) {
+fn multi_segment_line(segments: Vec<(&str, Color)>) -> (String, Vec<TextFormat>) {
     let mut text = String::new();
     let mut runs = Vec::with_capacity(segments.len());
     let mut byte_cursor = 0;
     for (t, c) in segments {
         let len = t.len();
         text.push_str(t);
-        runs.push(StyleRun::fg_only(byte_cursor..byte_cursor + len, c));
+        runs.push(TextFormat::fg(byte_cursor..byte_cursor + len, c));
         byte_cursor += len;
     }
     (text, runs)

@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition};
 
 use bevy_instanced_text::{
-    LineStyles, MonoCellWidth, RunWithText, StyleRun, TextBackgroundColor, TextBuffer, TextColor,
+    LineStyles, MonoCellWidth, RunWithText, TextFormat, TextBackgroundColor, TextBuffer, TextColor,
     TextSpan,
 };
 use wezterm_surface::SequenceNo;
@@ -225,7 +225,7 @@ fn shape_phys_line(
 ) -> (String, Vec<RunWithText>) {
     let mut line_text = String::with_capacity(cols);
     let mut runs: Vec<RunWithText> = Vec::new();
-    let mut current: Option<(StyleRun, String)> = None;
+    let mut current: Option<(TextFormat, String)> = None;
 
     for cell in line.visible_cells() {
         let cell_str = cell.str();
@@ -239,7 +239,7 @@ fn shape_phys_line(
             other => Some(resolve_color(other, palette, fg, bg, false)),
         };
 
-        let run_proto = StyleRun {
+        let run_proto = TextFormat {
             byte_range: 0..0,
             fg: fg_color,
             bg: bg_color,
@@ -287,7 +287,7 @@ fn shape_phys_line(
     (line_text, runs)
 }
 
-fn style_run_matches(a: &StyleRun, b: &StyleRun) -> bool {
+fn style_run_matches(a: &TextFormat, b: &TextFormat) -> bool {
     a.fg == b.fg
         && a.bg == b.bg
         && a.font_weight == b.font_weight

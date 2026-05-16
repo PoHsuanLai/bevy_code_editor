@@ -6,7 +6,7 @@
 //! per-line slice through `segs_to_runs` before stuffing it into a
 //! [`bevy_instanced_text::LineStyles`] map.
 
-use bevy_instanced_text::{RunWithText, StyleRun, TextDecoration};
+use bevy_instanced_text::{RunWithText, TextFormat};
 
 use crate::types::LineSegment;
 
@@ -20,21 +20,18 @@ use crate::types::LineSegment;
 pub(crate) fn segs_to_runs(segs: &[LineSegment]) -> Vec<RunWithText> {
     segs.iter()
         .filter(|s| !s.text.is_empty())
-        .map(|s| RunWithText {
-            text: s.text.clone(),
-            run: StyleRun {
-                byte_range: 0..0,
-                fg: s.color,
-                bg: s.background,
-                font_scale: s.font_scale,
-                skew: s.skew,
-                corner_radius: s.corner_radius,
-                font_weight: None,
-                italic: false,
-                font: None,
-                decoration: TextDecoration::empty(),
-                link: None,
-            },
+        .map(|s| {
+            let mut run = TextFormat::fg(0..0, s.color)
+                .with_scale(s.font_scale)
+                .with_skew(s.skew)
+                .with_corner_radius(s.corner_radius);
+            if let Some(bg) = s.background {
+                run = run.with_bg(bg);
+            }
+            RunWithText {
+                text: s.text.clone(),
+                run,
+            }
         })
         .collect()
 }

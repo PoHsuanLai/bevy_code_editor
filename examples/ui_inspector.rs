@@ -26,7 +26,7 @@ use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy::ecs::message::MessageReader;
 use bevy_instanced_text::prelude::*;
-use bevy_instanced_text::view::glyph::StyleRun;
+use bevy_instanced_text::view::glyph::TextFormat;
 use bevy_instanced_text::view::pipeline::DisplayLayout;
 
 fn main() {
@@ -325,7 +325,7 @@ fn build_sidebar_styles(text: &str, selected: usize) -> LineStyles {
             i as u32,
             vec![RunWithText {
                 text: line.to_string(),
-                run: StyleRun::fg_only(0..len, color),
+                run: TextFormat::fg(0..len, color),
             }],
         );
     }
@@ -365,7 +365,7 @@ fn build_props_styles(obj: &SceneObject) -> LineStyles {
     let len = heading_text.len();
     map.insert(0u32, vec![RunWithText {
         text: heading_text.clone(),
-        run: StyleRun::fg_only(0..len, heading),
+        run: TextFormat::fg(0..len, heading),
     }]);
 
     // Row 1: blank
@@ -380,11 +380,11 @@ fn build_props_styles(obj: &SceneObject) -> LineStyles {
         map.insert(row, vec![
             RunWithText {
                 text: line.clone(),
-                run: StyleRun::fg_only(0..key_end.min(line.len()), key_color),
+                run: TextFormat::fg(0..key_end.min(line.len()), key_color),
             },
             RunWithText {
                 text: line.clone(),
-                run: StyleRun::fg_only(val_start.min(line.len())..val_end, val_color),
+                run: TextFormat::fg(val_start.min(line.len())..val_end, val_color),
             },
         ]);
     }
