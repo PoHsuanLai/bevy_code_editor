@@ -1,34 +1,66 @@
 //! Smooth-scroll animator for code-editor entities.
 //!
 //! Hosts that want VS-Code-style eased scrolling attach a [`ScrollAnimator`]
-//! to an entity carrying `bevy::ui::ScrollPosition`. Set
-//! [`ScrollAnimator::target`] to request a scroll position; the animator
-//! tweens `ScrollPosition` toward it each frame using the same two-stage
-//! composite easing the engine used to ship internally.
+//! to an entity (the component requires [`ScrollPosition`], so it's pulled
+//! in automatically). Set [`ScrollAnimator::target`] to request a scroll
+//! position; the animator tweens `ScrollPosition` toward it each frame,
+//! using a two-stage composite curve for jumps larger than 2.5× the
+//! viewport so big scrolls don't visibly streak through the middle.
 //!
 //! Instant scrolls don't go through the animator at all — write
 //! `ScrollPosition` directly and the animator stops on the next frame
 //! (it always re-anchors against the current `ScrollPosition`).
 
+use bevy::math::curve::{Curve, EaseFunction, EasingCurve};
 use bevy::prelude::*;
 use bevy::ui::ScrollPosition;
 
 /// Per-entity smooth-scroll state. Hosts write `target`; the
 /// [`drive_scroll_animator`] system advances `ScrollPosition` toward it.
-#[derive(Component, Default, Reflect)]
+///
+/// The default constructor leaves `duration` at `0.0` (instant). Use
+/// [`ScrollAnimator::smooth`] for a sensible smooth-scroll preset, or
+/// [`ScrollAnimator::with_duration`] to pick your own.
+#[derive(Component, Reflect)]
+#[require(ScrollPosition)]
 #[reflect(Component, Default)]
 pub struct ScrollAnimator {
     /// Where the host wants the viewport to land. Set this to scroll.
     pub target: Vec2,
-    /// Per-axis easing length in seconds. `0.0` = instant.
+    /// Animation length in seconds. `0.0` = instant.
     pub duration: f32,
+    /// Easing curve sampled across the animation. Defaults to
+    /// [`EaseFunction::CubicOut`] for a natural decelerating motion.
+    pub easing: EaseFunction,
     #[reflect(ignore)]
     anim: Option<AxisAnim>,
 }
 
+impl Default for ScrollAnimator {
+    fn default() -> Self {
+        Self {
+            target: Vec2::ZERO,
+            duration: 0.0,
+            easing: EaseFunction::CubicOut,
+            anim: None,
+        }
+    }
+}
+
 impl ScrollAnimator {
+    /// Smooth-scroll preset: 125 ms cubic-out, matching VS Code-style feel.
+    pub fn smooth() -> Self {
+        Self {
+            duration: 0.125,
+            ..Self::default()
+        }
+    }
+
     pub fn with_duration(duration: f32) -> Self {
-        Self { target: Vec2::ZERO, duration, anim: None }
+        Self {
+            duration,
+            ..Self::default()
+        }
     }
 }
 
@@ -68,27 +100,22 @@ fn build_composite(from: f32, to: f32, viewport_size: f32) -> Option<CompositeSt
     }
 }
 
-#[inline]
-fn ease_out_cubic(t: f32) -> f32 {
-    let inv = 1.0 - t;
-    1.0 - inv * inv * inv
-}
-
-#[inline]
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t
-}
-
-fn sample_axis(from: f32, to: f32, t: f32, composite: Option<&CompositeStops>) -> f32 {
+fn sample_axis(
+    from: f32,
+    to: f32,
+    t: f32,
+    ease: EaseFunction,
+    composite: Option<&CompositeStops>,
+) -> f32 {
     match composite {
-        None => lerp(from, to, ease_out_cubic(t)),
+        None => EasingCurve::new(from, to, ease).sample_clamped(t),
         Some(c) => {
             if t < c.split {
                 let local = t / c.split;
-                lerp(from, c.stop1, ease_out_cubic(local))
+                EasingCurve::new(from, c.stop1, ease).sample_clamped(local)
             } else {
                 let local = (t - c.split) / (1.0 - c.split);
-                lerp(c.stop2, to, ease_out_cubic(local))
+                EasingCurve::new(c.stop2, to, ease).sample_clamped(local)
             }
         }
     }
@@ -132,6 +159,7 @@ pub fn drive_scroll_animator(
             });
         }
 
+        let easing = animator.easing;
         let Some(anim) = animator.anim.as_mut() else {
             continue;
         };
@@ -142,8 +170,8 @@ pub fn drive_scroll_animator(
             continue;
         }
         let t = (anim.elapsed / anim.duration).clamp(0.0, 1.0);
-        let new_y = sample_axis(anim.from.y, anim.to.y, t, anim.composite_y.as_ref());
-        let new_x = sample_axis(anim.from.x, anim.to.x, t, None);
+        let new_y = sample_axis(anim.from.y, anim.to.y, t, easing, anim.composite_y.as_ref());
+        let new_x = sample_axis(anim.from.x, anim.to.x, t, easing, None);
         scroll.0 = Vec2::new(new_x, new_y);
     }
 }
