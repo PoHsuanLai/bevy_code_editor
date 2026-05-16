@@ -11,7 +11,10 @@ keywords = ["bevy", "lsp", "language-server"]
 categories = ["game-development", "development-tools"]
 
 [dependencies]
-bevy = { version = "0.18", default-features = false, features = ["bevy_log"] }
+bevy_app = "0.18"
+bevy_ecs = "0.18"
+bevy_log = "0.18"
+bevy_tasks = "0.18"
 
 async-lsp = { version = "0.2", features = ["client-monitor", "stdio"] }
 async-process = "2"

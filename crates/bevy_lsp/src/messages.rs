@@ -17,7 +17,7 @@
 //! to send the request and subscribe to the response message — this crate
 //! does not gate features it doesn't itself use.
 
-use bevy::prelude::*;
+use bevy_ecs::prelude::*;
 use lsp_types::*;
 use serde::{Deserialize, Serialize};
 

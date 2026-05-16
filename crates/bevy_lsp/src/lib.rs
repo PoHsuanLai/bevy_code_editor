@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 //! Language Server Protocol transport for Bevy.
 //!
 //! Manages a JSON-RPC stdio connection to a language server as ECS components.

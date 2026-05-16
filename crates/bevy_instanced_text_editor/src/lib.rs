@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 //! Rope-backed text editor on top of [`bevy_instanced_text`] +
 //! [`bevy_instanced_text_interaction`].
 //!

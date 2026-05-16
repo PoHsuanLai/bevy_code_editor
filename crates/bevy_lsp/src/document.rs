@@ -1,6 +1,6 @@
 //! LSP document identifier — protocol-level state per open document.
 
-use bevy::prelude::*;
+use bevy_ecs::prelude::*;
 use lsp_types::{TextDocumentContentChangeEvent, Url};
 
 /// One open LSP document, keyed by URI per the protocol.

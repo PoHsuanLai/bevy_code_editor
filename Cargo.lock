@@ -549,7 +549,6 @@ name = "bevscode"
 version = "0.1.1"
 dependencies = [
  "bevy",
- "bevy_camera",
  "bevy_instanced_text",
  "bevy_instanced_text_editor",
  "bevy_lsp",
@@ -1361,7 +1360,10 @@ dependencies = [
  "async-channel",
  "async-lsp",
  "async-process",
- "bevy",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_log",
+ "bevy_tasks",
  "futures",
  "lsp-types",
  "ropey",
@@ -1863,7 +1865,10 @@ dependencies = [
 name = "bevy_tree_sitter"
 version = "0.1.1"
 dependencies = [
- "bevy",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_log",
+ "bevy_tasks",
  "futures-lite",
  "ropey",
  "streaming-iterator",

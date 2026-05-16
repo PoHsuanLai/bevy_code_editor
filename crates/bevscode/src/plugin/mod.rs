@@ -17,7 +17,7 @@ pub mod ui_elements;
 mod flicker_test;
 
 #[cfg(feature = "lsp")]
-pub use self::lsp_plugin::LspPlugin;
+pub use self::lsp::LspPlugin;
 
 pub use self::brackets::BracketPlugin;
 pub use self::cursor::CursorPlugin;
@@ -87,6 +87,42 @@ pub struct RenderingSet;
 /// System set for one-time editor setup systems (Startup / PostStartup).
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EditorSetupSet;
+
+/// Convenience trait for hosts adding their own per-action handler systems.
+///
+/// Drops a system into [`Update`] inside [`InputSet`] running after
+/// [`ActionDispatchSet`] — the same wiring used by the built-in IDE handlers.
+/// Hosts that want different scheduling can call `app.add_systems(...)`
+/// directly with the public system-set markers from this module.
+///
+/// ```rust,no_run
+/// # use bevy::prelude::*;
+/// # use bevscode::prelude::*;
+/// # use bevscode::plugin::EditorAppExt;
+/// # #[derive(Message)] struct MyActionRequested;
+/// # fn handle_my_action(_: MessageReader<MyActionRequested>) {}
+/// # fn build(app: &mut App) {
+/// app.add_message::<MyActionRequested>()
+///    .add_editor_action_handler(handle_my_action);
+/// # }
+/// ```
+pub trait EditorAppExt {
+    /// Register a per-action handler system that runs after the action dispatcher.
+    fn add_editor_action_handler<M>(
+        &mut self,
+        system: impl bevy::ecs::schedule::IntoScheduleConfigs<bevy::ecs::system::ScheduleSystem, M>,
+    ) -> &mut Self;
+}
+
+impl EditorAppExt for App {
+    fn add_editor_action_handler<M>(
+        &mut self,
+        system: impl bevy::ecs::schedule::IntoScheduleConfigs<bevy::ecs::system::ScheduleSystem, M>,
+    ) -> &mut Self {
+        self.add_systems(Update, system.in_set(InputSet).after(ActionDispatchSet));
+        self
+    }
+}
 
 /// Editor systems plugin — just the editor's own resources, system sets,
 /// observers, and IDE-specific event/handler wiring. Does **not** add the

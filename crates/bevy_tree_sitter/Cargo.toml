@@ -11,10 +11,10 @@ keywords = ["bevy", "tree-sitter", "syntax", "parsing"]
 categories = ["game-development", "parser-implementations"]
 
 [dependencies]
-bevy = { version = "0.18", default-features = false, features = [
-    "bevy_asset",
-    "bevy_log",
-] }
+bevy_app = "0.18"
+bevy_ecs = "0.18"
+bevy_log = "0.18"
+bevy_tasks = "0.18"
 
 tree-sitter = "0.24"
 streaming-iterator = "0.1"

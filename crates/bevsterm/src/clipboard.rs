@@ -102,7 +102,7 @@ pub fn handle_resize(
     }
 }
 
-pub fn handle_scroll_to(
+pub(crate) fn handle_scroll_to(
     mut events: MessageReader<TerminalScrollTo>,
     mut q: Query<(
         &mut ScrollPosition,
@@ -138,7 +138,7 @@ pub fn handle_scroll_to_bottom(
     }
 }
 
-pub fn handle_scroll_to_top(
+pub(crate) fn handle_scroll_to_top(
     mut events: MessageReader<TerminalScrollToTop>,
     mut q: Query<(
         &mut ScrollPosition,

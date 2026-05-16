@@ -5,8 +5,8 @@
 //! and writes the result back when the task completes. Single-flight per
 //! entity; never blocks the main thread.
 
-use bevy::prelude::*;
-use bevy::tasks::{AsyncComputeTaskPool, Task};
+use bevy_ecs::prelude::*;
+use bevy_tasks::{AsyncComputeTaskPool, Task};
 use ropey::Rope;
 use std::sync::Arc;
 

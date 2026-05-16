@@ -14,8 +14,9 @@ use async_lsp::router::Router;
 use async_lsp::tracing::TracingLayer;
 use async_lsp::{ResponseError, ServerSocket};
 use async_process::Child;
-use bevy::prelude::*;
-use bevy::tasks::{AsyncComputeTaskPool, Task};
+use bevy_ecs::prelude::*;
+use bevy_log::{debug, warn};
+use bevy_tasks::{AsyncComputeTaskPool, Task};
 use futures::channel::oneshot;
 use lsp_types::notification::{
     Cancel as CancelNotif, DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles,
@@ -219,7 +220,6 @@ impl LspClient {
     ) {
         let tx = self.response_tx.clone();
         let init_done = self.init_done.clone();
-        let slots = self.inbound_slots.clone();
         AsyncComputeTaskPool::get()
             .spawn(async move {
                 #[allow(deprecated)]

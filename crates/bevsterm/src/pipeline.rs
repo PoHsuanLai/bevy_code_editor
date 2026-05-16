@@ -77,7 +77,7 @@ type SnapshotQuery<'w, 's> = Query<
     ),
 >;
 
-pub fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity, RebuildCache>>) {
+pub(crate) fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity, RebuildCache>>) {
     cache.retain(|e, _| q.contains(*e));
     for (
         entity,

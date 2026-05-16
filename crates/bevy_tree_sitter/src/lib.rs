@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 //! Component-driven tree-sitter integration for Bevy.
 //!
 //! Parses text into syntax trees on a background thread and exposes the

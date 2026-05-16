@@ -191,7 +191,7 @@ fn setup_editor_ui(
             &GutterConfig,
             &EditorTheme,
             &EditorUi,
-            Option<&bevy_camera::visibility::RenderLayers>,
+            Option<&bevy::camera::visibility::RenderLayers>,
         ),
         With<CodeEditor>,
     >,

@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 //! Embeddable code editor plugin for Bevy.
 //!
 //! Designed to be dropped into any Bevy application as a self-contained
@@ -91,7 +93,7 @@
 //!
 //! ```rust,no_run
 //! # use bevy::prelude::*;
-//! # use bevy_camera::visibility::RenderLayers;
+//! # use bevy::camera::visibility::RenderLayers;
 //! # use bevscode::prelude::*;
 //! # fn split(mut commands: Commands, window: Query<&Window>) {
 //! let window = window.single().unwrap();
@@ -161,7 +163,9 @@ pub mod prelude {
 
     // Editor plugin + its standalone PluginGroup, and the interaction +
     // UI plugins that hosts compose with.
-    pub use crate::plugin::{AutoResizeViewport, CodeEditorPlugin, CodeEditorPlugins, EditorUiPlugin};
+    pub use crate::plugin::{
+        AutoResizeViewport, CodeEditorPlugin, CodeEditorPlugins, EditorAppExt, EditorUiPlugin,
+    };
 
     // Editor marker + save/open events.
     pub use crate::types::editor::{CodeEditor, OpenRequested, SaveRequested};

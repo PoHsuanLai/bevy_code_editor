@@ -1,6 +1,6 @@
 //! Tree-sitter grammar configuration component.
 
-use bevy::prelude::*;
+use bevy_ecs::prelude::*;
 use crate::tree_sitter::TreeSitterProvider;
 
 /// Tree-sitter grammar + highlight query for an entity.

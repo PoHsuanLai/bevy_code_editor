@@ -6,7 +6,7 @@
 use bevy::prelude::*;
 use bevy_instanced_text_interaction::{CursorState, InstancedTextInteractionPlugin, SelectionState};
 
-use crate::text_edit::{self, CursorMoved as EditorCursorMoved, SelectionChanged, *};
+use crate::text_edit::{CursorMoved as EditorCursorMoved, SelectionChanged, *};
 use crate::widget;
 use crate::text::RopeBuffer;
 use crate::text_state::{

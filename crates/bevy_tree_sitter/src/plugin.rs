@@ -1,6 +1,7 @@
 //! `TreeSitterPlugin` — drives the per-entity parse pipeline.
 
-use bevy::prelude::*;
+use bevy_app::{App, Plugin, Update};
+use bevy_ecs::prelude::*;
 
 use crate::pipeline::parse_dirty;
 

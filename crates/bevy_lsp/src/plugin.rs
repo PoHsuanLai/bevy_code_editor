@@ -6,9 +6,9 @@
 //! system cap and so reader systems can run in parallel against the next
 //! frame's drain.
 
-use bevy::app::AppExit;
-use bevy::ecs::system::SystemParam;
-use bevy::prelude::*;
+use bevy_app::{App, AppExit, Last, Plugin, Update};
+use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 
 use crate::client::LspClient;
 use crate::document::LspDocument;

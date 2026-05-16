@@ -2,7 +2,7 @@
 //! editor adapter sets it on `LspResponse::Initialized`, all `supports_*`
 //! predicates return `false` and capability-gated sends are dropped.
 
-use bevy::prelude::*;
+use bevy_ecs::prelude::*;
 use lsp_types::*;
 
 #[derive(Component, Debug, Default, Clone)]
