@@ -1,24 +1,24 @@
 [package]
-name = "bevy_text_editor"
+name = "bevy_instanced_text_editor"
 version = "0.1.1"
 edition = "2021"
 authors = ["PoHsuanLai"]
 license = "MIT OR Apache-2.0"
-description = "Rope-backed text editor primitives on top of bevy_text_interaction: edit history, undo/redo, cursor movement, typing observer."
+description = "Rope-backed text editor primitives on top of bevy_instanced_text_interaction: edit history, undo/redo, cursor movement, typing observer."
 repository = "https://github.com/PoHsuanLai/bevscode"
 keywords = ["bevy", "text", "editor", "ropey", "undo"]
 categories = ["game-development"]
 
 [features]
 default = ["arboard"]
-# Forward to bevy_text_interaction so editor consumers can toggle the
-# clipboard backend through bevy_text_editor's feature flag.
-arboard = ["bevy_text_interaction/arboard"]
-clipboard-wasm = ["bevy_text_interaction/clipboard-wasm"]
+# Forward to bevy_instanced_text_interaction so editor consumers can toggle the
+# clipboard backend through bevy_instanced_text_editor's feature flag.
+arboard = ["bevy_instanced_text_interaction/arboard"]
+clipboard-wasm = ["bevy_instanced_text_interaction/clipboard-wasm"]
 
 [dependencies]
 bevy_instanced_text = { path = "../bevy_instanced_text", version = "0.1.1" }
-bevy_text_interaction = { path = "../bevy_text_interaction", version = "0.1.1", default-features = false }
+bevy_instanced_text_interaction = { path = "../bevy_instanced_text_interaction", version = "0.1.1", default-features = false }
 
 bevy = { version = "0.18", default-features = false, features = [
     "bevy_render",

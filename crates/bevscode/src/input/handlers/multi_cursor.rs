@@ -2,7 +2,7 @@
 //! ClearSecondaryCursors.
 
 use crate::input::action_events::*;
-use bevy_text_editor::RopeBuffer;
+use bevy_instanced_text_editor::RopeBuffer;
 use crate::input::picking_backend::add_cursor_at_next_occurrence;
 use crate::types::*;
 use bevy::input_focus::InputFocus;

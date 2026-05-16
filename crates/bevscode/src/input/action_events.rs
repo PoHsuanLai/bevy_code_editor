@@ -2,7 +2,7 @@
 //! [`super::EditorAction`] variant.
 //!
 //! The 33 editing events (cursor movement, selection, delete / insert /
-//! clipboard / undo / redo) are defined in [`bevy_text_editor`] and
+//! clipboard / undo / redo) are defined in [`bevy_instanced_text_editor`] and
 //! registered by `InstancedTextEditPlugin`; they're re-exported here so dispatcher
 //! code stays at `crate::input::action_events::*`.
 //!
@@ -13,9 +13,9 @@
 
 use bevy::prelude::*;
 
-// Re-export the editing events from bevy_text_editor (moved as part of the
+// Re-export the editing events from bevy_instanced_text_editor (moved as part of the
 // editable-text-widget refactor).
-pub use bevy_text_editor::{
+pub use bevy_instanced_text_editor::{
     ClearSelectionRequested, CopyRequested, CutRequested, DeleteBackwardRequested,
     DeleteForwardRequested, DeleteLineRequested, DeleteWordBackwardRequested,
     DeleteWordForwardRequested, InsertNewlineRequested, InsertTabRequested,

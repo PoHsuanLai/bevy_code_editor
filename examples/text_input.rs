@@ -1,4 +1,4 @@
-//! Minimal editable text field — proves `bevy_text_editor` works
+//! Minimal editable text field — proves `bevy_instanced_text_editor` works
 //! standalone, without `bevscode`'s IDE features.
 //!
 //! Spawns one [`TextEditor`] entity with the engine's GPU rendering, plus
@@ -14,7 +14,7 @@ use bevy::prelude::*;
 use bevy_instanced_text::prelude::*;
 use bevy::text::TextFont;
 use bevy::text::LineHeight;
-use bevy_text_editor::{InstancedTextEditPlugin, TextEditor};
+use bevy_instanced_text_editor::{InstancedTextEditPlugin, TextEditor};
 
 fn main() {
     App::new()
@@ -22,7 +22,7 @@ fn main() {
             DefaultPlugins
                 .set(WindowPlugin {
                     primary_window: Some(Window {
-                        title: "bevy_text_editor — simple text input".to_string(),
+                        title: "bevy_instanced_text_editor — simple text input".to_string(),
                         resolution: (800u32, 400u32).into(),
                         ..default()
                     }),

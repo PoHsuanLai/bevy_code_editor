@@ -13,7 +13,7 @@
 //!   `.before(LayoutProduceSet)`.
 
 use crate::types::events::TextEdited;
-use bevy_text_editor::RopeBuffer;
+use bevy_instanced_text_editor::RopeBuffer;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::{

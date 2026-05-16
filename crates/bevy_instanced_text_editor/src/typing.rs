@@ -17,7 +17,7 @@ use bevy_instanced_text::TextBuffer;
 
 use crate::widget::text_input::insert_char;
 use crate::text_state::{EditHistoryState, TextEditor};
-use bevy_text_interaction::{CursorState, SelectionState};
+use bevy_instanced_text_interaction::{CursorState, SelectionState};
 
 /// `true` when any modifier key is held — used by the typing observer to
 /// skip shortcut keystrokes (Ctrl+C, Cmd+S, …) that should reach the

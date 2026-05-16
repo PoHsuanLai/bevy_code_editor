@@ -1,8 +1,8 @@
 //! Per-action handler systems for IDE-specific actions.
 //!
 //! The basic editing handlers (cursor movement, selection, delete / insert,
-//! clipboard, undo / redo) live in [`bevy_text_editor::handlers`] and are
-//! registered by [`bevy_text_editor::InstancedTextEditPlugin`]. The handlers in
+//! clipboard, undo / redo) live in [`bevy_instanced_text_editor::handlers`] and are
+//! registered by [`bevy_instanced_text_editor::InstancedTextEditPlugin`]. The handlers in
 //! this module cover IDE-only concerns: multi-cursor, folding, the
 //! goto-line dialog, and LSP request handlers.
 //!

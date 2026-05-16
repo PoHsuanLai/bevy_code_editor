@@ -3,7 +3,7 @@
 //! Pure rope/cursor functions — no syntax, no folding. Hosts that need
 //! fold-aware movement (the code editor) layer their own movement on top.
 
-use bevy_text_interaction::CursorState;
+use bevy_instanced_text_interaction::CursorState;
 use ropey::Rope;
 
 /// Move cursor up one line, preserving column offset.

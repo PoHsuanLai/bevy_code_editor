@@ -32,7 +32,7 @@ impl Plugin for TerminalPlugin {
             app.add_plugins(bevy::input_focus::InputDispatchPlugin);
         }
         app.add_plugins(
-            bevy_text_interaction::InstancedTextInteractionPlugin::<bevy_instanced_text::TextSpan>::default(),
+            bevy_instanced_text_interaction::InstancedTextInteractionPlugin::<bevy_instanced_text::TextSpan>::default(),
         );
 
         app.register_type::<BevyTerminal>()
@@ -88,11 +88,11 @@ impl Plugin for TerminalPlugin {
             .add_message::<TerminalFocus>()
             .add_message::<TerminalClear>();
 
-        app.register_type::<bevy_text_interaction::CursorSettings>();
-        app.register_type::<bevy_text_interaction::CursorStyle>();
+        app.register_type::<bevy_instanced_text_interaction::CursorSettings>();
+        app.register_type::<bevy_instanced_text_interaction::CursorStyle>();
         app.register_type::<bevy_instanced_text::TextColor>();
-        app.register_type::<bevy_text_interaction::TextCursorColor>();
-        app.register_type::<bevy_text_interaction::TextSelectionColor>();
+        app.register_type::<bevy_instanced_text_interaction::TextCursorColor>();
+        app.register_type::<bevy_instanced_text_interaction::TextSelectionColor>();
 
         app.configure_sets(
             Update,
@@ -145,7 +145,7 @@ impl Plugin for TerminalPlugin {
         );
 
         app.register_type::<crate::cursor::TerminalCursorCell>();
-        app.register_type::<bevy_text_interaction::BlinkPhase>();
+        app.register_type::<bevy_instanced_text_interaction::BlinkPhase>();
         app.add_systems(
             Update,
             (
@@ -176,7 +176,7 @@ impl PluginGroup for TerminalPlugins {
             .add(bevy_instanced_text::gpu::InstancedTextRenderPlugin)
             .add(bevy_instanced_text::view::plugin::InstancedTextPlugin)
             .add(bevy::input_focus::InputDispatchPlugin)
-            .add(bevy_text_interaction::InstancedTextInteractionPlugin::<bevy_instanced_text::TextSpan>::default())
+            .add(bevy_instanced_text_interaction::InstancedTextInteractionPlugin::<bevy_instanced_text::TextSpan>::default())
             .add(TerminalPlugin);
         #[cfg(feature = "pty")]
         {

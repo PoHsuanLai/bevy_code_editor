@@ -20,7 +20,7 @@
 
 use bevy::prelude::*;
 use bevy_instanced_text::prelude::*;
-use bevy_text_editor::InstancedTextInteractionPlugin;
+use bevy_instanced_text_editor::InstancedTextInteractionPlugin;
 
 fn main() {
     App::new()

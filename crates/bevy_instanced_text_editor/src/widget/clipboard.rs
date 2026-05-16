@@ -4,7 +4,7 @@
 //! `*Requested` event and operates on the focused [`crate::TextEditor`] entity
 //! via [`crate::clipboard::ClipboardResource`].
 
-use bevy_text_interaction::{ClipboardResource, CursorState, SelectionState};
+use bevy_instanced_text_interaction::{ClipboardResource, CursorState, SelectionState};
 use crate::text::RopeBuffer;
 use crate::text_edit::*;
 use crate::history::EditKind;

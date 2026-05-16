@@ -13,7 +13,7 @@
 //! fires the same three side-effects. Behavior matches the original.
 
 use crate::types::*;
-use bevy_text_editor::RopeBuffer;
+use bevy_instanced_text_editor::RopeBuffer;
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 

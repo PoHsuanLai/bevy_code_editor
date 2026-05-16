@@ -13,7 +13,7 @@ use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{
     HiddenLines, LineStyles, MonoFontFaces, FormattedSpan, TextBuffer, TextFormat, TextSpan,
 };
-use bevy_text_editor::RopeBuffer;
+use bevy_instanced_text_editor::RopeBuffer;
 
 use crate::settings::*;
 use crate::types::*;

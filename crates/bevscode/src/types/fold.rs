@@ -1,7 +1,7 @@
 //! Code folding types
 
 use bevy::prelude::*;
-use bevy_text_editor::RopeBuffer;
+use bevy_instanced_text_editor::RopeBuffer;
 
 use crate::text_view::TextBuffer;
 use crate::types::{CursorState, SelectionState};
@@ -51,7 +51,7 @@ impl GotoLineState {
 ///
 /// When the dialog is active and the user presses `ClearSelection`
 /// (Escape), dismisses the dialog without falling through to the
-/// `bevy_text_editor::ClearSelectionRequested` handler. Returns `true`
+/// `bevy_instanced_text_editor::ClearSelectionRequested` handler. Returns `true`
 /// when the action was consumed.
 pub fn goto_line_intercept(
     action: crate::input::keybindings::EditorAction,

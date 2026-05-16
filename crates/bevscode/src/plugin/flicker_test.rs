@@ -21,7 +21,7 @@ use bevy_instanced_text::{
     ContentMetrics, DisplayLayout, HiddenLines, LineStyles, MonoCellWidth, TextBounds, TextBuffer,
     TextOverlays, TextUnderlays,
 };
-use bevy_text_editor::{RopeBuffer, TextViewDragState};
+use bevy_instanced_text_editor::{RopeBuffer, TextViewDragState};
 
 use crate::plugin::scroll_animator::ScrollAnimator;
 
@@ -50,8 +50,8 @@ fn make_test_app() -> App {
         Update,
         (
             InputSet,
-            bevy_text_editor::EditEmitSet.after(InputSet),
-            ApplyStateSet.after(bevy_text_editor::EditEmitSet),
+            bevy_instanced_text_editor::EditEmitSet.after(InputSet),
+            ApplyStateSet.after(bevy_instanced_text_editor::EditEmitSet),
         )
             .chain(),
     );
@@ -231,7 +231,7 @@ fn full_code_editor_plugin_does_not_move_scroll_target_on_idle_frames() {
     // GPU-render plugins (`GlyphAtlasPlugin`, `InstancedTextRenderPlugin`)
     // and `InstancedTextPlugin` since they require a render device.
     app.add_plugins(bevy::input_focus::InputDispatchPlugin);
-    app.add_plugins(bevy_text_editor::InstancedTextEditPlugin::without_typing_observer());
+    app.add_plugins(bevy_instanced_text_editor::InstancedTextEditPlugin::without_typing_observer());
     app.add_plugins(leafwing_input_manager::plugin::InputManagerPlugin::<
         crate::input::EditorAction,
     >::default());
@@ -268,14 +268,14 @@ fn full_code_editor_plugin_does_not_move_scroll_target_on_idle_frames() {
 
 /// Fire a `Pointer<Scroll>` at the editor and verify `on_pointer_scroll`
 /// accumulates the delta into `ScrollPosition.y`. Wheel writes are instant —
-/// `bevy_text_interaction` writes `ScrollPosition` directly so the wheel
+/// `bevy_instanced_text_interaction` writes `ScrollPosition` directly so the wheel
 /// stays out of the host animator path.
 #[test]
 fn pointer_scroll_event_accumulates_into_target() {
     let mut app = make_test_app();
     app.add_plugins(bevy_instanced_text::view::plugin::InstancedTextPlugin);
     app.add_plugins(bevy::input_focus::InputDispatchPlugin);
-    app.add_plugins(bevy_text_editor::InstancedTextEditPlugin::without_typing_observer());
+    app.add_plugins(bevy_instanced_text_editor::InstancedTextEditPlugin::without_typing_observer());
     app.add_plugins(leafwing_input_manager::plugin::InputManagerPlugin::<
         crate::input::EditorAction,
     >::default());
@@ -331,7 +331,7 @@ fn animator_drives_current_to_target_within_duration() {
     let mut app = make_test_app();
     app.add_plugins(bevy_instanced_text::view::plugin::InstancedTextPlugin);
     app.add_plugins(bevy::input_focus::InputDispatchPlugin);
-    app.add_plugins(bevy_text_editor::InstancedTextEditPlugin::without_typing_observer());
+    app.add_plugins(bevy_instanced_text_editor::InstancedTextEditPlugin::without_typing_observer());
     app.add_plugins(leafwing_input_manager::plugin::InputManagerPlugin::<
         crate::input::EditorAction,
     >::default());

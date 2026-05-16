@@ -1,10 +1,10 @@
 //! Editor-core plugin: registers the rope-backed editing systems for any
 //! [`TextEditor`] entity. Pair with [`bevy_instanced_text::InstancedTextPlugins`]
-//! and [`bevy_text_interaction::InstancedTextInteractionPlugin`] (the latter
+//! and [`bevy_instanced_text_interaction::InstancedTextInteractionPlugin`] (the latter
 //! is added transitively).
 
 use bevy::prelude::*;
-use bevy_text_interaction::{CursorState, InstancedTextInteractionPlugin, SelectionState};
+use bevy_instanced_text_interaction::{CursorState, InstancedTextInteractionPlugin, SelectionState};
 
 use crate::text_edit::{self, CursorMoved as EditorCursorMoved, SelectionChanged, *};
 use crate::widget;

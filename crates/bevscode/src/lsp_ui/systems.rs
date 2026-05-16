@@ -6,7 +6,7 @@
 //! requires host action.
 
 use bevy::prelude::*;
-use bevy_text_editor::RopeBuffer;
+use bevy_instanced_text_editor::RopeBuffer;
 use lsp_types::*;
 
 use crate::text_view::TextBuffer;
@@ -334,7 +334,7 @@ pub fn on_lsp_references(
 pub fn on_lsp_format(
     mut events: MessageReader<LspFormatResponse>,
     q: Query<&TextBuffer<RopeBuffer>, With<CodeEditor>>,
-    mut replace_writer: MessageWriter<bevy_text_editor::ReplaceRangeRequested>,
+    mut replace_writer: MessageWriter<bevy_instanced_text_editor::ReplaceRangeRequested>,
 ) {
     for ev in events.read() {
         let Ok(buffer) = q.get(ev.entity) else {
@@ -446,7 +446,7 @@ pub fn on_lsp_rename(
     mut events: MessageReader<LspRenameResponse>,
     mut q: Query<(&TextBuffer<RopeBuffer>, Option<&LspDocument>, &mut LspRenamePopup), With<CodeEditor>>,
     mut workspace_edit_events: MessageWriter<WorkspaceEditEvent>,
-    mut replace_writer: MessageWriter<bevy_text_editor::ReplaceRangeRequested>,
+    mut replace_writer: MessageWriter<bevy_instanced_text_editor::ReplaceRangeRequested>,
 ) {
     for ev in events.read() {
         let Ok((buffer, lsp_document, mut rename_state)) = q.get_mut(ev.entity) else {
@@ -510,7 +510,7 @@ fn apply_text_edits(
     entity: Entity,
     buffer: &TextBuffer<RopeBuffer>,
     edits: Vec<TextEdit>,
-    writer: &mut MessageWriter<bevy_text_editor::ReplaceRangeRequested>,
+    writer: &mut MessageWriter<bevy_instanced_text_editor::ReplaceRangeRequested>,
 ) {
     let mut edits_sorted = edits;
     edits_sorted.sort_by(|a, b| {
@@ -536,12 +536,12 @@ fn apply_text_edits(
             buffer.len_chars()
         };
 
-        writer.write(bevy_text_editor::ReplaceRangeRequested {
+        writer.write(bevy_instanced_text_editor::ReplaceRangeRequested {
             entity,
             start: start_pos,
             end: end_pos,
             text: edit.new_text,
-            kind: bevy_text_editor::EditKind::Other,
+            kind: bevy_instanced_text_editor::EditKind::Other,
             record_history: true,
         });
     }

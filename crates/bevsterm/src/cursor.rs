@@ -3,7 +3,7 @@
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy_instanced_text::{MonoCellWidth, RectOverlay, TextOverlays};
-use bevy_text_interaction::{
+use bevy_instanced_text_interaction::{
     caret_overlay, cursor_blink_visible, BlinkPhase, CursorSettings, TextCursorColor,
 };
 

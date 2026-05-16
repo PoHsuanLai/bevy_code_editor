@@ -7,7 +7,7 @@ use bevy::prelude::*;
 
 use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{MonoCellWidth, TextBuffer, TextSpan};
-use bevy_text_interaction::{ClipboardResource, SelectionState};
+use bevy_instanced_text_interaction::{ClipboardResource, SelectionState};
 
 use crate::messages::{
     TerminalClear, TerminalCopySelection, TerminalFocus, TerminalKeyInput, TerminalPaste,

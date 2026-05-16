@@ -36,7 +36,7 @@ pub use wrapping::*;
 
 // Re-export hoisted timing primitives so existing callers keep importing
 // them through `crate::settings::*` and `crate::settings::KeyRepeatSettings`.
-pub use bevy_text_editor::KeyRepeatSettings;
+pub use bevy_instanced_text_editor::KeyRepeatSettings;
 
 #[cfg(feature = "lsp")]
 pub use lsp::*;

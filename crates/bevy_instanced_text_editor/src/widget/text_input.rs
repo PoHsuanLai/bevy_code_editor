@@ -10,7 +10,7 @@ use crate::text_edit::*;
 use crate::text::RopeBuffer;
 use crate::history::EditKind;
 use crate::text_state::{EditHistoryState, IndentConfig, TextEditor};
-use bevy_text_interaction::{CursorState, SelectionState};
+use bevy_instanced_text_interaction::{CursorState, SelectionState};
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy_instanced_text::{ContentMetrics, TextBuffer};

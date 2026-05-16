@@ -1,7 +1,7 @@
 //! Cursor rendering and animation.
 
 use crate::settings::{CursorLine, CursorSettings, EditorTheme};
-use bevy_text_editor::RopeBuffer;
+use bevy_instanced_text_editor::RopeBuffer;
 use crate::text_view::{DisplayLayout, RectOverlay, RowVertical, TextBuffer};
 use bevy::ui::ComputedNode;
 use crate::types::*;
@@ -15,7 +15,7 @@ type PushCursorOverlaysQuery<'w, 's> = Query<
         Entity,
         &'static SelectionState,
         &'static CursorState,
-        &'static bevy_text_editor::BlinkPhase,
+        &'static bevy_instanced_text_editor::BlinkPhase,
         &'static TextBuffer<RopeBuffer>,
         &'static mut CaretRects,
         &'static FoldState,
@@ -97,7 +97,7 @@ impl Plugin for CursorPlugin {
 
 pub(crate) fn track_cursor_movement(
     mut editor_query: Query<
-        (&mut CursorState, &mut bevy_text_editor::BlinkPhase),
+        (&mut CursorState, &mut bevy_instanced_text_editor::BlinkPhase),
         With<CodeEditor>,
     >,
     time: Res<Time>,
@@ -121,7 +121,7 @@ pub(crate) fn push_cursor_overlays(
     {
         let focused = input_focus.get() == Some(entity);
         let visible = focused
-            && bevy_text_editor::cursor_blink_visible(
+            && bevy_instanced_text_editor::cursor_blink_visible(
                 cursor_settings.blink_rate,
                 cursor_settings.blink_pause_secs,
                 time.elapsed_secs_f64(),
@@ -146,7 +146,7 @@ pub(crate) fn push_cursor_overlays(
                     .unwrap_or_else(|| (fold_state.actual_to_display_line(line_index), byte_in_line));
                 let glyph_x = layout.and_then(|l| l.x_at_byte(display_row as u32, byte_in_row));
                 let x_left = glyph_x.unwrap_or(col_index as f32 * char_width);
-                new_rects.push(bevy_text_editor::caret_overlay(
+                new_rects.push(bevy_instanced_text_editor::caret_overlay(
                     display_row as u32,
                     x_left,
                     cursor_settings,

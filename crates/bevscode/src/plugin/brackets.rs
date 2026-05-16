@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 use crate::settings::*;
-use bevy_text_editor::RopeBuffer;
+use bevy_instanced_text_editor::RopeBuffer;
 use crate::text_view::{DisplayLayout, TextBuffer};
 use crate::types::*;
 use bevy::prelude::*;

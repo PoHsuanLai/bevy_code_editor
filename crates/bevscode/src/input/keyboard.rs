@@ -13,7 +13,7 @@
 
 #[cfg(feature = "lsp")]
 use super::actions::{find_word_start, request_completion, update_completion_filter};
-use bevy_text_editor::RopeBuffer;
+use bevy_instanced_text_editor::RopeBuffer;
 use super::actions::{
     get_closing_bracket, get_closing_quote, insert_closing_char, should_skip_auto_close,
 };
@@ -175,7 +175,7 @@ pub fn on_focused_keyboard(
             }
         }
         Key::Space => {
-            bevy_text_editor::widget::text_input::insert_char(
+            bevy_instanced_text_editor::widget::text_input::insert_char(
                 &mut sel,
                 &mut hist,
                 &mut cursor,
@@ -226,7 +226,7 @@ fn insert_typed_char(
         }
     }
 
-    bevy_text_editor::widget::text_input::insert_char(sel, hist, cursor, buffer, c);
+    bevy_instanced_text_editor::widget::text_input::insert_char(sel, hist, cursor, buffer, c);
 
     if brackets.auto_close {
         if let Some(closing) = get_closing_bracket(c, &brackets.pairs) {

@@ -11,7 +11,7 @@ use bevy_instanced_text::{ContentMetrics, TextBuffer};
 use crate::text::RopeBuffer;
 use ropey::Rope;
 
-use bevy_text_interaction::{
+use bevy_instanced_text_interaction::{
     Anchor, AnchorBias, CursorState, SelectionCollection, SelectionState, TextEdit,
 };
 use crate::history::{EditKind, EditOperation};
@@ -303,4 +303,4 @@ impl EditHistoryState {
 
 // `SelectionState`'s `apply_primary_cursor`, `add_cursor_at`,
 // `clear_secondary_cursors`, `primary_range`, etc. now live in
-// `bevy_text_interaction::state` so terminals can use them too.
+// `bevy_instanced_text_interaction::state` so terminals can use them too.

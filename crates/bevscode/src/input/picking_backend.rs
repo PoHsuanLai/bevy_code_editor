@@ -1,7 +1,7 @@
 //! Text search and cursor operations on the editor's rope buffer.
 
 use crate::text_view::TextBuffer;
-use bevy_text_editor::RopeBuffer;
+use bevy_instanced_text_editor::RopeBuffer;
 use crate::types::*;
 use ropey::Rope;
 

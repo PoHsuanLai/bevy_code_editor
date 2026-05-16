@@ -1,5 +1,5 @@
 //! Rope-backed text editor on top of [`bevy_instanced_text`] +
-//! [`bevy_text_interaction`].
+//! [`bevy_instanced_text_interaction`].
 //!
 //! Spawn a [`TextEditor`] entity with a [`bevy_instanced_text::TextBuffer`]
 //! holding a [`RopeBuffer`]; the crate's plugin wires up edit history,
@@ -9,7 +9,7 @@
 //! ```rust,no_run
 //! use bevy::prelude::*;
 //! use bevy_instanced_text::prelude::*;
-//! use bevy_text_editor::{InstancedTextEditPlugin, RopeBuffer, TextEditor};
+//! use bevy_instanced_text_editor::{InstancedTextEditPlugin, RopeBuffer, TextEditor};
 //!
 //! App::new()
 //!     .add_plugins(DefaultPlugins)
@@ -45,10 +45,10 @@ pub use text_state::{
     EditDelta, EditHistoryState, EditPoint, IndentConfig, OnEdit, SnapshotPreEdit, TextEditor,
 };
 
-// Re-export everything from bevy_text_interaction so downstream editors
+// Re-export everything from bevy_instanced_text_interaction so downstream editors
 // (bevscode) can depend on this single crate and still reach the shared
 // interaction primitives (clipboard, selection, caret).
-pub use bevy_text_interaction::{
+pub use bevy_instanced_text_interaction::{
     caret_overlay, copy_selection, cursor_blink_visible, screen_to_char_pos, selection_text,
     Anchor, AnchorBias, AnchorSet, BlinkPhase, ClipboardProvider, ClipboardResource, CursorSettings,
     CursorState, CursorStyle, InstancedTextInteractionPlugin, InteractionSettings,
@@ -57,7 +57,7 @@ pub use bevy_text_interaction::{
     DEFAULT_SEMANTIC_ESCAPE_CHARS,
 };
 #[cfg(feature = "arboard")]
-pub use bevy_text_interaction::SystemClipboard;
+pub use bevy_instanced_text_interaction::SystemClipboard;
 
 pub mod prelude {
     //! Common types for spawning editable text views.
@@ -66,5 +66,5 @@ pub mod prelude {
         EditPoint, EditTransaction, IndentConfig, InstancedTextEditPlugin, OnEdit, RopeBuffer,
         SnapshotPreEdit, TextEditor,
     };
-    pub use bevy_text_interaction::prelude::*;
+    pub use bevy_instanced_text_interaction::prelude::*;
 }

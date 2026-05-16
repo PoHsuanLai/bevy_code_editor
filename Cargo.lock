@@ -551,8 +551,8 @@ dependencies = [
  "bevy",
  "bevy_camera",
  "bevy_instanced_text",
+ "bevy_instanced_text_editor",
  "bevy_lsp",
- "bevy_text_editor",
  "bevy_tree_sitter",
  "bytemuck",
  "cosmic-text 0.12.1",
@@ -573,7 +573,7 @@ dependencies = [
  "bevscode",
  "bevy",
  "bevy_instanced_text",
- "bevy_text_interaction",
+ "bevy_instanced_text_interaction",
  "crossbeam-channel",
  "leafwing-input-manager",
  "libc",
@@ -1234,6 +1234,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_instanced_text_editor"
+version = "0.1.1"
+dependencies = [
+ "bevy",
+ "bevy_instanced_text",
+ "bevy_instanced_text_interaction",
+ "ropey",
+ "serde",
+]
+
+[[package]]
+name = "bevy_instanced_text_interaction"
+version = "0.1.1"
+dependencies = [
+ "arboard",
+ "bevy",
+ "bevy_instanced_text",
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "bevy_internal"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1799,31 +1824,6 @@ dependencies = [
  "thiserror 2.0.17",
  "tracing",
  "wgpu-types",
-]
-
-[[package]]
-name = "bevy_text_editor"
-version = "0.1.1"
-dependencies = [
- "bevy",
- "bevy_instanced_text",
- "bevy_text_interaction",
- "ropey",
- "serde",
-]
-
-[[package]]
-name = "bevy_text_interaction"
-version = "0.1.1"
-dependencies = [
- "arboard",
- "bevy",
- "bevy_instanced_text",
- "js-sys",
- "serde",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
 ]
 
 [[package]]
@@ -3001,8 +3001,8 @@ dependencies = [
  "bevy_camera",
  "bevy_egui",
  "bevy_instanced_text",
+ "bevy_instanced_text_editor",
  "bevy_lsp",
- "bevy_text_editor",
  "bevy_tree_sitter",
  "lsp-types",
  "tree-sitter-c",

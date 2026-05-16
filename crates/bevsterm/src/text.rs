@@ -29,14 +29,14 @@ use crate::backend;
     bevy_instanced_text::HiddenLines,
     bevy_instanced_text::TextColor,
     bevy_instanced_text::TextBackgroundColor,
-    bevy_text_interaction::SelectionState,
-    bevy_text_interaction::TextViewDragState,
-    bevy_text_interaction::TextCursorColor,
-    bevy_text_interaction::TextSelectionColor,
-    bevy_text_interaction::CursorSettings,
-    bevy_text_interaction::BlinkPhase,
-    bevy_text_interaction::InteractionSettings,
-    bevy_text_interaction::ScrollConfig,
+    bevy_instanced_text_interaction::SelectionState,
+    bevy_instanced_text_interaction::TextViewDragState,
+    bevy_instanced_text_interaction::TextCursorColor,
+    bevy_instanced_text_interaction::TextSelectionColor,
+    bevy_instanced_text_interaction::CursorSettings,
+    bevy_instanced_text_interaction::BlinkPhase,
+    bevy_instanced_text_interaction::InteractionSettings,
+    bevy_instanced_text_interaction::ScrollConfig,
     TerminalGridSnapshot,
     TerminalShellInfo,
     TerminalInputMode,
@@ -184,7 +184,7 @@ pub enum BlockStatus {
 ///
 /// Pure rendering colors come from `bevy_instanced_text::TextColor`
 /// (background, foreground); cursor + selection colors from
-/// `bevy_text_interaction::EditTheme`. This component carries the
+/// `bevy_instanced_text_interaction::EditTheme`. This component carries the
 /// terminal-specific 16 ANSI colors used by the grid snapshot.
 #[derive(Component, Clone, Debug, Reflect)]
 #[reflect(Component, Default, Debug)]

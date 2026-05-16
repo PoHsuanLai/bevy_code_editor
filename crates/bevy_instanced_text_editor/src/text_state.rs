@@ -1,7 +1,7 @@
 //! Editor-only state components: edit history, indentation, the TextEditor
 //! marker, and the per-edit byte snapshot.
 //!
-//! The cursor + selection components live in [`bevy_text_interaction`] —
+//! The cursor + selection components live in [`bevy_instanced_text_interaction`] —
 //! editors and terminals share them. Everything in this module is
 //! rope-specific or only meaningful when undo / LSP-style edit tracking
 //! is in play.
@@ -9,7 +9,7 @@
 use bevy::prelude::*;
 use ropey::Rope;
 
-use bevy_text_interaction::text_edit::AnchorSet;
+use bevy_instanced_text_interaction::text_edit::AnchorSet;
 use crate::history::EditHistory;
 
 /// Marker requesting that [`EditHistoryState`] keep a clone of the rope
@@ -124,14 +124,14 @@ impl Default for IndentConfig {
 #[reflect(Component, Default)]
 #[require(
     bevy_instanced_text::TextBuffer<crate::text::RopeBuffer>,
-    bevy_text_interaction::CursorState,
-    bevy_text_interaction::SelectionState,
+    bevy_instanced_text_interaction::CursorState,
+    bevy_instanced_text_interaction::SelectionState,
     EditHistoryState,
     IndentConfig,
-    bevy_text_interaction::TextViewDragState,
-    bevy_text_interaction::ScrollConfig,
-    bevy_text_interaction::CursorSettings,
-    bevy_text_interaction::BlinkPhase,
-    bevy_text_interaction::InteractionSettings,
+    bevy_instanced_text_interaction::TextViewDragState,
+    bevy_instanced_text_interaction::ScrollConfig,
+    bevy_instanced_text_interaction::CursorSettings,
+    bevy_instanced_text_interaction::BlinkPhase,
+    bevy_instanced_text_interaction::InteractionSettings,
 )]
 pub struct TextEditor;

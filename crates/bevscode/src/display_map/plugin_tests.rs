@@ -40,7 +40,7 @@ use bevy_instanced_text::{
     DisplayLayout, LineStyles, MonoCellWidth, TextBounds, TextBuffer, TextOverlays, TextUnderlays,
     TextViewBatchEntity,
 };
-use bevy_text_editor::{RopeBuffer, BlinkPhase, EditDelta, EditPoint};
+use bevy_instanced_text_editor::{RopeBuffer, BlinkPhase, EditDelta, EditPoint};
 use bevy_tree_sitter::{SyntaxTree, TreeSitterGrammar, TreeSitterPlugin};
 use std::time::{Duration, Instant};
 
@@ -60,8 +60,8 @@ fn make_test_app() -> App {
         Update,
         (
             crate::plugin::InputSet,
-            bevy_text_editor::EditEmitSet.after(crate::plugin::InputSet),
-            crate::plugin::ApplyStateSet.after(bevy_text_editor::EditEmitSet),
+            bevy_instanced_text_editor::EditEmitSet.after(crate::plugin::InputSet),
+            crate::plugin::ApplyStateSet.after(bevy_instanced_text_editor::EditEmitSet),
         )
             .chain(),
     );
@@ -1019,8 +1019,8 @@ fn gpu_readback_renders_colored_pixels() {
         Update,
         (
             crate::plugin::InputSet,
-            bevy_text_editor::EditEmitSet.after(crate::plugin::InputSet),
-            crate::plugin::ApplyStateSet.after(bevy_text_editor::EditEmitSet),
+            bevy_instanced_text_editor::EditEmitSet.after(crate::plugin::InputSet),
+            crate::plugin::ApplyStateSet.after(bevy_instanced_text_editor::EditEmitSet),
         )
             .chain(),
     );

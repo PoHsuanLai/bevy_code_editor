@@ -8,7 +8,7 @@
 //!      variant. The [`dispatch::dispatch_action_events`] system fans the
 //!      enum out into events. Editing events (cursor movement, selection,
 //!      delete / insert / clipboard / undo / redo) are defined in and
-//!      handled by [`bevy_text_editor`]; IDE-only events (multi-cursor,
+//!      handled by [`bevy_instanced_text_editor`]; IDE-only events (multi-cursor,
 //!      folding, LSP, goto-line, save / open) are handled by the per-action
 //!      handler systems under [`handlers`].
 

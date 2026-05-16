@@ -11,7 +11,7 @@
 use bevy::prelude::*;
 use bevy::text::TextFont;
 use bevy_instanced_text::prelude::*;
-use bevy_text_editor::InstancedTextInteractionPlugin;
+use bevy_instanced_text_editor::InstancedTextInteractionPlugin;
 
 fn main() {
     let mut app = App::new();
