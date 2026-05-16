@@ -304,3 +304,102 @@ impl EditHistoryState {
 // `SelectionState`'s `apply_primary_cursor`, `add_cursor_at`,
 // `clear_secondary_cursors`, `primary_range`, etc. now live in
 // `bevy_instanced_text_interaction::state` so terminals can use them too.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::text::RopeBuffer;
+    use bevy_instanced_text::TextBuffer;
+    use bevy_instanced_text_interaction::{CursorState, SelectionState};
+
+    /// Build (buffer, cursor at `pos`, fresh history & selection).
+    fn editor_at(text: &str, pos: usize) -> (
+        TextBuffer<RopeBuffer>,
+        CursorState,
+        SelectionState,
+        EditHistoryState,
+    ) {
+        let buffer = TextBuffer::new(RopeBuffer::new(text));
+        let cursor = CursorState { cursor_pos: pos, last_cursor_pos: pos, last_cursor_pos_for_blink: pos };
+        let mut sel = SelectionState::default();
+        sel.selections.set_cursor(pos);
+        let hist = EditHistoryState::default();
+        (buffer, cursor, sel, hist)
+    }
+
+    /// Backspace at the start of line 2 joins line 2 with line 1 — does NOT
+    /// delete the previous line's content.
+    #[test]
+    fn backspace_at_line_start_joins_with_previous() {
+        let text = "first line\nsecond line\nthird line\n";
+        // Cursor on column 0 of the SECOND line (just after the first '\n').
+        let pos = "first line\n".chars().count();
+        let (mut buffer, mut cursor, mut sel, mut hist) = editor_at(text, pos);
+
+        hist.delete_backward(&mut sel, &mut cursor, &mut buffer);
+
+        assert_eq!(
+            buffer.rope().to_string(),
+            "first linesecond line\nthird line\n",
+            "expected the newline between line 1 and line 2 to be removed"
+        );
+        assert_eq!(cursor.cursor_pos, "first line".chars().count());
+    }
+
+    /// Backspace at the start of line 3 must NOT delete line 1 or any text on
+    /// line 1; it should only remove the `\n` at the end of line 2.
+    #[test]
+    fn backspace_at_line_3_start_does_not_touch_line_1() {
+        let text = "first line\nsecond line\nthird line\n";
+        let line2_start = "first line\n".chars().count();
+        let line3_start = line2_start + "second line\n".chars().count();
+        let (mut buffer, mut cursor, mut sel, mut hist) = editor_at(text, line3_start);
+
+        hist.delete_backward(&mut sel, &mut cursor, &mut buffer);
+
+        assert_eq!(
+            buffer.rope().to_string(),
+            "first line\nsecond linethird line\n",
+            "only the newline between line 2 and line 3 should be removed"
+        );
+    }
+
+    /// Backspace mid-line removes only the char before the cursor.
+    #[test]
+    fn backspace_mid_line_removes_one_char() {
+        let text = "hello\nworld\n";
+        let pos = "hello\nwo".chars().count();
+        let (mut buffer, mut cursor, mut sel, mut hist) = editor_at(text, pos);
+
+        hist.delete_backward(&mut sel, &mut cursor, &mut buffer);
+
+        assert_eq!(buffer.rope().to_string(), "hello\nwrld\n");
+        assert_eq!(cursor.cursor_pos, pos - 1);
+    }
+
+    /// Empty current line: backspace must remove the empty line (the `\n`
+    /// that ends the previous line), landing the cursor at end-of-previous-line.
+    #[test]
+    fn backspace_on_empty_line_removes_empty_line() {
+        let text = "alpha\n\nbeta\n";
+        let pos = "alpha\n".chars().count(); // start of the empty line
+        let (mut buffer, mut cursor, mut sel, mut hist) = editor_at(text, pos);
+
+        hist.delete_backward(&mut sel, &mut cursor, &mut buffer);
+
+        assert_eq!(buffer.rope().to_string(), "alpha\nbeta\n");
+        assert_eq!(cursor.cursor_pos, "alpha".chars().count());
+    }
+
+    /// Backspace at offset 0 is a no-op.
+    #[test]
+    fn backspace_at_buffer_start_is_noop() {
+        let text = "first\nsecond\n";
+        let (mut buffer, mut cursor, mut sel, mut hist) = editor_at(text, 0);
+
+        hist.delete_backward(&mut sel, &mut cursor, &mut buffer);
+
+        assert_eq!(buffer.rope().to_string(), text);
+        assert_eq!(cursor.cursor_pos, 0);
+    }
+}

@@ -343,27 +343,7 @@ pub(crate) fn produce_line_styles(
             // Clone the existing Arc'd map so we can patch it, then apply any
             // line-index shift caused by insertions/deletions of newlines.
             let mut map = (*line_styles.by_line).clone();
-            if line_shift != 0 {
-                // Collect keys that need to move, in the right order to avoid
-                // clobbering: shift down (negative delta) → process ascending,
-                // shift up (positive delta) → process descending.
-                let mut to_shift: Vec<u32> = map
-                    .keys()
-                    .copied()
-                    .filter(|&k| k >= shift_pivot)
-                    .collect();
-                if line_shift < 0 {
-                    to_shift.sort_unstable();
-                } else {
-                    to_shift.sort_unstable_by(|a, b| b.cmp(a));
-                }
-                for old_key in to_shift {
-                    if let Some(val) = map.remove(&old_key) {
-                        let new_key = (old_key as i32 + line_shift) as u32;
-                        map.insert(new_key, val);
-                    }
-                }
-            }
+            shift_by_line(&mut map, shift_pivot, line_shift);
             map
         };
 
@@ -468,6 +448,64 @@ pub(crate) fn produce_line_styles(
     }
 }
 
+/// Relocate `by_line` keys after a multi-line edit at `pivot` that shifted
+/// trailing rows by `line_shift`.
+///
+/// `pivot` is the buffer row where the edit started (the row that survives
+/// after a merge, or the original row before an insertion-of-newlines).
+///
+/// - **`line_shift > 0`** (lines added — e.g. Enter splits one row into two):
+///   keys `> pivot` move up by `line_shift`. The pivot row's runs are left
+///   in place — they're stale, but the dirty range covers them and they'll
+///   be overwritten by the rehighlight pass.
+/// - **`line_shift < 0`** (lines removed — e.g. backspace joins two rows):
+///   the `|line_shift|` rows immediately after `pivot` vanish from the buffer.
+///   Their cached runs are discarded; keys past the deleted zone shift down
+///   by `|line_shift|`. The pivot row stays put with stale runs that the
+///   rehighlight pass will overwrite.
+pub(crate) fn shift_by_line<V>(
+    map: &mut HashMap<u32, V>,
+    pivot: u32,
+    line_shift: i32,
+) {
+    if line_shift == 0 {
+        return;
+    }
+    match line_shift.cmp(&0) {
+        std::cmp::Ordering::Greater => {
+            // Shift up: process descending so an entry never lands on a
+            // still-occupied higher key it hasn't moved yet.
+            let mut keys: Vec<u32> = map.keys().copied().filter(|&k| k > pivot).collect();
+            keys.sort_unstable_by(|a, b| b.cmp(a));
+            for old_key in keys {
+                if let Some(val) = map.remove(&old_key) {
+                    let new_key = (old_key as i32 + line_shift) as u32;
+                    map.insert(new_key, val);
+                }
+            }
+        }
+        std::cmp::Ordering::Less => {
+            // Shift down: the rows in `(pivot, pivot + |shift|]` vanished;
+            // their cached runs are gone with them. Keys past that range
+            // move down by `|shift|`; process ascending so each insertion
+            // targets an already-vacated key.
+            let abs = (-line_shift) as u32;
+            let removed_lo = pivot + 1;
+            let removed_hi = pivot + 1 + abs; // exclusive
+            map.retain(|&k, _| k < removed_lo || k >= removed_hi);
+            let mut keys: Vec<u32> = map.keys().copied().filter(|&k| k >= removed_hi).collect();
+            keys.sort_unstable();
+            for old_key in keys {
+                if let Some(val) = map.remove(&old_key) {
+                    let new_key = (old_key as i32 + line_shift) as u32;
+                    map.insert(new_key, val);
+                }
+            }
+        }
+        std::cmp::Ordering::Equal => unreachable!(),
+    }
+}
+
 /// Refresh `TextBounds` from `Wrapping` + `Indentation`.
 pub(crate) fn sync_layout_wrap(
     mut editors: Query<
@@ -505,5 +543,81 @@ pub(crate) fn sync_layout_wrap(
         if wrap.width != next.width || wrap.indent_px != next.indent_px {
             *wrap = next;
         }
+    }
+}
+
+#[cfg(test)]
+mod shift_tests {
+    use super::shift_by_line;
+    use std::collections::HashMap;
+
+    fn map_from(pairs: &[(u32, &'static str)]) -> HashMap<u32, &'static str> {
+        pairs.iter().copied().collect()
+    }
+
+    /// Backspace at the start of row 2 joins rows 1 and 2. Row 2 vanishes;
+    /// row 3 slides down to become row 2. Row 0 must remain untouched.
+    #[test]
+    fn delete_newline_at_start_of_row_2_does_not_clobber_row_0() {
+        let mut map = map_from(&[(0, "line0"), (1, "line1"), (2, "line2")]);
+        shift_by_line(&mut map, /*pivot=*/ 1, /*line_shift=*/ -1);
+        assert_eq!(map.get(&0).copied(), Some("line0"), "row 0 must be preserved");
+        // Row 1's cached runs are stale (content changed) — the test asserts
+        // only that row 0 was not corrupted; the rehighlight pass repopulates
+        // row 1 from the new buffer content.
+        assert!(!map.contains_key(&2), "row 2 must be dropped after merge");
+    }
+
+    /// Same shape, but deeper in the buffer.
+    #[test]
+    fn delete_newline_far_from_start_only_shifts_trailing_rows() {
+        let mut map = map_from(&[
+            (0, "a"), (1, "b"), (2, "c"), (3, "d"), (4, "e"),
+        ]);
+        shift_by_line(&mut map, /*pivot=*/ 2, /*line_shift=*/ -1);
+        assert_eq!(map.get(&0).copied(), Some("a"));
+        assert_eq!(map.get(&1).copied(), Some("b"));
+        // map[2] is stale-but-present; map[3] (was "d") slides to 3 - 1 = 2…
+        // no wait: pivot=2, removed range = (2, 3] exclusive = row 3. Keys >= 4
+        // shift down by 1. So row 3 vanishes; row 4 ("e") → row 3.
+        assert!(!map.contains_key(&4));
+        assert_eq!(map.get(&3).copied(), Some("e"));
+    }
+
+    /// Deleting 2 consecutive newlines (e.g. selecting `\n\n` and pressing
+    /// backspace) drops two rows.
+    #[test]
+    fn multi_line_delete_drops_correct_rows() {
+        let mut map = map_from(&[
+            (0, "a"), (1, "b"), (2, "c"), (3, "d"), (4, "e"),
+        ]);
+        shift_by_line(&mut map, /*pivot=*/ 1, /*line_shift=*/ -2);
+        assert_eq!(map.get(&0).copied(), Some("a"));
+        // Rows 2 and 3 vanished; row 4 ("e") → row 2.
+        assert!(!map.contains_key(&3));
+        assert!(!map.contains_key(&4));
+        assert_eq!(map.get(&2).copied(), Some("e"));
+    }
+
+    /// Enter at end of row 0 splits it into rows 0 and 1; existing rows shift up.
+    #[test]
+    fn insert_newline_shifts_trailing_rows_up() {
+        let mut map = map_from(&[(0, "first"), (1, "second"), (2, "third")]);
+        shift_by_line(&mut map, /*pivot=*/ 0, /*line_shift=*/ 1);
+        // Row 0's cached runs stay (stale, will be overwritten by rehighlight).
+        assert_eq!(map.get(&0).copied(), Some("first"));
+        // Row 1 ("second") → row 2; row 2 ("third") → row 3.
+        assert_eq!(map.get(&2).copied(), Some("second"));
+        assert_eq!(map.get(&3).copied(), Some("third"));
+        assert!(!map.contains_key(&1) || map.get(&1).copied() == Some("first"));
+    }
+
+    /// Zero shift is a no-op.
+    #[test]
+    fn zero_shift_is_noop() {
+        let original = map_from(&[(0, "a"), (1, "b"), (2, "c")]);
+        let mut map = original.clone();
+        shift_by_line(&mut map, 1, 0);
+        assert_eq!(map, original);
     }
 }
