@@ -16,8 +16,7 @@ bevy_ecs = "0.18"
 bevy_log = "0.18"
 bevy_tasks = "0.18"
 
-async-lsp = { version = "0.2", features = ["client-monitor", "stdio"] }
-async-process = "2"
+async-lsp = { version = "0.2", default-features = false, features = ["client-monitor", "tracing"] }
 async-channel = "2"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 tower = "0.4"
@@ -27,3 +26,11 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 ropey = "1.6"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+async-process = "2"
+async-lsp = { version = "0.2", default-features = false, features = ["client-monitor", "tracing", "stdio"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+gloo-net = { version = "0.6", default-features = false, features = ["websocket"] }
+wasm-bindgen-futures = "0.4"
