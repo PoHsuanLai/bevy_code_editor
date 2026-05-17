@@ -1,7 +1,7 @@
 //! Edit history and undo/redo types
 
+use bevy::platform::time::Instant;
 use bevy::reflect::Reflect;
-use std::time::Instant;
 
 /// Type of edit for transaction grouping decisions
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Reflect)]

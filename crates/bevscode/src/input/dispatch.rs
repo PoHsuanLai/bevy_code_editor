@@ -41,7 +41,7 @@ use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy_instanced_text_editor::RopeBuffer;
 use leafwing_input_manager::prelude::*;
-use std::time::Instant;
+use bevy::platform::time::Instant;
 
 const ALL_ACTIONS: [EditorAction; 49] = [
     EditorAction::DeleteBackward,
