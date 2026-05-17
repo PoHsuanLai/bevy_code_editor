@@ -8,7 +8,7 @@ use bevy_log::debug;
 use bevy_tasks::AsyncComputeTaskPool;
 use futures::FutureExt;
 
-use super::{LspTransport, TransportHandle};
+use super::{BoxedFuture, LspTransport, TransportHandle};
 
 /// Spawn `command` with `args` and wire the resulting child's stdio into the
 /// async-lsp main loop. stderr is drained to the debug log.
@@ -29,16 +29,11 @@ impl StdioTransport {
 impl LspTransport for StdioTransport {
     type Reader = async_process::ChildStdout;
     type Writer = async_process::ChildStdin;
-    type Connect = std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = std::io::Result<(Self::Reader, Self::Writer, TransportHandle)>,
-                > + Send,
-        >,
-    >;
+    type Connect =
+        BoxedFuture<std::io::Result<(Self::Reader, Self::Writer, TransportHandle)>>;
 
     fn connect(self) -> Self::Connect {
-        Box::pin(async move {
+        async move {
             #[cfg(debug_assertions)]
             debug!("[LSP] Starting server: {} {:?}", self.command, self.args);
 
@@ -88,6 +83,7 @@ impl LspTransport for StdioTransport {
                     client_process_id: Some(std::process::id()),
                 },
             ))
-        })
+        }
+        .boxed()
     }
 }

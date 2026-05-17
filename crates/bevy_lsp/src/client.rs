@@ -3,6 +3,7 @@
 //! [`LspClient::try_recv`].
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::ops::ControlFlow;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -17,9 +18,27 @@ use bevy_log::{debug, warn};
 use bevy_tasks::{AsyncComputeTaskPool, Task};
 use futures::channel::oneshot;
 
-use crate::transport::LspTransport;
+use crate::transport::{LspTransport, MaybeSend};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::transport::StdioTransport;
+
+/// Spawn an async task on Bevy's compute pool. Uses `spawn_local` on wasm32
+/// (single-threaded, where many in-browser handles such as `WebSocket` are
+/// `!Send`) and the thread-pooled `spawn` everywhere else.
+fn spawn_task<Fut>(future: Fut) -> Task<()>
+where
+    Fut: Future<Output = ()> + MaybeSend + 'static,
+{
+    let pool = AsyncComputeTaskPool::get();
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        pool.spawn(future)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        pool.spawn_local(future)
+    }
+}
 use lsp_types::notification::{
     Cancel as CancelNotif, DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles,
     DidChangeWorkspaceFolders, DidCloseTextDocument, DidOpenTextDocument, DidSaveTextDocument,
@@ -146,7 +165,7 @@ impl LspClient {
         let watchdog_flag = self.shutting_down.clone();
         let pid_slot = self.client_process_id.clone();
 
-        let driver = AsyncComputeTaskPool::get().spawn(async move {
+        let driver = spawn_task(async move {
             let (reader, writer, handle) = match transport.connect().await {
                 Ok(t) => t,
                 Err(err) => {
@@ -213,36 +232,35 @@ impl LspClient {
         let tx = self.response_tx.clone();
         let init_done = self.init_done.clone();
         let pid = self.client_process_id.get().and_then(|p| *p);
-        AsyncComputeTaskPool::get()
-            .spawn(async move {
-                #[allow(deprecated)]
-                let params = InitializeParams {
-                    process_id: pid,
-                    root_uri: Some(root_uri),
-                    capabilities: *capabilities,
-                    client_info: Some(ClientInfo {
-                        name: "bevy_lsp".into(),
-                        version: Some(env!("CARGO_PKG_VERSION").into()),
-                    }),
-                    ..InitializeParams::default()
-                };
-                match server.request::<InitializeRequest>(params).await {
-                    Ok(result) => {
-                        if let Err(err) = server.notify::<InitializedNotif>(InitializedParams {}) {
-                            warn!("[LSP] initialized notify failed: {err}");
-                        }
-                        init_done.store(true, Ordering::Release);
-                        emit(
-                            &tx,
-                            LspResponse::Initialized {
-                                capabilities: Box::new(result.capabilities),
-                            },
-                        );
+        spawn_task(async move {
+            #[allow(deprecated)]
+            let params = InitializeParams {
+                process_id: pid,
+                root_uri: Some(root_uri),
+                capabilities: *capabilities,
+                client_info: Some(ClientInfo {
+                    name: "bevy_lsp".into(),
+                    version: Some(env!("CARGO_PKG_VERSION").into()),
+                }),
+                ..InitializeParams::default()
+            };
+            match server.request::<InitializeRequest>(params).await {
+                Ok(result) => {
+                    if let Err(err) = server.notify::<InitializedNotif>(InitializedParams {}) {
+                        warn!("[LSP] initialized notify failed: {err}");
                     }
-                    Err(err) => warn!("[LSP] {} failed: {err}", InitializeRequest::METHOD),
+                    init_done.store(true, Ordering::Release);
+                    emit(
+                        &tx,
+                        LspResponse::Initialized {
+                            capabilities: Box::new(result.capabilities),
+                        },
+                    );
                 }
-            })
-            .detach();
+                Err(err) => warn!("[LSP] {} failed: {err}", InitializeRequest::METHOD),
+            }
+        })
+        .detach();
     }
 
     pub fn try_recv(&self) -> Option<LspResponse> {
@@ -275,22 +293,21 @@ fn spawn<R>(
     server: &ServerSocket,
     tx: &Tx,
     params: R::Params,
-    map: impl FnOnce(R::Result, &Tx) + Send + 'static,
+    map: impl FnOnce(R::Result, &Tx) + MaybeSend + 'static,
 ) where
     R: LspRequestTrait + 'static,
-    R::Params: Send + 'static,
-    R::Result: Send + 'static,
+    R::Params: MaybeSend + 'static,
+    R::Result: MaybeSend + 'static,
 {
     let server = server.clone();
     let tx = tx.clone();
-    AsyncComputeTaskPool::get()
-        .spawn(async move {
-            match server.request::<R>(params).await {
-                Ok(result) => map(result, &tx),
-                Err(err) => log_request_error::<R>(err),
-            }
-        })
-        .detach();
+    spawn_task(async move {
+        match server.request::<R>(params).await {
+            Ok(result) => map(result, &tx),
+            Err(err) => log_request_error::<R>(err),
+        }
+    })
+    .detach();
 }
 
 fn log_request_error<R: LspRequestTrait>(err: async_lsp::Error) {

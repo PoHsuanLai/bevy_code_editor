@@ -11,7 +11,6 @@
 use bevy_tasks::Task;
 use futures::io::{AsyncRead, AsyncWrite};
 use std::future::Future;
-use std::pin::Pin;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod stdio;
@@ -22,6 +21,15 @@ pub use stdio::StdioTransport;
 pub mod websocket;
 #[cfg(target_arch = "wasm32")]
 pub use websocket::WebSocketTransport;
+
+/// `Pin<Box<dyn Future<Output = T>>>` that's `Send` on native and bare on
+/// wasm32. JS-backed handles (`WebSocket`, `Promise`) are `!Send` and the
+/// single browser thread doesn't need the marker; native uses Bevy's
+/// thread-pooled executor and does.
+#[cfg(not(target_arch = "wasm32"))]
+pub type BoxedFuture<T> = futures::future::BoxFuture<'static, T>;
+#[cfg(target_arch = "wasm32")]
+pub type BoxedFuture<T> = futures::future::LocalBoxFuture<'static, T>;
 
 /// One open connection's runtime state.
 ///
@@ -34,7 +42,7 @@ pub struct TransportHandle {
     pub auxiliary_tasks: Vec<Task<()>>,
     /// Resolves when the transport exits. The crash watchdog awaits this to
     /// decide whether to emit [`crate::LspResponse::Crashed`].
-    pub exited: Pin<Box<dyn Future<Output = ()> + Send>>,
+    pub exited: BoxedFuture<()>,
     /// PID of the local process hosting the language server, if any. Surfaced
     /// in [`InitializeParams::process_id`]; `None` on transports where the
     /// concept doesn't apply (WebSocket, in-browser worker).
@@ -43,14 +51,27 @@ pub struct TransportHandle {
     pub client_process_id: Option<u32>,
 }
 
+/// Per-target `Send` bound used by [`LspTransport`]. Identical to `Send` on
+/// native; vacuous on wasm32, matching how `wasm_bindgen_futures::spawn_local`
+/// places no `Send` requirement on the future.
+#[cfg(not(target_arch = "wasm32"))]
+pub trait MaybeSend: Send {}
+#[cfg(not(target_arch = "wasm32"))]
+impl<T: Send> MaybeSend for T {}
+#[cfg(target_arch = "wasm32")]
+pub trait MaybeSend {}
+#[cfg(target_arch = "wasm32")]
+impl<T> MaybeSend for T {}
+
 /// Connect to a language server and hand back the byte streams `async-lsp`
 /// drives. Implementations are one-shot: [`Self::connect`] consumes `self`
 /// and produces the runtime artefacts.
-pub trait LspTransport: Send + 'static {
-    type Reader: AsyncRead + Send + Unpin + 'static;
-    type Writer: AsyncWrite + Send + Unpin + 'static;
+pub trait LspTransport: MaybeSend + 'static {
+    type Reader: AsyncRead + MaybeSend + Unpin + 'static;
+    type Writer: AsyncWrite + MaybeSend + Unpin + 'static;
     type Connect: Future<Output = std::io::Result<(Self::Reader, Self::Writer, TransportHandle)>>
-        + Send;
+        + MaybeSend
+        + 'static;
 
     fn connect(self) -> Self::Connect;
 }

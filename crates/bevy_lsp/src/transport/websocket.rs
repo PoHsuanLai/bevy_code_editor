@@ -26,7 +26,7 @@ use futures::SinkExt;
 use gloo_net::websocket::futures::WebSocket;
 use gloo_net::websocket::Message;
 
-use super::{LspTransport, TransportHandle};
+use super::{BoxedFuture, LspTransport, TransportHandle};
 
 /// Connect to `url` (e.g. `ws://localhost:9876`). The host on the other end
 /// must be a JSON-RPC forwarder that pipes WebSocket payloads to/from a
@@ -44,16 +44,10 @@ impl WebSocketTransport {
 impl LspTransport for WebSocketTransport {
     type Reader = WsReader;
     type Writer = WsWriter;
-    type Connect = Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = io::Result<(Self::Reader, Self::Writer, TransportHandle)>,
-                > + Send,
-        >,
-    >;
+    type Connect = BoxedFuture<io::Result<(Self::Reader, Self::Writer, TransportHandle)>>;
 
     fn connect(self) -> Self::Connect {
-        Box::pin(async move {
+        async move {
             let ws = WebSocket::open(&self.url)
                 .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))?;
 
@@ -97,7 +91,7 @@ impl LspTransport for WebSocketTransport {
             let exited = async move {
                 let _ = exit_rx.await;
             }
-            .boxed();
+            .boxed_local();
 
             Ok((
                 reader,
@@ -108,7 +102,8 @@ impl LspTransport for WebSocketTransport {
                     client_process_id: None,
                 },
             ))
-        })
+        }
+        .boxed_local()
     }
 }
 
