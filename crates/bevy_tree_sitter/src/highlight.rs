@@ -5,11 +5,12 @@
 //! `highlight_ranges` is the query-execution entry point; line-splitting is
 //! the consumer's responsibility.
 
+use crate::ts;
+use crate::ts::{Query, QueryCursor, Tree};
 use ropey::Rope;
 use std::ops::Range;
 use std::sync::Arc;
 use streaming_iterator::StreamingIterator;
-use tree_sitter::{Query, QueryCursor, Tree};
 
 /// One contiguous run of text sharing a single tree-sitter capture.
 /// `byte_range` is document-absolute; `capture_name` is the raw query capture
@@ -28,10 +29,10 @@ pub(crate) struct RopeChunks<'a> {
     pub(crate) chunks: ropey::iter::Chunks<'a>,
 }
 
-impl<'a> tree_sitter::TextProvider<&'a [u8]> for RopeProvider<'a> {
+impl<'a> ts::TextProvider<&'a [u8]> for RopeProvider<'a> {
     type I = RopeChunks<'a>;
 
-    fn text(&mut self, node: tree_sitter::Node) -> Self::I {
+    fn text(&mut self, node: ts::Node) -> Self::I {
         let byte_range = node.byte_range();
         let start_char = self.0.byte_to_char(byte_range.start);
         let end_char = self.0.byte_to_char(byte_range.end.min(self.0.len_bytes()));

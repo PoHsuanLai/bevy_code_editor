@@ -1,5 +1,6 @@
 //! Tree-sitter grammar configuration component.
 
+use crate::ts;
 use crate::tree_sitter::TreeSitterProvider;
 use bevy_ecs::prelude::*;
 
@@ -8,15 +9,15 @@ use bevy_ecs::prelude::*;
 /// Insert this component to opt into async parsing and highlight queries.
 /// Omit it for plain-text entities.
 ///
-/// Not Reflect: `tree_sitter::Language` owns FFI-side state.
+/// Not Reflect: `ts::Language` owns FFI-side state.
 #[derive(Component, Clone)]
 pub struct TreeSitterGrammar {
-    pub grammar: tree_sitter::Language,
+    pub grammar: ts::Language,
     pub highlights_query: String,
 }
 
 impl TreeSitterGrammar {
-    pub fn new(grammar: tree_sitter::Language, highlights_query: impl Into<String>) -> Self {
+    pub fn new(grammar: ts::Language, highlights_query: impl Into<String>) -> Self {
         Self {
             grammar,
             highlights_query: highlights_query.into(),

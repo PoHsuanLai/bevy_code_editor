@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use crate::language::TreeSitterGrammar;
 use crate::tree_sitter::{build_parser, RopeReader};
+use crate::ts;
 
 /// Buffer interface for the parse pipeline. `content_version` and `snapshot`
 /// are called on the main thread; the cloned `Rope` is moved to the worker.
@@ -27,7 +28,7 @@ pub trait ParseSource: Send + Sync + 'static {
 
     /// Optional: implementations without their own cached tree can leave this as
     /// the default no-op.
-    fn apply_edit(&self, _edit: tree_sitter::InputEdit) {}
+    fn apply_edit(&self, _edit: ts::InputEdit) {}
 }
 
 /// Wraps a [`ParseSource`] trait object. Cheap to clone (`Arc` bump).
@@ -44,11 +45,11 @@ impl ParseSourceComp {
 /// Per-entity parsed-tree state. Written by `parse_dirty` on completion;
 /// filter `Changed<SyntaxTree>` to react when a new tree lands.
 ///
-/// Not Reflect: `tree_sitter::Tree` owns FFI-side state.
+/// Not Reflect: `ts::Tree` owns FFI-side state.
 #[derive(Component, Default)]
 #[require(ParseState)]
 pub struct SyntaxTree {
-    pub tree: Option<tree_sitter::Tree>,
+    pub tree: Option<ts::Tree>,
     pub content_version: u64,
     /// Bumps on each tree replacement so readers can cache derived data by
     /// tree identity instead of pointer equality.
@@ -77,11 +78,11 @@ impl SyntaxTree {
 pub(crate) enum ParseState {
     /// Holds the reusable parser between parses. `None` until the grammar
     /// is first set; repopulated when each async parse completes.
-    Idle(Option<tree_sitter::Parser>),
+    Idle(Option<ts::Parser>),
     /// Parser is moved into the task and returned alongside the tree so it
     /// can be reused on the next parse without re-allocating.
     InFlight {
-        task: Task<(Option<tree_sitter::Tree>, tree_sitter::Parser)>,
+        task: Task<(Option<ts::Tree>, ts::Parser)>,
         content_version: u64,
         dirty_rows: Option<(u32, u32)>,
     },
@@ -165,25 +166,25 @@ pub(crate) fn parse_dirty(
 /// Async worker: incremental parse using the provided `parser`. Returns the
 /// parser alongside the tree so the caller can reuse it next parse.
 fn parse_tree_async(
-    mut parser: tree_sitter::Parser,
+    mut parser: ts::Parser,
     rope: Rope,
-    cached_tree: Option<tree_sitter::Tree>,
-) -> (Option<tree_sitter::Tree>, tree_sitter::Parser) {
+    cached_tree: Option<ts::Tree>,
+) -> (Option<ts::Tree>, ts::Parser) {
     let mut reader = RopeReader::new(&rope);
     let mut callback =
-        |byte_offset: usize, _position: tree_sitter::Point| -> &[u8] { reader.read(byte_offset) };
+        |byte_offset: usize, _position: ts::Point| -> &[u8] { reader.read(byte_offset) };
 
-    let tree = parser.parse_with(&mut callback, cached_tree.as_ref());
+    let tree = parser.parse_with_options(&mut callback, cached_tree.as_ref(), None);
     (tree, parser)
 }
 
 /// O(log n) rope lookup — safe to call on the main thread per edit.
-pub fn byte_to_point(rope: &Rope, byte_offset: usize) -> tree_sitter::Point {
+pub fn byte_to_point(rope: &Rope, byte_offset: usize) -> ts::Point {
     let byte_offset = byte_offset.min(rope.len_bytes());
     let char_offset = rope.byte_to_char(byte_offset);
     let line = rope.char_to_line(char_offset);
     let line_start_char = rope.line_to_char(line);
     let line_start_byte = rope.char_to_byte(line_start_char);
     let column_byte = byte_offset - line_start_byte;
-    tree_sitter::Point::new(line, column_byte)
+    ts::Point::new(line, column_byte)
 }

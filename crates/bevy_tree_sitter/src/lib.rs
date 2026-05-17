@@ -47,9 +47,15 @@ pub mod plugin;
 pub mod prelude;
 pub mod tree_sitter;
 
-/// Re-exported so consumers can name `tree_sitter::Tree`, `InputEdit`, etc.
-/// without a direct dep on the C-binding crate.
-pub use ::tree_sitter as ts;
+/// Re-exported so consumers can name `ts::Tree`, `ts::InputEdit`, etc.
+/// without a direct dep on the underlying tree-sitter implementation. Points
+/// at [`arborium`]'s vendored, wasm-capable fork so both native and
+/// `wasm32-unknown-unknown` builds share one type universe.
+pub use ::arborium::tree_sitter as ts;
+
+/// Re-exported so consumers can pull in bundled grammars
+/// (e.g. `arborium::lang_rust::language()` + `HIGHLIGHTS_QUERY`).
+pub use ::arborium;
 
 pub use crate::highlight::{highlight_ranges, HighlightRange};
 pub use crate::language::TreeSitterGrammar;

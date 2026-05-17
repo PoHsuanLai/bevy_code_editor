@@ -1,10 +1,10 @@
 //! Tree-sitter syntax-highlight provider using the low-level `QueryCursor` API.
 
 use crate::highlight::{highlight_ranges, HighlightRange};
+use crate::ts::{Language, Parser, Query, QueryCursor, Tree};
 use ropey::Rope;
 use std::ops::Range;
 use std::sync::Arc;
-use tree_sitter::{Language, Parser, Query, QueryCursor, Tree};
 
 /// Zero-copy rope reader for `parse_with`. Streams chunks forward; seeking
 /// backwards resets the chunk iterator.
@@ -72,7 +72,7 @@ impl TreeSitterProvider {
         &mut self,
         query_source: &str,
         language: Language,
-    ) -> Result<(), tree_sitter::QueryError> {
+    ) -> Result<(), crate::ts::QueryError> {
         let query = Query::new(&language, query_source)?;
         self.capture_names = query
             .capture_names()
