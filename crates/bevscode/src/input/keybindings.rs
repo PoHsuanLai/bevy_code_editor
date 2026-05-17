@@ -296,4 +296,25 @@ impl EditorAction {
                 | EditorAction::InsertNewline
         )
     }
+
+    /// Actions that mutate buffer contents. Suppressed when `Misc::read_only`
+    /// is set; navigation, selection, copy, search, and fold actions stay
+    /// available so the editor still behaves like a usable viewer.
+    pub fn is_mutating(&self) -> bool {
+        matches!(
+            self,
+            EditorAction::DeleteBackward
+                | EditorAction::DeleteForward
+                | EditorAction::DeleteWordBackward
+                | EditorAction::DeleteWordForward
+                | EditorAction::DeleteLine
+                | EditorAction::InsertNewline
+                | EditorAction::InsertTab
+                | EditorAction::Cut
+                | EditorAction::Paste
+                | EditorAction::Undo
+                | EditorAction::Redo
+                | EditorAction::RenameSymbol
+        )
+    }
 }

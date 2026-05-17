@@ -358,6 +358,7 @@ pub fn dispatch_action_events(
         With<EditorInputManager>,
     >,
     cursor_settings_q: Query<&CursorSettings, With<CodeEditor>>,
+    misc_q: Query<&crate::settings::Misc, With<CodeEditor>>,
     #[cfg(feature = "lsp")] mut pending: ResMut<PendingActionFollowup>,
     #[cfg(feature = "lsp")] mut editor_q: Query<
         (
@@ -432,6 +433,16 @@ pub fn dispatch_action_events(
     let Some(action) = action_to_execute else {
         return;
     };
+
+    // Read-only: drop content-mutating actions before they reach handlers.
+    // Navigation, selection, copy, search, and fold actions still flow.
+    if action.is_mutating() {
+        if let Ok(misc) = misc_q.get(focused) {
+            if misc.read_only {
+                return;
+            }
+        }
+    }
 
     // Feature-owned interceptors get first crack at the action. Each returns
     // `true` if it consumed the action; the dispatcher early-returns and the

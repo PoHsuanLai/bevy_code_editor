@@ -67,6 +67,7 @@ pub fn on_focused_keyboard(
             &mut CursorState,
             &mut crate::text_view::TextBuffer<RopeBuffer>,
             &crate::settings::AutoEdit,
+            &crate::settings::Misc,
         ),
         With<CodeEditor>,
     >,
@@ -76,10 +77,14 @@ pub fn on_focused_keyboard(
 ) {
     let entity = trigger.event().focused_entity;
 
-    let Ok((mut sel, mut hist, mut cursor, mut buffer, auto_edit)) = editor_query.get_mut(entity)
+    let Ok((mut sel, mut hist, mut cursor, mut buffer, auto_edit, misc)) =
+        editor_query.get_mut(entity)
     else {
         return;
     };
+    if misc.read_only {
+        return;
+    }
 
     #[cfg(feature = "lsp")]
     let Ok((

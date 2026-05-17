@@ -159,6 +159,7 @@ pub fn on_fold_gutter_press(
             &TextFont,
             &bevy::text::LineHeight,
             &MonoCellWidth,
+            &crate::settings::Folding,
         ),
         With<CodeEditor>,
     >,
@@ -167,11 +168,14 @@ pub fn on_fold_gutter_press(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((scroll, computed, gutter, mut fold_state, font, lh, _mono)) =
+    let Ok((scroll, computed, gutter, mut fold_state, font, lh, _mono, folding)) =
         editor_query.get_mut(entity)
     else {
         return;
     };
+    if !folding.enabled {
+        return;
+    }
     let Some(local_pos) = trigger.event().hit.position.map(|p| Vec2::new(p.x, p.y)) else {
         return;
     };

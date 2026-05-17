@@ -51,6 +51,7 @@ type FoldDetectQuery<'w, 's> = Query<
         &'static FoldState,
         &'static TextBuffer<RopeBuffer>,
         &'static bevy_tree_sitter::SyntaxTree,
+        &'static crate::settings::Folding,
     ),
     (With<CodeEditor>, Changed<bevy_tree_sitter::SyntaxTree>),
 >;
@@ -62,7 +63,10 @@ pub(crate) fn spawn_fold_detect_tasks(
 ) {
     let busy: std::collections::HashSet<Entity> = in_flight.iter().map(|t| t.target).collect();
 
-    for (entity, fold_state, buffer, syntax_tree) in editor_query.iter() {
+    for (entity, fold_state, buffer, syntax_tree, folding) in editor_query.iter() {
+        if !folding.enabled {
+            continue;
+        }
         if busy.contains(&entity) {
             continue;
         }

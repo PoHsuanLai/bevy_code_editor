@@ -35,6 +35,13 @@ impl Plugin for EditorUiPlugin {
         // This runs every frame so window resizes are picked up automatically.
         app.add_systems(Update, sync_node_from_window);
 
+        // Mirror bevscode's `Indentation` into the widget crate's `IndentConfig`
+        // (which the typing/tab handlers read). `Indentation` is the
+        // Monaco-shaped surface; `IndentConfig` is the underlying handler input.
+        // Observer-driven so the schedule has zero per-frame cost — fires
+        // only on the entity that just had `Indentation` inserted or replaced.
+        app.add_observer(sync_indent_config_on_change);
+
         // Update separator position when ComputedNode changes (driven by Bevy UI layout).
         app.add_systems(Update, update_separator_on_resize.run_if(viewport_changed));
 
@@ -154,6 +161,29 @@ fn sync_node_from_window(
 ///
 /// Runs every frame (not change-filtered) so async `char_width` updates
 /// from `update_font_metrics` are picked up immediately.
+/// Mirror `Indentation` (Monaco-shaped surface in bevscode) into
+/// `IndentConfig` (the widget-layer Component the Tab / typing handlers
+/// read). Fires on insert *and* on replace of `Indentation`, so the
+/// initial `#[require]` cascade and any later mutation both trip it.
+fn sync_indent_config_on_change(
+    trigger: On<bevy::ecs::lifecycle::Insert, crate::settings::Indentation>,
+    mut editors: Query<
+        (&crate::settings::Indentation, &mut bevy_instanced_text_editor::IndentConfig),
+        With<CodeEditor>,
+    >,
+) {
+    let Ok((indent, mut cfg)) = editors.get_mut(trigger.event().entity) else {
+        return;
+    };
+    let next_tab = indent.tab_size as usize;
+    if cfg.tab_width != next_tab {
+        cfg.tab_width = next_tab;
+    }
+    if cfg.use_spaces != indent.insert_spaces {
+        cfg.use_spaces = indent.insert_spaces;
+    }
+}
+
 fn sync_gutter_width(
     mut editors: Query<
         (
