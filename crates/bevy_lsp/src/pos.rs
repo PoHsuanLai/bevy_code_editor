@@ -274,7 +274,7 @@ mod tests {
         let rope = Rope::from_str("hi 🎉 there");
         for byte in [0usize, 1, 2, 3, 7, 8, 13] {
             // Skip non-char-boundary bytes (the emoji's interior).
-            if !rope.try_byte_to_char(byte).is_ok() {
+            if rope.try_byte_to_char(byte).is_err() {
                 continue;
             }
             let pos = rope_byte_to_lsp_position(&rope, byte, PositionEncoding::Utf16);

@@ -13,13 +13,13 @@
 //!   `.before(LayoutProduceSet)`.
 
 use crate::types::events::TextEdited;
-use bevy_instanced_text_editor::RopeBuffer;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::{
-    visible_buffer_range, HiddenLines, LayoutProduceSet, LineStyles, MonoCellWidth, FormattedSpan,
+    visible_buffer_range, FormattedSpan, HiddenLines, LayoutProduceSet, LineStyles, MonoCellWidth,
     TextBounds, TextBuffer,
 };
+use bevy_instanced_text_editor::RopeBuffer;
 use std::collections::{HashMap, HashSet};
 
 use super::styling::segs_to_runs;
@@ -267,7 +267,6 @@ pub(crate) fn produce_line_styles(
         return;
     }
 
-
     for (
         entity,
         buffer,
@@ -297,7 +296,16 @@ pub(crate) fn produce_line_styles(
         let text_area_top = computed.content_inset().min_inset.y * inv;
         let wrap = wrap.copied().unwrap_or_default();
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
-        let visible = visible_buffer_range(&**buffer, scroll.y, viewport_height, text_area_top, line_height, mono.px, wrap, hidden);
+        let visible = visible_buffer_range(
+            &**buffer,
+            scroll.y,
+            viewport_height,
+            text_area_top,
+            line_height,
+            mono.px,
+            wrap,
+            hidden,
+        );
         if visible.start >= visible.end {
             *line_styles = LineStyles::new(HashMap::new());
             syntax.covered = 0..0;
@@ -312,7 +320,10 @@ pub(crate) fn produce_line_styles(
         // Zed's syntax-cache margin: render tight, cache wide.
         const HIGHLIGHT_LOOKAHEAD_LINES: usize = 64;
         let range = visible.start.saturating_sub(HIGHLIGHT_LOOKAHEAD_LINES)
-            ..visible.end.saturating_add(HIGHLIGHT_LOOKAHEAD_LINES).min(total_lines);
+            ..visible
+                .end
+                .saturating_add(HIGHLIGHT_LOOKAHEAD_LINES)
+                .min(total_lines);
 
         // Determine which lines to (re)highlight this frame.
         // `None` = full rebuild. Content edits without a matching edit event
@@ -382,10 +393,8 @@ pub(crate) fn produce_line_styles(
         // Remove hidden lines that were in the dirty range.
         if let Some(h) = hidden {
             for &(li, _) in &batch {
-                if !h.is_visible(li) {
-                    if by_line.remove(&(li as u32)).is_some() {
-                        map_changed = true;
-                    }
+                if !h.is_visible(li) && by_line.remove(&(li as u32)).is_some() {
+                    map_changed = true;
                 }
             }
         }
@@ -463,11 +472,7 @@ pub(crate) fn produce_line_styles(
 ///   Their cached runs are discarded; keys past the deleted zone shift down
 ///   by `|line_shift|`. The pivot row stays put with stale runs that the
 ///   rehighlight pass will overwrite.
-pub(crate) fn shift_by_line<V>(
-    map: &mut HashMap<u32, V>,
-    pivot: u32,
-    line_shift: i32,
-) {
+pub(crate) fn shift_by_line<V>(map: &mut HashMap<u32, V>, pivot: u32, line_shift: i32) {
     if line_shift == 0 {
         return;
     }
@@ -523,9 +528,9 @@ pub(crate) fn sync_layout_wrap(
         let char_width = mono.px;
         let width: Option<f32> = if wrapping.enabled {
             let inv = computed.inverse_scale_factor();
-            let viewport_text_w =
-                (computed.size().x * inv - computed.content_inset().min_inset.x * inv)
-                    .max(char_width);
+            let viewport_text_w = (computed.size().x * inv
+                - computed.content_inset().min_inset.x * inv)
+                .max(char_width);
             let budget = match wrapping.wrap_column {
                 Some(col) => (col as f32) * char_width,
                 None => viewport_text_w,
@@ -561,7 +566,11 @@ mod shift_tests {
     fn delete_newline_at_start_of_row_2_does_not_clobber_row_0() {
         let mut map = map_from(&[(0, "line0"), (1, "line1"), (2, "line2")]);
         shift_by_line(&mut map, /*pivot=*/ 1, /*line_shift=*/ -1);
-        assert_eq!(map.get(&0).copied(), Some("line0"), "row 0 must be preserved");
+        assert_eq!(
+            map.get(&0).copied(),
+            Some("line0"),
+            "row 0 must be preserved"
+        );
         // Row 1's cached runs are stale (content changed) — the test asserts
         // only that row 0 was not corrupted; the rehighlight pass repopulates
         // row 1 from the new buffer content.
@@ -571,9 +580,7 @@ mod shift_tests {
     /// Same shape, but deeper in the buffer.
     #[test]
     fn delete_newline_far_from_start_only_shifts_trailing_rows() {
-        let mut map = map_from(&[
-            (0, "a"), (1, "b"), (2, "c"), (3, "d"), (4, "e"),
-        ]);
+        let mut map = map_from(&[(0, "a"), (1, "b"), (2, "c"), (3, "d"), (4, "e")]);
         shift_by_line(&mut map, /*pivot=*/ 2, /*line_shift=*/ -1);
         assert_eq!(map.get(&0).copied(), Some("a"));
         assert_eq!(map.get(&1).copied(), Some("b"));
@@ -588,9 +595,7 @@ mod shift_tests {
     /// backspace) drops two rows.
     #[test]
     fn multi_line_delete_drops_correct_rows() {
-        let mut map = map_from(&[
-            (0, "a"), (1, "b"), (2, "c"), (3, "d"), (4, "e"),
-        ]);
+        let mut map = map_from(&[(0, "a"), (1, "b"), (2, "c"), (3, "d"), (4, "e")]);
         shift_by_line(&mut map, /*pivot=*/ 1, /*line_shift=*/ -2);
         assert_eq!(map.get(&0).copied(), Some("a"));
         // Rows 2 and 3 vanished; row 4 ("e") → row 2.

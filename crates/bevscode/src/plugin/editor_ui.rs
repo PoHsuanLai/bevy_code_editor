@@ -59,16 +59,10 @@ impl Plugin for EditorUiPlugin {
             (update_selection_highlight, update_cursor_line_highlight).in_set(super::RenderingSet),
         );
 
-        app.add_systems(
-            PostUpdate,
-            update_indent_guides.in_set(super::RenderingSet),
-        );
+        app.add_systems(PostUpdate, update_indent_guides.in_set(super::RenderingSet));
 
         // State update stays in Update; overlay producer reads DisplayLayout so it runs in PostUpdate.
-        app.add_systems(
-            Update,
-            update_bracket_match.in_set(super::ApplyStateSet),
-        );
+        app.add_systems(Update, update_bracket_match.in_set(super::ApplyStateSet));
         app.add_systems(
             PostUpdate,
             update_bracket_highlight
@@ -85,7 +79,6 @@ impl Plugin for EditorUiPlugin {
     }
 }
 
-#[allow(clippy::type_complexity)]
 /// Assemble per-producer typed components into the two engine overlay components.
 /// Only runs for editors where at least one source component changed.
 #[allow(clippy::type_complexity)]

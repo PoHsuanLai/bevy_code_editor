@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 //! Single-pane terminal demo. Spawns a `BevyTerminal`, fills the
 //! window. Type into it; resize it; drag-select; Cmd+C / Cmd+V (or
 //! Ctrl+Shift+C / Ctrl+Shift+V on Linux/Windows).

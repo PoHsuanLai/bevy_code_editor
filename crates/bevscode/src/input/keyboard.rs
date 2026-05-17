@@ -13,7 +13,6 @@
 
 #[cfg(feature = "lsp")]
 use super::actions::{find_word_start, request_completion, update_completion_filter};
-use bevy_instanced_text_editor::RopeBuffer;
 use super::actions::{
     get_closing_bracket, get_closing_quote, insert_closing_char, should_skip_auto_close,
 };
@@ -25,6 +24,7 @@ use crate::types::*;
 use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
 use bevy::input_focus::FocusedInput;
 use bevy::prelude::*;
+use bevy_instanced_text_editor::RopeBuffer;
 
 /// True when any modifier key is held — used by the char observer to skip
 /// shortcut keystrokes (Ctrl+C, Cmd+S, etc.) that should be handled by
@@ -209,7 +209,7 @@ fn insert_typed_char(
     #[cfg(feature = "lsp")] completion_state: &mut crate::lsp_ui::state::LspCompletionPopup,
     #[cfg(feature = "lsp")] lsp_document: Option<&mut bevy_lsp::LspDocument>,
     #[cfg(feature = "lsp")] syntax_tree: Option<&bevy_tree_sitter::SyntaxTree>,
-    #[cfg(feature = "lsp")] mut lsp_w: &mut MessageWriter<bevy_lsp::LspRequest>,
+    #[cfg(feature = "lsp")] lsp_w: &mut MessageWriter<bevy_lsp::LspRequest>,
 ) {
     if brackets.auto_close_quotes
         && get_closing_quote(c).is_some()
@@ -291,8 +291,7 @@ fn insert_typed_char(
                     }
                 } else if cursor_pos >= trigger.len() {
                     let start = cursor_pos - trigger.len();
-                    let recent_text: String =
-                        buffer.slice(start..cursor_pos).chars().collect();
+                    let recent_text: String = buffer.slice(start..cursor_pos).chars().collect();
                     if recent_text == *trigger {
                         is_trigger = true;
                         break;
@@ -308,7 +307,7 @@ fn insert_typed_char(
                     buffer.rope(),
                     completion_state,
                     lsp_document.as_deref(),
-                    &mut lsp_w,
+                    lsp_w,
                 );
             } else if (c.is_alphanumeric() || c == '_') && in_completion_context {
                 if completion_state.visible {
@@ -324,7 +323,7 @@ fn insert_typed_char(
                             buffer.rope(),
                             completion_state,
                             lsp_document.as_deref(),
-                            &mut lsp_w,
+                            lsp_w,
                         );
                     }
                 }

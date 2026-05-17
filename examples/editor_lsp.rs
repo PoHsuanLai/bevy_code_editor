@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 //! LSP (Language Server Protocol) integration example with egui+armas overlays.
 //!
 //! Demonstrates how a host application can render the editor's LSP popup
@@ -22,14 +24,14 @@ use bevscode::lsp_ui::state::UnifiedCompletionItem;
 use bevscode::lsp_ui::state::{
     LspCodeActionsPopup, LspCompletionPopup, LspHoverPopup, LspRenamePopup, LspSignatureHelpPopup,
 };
+use bevscode::lsp_ui::{CodeActionOrCommand, LspClient, LspDocument, LspMessage, LspRequest};
 use bevscode::prelude::*;
+use bevscode::prelude::{BufferAnchorParam, RopeBuffer};
 use bevscode::types::{CodeEditor, CursorState};
 use bevy::prelude::*;
-use bevy::ui::ComputedNode;
 use bevy::sprite::Anchor;
+use bevy::ui::ComputedNode;
 use bevy_egui::{egui, EguiContexts};
-use bevscode::lsp_ui::{CodeActionOrCommand, LspClient, LspDocument, LspMessage, LspRequest};
-use bevscode::prelude::{BufferAnchorParam, RopeBuffer};
 use egui::Color32;
 
 fn main() {
@@ -104,7 +106,7 @@ impl Plugin for LspEguiUiPlugin {
                 render_rename_egui,
                 render_inlay_hints,
                 // Document highlights push `RectOverlay` into the editor's
-                // `TextViewOverlays`, which the engine then paints in the
+                // `TextOverlays`, which the engine then paints in the
                 // same draw call as glyphs. Must run before
                 // `TextViewRenderSet` (which consumes overlays) — same
                 // ordering requirement as selection / cursor.
@@ -151,19 +153,10 @@ struct InlayHintText {
 /// Theme for the sprite-rendered inline decorations (inlay hints, document
 /// highlights). The library no longer ships a theme — this is the example's
 /// local copy of the relevant subset of the old `LspUiTheme`.
-#[derive(Resource, Clone, Debug)]
+#[derive(Resource, Clone, Debug, Default)]
 struct InlineDecorationsTheme {
     inlay_hints: InlayHintsTheme,
     document_highlights: DocumentHighlightsTheme,
-}
-
-impl Default for InlineDecorationsTheme {
-    fn default() -> Self {
-        Self {
-            inlay_hints: InlayHintsTheme::default(),
-            document_highlights: DocumentHighlightsTheme::default(),
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -271,7 +264,7 @@ fn render_inlay_hints(
 }
 
 /// Render document highlights as `RectOverlay`s on the editor's
-/// `TextViewOverlays`.
+/// `TextOverlays`.
 ///
 /// Going through the engine's overlay path (rather than spawning Bevy
 /// `Sprite`s) means the highlight quads ship in the **same draw call
@@ -291,14 +284,7 @@ fn render_inlay_hints(
 /// folded regions are handled by the engine's own coordinate system.
 fn render_document_highlights(
     highlight_query: Query<&DocumentHighlightData>,
-    mut editors: Query<
-        (
-            &MonoCellWidth,
-            &DisplayLayout,
-            &mut TextViewOverlays,
-        ),
-        With<CodeEditor>,
-    >,
+    mut editors: Query<(&MonoCellWidth, &DisplayLayout, &mut TextOverlays), With<CodeEditor>>,
     theme: Res<InlineDecorationsTheme>,
 ) {
     let Ok((mono, layout, mut overlays)) = editors.single_mut() else {
@@ -308,8 +294,8 @@ fn render_document_highlights(
     // Drain previous-frame highlight rects. `z = -2` is reserved for
     // document highlights so this drain doesn't touch selections (`-1`),
     // line-bg/cursor decorations (`0`), or carets (`+1`).
-    let had_highlights = overlays.rects.iter().any(|r| r.z == -2);
-    overlays.rects.retain(|r| r.z != -2);
+    let had_highlights = overlays.0.iter().any(|r| r.z == -2);
+    overlays.0.retain(|r| r.z != -2);
 
     let mut pushed = 0usize;
     for highlight in highlight_query.iter() {
@@ -366,8 +352,7 @@ fn render_document_highlights(
                 )
                 .unwrap_or(
                     start_x
-                        + (highlight.end_character - highlight.start_character) as f32
-                            * mono.px,
+                        + (highlight.end_character - highlight.start_character) as f32 * mono.px,
                 )
         };
 
@@ -375,7 +360,7 @@ fn render_document_highlights(
             continue;
         }
 
-        overlays.rects.push(RectOverlay {
+        overlays.0.push(RectOverlay {
             display_row,
             x_range: start_x..end_x,
             vertical: RowVertical::Full,
@@ -386,11 +371,10 @@ fn render_document_highlights(
         pushed += 1;
     }
 
-    // Bump the version only when something actually changed, so the
-    // engine can skip the GPU re-upload otherwise.
-    if pushed > 0 || had_highlights {
-        overlays.version = overlays.version.wrapping_add(1);
-    }
+    // Mutating overlays.0 above already marks the component as changed,
+    // so the engine picks up the new highlight rects via `Changed&lt;TextOverlays&gt;`
+    // without an explicit version bump.
+    let _ = (pushed, had_highlights);
 }
 
 /// Screen-space offset for positioning egui overlays relative to the editor panel.
@@ -518,7 +502,12 @@ fn kind_badge(item: &UnifiedCompletionItem, ui: &mut egui::Ui, size: f32) {
 fn render_completion_egui(
     mut contexts: EguiContexts,
     query: Query<
-        (Entity, &LspCompletionPopup, &CursorState, EditorMetricsQuery),
+        (
+            Entity,
+            &LspCompletionPopup,
+            &CursorState,
+            EditorMetricsQuery,
+        ),
         With<CodeEditor>,
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
@@ -691,7 +680,12 @@ fn render_completion_egui(
 fn render_hover_egui(
     mut contexts: EguiContexts,
     query: Query<
-        (Entity, &LspHoverPopup, &LspCompletionPopup, EditorMetricsQuery),
+        (
+            Entity,
+            &LspHoverPopup,
+            &LspCompletionPopup,
+            EditorMetricsQuery,
+        ),
         With<CodeEditor>,
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
@@ -765,7 +759,12 @@ fn render_hover_egui(
 fn render_signature_help_egui(
     mut contexts: EguiContexts,
     query: Query<
-        (Entity, &LspSignatureHelpPopup, &CursorState, EditorMetricsQuery),
+        (
+            Entity,
+            &LspSignatureHelpPopup,
+            &CursorState,
+            EditorMetricsQuery,
+        ),
         With<CodeEditor>,
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
@@ -895,7 +894,12 @@ fn render_signature_help_egui(
 fn render_code_actions_egui(
     mut contexts: EguiContexts,
     query: Query<
-        (Entity, &LspCodeActionsPopup, &CursorState, EditorMetricsQuery),
+        (
+            Entity,
+            &LspCodeActionsPopup,
+            &CursorState,
+            EditorMetricsQuery,
+        ),
         With<CodeEditor>,
     >,
     viewport_offset: Res<LspEguiViewportOffset>,
@@ -972,9 +976,7 @@ fn render_code_actions_egui(
                                     };
                                     (icon, a.title.as_str())
                                 }
-                                CodeActionOrCommand::Command(c) => {
-                                    ("C", c.title.as_str())
-                                }
+                                CodeActionOrCommand::Command(c) => ("C", c.title.as_str()),
                             };
 
                             egui::Frame::NONE
@@ -1119,10 +1121,8 @@ fn setup_editor(
     };
 
     commands.entity(editor_entity).insert((
-        TextFont::from_font_size(14.0)
-            .with_font(asset_server.load("fonts/FiraMono-Regular.ttf")),
-        MonoFontFaces::default()
-            .with_bold(asset_server.load("fonts/FiraMono-Medium.ttf")),
+        TextFont::from_font_size(14.0).with_font(asset_server.load("fonts/FiraMono-Regular.ttf")),
+        MonoFontFaces::default().with_bold(asset_server.load("fonts/FiraMono-Medium.ttf")),
     ));
 
     let example_file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("editor_lsp.rs");
@@ -1168,19 +1168,28 @@ fn setup_editor(
         lsp_types::Url::from_directory_path(&project_root).expect("Failed to get project root URI");
     let capabilities = lsp_types::ClientCapabilities::default();
 
-    lsp_w.write(LspRequest { entity: editor_entity, msg: LspMessage::Initialize {
-        root_uri: root_uri.clone(),
-        capabilities: Box::new(capabilities),
-    }});
+    lsp_w.write(LspRequest {
+        entity: editor_entity,
+        msg: LspMessage::Initialize {
+            root_uri: root_uri.clone(),
+            capabilities: Box::new(capabilities),
+        },
+    });
 
-    lsp_w.write(LspRequest { entity: editor_entity, msg: LspMessage::Initialized });
+    lsp_w.write(LspRequest {
+        entity: editor_entity,
+        msg: LspMessage::Initialized,
+    });
 
-    lsp_w.write(LspRequest { entity: editor_entity, msg: LspMessage::DidOpen {
-        uri: doc_uri.clone(),
-        language_id: "rust".to_string(),
-        version: 1,
-        text: rust_code.to_string(),
-    }});
+    lsp_w.write(LspRequest {
+        entity: editor_entity,
+        msg: LspMessage::DidOpen {
+            uri: doc_uri.clone(),
+            language_id: "rust".to_string(),
+            version: 1,
+            text: rust_code.to_string(),
+        },
+    });
 
     // Insert per-document state on the editor entity. Other LSP-side
     // Components (capabilities, popups, debounce, sync extra) are already on

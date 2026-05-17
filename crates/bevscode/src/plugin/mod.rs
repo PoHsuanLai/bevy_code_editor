@@ -154,6 +154,14 @@ impl Plugin for CodeEditorPlugin {
         // `bevy_instanced_text_editor::TextViewDragState`, written by the picking-driven
         // press/drag observers in `bevy_instanced_text_editor::interaction`.
 
+        // LSP handlers registered below by `register_handler_systems` read
+        // `bevy_lsp::LspRequest`; ensure the message type is initialized even
+        // when hosts add `CodeEditorPlugin` standalone (without `LspPlugin`).
+        #[cfg(feature = "lsp")]
+        if !app.is_plugin_added::<bevy_lsp::LspPlugin>() {
+            app.add_plugins(bevy_lsp::LspPlugin);
+        }
+
         app.configure_sets(
             Update,
             (
@@ -246,7 +254,6 @@ impl Plugin for CodeEditorPlugin {
                 .run_if(ui_elements::should_auto_scroll)
                 .in_set(ApplyStateSet),
         );
-
     }
 }
 
