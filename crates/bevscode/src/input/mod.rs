@@ -14,6 +14,7 @@
 
 pub mod action_events;
 pub mod actions;
+pub mod auto_indent;
 pub mod dispatch;
 pub mod editing;
 pub mod handlers;

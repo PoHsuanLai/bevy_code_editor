@@ -17,6 +17,7 @@ use super::actions::{
 };
 #[cfg(feature = "lsp")]
 use super::actions::{find_word_start, request_completion, update_completion_filter};
+use super::auto_indent::should_dedent_close_brace;
 use super::picking_backend::move_cursor;
 #[cfg(feature = "lsp")]
 use crate::settings::LspConfig;
@@ -24,7 +25,7 @@ use crate::types::*;
 use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
 use bevy::input_focus::FocusedInput;
 use bevy::prelude::*;
-use bevy_instanced_text_editor::RopeBuffer;
+use bevy_instanced_text_editor::{EditKind, RopeBuffer};
 
 /// True when any modifier key is held — used by the char observer to skip
 /// shortcut keystrokes (Ctrl+C, Cmd+S, etc.) that should be handled by
@@ -68,6 +69,7 @@ pub fn on_focused_keyboard(
             &mut CursorState,
             &mut crate::text_view::TextBuffer<RopeBuffer>,
             &crate::settings::AutoEdit,
+            &crate::settings::Indentation,
             &crate::settings::Misc,
         ),
         With<CodeEditor>,
@@ -79,7 +81,7 @@ pub fn on_focused_keyboard(
 ) {
     let entity = trigger.event().focused_entity;
 
-    let Ok((mut sel, mut hist, mut cursor, mut buffer, auto_edit, misc)) =
+    let Ok((mut sel, mut hist, mut cursor, mut buffer, auto_edit, indentation, misc)) =
         editor_query.get_mut(entity)
     else {
         return;
@@ -166,6 +168,7 @@ pub fn on_focused_keyboard(
                     &mut cursor,
                     &mut buffer,
                     auto_edit,
+                    indentation,
                     #[cfg(feature = "lsp")]
                     lsp,
                     #[cfg(feature = "lsp")]
@@ -214,6 +217,7 @@ fn insert_typed_char(
     cursor: &mut CursorState,
     buffer: &mut crate::text_view::TextBuffer<RopeBuffer>,
     auto_edit: &crate::settings::AutoEdit,
+    indentation: &crate::settings::Indentation,
     #[cfg(feature = "lsp")] lsp: &LspConfig,
     #[cfg(feature = "lsp")] entity: Entity,
     #[cfg(feature = "lsp")] capabilities: &bevy_lsp::ServerCapabilities,
@@ -229,6 +233,25 @@ fn insert_typed_char(
 
     let is_closing_bracket = auto_edit.pairs.iter().any(|(_, close)| *close == c);
     let is_closing_quote = matches!(c, '"' | '\'' | '`');
+
+    if !sel.selections.primary().has_selection() {
+        if let Some(delete_count) =
+            should_dedent_close_brace(c, buffer.rope(), cursor.cursor_pos, auto_edit, indentation)
+        {
+            let pos = cursor.cursor_pos;
+            let outcome = hist.replace_range(
+                buffer,
+                pos - delete_count,
+                pos,
+                &c.to_string(),
+                EditKind::Other,
+                true,
+            );
+            cursor.cursor_pos = outcome.new_cursor_pos;
+            sel.apply_primary_cursor(cursor);
+            return;
+        }
+    }
 
     if (is_closing_bracket || is_closing_quote) && should_skip_auto_close(cursor, buffer.rope(), c)
     {
