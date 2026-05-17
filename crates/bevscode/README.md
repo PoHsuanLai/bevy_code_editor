@@ -19,15 +19,24 @@ use bevscode::prelude::*;
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, CodeEditorPlugins))
+        .add_plugins(DefaultPlugins)
+        .add_plugins(CodeEditorPlugins)
         .add_systems(Startup, |mut commands: Commands| {
-            commands.spawn((
-                CodeEditor,
-                TextViewViewport { rect: Rect::new(0.0, 0.0, 800.0, 600.0), ..default() },
-            ));
+            commands.spawn(Camera2d);
+            // AutoResizeViewport keeps the editor's Node sized to the window.
+            commands.spawn((CodeEditor, AutoResizeViewport));
         })
         .run();
 }
+```
+
+For a fixed-size pane, omit `AutoResizeViewport` and set an explicit `Node`:
+
+```rust
+commands.spawn((
+    CodeEditor,
+    Node { width: Val::Px(800.0), height: Val::Px(600.0), ..default() },
+));
 ```
 
 ## Features
@@ -39,12 +48,31 @@ Multi-cursor, folding, bracket matching, line numbers, scrollbar, syntax highlig
 All state is plain ECS — query it from any system:
 
 ```rust
-fn status_bar(editors: Query<(&TextBuffer, &CursorState, &FoldState), With<CodeEditor>>) {
+use bevy_instanced_text_editor::RopeBuffer;
+
+fn status_bar(
+    editors: Query<(&TextBuffer<RopeBuffer>, &CursorState, &FoldState), With<CodeEditor>>,
+) {
     for (buffer, cursor, folds) in &editors { /* … */ }
 }
 ```
 
-File I/O events are public — emit `SaveRequested` / `OpenRequested` yourself or handle them in your own system.
+## Handling editor actions
+
+File I/O and IDE-action events are public Bevy messages. Wire your own handler with `EditorAppExt`:
+
+```rust
+use bevscode::prelude::*;
+
+App::new()
+    .add_plugins(CodeEditorPlugins)
+    .add_editor_action_handler(my_save_handler)
+    .run();
+
+fn my_save_handler(mut events: MessageReader<SaveRequested>) {
+    for ev in events.read() { /* persist buffer */ }
+}
+```
 
 ## Embedding in a larger app
 
@@ -54,10 +82,13 @@ Disable sub-plugins your host already provides:
 CodeEditorPlugins.build().disable::<EditorUiPlugin>()
 ```
 
-Override components at spawn:
+Override components at spawn. Settings cascade onto `CodeEditor` via `#[require]`, so any explicit component on the spawn replaces the default:
 
 ```rust
-commands.spawn((CodeEditor, FontConfig::from_size(18.0), TextBuffer::with_text("fn main() {}")));
+commands.spawn((
+    CodeEditor,
+    Indentation { use_spaces: true, tab_width: 2, auto_indent: true },
+));
 ```
 
 ## Feature flags

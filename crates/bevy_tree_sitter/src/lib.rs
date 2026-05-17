@@ -34,13 +34,10 @@
 //! ## Quick start
 //!
 //! ```rust,no_run
-//! use bevy::prelude::*;
-//! use bevy_tree_sitter::{TreeSitterGrammar, TreeSitterPlugin};
+//! use bevy_app::{App, AppExit};
+//! use bevy_tree_sitter::TreeSitterPlugin;
 //!
-//! App::new()
-//!     .add_plugins(DefaultPlugins)
-//!     .add_plugins(TreeSitterPlugin)
-//!     .run();
+//! let _: AppExit = App::new().add_plugins(TreeSitterPlugin).run();
 //! ```
 
 pub mod highlight;

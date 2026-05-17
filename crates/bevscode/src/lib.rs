@@ -145,20 +145,19 @@ pub mod lsp_ui;
 pub mod prelude {
     //! Convenient re-exports for common editor usage.
     //!
-    //! Engine-side primitives (`TextView`, `TextFont`, `DisplayLayout`,
-    //! `TextBuffer<RopeBuffer>`, `ScrollState`, `ContentMetrics`,
-    //! `InstancedTextPlugin`, `InstancedTextPlugins`) come in via
-    //! `bevy_instanced_text::prelude::*`. The
-    //! editor adds: the editor plugin (+ `standalone()`'s plugin group), the
-    //! UI plugin, the interaction plugin, the `CodeEditor` marker, and the
-    //! handful of file/save events + scroll config that hosts touch
-    //! day-to-day. Lower-level types (display map points, fold/wrap state,
-    //! shaped lines, history) live on the crate path
-    //! (`bevscode::types::*`, `::display_map::*`, etc.) for hosts
-    //! that need them.
+    //! Engine-side primitives (`TextBuffer<T>`, `TextFont`, `DisplayLayout`,
+    //! `ContentMetrics`, `InstancedTextPlugin`, `InstancedTextPlugins`)
+    //! come in via `bevy_instanced_text::prelude::*`. Scroll state is
+    //! `bevy::ui::ScrollPosition`. The editor adds the editor plugin (and
+    //! the `CodeEditorPlugins` plugin group), the UI plugin, the interaction
+    //! plugin, the `CodeEditor` marker, and the handful of file/save events
+    //! and scroll config that hosts touch day-to-day. Lower-level types
+    //! such as display-map points, fold/wrap state, shaped lines, and
+    //! history live on the crate path (`bevscode::types::*`,
+    //! `::display_map::*`, etc.) for hosts that need them.
 
-    // Engine surface — InstancedTextPlugins, InstancedTextPlugin, TextView,
-    // TextFont, DisplayLayout, TextBuffer<RopeBuffer>, ScrollState, ContentMetrics.
+    // Engine surface — InstancedTextPlugins, InstancedTextPlugin, TextBuffer,
+    // TextFont, DisplayLayout, ContentMetrics.
     pub use bevy_instanced_text::prelude::*;
 
     // Editor plugin + its standalone PluginGroup, and the interaction +
@@ -178,9 +177,9 @@ pub mod prelude {
 
     // Editable-text widget types from `bevy_instanced_text_editor`. Re-exported so
     // prelude users get them without a separate import.
-    pub use bevy_instanced_text_editor::{RopeBuffer, 
-        InstancedTextEditPlugin, InstancedTextInteractionPlugin, ScrollConfig, SetTextRequested,
-        TextEditor,
+    pub use bevy_instanced_text_editor::{
+        InstancedTextEditPlugin, InstancedTextInteractionPlugin, RopeBuffer, ScrollConfig,
+        SetTextRequested, TextEditor,
     };
 
     // System-set ordering anchor for hosts that schedule overlay-producing

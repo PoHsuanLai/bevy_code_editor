@@ -15,9 +15,8 @@ Embeddable text editing and rendering plugins for Bevy. Drop them into any app a
 | **[`bevy_instanced_text_interaction`](https://github.com/PoHsuanLai/bevy_instanced_text)** *(separate repo)* | Shared UI primitives: clipboard, selection, caret rendering, picking observers. No ropey dep. | [![crates.io](https://img.shields.io/crates/v/bevy_instanced_text_interaction.svg)](https://crates.io/crates/bevy_instanced_text_interaction) [![docs.rs](https://docs.rs/bevy_instanced_text_interaction/badge.svg)](https://docs.rs/bevy_instanced_text_interaction) |
 | **[`bevy_instanced_text_editor`](crates/bevy_instanced_text_editor)** | Rope-backed editable text: edit history, undo/redo, typed-char insertion, anchors. | [![crates.io](https://img.shields.io/crates/v/bevy_instanced_text_editor.svg)](https://crates.io/crates/bevy_instanced_text_editor) [![docs.rs](https://docs.rs/bevy_instanced_text_editor/badge.svg)](https://docs.rs/bevy_instanced_text_editor) |
 | **[`bevy_tree_sitter`](crates/bevy_tree_sitter)** | Tree-sitter incremental syntax highlighting. | [![crates.io](https://img.shields.io/crates/v/bevy_tree_sitter.svg)](https://crates.io/crates/bevy_tree_sitter) [![docs.rs](https://docs.rs/bevy_tree_sitter/badge.svg)](https://docs.rs/bevy_tree_sitter) |
-| **[`bevy_lsp`](crates/bevy_lsp)** | Async LSP transport. Responses arrive as Bevy events. | [![crates.io](https://img.shields.io/crates/v/bevy_lsp.svg)](https://crates.io/crates/bevy_lsp) [![docs.rs](https://docs.rs/bevy_lsp/badge.svg)](https://docs.rs/bevy_lsp) |
+| **[`bevy_lsp`](crates/bevy_lsp)** | Async LSP transport. Responses arrive as Bevy messages. | [![crates.io](https://img.shields.io/crates/v/bevy_lsp.svg)](https://crates.io/crates/bevy_lsp) [![docs.rs](https://docs.rs/bevy_lsp/badge.svg)](https://docs.rs/bevy_lsp) |
 | **[`bevscode`](crates/bevscode)** | Code editor: multi-cursor, folding, brackets, line numbers, LSP UI. | [![crates.io](https://img.shields.io/crates/v/bevscode.svg)](https://crates.io/crates/bevscode) [![docs.rs](https://docs.rs/bevscode/badge.svg)](https://docs.rs/bevscode) |
-| **[`bevsmd`](crates/bevsmd)** | CommonMark viewer. | [![crates.io](https://img.shields.io/crates/v/bevsmd.svg)](https://crates.io/crates/bevsmd) [![docs.rs](https://docs.rs/bevsmd/badge.svg)](https://docs.rs/bevsmd) |
 | **[`bevsterm`](crates/bevsterm)** | PTY-backed terminal widget. | *(not published — wezterm deps not on crates.io)* |
 
 ## Bevy compatibility
@@ -34,37 +33,68 @@ use bevscode::prelude::*;
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, CodeEditorPlugins))
+        .add_plugins(DefaultPlugins)
+        .add_plugins(CodeEditorPlugins)
         .add_systems(Startup, |mut commands: Commands| {
-            commands.spawn((
-                CodeEditor,
-                TextViewViewport { rect: Rect::new(0.0, 0.0, 800.0, 600.0), ..default() },
-            ));
+            commands.spawn(Camera2d);
+            // AutoResizeViewport keeps the editor's Node sized to the window.
+            commands.spawn((CodeEditor, AutoResizeViewport));
         })
         .run();
 }
 ```
 
-## Composition
-
-Add only what you need:
+For a fixed-size pane (e.g. split layout), omit `AutoResizeViewport` and set an explicit `Node`:
 
 ```rust
-// Just GPU text rendering
+commands.spawn((
+    CodeEditor,
+    Node { width: Val::Px(800.0), height: Val::Px(600.0), ..default() },
+));
+```
+
+## Composition
+
+Pick the plugin set that matches your use case:
+
+```rust
+// Just GPU text rendering (labels, HUDs)
 .add_plugins(InstancedTextPlugins)
 
-// Rendering + interaction
-.add_plugins((InstancedTextPlugins, InstancedTextInteractionPlugin))
+// Rendering + selection / clipboard / scroll-wheel
+.add_plugins((
+    InstancedTextPlugins,
+    InstancedTextInteractionPlugin::<TextSpan>::default(),
+))
 
-// Full code editor
+// Full code editor (cursor, edits, syntax, folding, LSP UI)
 .add_plugins(CodeEditorPlugins)
 ```
 
 State is plain ECS — query it from any system:
 
 ```rust
-fn status_bar(editors: Query<(&TextBuffer, &CursorState), With<CodeEditor>>) {
+use bevy_instanced_text_editor::RopeBuffer;
+
+fn status_bar(
+    editors: Query<(&TextBuffer<RopeBuffer>, &CursorState), With<CodeEditor>>,
+) {
     for (buffer, cursor) in &editors { /* … */ }
+}
+```
+
+To handle a built-in editor action (save, open, completion request, …), add a handler system with `EditorAppExt`:
+
+```rust
+use bevscode::prelude::*;
+
+App::new()
+    .add_plugins(CodeEditorPlugins)
+    .add_editor_action_handler(my_save_handler)
+    .run();
+
+fn my_save_handler(mut events: MessageReader<SaveRequested>) {
+    for ev in events.read() { /* … */ }
 }
 ```
 

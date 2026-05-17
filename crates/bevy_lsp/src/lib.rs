@@ -45,13 +45,10 @@
 //! ## Quick start
 //!
 //! ```rust,no_run
-//! use bevy::prelude::*;
-//! use bevy_lsp::{LspPlugin, LspClient, LspMessage};
+//! use bevy_app::{App, AppExit};
+//! use bevy_lsp::LspPlugin;
 //!
-//! App::new()
-//!     .add_plugins(DefaultPlugins)
-//!     .add_plugins(LspPlugin)
-//!     .run();
+//! let _: AppExit = App::new().add_plugins(LspPlugin).run();
 //! ```
 
 pub mod capabilities;
