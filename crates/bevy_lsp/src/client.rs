@@ -4,20 +4,22 @@
 
 use std::collections::HashMap;
 use std::ops::ControlFlow;
-use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use async_lsp::concurrency::ConcurrencyLayer;
 use async_lsp::panic::CatchUnwindLayer;
 use async_lsp::router::Router;
 use async_lsp::tracing::TracingLayer;
 use async_lsp::{ResponseError, ServerSocket};
-use async_process::Child;
 use bevy_ecs::prelude::*;
 use bevy_log::{debug, warn};
 use bevy_tasks::{AsyncComputeTaskPool, Task};
 use futures::channel::oneshot;
+
+use crate::transport::LspTransport;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::transport::StdioTransport;
 use lsp_types::notification::{
     Cancel as CancelNotif, DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles,
     DidChangeWorkspaceFolders, DidCloseTextDocument, DidOpenTextDocument, DidSaveTextDocument,
@@ -80,6 +82,10 @@ pub struct LspClient {
     shutting_down: Arc<AtomicBool>,
     next_inbound_request_id: Arc<AtomicU64>,
     inbound_slots: Arc<InboundReplySlots>,
+    /// Populated by the connect task once the transport reports a PID. `None`
+    /// when the transport has no concept of a local PID (WebSocket, in-browser
+    /// worker). Surfaced in [`InitializeParams::process_id`].
+    client_process_id: Arc<OnceLock<Option<u32>>>,
 }
 
 impl Default for LspClient {
@@ -102,32 +108,26 @@ impl LspClient {
             shutting_down: Arc::new(AtomicBool::new(false)),
             next_inbound_request_id: Arc::new(AtomicU64::new(1)),
             inbound_slots: Arc::new(InboundReplySlots::default()),
+            client_process_id: Arc::new(OnceLock::new()),
         }
     }
 
-    /// Spawn the language server. `Err` only on synchronous spawn failure
-    /// (binary missing, permissions). Async errors surface as `LspResponse::Crashed`.
+    /// Spawn the language server over a stdio subprocess. Convenience for the
+    /// native default; equivalent to [`Self::start_with`] with a
+    /// [`StdioTransport`]. `Err` only on synchronous setup failure (e.g.
+    /// caller asked for an empty command). Connect / async errors surface as
+    /// [`LspResponse::Crashed`].
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn start(&mut self, command: &str, args: &[&str]) -> std::io::Result<()> {
-        #[cfg(debug_assertions)]
-        debug!("[LSP] Starting server: {} {:?}", command, args);
+        self.start_with(StdioTransport::new(command, args.iter().copied()));
+        Ok(())
+    }
 
-        let mut child = async_process::Command::new(command)
-            .args(args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-
-        let stdin = child.stdin.take().ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::BrokenPipe, "child stdin missing")
-        })?;
-        let stdout = child.stdout.take().ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::BrokenPipe, "child stdout missing")
-        })?;
-        let stderr = child.stderr.take().ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::BrokenPipe, "child stderr missing")
-        })?;
-
+    /// Spawn the language server using `transport`. The async [`LspTransport::connect`]
+    /// call runs on Bevy's task pool; any transport-side failure (failed spawn,
+    /// failed WebSocket handshake, premature exit) is reported by emitting
+    /// [`LspResponse::Crashed`] on this client's response channel.
+    pub fn start_with<T: LspTransport>(&mut self, transport: T) {
         let bridge_tx = self.response_tx.clone();
         let next_id = self.next_inbound_request_id.clone();
         let slots = self.inbound_slots.clone();
@@ -142,30 +142,25 @@ impl LspClient {
 
         self.server = Some(server);
 
-        let pool = AsyncComputeTaskPool::get();
-
-        // Drain stderr to debug log.
-        let stderr_task = pool.spawn(async move {
-            use futures::AsyncBufReadExt;
-            let mut reader = futures::io::BufReader::new(stderr);
-            let mut line = String::new();
-            loop {
-                line.clear();
-                match reader.read_line(&mut line).await {
-                    Ok(0) | Err(_) => break,
-                    Ok(_) => debug!("[LSP stderr] {}", line.trim_end()),
-                }
-            }
-        });
-
-        // Run the async-lsp mainloop. async-process pipes already implement
-        // futures AsyncRead/AsyncWrite, so no compat shim needed.
         let watchdog_tx = self.response_tx.clone();
         let watchdog_flag = self.shutting_down.clone();
-        let mainloop_task = pool.spawn(async move {
-            let outcome = mainloop.run_buffered(stdout, stdin).await;
-            // Wait for the child to exit so it doesn't become a zombie.
-            let _ = Child::status(&mut { child }).await;
+        let pid_slot = self.client_process_id.clone();
+
+        let driver = AsyncComputeTaskPool::get().spawn(async move {
+            let (reader, writer, handle) = match transport.connect().await {
+                Ok(t) => t,
+                Err(err) => {
+                    warn!("[LSP] transport connect failed: {err}");
+                    let _ = watchdog_tx.try_send(LspResponse::Crashed);
+                    return;
+                }
+            };
+            let _ = pid_slot.set(handle.client_process_id);
+            let _aux = handle.auxiliary_tasks;
+
+            let outcome = mainloop.run_buffered(reader, writer).await;
+            handle.exited.await;
+
             if !watchdog_flag.load(Ordering::Acquire) {
                 if let Err(err) = outcome {
                     warn!("[LSP] main loop exited unexpectedly: {err}");
@@ -176,10 +171,7 @@ impl LspClient {
             }
         });
 
-        self._tasks.push(stderr_task);
-        self._tasks.push(mainloop_task);
-
-        Ok(())
+        self._tasks.push(driver);
     }
 
     pub fn started(&self) -> bool {
@@ -220,11 +212,12 @@ impl LspClient {
     ) {
         let tx = self.response_tx.clone();
         let init_done = self.init_done.clone();
+        let pid = self.client_process_id.get().and_then(|p| *p);
         AsyncComputeTaskPool::get()
             .spawn(async move {
                 #[allow(deprecated)]
                 let params = InitializeParams {
-                    process_id: Some(std::process::id()),
+                    process_id: pid,
                     root_uri: Some(root_uri),
                     capabilities: *capabilities,
                     client_info: Some(ClientInfo {

@@ -58,6 +58,7 @@ pub mod messages;
 pub mod plugin;
 pub mod pos;
 pub mod prelude;
+pub mod transport;
 
 pub use crate::capabilities::ServerCapabilities;
 pub use crate::client::{LspClient, DEFAULT_REQUEST_TIMEOUT_SECS};
@@ -68,5 +69,10 @@ pub use crate::pos::{
     lsp_position_to_rope_byte, lsp_position_to_rope_char, rope_byte_to_lsp_position,
     rope_char_to_lsp_position, rope_range_to_lsp_range, PositionEncoding,
 };
+pub use crate::transport::{LspTransport, TransportHandle};
+#[cfg(not(target_arch = "wasm32"))]
+pub use crate::transport::StdioTransport;
+#[cfg(target_arch = "wasm32")]
+pub use crate::transport::WebSocketTransport;
 
 pub use ::lsp_types;
