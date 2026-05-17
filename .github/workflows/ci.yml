@@ -83,7 +83,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: bevscode
+      - uses: actions/checkout@v4
+        with:
+          repository: PoHsuanLai/bevy_instanced_text
+          path: bevy_instanced_text
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
+        working-directory: bevscode
