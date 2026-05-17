@@ -108,21 +108,21 @@ impl LspTransport for WebSocketTransport {
 }
 
 #[derive(Default)]
-struct SharedReadBuffer {
+pub(crate) struct SharedReadBuffer {
     queue: VecDeque<u8>,
     closed: bool,
     waker: Option<Waker>,
 }
 
 impl SharedReadBuffer {
-    fn push(&mut self, bytes: Vec<u8>) {
+    pub(crate) fn push(&mut self, bytes: Vec<u8>) {
         self.queue.extend(bytes);
         if let Some(w) = self.waker.take() {
             w.wake();
         }
     }
 
-    fn close(&mut self) {
+    pub(crate) fn close(&mut self) {
         self.closed = true;
         if let Some(w) = self.waker.take() {
             w.wake();
@@ -132,6 +132,13 @@ impl SharedReadBuffer {
 
 pub struct WsReader {
     buffer: Arc<Mutex<SharedReadBuffer>>,
+}
+
+impl WsReader {
+    #[cfg(test)]
+    pub(crate) fn from_buffer(buffer: Arc<Mutex<SharedReadBuffer>>) -> Self {
+        Self { buffer }
+    }
 }
 
 impl AsyncRead for WsReader {
@@ -187,4 +194,44 @@ impl AsyncWrite for WsWriter {
     fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Poll::Ready(Ok(()))
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::io::AsyncReadExt;
+    use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
+
+    wasm_bindgen_test_configure!(run_in_browser);
+
+    /// Bytes pushed into the shared buffer are surfaced verbatim through
+    /// the `AsyncRead` adapter, across multiple WebSocket "messages".
+    #[wasm_bindgen_test]
+    async fn ws_reader_round_trips_pushed_bytes() {
+        let buffer = Arc::new(Mutex::new(SharedReadBuffer::default()));
+        buffer.lock().unwrap().push(b"Conte".to_vec());
+        buffer.lock().unwrap().push(b"nt-Length: 2\r\n\r\nok".to_vec());
+        buffer.lock().unwrap().close();
+
+        let mut reader = WsReader::from_buffer(buffer);
+        let mut out = Vec::new();
+        reader.read_to_end(&mut out).await.expect("read failed");
+
+        assert_eq!(out, b"Content-Length: 2\r\n\r\nok");
+    }
+
+    /// `close()` after the queue drains causes `read_to_end` to terminate
+    /// rather than hang waiting for more bytes.
+    #[wasm_bindgen_test]
+    async fn ws_reader_terminates_on_close() {
+        let buffer = Arc::new(Mutex::new(SharedReadBuffer::default()));
+        buffer.lock().unwrap().push(b"hi".to_vec());
+        buffer.lock().unwrap().close();
+
+        let mut reader = WsReader::from_buffer(buffer);
+        let mut out = Vec::new();
+        reader.read_to_end(&mut out).await.expect("read failed");
+        assert_eq!(out, b"hi");
+    }
+
 }
