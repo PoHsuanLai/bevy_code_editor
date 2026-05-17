@@ -7323,6 +7323,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasm_lsp_example"
+version = "0.0.0"
+dependencies = [
+ "bevscode",
+ "bevy",
+ "bevy_lsp",
+ "bevy_tree_sitter",
+ "console_error_panic_hook",
+ "lsp-types",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "wayland-backend"
 version = "0.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
