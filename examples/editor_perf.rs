@@ -98,8 +98,8 @@ fn setup_editor(
     });
 
     commands.entity(entity).insert(TreeSitterGrammar::new(
-        tree_sitter_c::LANGUAGE.into(),
-        tree_sitter_c::HIGHLIGHT_QUERY,
+        bevy_tree_sitter::arborium::lang_c::language().into(),
+        bevy_tree_sitter::arborium::lang_c::HIGHLIGHTS_QUERY,
     ));
 }
 

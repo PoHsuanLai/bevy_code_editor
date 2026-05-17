@@ -199,7 +199,7 @@ fn setup(mut commands: Commands) {
     });
 
     commands.entity(entity).insert(TreeSitterGrammar::new(
-        tree_sitter_rust::LANGUAGE.into(),
-        tree_sitter_rust::HIGHLIGHTS_QUERY,
+        bevy_tree_sitter::arborium::lang_rust::language().into(),
+        bevy_tree_sitter::arborium::lang_rust::HIGHLIGHTS_QUERY,
     ));
 }

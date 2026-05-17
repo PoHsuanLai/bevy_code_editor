@@ -119,8 +119,8 @@ fn spawn_test_editor(app: &mut App, text: &str) -> Entity {
         BracketConfig::default(),
     );
     let language = TreeSitterGrammar::new(
-        tree_sitter_rust::LANGUAGE.into(),
-        tree_sitter_rust::HIGHLIGHTS_QUERY,
+        bevy_tree_sitter::arborium::lang_rust::language().into(),
+        bevy_tree_sitter::arborium::lang_rust::HIGHLIGHTS_QUERY,
     );
     let entity = app
         .world_mut()

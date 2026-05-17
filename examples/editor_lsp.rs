@@ -1142,8 +1142,8 @@ fn setup_editor(
     commands
         .entity(editor_entity)
         .insert(TreeSitterGrammar::new(
-            tree_sitter_rust::LANGUAGE.into(),
-            tree_sitter_rust::HIGHLIGHTS_QUERY,
+            bevy_tree_sitter::arborium::lang_rust::language().into(),
+            bevy_tree_sitter::arborium::lang_rust::HIGHLIGHTS_QUERY,
         ));
 
     let file_uri_str = format!("file://{}", example_file_path.to_string_lossy());
