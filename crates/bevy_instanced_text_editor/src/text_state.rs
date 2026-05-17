@@ -45,9 +45,6 @@ pub struct EditHistoryState {
     /// incremental sync. Drained into [`OnEdit`] by `emit_edit_triggers`.
     #[doc(hidden)]
     pub pre_edit_rope: Option<Rope>,
-    /// Char indices where an auto-close inserted the closing bracket/quote.
-    /// Read by backspace to delete the matching pair.
-    pub auto_inserted_pairs: std::collections::HashSet<(usize, char)>,
 }
 
 impl Default for EditHistoryState {
@@ -58,9 +55,24 @@ impl Default for EditHistoryState {
             pending_byte_edit: None,
             snapshot_pre_edits: false,
             pre_edit_rope: None,
-            auto_inserted_pairs: Default::default(),
         }
     }
+}
+
+/// True when the char at `pos` looks like the closer of an auto-inserted
+/// pair: either a standard bracket whose opener sits at `pos - 1`, or a
+/// matching quote with a quote immediately before it. This neighbor check
+/// is index-free, so it stays correct as the buffer is edited elsewhere.
+pub fn is_auto_pair_neighbor(rope: &Rope, pos: usize) -> bool {
+    if pos == 0 || pos >= rope.len_chars() {
+        return false;
+    }
+    let opener = rope.char(pos - 1);
+    let closer = rope.char(pos);
+    matches!(
+        (opener, closer),
+        ('(', ')') | ('[', ']') | ('{', '}') | ('<', '>') | ('"', '"') | ('\'', '\'') | ('`', '`')
+    )
 }
 
 /// Emitted per edit by [`crate::plugin::emit_edit_triggers`]. Consumers add

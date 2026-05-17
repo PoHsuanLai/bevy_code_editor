@@ -235,12 +235,11 @@ fn insert_typed_char(
         let allow_overtype = match overtype_mode {
             crate::settings::AutoClosingAuto::Always => true,
             crate::settings::AutoClosingAuto::Auto => {
-                hist.auto_inserted_pairs.contains(&(cursor.cursor_pos, c))
+                bevy_instanced_text_editor::is_auto_pair_neighbor(buffer.rope(), cursor.cursor_pos)
             }
             crate::settings::AutoClosingAuto::Never => false,
         };
         if allow_overtype {
-            hist.auto_inserted_pairs.remove(&(cursor.cursor_pos, c));
             move_cursor(cursor, buffer.rope(), 1);
             return;
         }
@@ -285,8 +284,6 @@ fn insert_typed_char(
     if auto_close_allowed(brackets_mode, buffer.rope(), cursor.cursor_pos) {
         if let Some(closing) = get_closing_bracket(c, &auto_edit.pairs) {
             insert_closing_char(cursor, buffer, closing);
-            hist.auto_inserted_pairs
-                .insert((cursor.cursor_pos, closing));
         }
     }
     if auto_close_allowed(quotes_mode, buffer.rope(), cursor.cursor_pos) {
@@ -303,8 +300,6 @@ fn insert_typed_char(
             };
             if should_close {
                 insert_closing_char(cursor, buffer, closing);
-                hist.auto_inserted_pairs
-                    .insert((cursor.cursor_pos, closing));
             }
         }
     }

@@ -206,11 +206,7 @@ pub fn handle_delete_backward(
         return;
     }
 
-    let auto_pair = pos < buffer.len_chars() && {
-        let next = buffer.rope().char(pos);
-        hist.auto_inserted_pairs.remove(&(pos, next))
-    };
-    if auto_pair {
+    if crate::text_state::is_auto_pair_neighbor(buffer.rope(), pos) {
         let outcome = hist.replace_range(
             &mut buffer,
             pos.saturating_sub(1),

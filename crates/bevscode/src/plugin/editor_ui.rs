@@ -42,7 +42,8 @@ impl Plugin for EditorUiPlugin {
         // only on the entity that just had `Indentation` inserted or replaced.
         app.add_observer(sync_indent_config_on_change);
 
-        app.add_systems(Update, detect_indentation_on_first_buffer);
+        app.add_observer(detect_indentation_on_buffer_insert);
+        app.add_observer(detect_indentation_on_first_edit);
         app.add_systems(Update, sync_cursor_icon);
         app.add_systems(Update, sync_automatic_layout);
 
@@ -204,71 +205,106 @@ fn sync_indent_config_on_change(
 #[derive(Component, Default)]
 struct DetectIndentationDone;
 
-/// On the first frame where an editor's buffer is non-empty and
-/// `Indentation::detect_indentation` is set, scan the first ~100 non-blank
-/// lines and overwrite `tab_size` / `insert_spaces` with the inferred shape.
-/// Single-shot per editor.
-fn detect_indentation_on_first_buffer(
-    mut commands: Commands,
-    mut editors: Query<
+/// Spawn-with-content path: when an editor's `TextBuffer` is inserted with
+/// non-empty content, run detection immediately. The `#[require]`-cascaded
+/// empty buffer hits this with len=0 and is no-op'd; hosts that spawn
+/// `(CodeEditor, TextBuffer::from(content))` get detection at spawn time.
+fn detect_indentation_on_buffer_insert(
+    trigger: On<
+        bevy::ecs::lifecycle::Insert,
+        bevy_instanced_text::TextBuffer<bevy_instanced_text_editor::RopeBuffer>,
+    >,
+    commands: Commands,
+    editors: Query<
         (
-            Entity,
             &bevy_instanced_text::TextBuffer<bevy_instanced_text_editor::RopeBuffer>,
             &mut crate::settings::Indentation,
         ),
         (With<CodeEditor>, Without<DetectIndentationDone>),
     >,
 ) {
-    for (entity, buffer, mut indent) in editors.iter_mut() {
-        if buffer.len_chars() == 0 {
-            continue;
-        }
-        commands.entity(entity).insert(DetectIndentationDone);
-        if !indent.detect_indentation {
-            continue;
-        }
+    run_detect_indentation(trigger.event().entity, commands, editors);
+}
 
-        let mut tab_count = 0usize;
-        let mut space_widths: std::collections::HashMap<u32, usize> = Default::default();
-        let line_count = buffer.len_lines().min(100);
-        for line_idx in 0..line_count {
-            let line = buffer.line(line_idx);
-            let mut spaces = 0u32;
-            let mut starts_with_tab = false;
-            for c in line.chars() {
-                match c {
-                    '\t' => {
-                        starts_with_tab = true;
-                        break;
-                    }
-                    ' ' => spaces += 1,
-                    _ => break,
+/// Post-spawn path: hosts that mutate the buffer after spawn (file open via
+/// `set_text`, paste-from-clipboard onto an empty editor) trigger detection
+/// on the first emitted `OnEdit`.
+fn detect_indentation_on_first_edit(
+    trigger: On<bevy_instanced_text_editor::OnEdit>,
+    commands: Commands,
+    editors: Query<
+        (
+            &bevy_instanced_text::TextBuffer<bevy_instanced_text_editor::RopeBuffer>,
+            &mut crate::settings::Indentation,
+        ),
+        (With<CodeEditor>, Without<DetectIndentationDone>),
+    >,
+) {
+    run_detect_indentation(trigger.event().entity, commands, editors);
+}
+
+fn run_detect_indentation(
+    entity: Entity,
+    mut commands: Commands,
+    mut editors: Query<
+        (
+            &bevy_instanced_text::TextBuffer<bevy_instanced_text_editor::RopeBuffer>,
+            &mut crate::settings::Indentation,
+        ),
+        (With<CodeEditor>, Without<DetectIndentationDone>),
+    >,
+) {
+    let Ok((buffer, mut indent)) = editors.get_mut(entity) else {
+        return;
+    };
+    if buffer.len_chars() == 0 {
+        return;
+    }
+    commands.entity(entity).insert(DetectIndentationDone);
+    if !indent.detect_indentation {
+        return;
+    }
+
+    let mut tab_count = 0usize;
+    let mut space_widths: std::collections::HashMap<u32, usize> = Default::default();
+    let line_count = buffer.len_lines().min(100);
+    for line_idx in 0..line_count {
+        let line = buffer.line(line_idx);
+        let mut spaces = 0u32;
+        let mut starts_with_tab = false;
+        for c in line.chars() {
+            match c {
+                '\t' => {
+                    starts_with_tab = true;
+                    break;
                 }
-            }
-            if starts_with_tab {
-                tab_count += 1;
-            } else if spaces > 0 {
-                *space_widths.entry(spaces).or_insert(0) += 1;
+                ' ' => spaces += 1,
+                _ => break,
             }
         }
+        if starts_with_tab {
+            tab_count += 1;
+        } else if spaces > 0 {
+            *space_widths.entry(spaces).or_insert(0) += 1;
+        }
+    }
 
-        let total_space_runs: usize = space_widths.values().copied().sum();
-        if tab_count > total_space_runs {
-            indent.insert_spaces = false;
-        } else if total_space_runs > 0 {
-            indent.insert_spaces = true;
-            let common = [2u32, 4, 8]
-                .into_iter()
-                .max_by_key(|w| {
-                    space_widths
-                        .iter()
-                        .filter(|(s, _)| *s % w == 0)
-                        .map(|(_, c)| *c)
-                        .sum::<usize>()
-                })
-                .unwrap_or(4);
-            indent.tab_size = common;
-        }
+    let total_space_runs: usize = space_widths.values().copied().sum();
+    if tab_count > total_space_runs {
+        indent.insert_spaces = false;
+    } else if total_space_runs > 0 {
+        indent.insert_spaces = true;
+        let common = [2u32, 4, 8]
+            .into_iter()
+            .max_by_key(|w| {
+                space_widths
+                    .iter()
+                    .filter(|(s, _)| *s % w == 0)
+                    .map(|(_, c)| *c)
+                    .sum::<usize>()
+            })
+            .unwrap_or(4);
+        indent.tab_size = common;
     }
 }
 
@@ -294,13 +330,18 @@ fn sync_automatic_layout(
     }
 }
 
-/// Mirror `Misc::mouse_style` to the primary window's [`CursorIcon`].
+/// Mirror the focused editor's `Misc::mouse_style` to the primary window's
+/// [`CursorIcon`]. Unfocused editors don't drive the OS cursor.
 fn sync_cursor_icon(
     mut commands: Commands,
-    editors: Query<&crate::settings::Misc, (With<CodeEditor>, Changed<crate::settings::Misc>)>,
+    input_focus: Res<bevy::input_focus::InputFocus>,
+    editors: Query<&crate::settings::Misc, With<CodeEditor>>,
     windows: Query<(Entity, Option<&bevy::window::CursorIcon>), With<bevy::window::PrimaryWindow>>,
 ) {
-    let Some(misc) = editors.iter().next() else {
+    let Some(entity) = input_focus.get() else {
+        return;
+    };
+    let Ok(misc) = editors.get(entity) else {
         return;
     };
     let Ok((window_entity, current)) = windows.single() else {
