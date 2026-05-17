@@ -11,11 +11,12 @@
 //! [`super::dispatch::dispatch_action_events`] (event emission) and the
 //! per-action handler systems under [`super::handlers`].
 
+use super::actions::{
+    auto_close_allowed, get_closing_bracket, get_closing_quote, insert_closing_char,
+    should_skip_auto_close,
+};
 #[cfg(feature = "lsp")]
 use super::actions::{find_word_start, request_completion, update_completion_filter};
-use super::actions::{
-    get_closing_bracket, get_closing_quote, insert_closing_char, should_skip_auto_close,
-};
 use super::picking_backend::move_cursor;
 #[cfg(feature = "lsp")]
 use crate::settings::LspConfig;
@@ -73,6 +74,7 @@ pub fn on_focused_keyboard(
     >,
     #[cfg(feature = "lsp")] mut lsp_query: KeyboardLspQuery,
     #[cfg(feature = "lsp")] mut lsp_w: MessageWriter<bevy_lsp::LspRequest>,
+    #[cfg(feature = "lsp")] suggest_q: Query<&crate::settings::Suggest, With<CodeEditor>>,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     let entity = trigger.event().focused_entity;
@@ -148,6 +150,9 @@ pub fn on_focused_keyboard(
         return;
     }
 
+    #[cfg(feature = "lsp")]
+    let suggest = suggest_q.get(entity).ok();
+
     match &event.logical_key {
         Key::Character(text) => {
             for c in text.chars() {
@@ -175,6 +180,8 @@ pub fn on_focused_keyboard(
                     syntax_tree,
                     #[cfg(feature = "lsp")]
                     &mut lsp_w,
+                    #[cfg(feature = "lsp")]
+                    suggest,
                 );
             }
         }
@@ -214,39 +221,75 @@ fn insert_typed_char(
     #[cfg(feature = "lsp")] lsp_document: Option<&mut bevy_lsp::LspDocument>,
     #[cfg(feature = "lsp")] syntax_tree: Option<&bevy_tree_sitter::SyntaxTree>,
     #[cfg(feature = "lsp")] lsp_w: &mut MessageWriter<bevy_lsp::LspRequest>,
+    #[cfg(feature = "lsp")] suggest: Option<&crate::settings::Suggest>,
 ) {
-    let quotes_on = !matches!(
-        auto_edit.auto_closing_quotes,
-        crate::settings::AutoClosingPairs::Never
-    );
-    let brackets_on = !matches!(
-        auto_edit.auto_closing_brackets,
-        crate::settings::AutoClosingPairs::Never
-    );
+    let quotes_mode = auto_edit.auto_closing_quotes;
+    let brackets_mode = auto_edit.auto_closing_brackets;
+    let overtype_mode = auto_edit.auto_closing_overtype;
 
-    if quotes_on
-        && get_closing_quote(c).is_some()
-        && should_skip_auto_close(cursor, buffer.rope(), c)
+    let is_closing_bracket = auto_edit.pairs.iter().any(|(_, close)| *close == c);
+    let is_closing_quote = matches!(c, '"' | '\'' | '`');
+
+    if (is_closing_bracket || is_closing_quote) && should_skip_auto_close(cursor, buffer.rope(), c)
     {
-        move_cursor(cursor, buffer.rope(), 1);
-        return;
-    }
-    if brackets_on {
-        let is_closing_bracket = auto_edit.pairs.iter().any(|(_, close)| *close == c);
-        if is_closing_bracket && should_skip_auto_close(cursor, buffer.rope(), c) {
+        let allow_overtype = match overtype_mode {
+            crate::settings::AutoClosingAuto::Always => true,
+            crate::settings::AutoClosingAuto::Auto => {
+                hist.auto_inserted_pairs.contains(&(cursor.cursor_pos, c))
+            }
+            crate::settings::AutoClosingAuto::Never => false,
+        };
+        if allow_overtype {
+            hist.auto_inserted_pairs.remove(&(cursor.cursor_pos, c));
             move_cursor(cursor, buffer.rope(), 1);
+            return;
+        }
+    }
+
+    let has_selection = sel.selections.primary().has_selection();
+    if has_selection {
+        let surround_mode = auto_edit.auto_surround;
+        let want_brackets = matches!(
+            surround_mode,
+            crate::settings::AutoSurround::Brackets
+                | crate::settings::AutoSurround::LanguageDefined
+        );
+        let want_quotes = matches!(
+            surround_mode,
+            crate::settings::AutoSurround::Quotes | crate::settings::AutoSurround::LanguageDefined
+        );
+        let closing = if want_brackets {
+            get_closing_bracket(c, &auto_edit.pairs)
+        } else {
+            None
+        }
+        .or_else(|| {
+            if want_quotes {
+                get_closing_quote(c)
+            } else {
+                None
+            }
+        });
+        if let Some(close_char) = closing {
+            let (start, end) = sel.selections.primary().range();
+            let start = start.min(buffer.len_chars());
+            let end = end.min(buffer.len_chars());
+            buffer.insert_char(end, close_char);
+            buffer.insert_char(start, c);
             return;
         }
     }
 
     bevy_instanced_text_editor::widget::text_input::insert_char(sel, hist, cursor, buffer, c);
 
-    if brackets_on {
+    if auto_close_allowed(brackets_mode, buffer.rope(), cursor.cursor_pos) {
         if let Some(closing) = get_closing_bracket(c, &auto_edit.pairs) {
             insert_closing_char(cursor, buffer, closing);
+            hist.auto_inserted_pairs
+                .insert((cursor.cursor_pos, closing));
         }
     }
-    if quotes_on {
+    if auto_close_allowed(quotes_mode, buffer.rope(), cursor.cursor_pos) {
         if let Some(closing) = get_closing_quote(c) {
             let should_close = if c == '\'' {
                 let cur_pos = cursor.cursor_pos;
@@ -260,6 +303,8 @@ fn insert_typed_char(
             };
             if should_close {
                 insert_closing_char(cursor, buffer, closing);
+                hist.auto_inserted_pairs
+                    .insert((cursor.cursor_pos, closing));
             }
         }
     }
@@ -272,21 +317,28 @@ fn insert_typed_char(
         if lsp.completion.enabled {
             let cursor_pos = cursor.cursor_pos;
 
-            // Suppress completion requests while the cursor is inside a
-            // string or comment per tree-sitter — Zed's "is_completion_context"
-            // gate. When tree-sitter isn't ready, default to allow.
-            let in_completion_context = match syntax_tree.and_then(|st| st.tree.as_ref()) {
+            let context = match syntax_tree.and_then(|st| st.tree.as_ref()) {
                 Some(tree) => {
                     let byte = buffer.char_to_byte(cursor_pos);
-                    crate::plugin::syntax_highlighting::EditorSyntaxState::is_completion_context(
-                        tree, byte,
-                    )
+                    crate::plugin::syntax_highlighting::syntax_context(tree, byte)
                 }
-                _ => true,
+                _ => crate::plugin::syntax_highlighting::SyntaxContext::Other,
             };
+            let quick = suggest.map(|s| s.quick_suggestions).unwrap_or_default();
+            let context_allows = match context {
+                crate::plugin::syntax_highlighting::SyntaxContext::Other => {
+                    !matches!(quick.other, crate::settings::QuickSuggestion::Off)
+                }
+                crate::plugin::syntax_highlighting::SyntaxContext::Comment => {
+                    !matches!(quick.comments, crate::settings::QuickSuggestion::Off)
+                }
+                crate::plugin::syntax_highlighting::SyntaxContext::String => {
+                    !matches!(quick.strings, crate::settings::QuickSuggestion::Off)
+                }
+            };
+            let in_completion_context = context_allows;
+            let on_triggers_allowed = suggest.is_none_or(|s| s.on_trigger_characters);
 
-            // Prefer the LSP server's advertised triggers; fall back to the
-            // host's configured list when the server doesn't advertise any.
             let server_triggers = capabilities.completion_triggers();
             let triggers: &[String] = if !server_triggers.is_empty() {
                 &server_triggers
@@ -295,18 +347,20 @@ fn insert_typed_char(
             };
 
             let mut is_trigger = false;
-            for trigger in triggers {
-                if trigger.len() == 1 {
-                    if c.to_string() == *trigger {
-                        is_trigger = true;
-                        break;
-                    }
-                } else if cursor_pos >= trigger.len() {
-                    let start = cursor_pos - trigger.len();
-                    let recent_text: String = buffer.slice(start..cursor_pos).chars().collect();
-                    if recent_text == *trigger {
-                        is_trigger = true;
-                        break;
+            if on_triggers_allowed {
+                for trigger in triggers {
+                    if trigger.len() == 1 {
+                        if c.to_string() == *trigger {
+                            is_trigger = true;
+                            break;
+                        }
+                    } else if cursor_pos >= trigger.len() {
+                        let start = cursor_pos - trigger.len();
+                        let recent_text: String = buffer.slice(start..cursor_pos).chars().collect();
+                        if recent_text == *trigger {
+                            is_trigger = true;
+                            break;
+                        }
                     }
                 }
             }

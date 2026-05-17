@@ -107,7 +107,15 @@ pub fn handle_insert_tab(
     };
     let indent = indent_q.get(entity).copied().unwrap_or_default();
     if indent.use_spaces {
-        for _ in 0..indent.tab_width {
+        let count = if indent.use_tab_stops && indent.tab_width > 0 {
+            let pos = cursor.cursor_pos;
+            let line = buffer.char_to_line(pos);
+            let col = pos - buffer.line_to_char(line);
+            indent.tab_width - (col % indent.tab_width)
+        } else {
+            indent.tab_width
+        };
+        for _ in 0..count {
             insert_char(&mut sel, &mut hist, &mut cursor, &mut buffer, ' ');
         }
     } else {
@@ -120,6 +128,7 @@ pub fn handle_delete_backward(
     mut events: MessageReader<DeleteBackwardRequested>,
     input_focus: Res<InputFocus>,
     mut q: EditorBufQuery,
+    indent_q: Query<&IndentConfig, With<TextEditor>>,
 ) {
     if events.read().next().is_none() {
         return;
@@ -133,6 +142,85 @@ pub fn handle_delete_backward(
     let _span = bevy::prelude::info_span!("delete_backward").entered();
     if sel.selections.primary().has_selection() {
         delete_selection(&mut sel, &mut hist, &mut cursor, &mut buffer);
+        return;
+    }
+
+    let indent = indent_q.get(entity).copied().unwrap_or_default();
+    let pos = cursor.cursor_pos;
+    if pos == 0 {
+        return;
+    }
+
+    let rope = buffer.rope();
+    let line = rope.char_to_line(pos);
+    let line_start = rope.line_to_char(line);
+    let col = pos - line_start;
+
+    let sticky_target = if indent.sticky_tab_stops && indent.tab_width > 0 && col > 0 {
+        let leading_spaces = rope
+            .slice(line_start..line_start + col)
+            .chars()
+            .take_while(|c| *c == ' ')
+            .count();
+        if leading_spaces == col && col >= indent.tab_width {
+            let stop = ((col - 1) / indent.tab_width) * indent.tab_width;
+            Some(line_start + stop)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let trim_target = if sticky_target.is_none() && indent.trim_whitespace_on_delete && col > 0 {
+        let line_chars: Vec<char> = rope.slice(line_start..pos).chars().collect();
+        let is_ws = |c: char| c == ' ' || c == '\t';
+        if line_chars.last().is_some_and(|c| is_ws(*c)) {
+            let mut run = line_chars.len();
+            while run > 0 && is_ws(line_chars[run - 1]) {
+                run -= 1;
+            }
+            if line_chars.len() - run > 1 {
+                Some(line_start + run)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    if let Some(target_start) = sticky_target.or(trim_target) {
+        let outcome = hist.replace_range(
+            &mut buffer,
+            target_start,
+            pos,
+            "",
+            crate::history::EditKind::DeleteBackward,
+            true,
+        );
+        cursor.cursor_pos = outcome.new_cursor_pos;
+        sel.apply_primary_cursor(&cursor);
+        return;
+    }
+
+    let auto_pair = pos < buffer.len_chars() && {
+        let next = buffer.rope().char(pos);
+        hist.auto_inserted_pairs.remove(&(pos, next))
+    };
+    if auto_pair {
+        let outcome = hist.replace_range(
+            &mut buffer,
+            pos.saturating_sub(1),
+            pos + 1,
+            "",
+            crate::history::EditKind::DeleteBackward,
+            true,
+        );
+        cursor.cursor_pos = outcome.new_cursor_pos;
+        sel.apply_primary_cursor(&cursor);
     } else {
         hist.delete_backward(&mut sel, &mut cursor, &mut buffer);
     }

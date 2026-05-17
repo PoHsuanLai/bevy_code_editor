@@ -107,40 +107,37 @@ pub(crate) fn spawn_fold_detect_tasks(
 pub(crate) fn apply_fold_detect_tasks(
     mut commands: Commands,
     mut tasks: Query<(Entity, &mut FoldDetectTask)>,
-    mut editors: Query<&mut FoldState, With<CodeEditor>>,
+    mut editors: Query<(&mut FoldState, &crate::settings::Folding), With<CodeEditor>>,
 ) {
     for (task_entity, mut task) in tasks.iter_mut() {
         let Some(regions) = block_on(futures_lite::future::poll_once(&mut task.task)) else {
             continue;
         };
 
-        if let Ok(mut fold_state) = editors.get_mut(task.target) {
-            // If a fresher tree version arrived after we kicked off, our
-            // result is stale — skip the write and let the next
-            // `spawn_fold_detect_tasks` tick respawn.
+        if let Ok((mut fold_state, folding_cfg)) = editors.get_mut(task.target) {
             if fold_state.content_version != task.tree_version {
-                // Build a HashMap keyed by (start_line, end_line) for O(1)
-                // lookup of prior is_folded flags. Without this the merge is
-                // O(N²) — sqlite3.c has thousands of regions and the linear
-                // find-per-region cost dominates the apply system.
+                let first_apply = fold_state.content_version == 0;
+                let limit = folding_cfg.max_regions as usize;
                 let prior: std::collections::HashMap<(usize, usize), bool> = fold_state
                     .regions
                     .iter()
                     .map(|r| ((r.start_line, r.end_line), r.is_folded))
                     .collect();
 
-                // Build the new region list (carrying prior is_folded flags)
-                // into a temp Vec so we can compare structurally before
-                // deciding to write. If nothing changed, skip the write to
-                // avoid firing `Changed<FoldState>` — that cascades into
-                // `produce_hidden_lines` → `Changed<HiddenLines>` →
-                // `produce_line_styles` full window rebuild.
                 let mut new_regions: Vec<FoldRegion> = Vec::with_capacity(regions.len());
                 for mut region in regions {
                     if let Some(&was_folded) = prior.get(&(region.start_line, region.end_line)) {
                         region.is_folded = was_folded;
+                    } else if first_apply
+                        && folding_cfg.imports_by_default
+                        && region.kind == FoldKind::Imports
+                    {
+                        region.is_folded = true;
                     }
                     new_regions.push(region);
+                }
+                if limit > 0 && new_regions.len() > limit {
+                    new_regions.truncate(limit);
                 }
 
                 let unchanged = new_regions.len() == fold_state.regions.len()
@@ -150,7 +147,6 @@ pub(crate) fn apply_fold_detect_tasks(
                         .all(|(a, b)| a == b);
 
                 if unchanged {
-                    // Update content_version without firing Changed<FoldState>.
                     fold_state.bypass_change_detection().content_version = task.tree_version;
                 } else {
                     fold_state.regions = new_regions;

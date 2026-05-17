@@ -42,6 +42,10 @@ impl Plugin for EditorUiPlugin {
         // only on the entity that just had `Indentation` inserted or replaced.
         app.add_observer(sync_indent_config_on_change);
 
+        app.add_systems(Update, detect_indentation_on_first_buffer);
+        app.add_systems(Update, sync_cursor_icon);
+        app.add_systems(Update, sync_automatic_layout);
+
         // Update separator position when ComputedNode changes (driven by Bevy UI layout).
         app.add_systems(Update, update_separator_on_resize.run_if(viewport_changed));
 
@@ -168,19 +172,148 @@ fn sync_node_from_window(
 fn sync_indent_config_on_change(
     trigger: On<bevy::ecs::lifecycle::Insert, crate::settings::Indentation>,
     mut editors: Query<
-        (&crate::settings::Indentation, &mut bevy_instanced_text_editor::IndentConfig),
+        (
+            &crate::settings::Indentation,
+            &mut bevy_instanced_text_editor::IndentConfig,
+        ),
         With<CodeEditor>,
     >,
 ) {
     let Ok((indent, mut cfg)) = editors.get_mut(trigger.event().entity) else {
         return;
     };
-    let next_tab = indent.tab_size as usize;
+    let next_tab = indent.indent_size.resolve(indent.tab_size);
     if cfg.tab_width != next_tab {
         cfg.tab_width = next_tab;
     }
     if cfg.use_spaces != indent.insert_spaces {
         cfg.use_spaces = indent.insert_spaces;
+    }
+    if cfg.use_tab_stops != indent.use_tab_stops {
+        cfg.use_tab_stops = indent.use_tab_stops;
+    }
+    if cfg.sticky_tab_stops != indent.sticky_tab_stops {
+        cfg.sticky_tab_stops = indent.sticky_tab_stops;
+    }
+    if cfg.trim_whitespace_on_delete != indent.trim_whitespace_on_delete {
+        cfg.trim_whitespace_on_delete = indent.trim_whitespace_on_delete;
+    }
+}
+
+/// Marker preventing repeat detection on the same editor after the first run.
+#[derive(Component, Default)]
+struct DetectIndentationDone;
+
+/// On the first frame where an editor's buffer is non-empty and
+/// `Indentation::detect_indentation` is set, scan the first ~100 non-blank
+/// lines and overwrite `tab_size` / `insert_spaces` with the inferred shape.
+/// Single-shot per editor.
+fn detect_indentation_on_first_buffer(
+    mut commands: Commands,
+    mut editors: Query<
+        (
+            Entity,
+            &bevy_instanced_text::TextBuffer<bevy_instanced_text_editor::RopeBuffer>,
+            &mut crate::settings::Indentation,
+        ),
+        (With<CodeEditor>, Without<DetectIndentationDone>),
+    >,
+) {
+    for (entity, buffer, mut indent) in editors.iter_mut() {
+        if buffer.len_chars() == 0 {
+            continue;
+        }
+        commands.entity(entity).insert(DetectIndentationDone);
+        if !indent.detect_indentation {
+            continue;
+        }
+
+        let mut tab_count = 0usize;
+        let mut space_widths: std::collections::HashMap<u32, usize> = Default::default();
+        let line_count = buffer.len_lines().min(100);
+        for line_idx in 0..line_count {
+            let line = buffer.line(line_idx);
+            let mut spaces = 0u32;
+            let mut starts_with_tab = false;
+            for c in line.chars() {
+                match c {
+                    '\t' => {
+                        starts_with_tab = true;
+                        break;
+                    }
+                    ' ' => spaces += 1,
+                    _ => break,
+                }
+            }
+            if starts_with_tab {
+                tab_count += 1;
+            } else if spaces > 0 {
+                *space_widths.entry(spaces).or_insert(0) += 1;
+            }
+        }
+
+        let total_space_runs: usize = space_widths.values().copied().sum();
+        if tab_count > total_space_runs {
+            indent.insert_spaces = false;
+        } else if total_space_runs > 0 {
+            indent.insert_spaces = true;
+            let common = [2u32, 4, 8]
+                .into_iter()
+                .max_by_key(|w| {
+                    space_widths
+                        .iter()
+                        .filter(|(s, _)| *s % w == 0)
+                        .map(|(_, c)| *c)
+                        .sum::<usize>()
+                })
+                .unwrap_or(4);
+            indent.tab_size = common;
+        }
+    }
+}
+
+/// Toggle [`AutoResizeViewport`] on every `CodeEditor` based on
+/// `Misc::automatic_layout`.
+fn sync_automatic_layout(
+    mut commands: Commands,
+    editors: Query<
+        (Entity, &crate::settings::Misc, Has<AutoResizeViewport>),
+        (With<CodeEditor>, Changed<crate::settings::Misc>),
+    >,
+) {
+    for (entity, misc, has_marker) in editors.iter() {
+        match (misc.automatic_layout, has_marker) {
+            (true, false) => {
+                commands.entity(entity).insert(AutoResizeViewport);
+            }
+            (false, true) => {
+                commands.entity(entity).remove::<AutoResizeViewport>();
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Mirror `Misc::mouse_style` to the primary window's [`CursorIcon`].
+fn sync_cursor_icon(
+    mut commands: Commands,
+    editors: Query<&crate::settings::Misc, (With<CodeEditor>, Changed<crate::settings::Misc>)>,
+    windows: Query<(Entity, Option<&bevy::window::CursorIcon>), With<bevy::window::PrimaryWindow>>,
+) {
+    let Some(misc) = editors.iter().next() else {
+        return;
+    };
+    let Ok((window_entity, current)) = windows.single() else {
+        return;
+    };
+    let target = match misc.mouse_style {
+        crate::settings::MouseStyle::Text => bevy::window::SystemCursorIcon::Text,
+        crate::settings::MouseStyle::Default => bevy::window::SystemCursorIcon::Default,
+        crate::settings::MouseStyle::Copy => bevy::window::SystemCursorIcon::Copy,
+    };
+    let next = bevy::window::CursorIcon::System(target);
+    if current.map(|c| *c != next).unwrap_or(true) {
+        commands.entity(window_entity).insert(next);
     }
 }
 
@@ -206,9 +339,14 @@ fn sync_gutter_width(
         };
         let padding_left = Val::Px(gutter_width + ui.code_margin_left);
         let padding_top = Val::Px(padding.top);
-        if node.padding.left != padding_left || node.padding.top != padding_top {
+        let padding_bottom = Val::Px(padding.bottom);
+        if node.padding.left != padding_left
+            || node.padding.top != padding_top
+            || node.padding.bottom != padding_bottom
+        {
             node.padding.left = padding_left;
             node.padding.top = padding_top;
+            node.padding.bottom = padding_bottom;
         }
         if (gutter_config.gutter_width - gutter_width).abs() > 0.01 {
             gutter_config.gutter_width = gutter_width;

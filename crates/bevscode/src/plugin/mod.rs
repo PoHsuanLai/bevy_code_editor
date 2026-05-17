@@ -216,6 +216,7 @@ impl Plugin for CodeEditorPlugin {
         // behaviors and the LSP hover trigger on top.
         app.add_observer(crate::input::on_fold_gutter_press);
         app.add_observer(crate::input::on_alt_click);
+        app.add_observer(crate::input::on_click_past_eol_unfold);
         #[cfg(feature = "lsp")]
         {
             app.add_observer(crate::input::on_ctrl_click_goto_definition);

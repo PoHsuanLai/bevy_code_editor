@@ -23,6 +23,7 @@ type AutoScrollQuery<'w, 's> = Query<
         &'static TextFont,
         &'static bevy::text::LineHeight,
         &'static MonoCellWidth,
+        &'static bevy_instanced_text_editor::ScrollConfig,
     ),
     With<CodeEditor>,
 >;
@@ -54,6 +55,7 @@ pub(crate) fn update_selection_highlight(
             Option<&HiddenLines>,
             Option<&TextBounds>,
             &EditorTheme,
+            &SelectionConfig,
         ),
         With<CodeEditor>,
     >,
@@ -88,6 +90,7 @@ pub(crate) fn update_selection_highlight(
         hidden,
         wrap,
         theme,
+        selection_cfg,
     ) in editor_query.iter_mut()
     {
         if !dirty.contains(&editor_entity) {
@@ -186,6 +189,7 @@ pub(crate) fn update_selection_highlight(
                     },
                     char_width,
                     theme.selection_background,
+                    selection_cfg.rounded_selection,
                     &mut sel_rects.0,
                 );
             }
@@ -254,6 +258,7 @@ fn push_selection_for_buffer_range(
     rows: &RowMap<'_>,
     char_width: f32,
     color: Color,
+    rounded: bool,
     out: &mut Vec<RectOverlay>,
 ) {
     let (start_row, start_byte_in_row) = rows.locate(span.s_byte);
@@ -287,29 +292,49 @@ fn push_selection_for_buffer_range(
         row_end_or_chars(end_row)
     };
 
+    let corners = if rounded {
+        bevy_instanced_text::CornerRadii::uniform(2.0)
+    } else {
+        bevy_instanced_text::CornerRadii::ZERO
+    };
+
     if start_row == end_row {
-        out.push(selection_rect(start_row, start_x..trailing_x, color));
+        out.push(selection_rect(
+            start_row,
+            start_x..trailing_x,
+            color,
+            corners,
+        ));
         return;
     }
 
-    // Multi-row span (selection crossed a soft-wrap break).
     let start_row_end = row_end_or_chars(start_row).max(start_x + char_width);
-    out.push(selection_rect(start_row, start_x..start_row_end, color));
+    out.push(selection_rect(
+        start_row,
+        start_x..start_row_end,
+        color,
+        corners,
+    ));
     for r in (start_row + 1)..end_row {
         let r_end = row_end_or_chars(r).max(char_width);
-        out.push(selection_rect(r, 0.0..r_end, color));
+        out.push(selection_rect(r, 0.0..r_end, color, corners));
     }
-    out.push(selection_rect(end_row, 0.0..trailing_x, color));
+    out.push(selection_rect(end_row, 0.0..trailing_x, color, corners));
 }
 
-fn selection_rect(display_row: u32, x_range: std::ops::Range<f32>, color: Color) -> RectOverlay {
+fn selection_rect(
+    display_row: u32,
+    x_range: std::ops::Range<f32>,
+    color: Color,
+    corners: bevy_instanced_text::CornerRadii,
+) -> RectOverlay {
     RectOverlay {
         display_row,
         x_range,
         vertical: RowVertical::Full,
         color,
         z: -1,
-        corners: bevy_instanced_text::CornerRadii::ZERO,
+        corners,
     }
 }
 
@@ -342,8 +367,10 @@ pub(crate) fn update_indent_guides(
 
         let inv = layout_view.computed.inverse_scale_factor();
         let indent_size = indentation.tab_size as usize;
-        let line_height =
-            bevy_instanced_text::resolve_line_height(*font_view.line_height, font_view.font.font_size);
+        let line_height = bevy_instanced_text::resolve_line_height(
+            *font_view.line_height,
+            font_view.font.font_size,
+        );
         let char_width = layout_view.mono.px;
         let viewport_height = layout_view.computed.size().y * inv;
 
@@ -449,7 +476,7 @@ pub(crate) fn should_auto_scroll(
 }
 
 pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
-    for (buffer, scroll, mut animator, metrics, mut cursor, computed, font, lh, mono) in
+    for (buffer, scroll, mut animator, metrics, mut cursor, computed, font, lh, mono, scroll_cfg) in
         editor_query.iter_mut()
     {
         let cursor_pos = cursor.cursor_pos.min(buffer.len_chars());
@@ -503,7 +530,7 @@ pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
         let char_width = mono.px;
         let cursor_x = col_index as f32 * char_width;
 
-        let margin_horizontal = char_width * 5.0;
+        let margin_horizontal = scroll_cfg.reveal_horizontal_right_padding.max(char_width);
         let visible_left = target.x;
         let visible_right = target.x + viewport_width - text_area_left - margin_horizontal;
 

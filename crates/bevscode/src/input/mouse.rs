@@ -198,6 +198,76 @@ pub fn on_fold_gutter_press(
     }
 }
 
+/// Click-past-EOL observer: when `Folding::unfold_on_click_after_eol` is set,
+/// a click whose x lands past the end of a folded line unfolds the region.
+pub fn on_click_past_eol_unfold(
+    trigger: On<Pointer<Press>>,
+    mut editor_query: Query<
+        (
+            &TextBuffer<RopeBuffer>,
+            &ScrollPosition,
+            &ComputedNode,
+            &mut FoldState,
+            &TextFont,
+            &bevy::text::LineHeight,
+            &MonoCellWidth,
+            Option<&DisplayLayout>,
+            &crate::settings::Folding,
+        ),
+        With<CodeEditor>,
+    >,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    if trigger.event().button != PointerButton::Primary {
+        return;
+    }
+    if keyboard.pressed(KeyCode::AltLeft)
+        || keyboard.pressed(KeyCode::AltRight)
+        || keyboard.pressed(KeyCode::ControlLeft)
+        || keyboard.pressed(KeyCode::ControlRight)
+        || keyboard.pressed(KeyCode::SuperLeft)
+        || keyboard.pressed(KeyCode::SuperRight)
+    {
+        return;
+    }
+    let entity = trigger.event().entity;
+    let Ok((buffer, scroll, computed, mut fold_state, font, lh, mono, layout, folding)) =
+        editor_query.get_mut(entity)
+    else {
+        return;
+    };
+    if !folding.unfold_on_click_after_eol {
+        return;
+    }
+    let Some(local_pos) = trigger.event().hit.position.map(|p| Vec2::new(p.x, p.y)) else {
+        return;
+    };
+    let inv = computed.inverse_scale_factor();
+    let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
+    let text_area_top = computed.content_inset().min_inset.y * inv;
+    let text_area_left = computed.content_inset().min_inset.x * inv;
+    let relative_y = local_pos.y - text_area_top + scroll.y;
+    let display_row = (relative_y / line_height).max(0.0) as usize;
+    let buffer_line = fold_state.display_to_actual_line(display_row);
+    if buffer_line >= buffer.rope().len_lines() {
+        return;
+    }
+    let line_chars = buffer.line(buffer_line).len_chars().saturating_sub(1);
+    let last_x = layout
+        .and_then(|l| l.x_at_byte(display_row as u32, buffer.line(buffer_line).len_bytes()))
+        .unwrap_or(line_chars as f32 * mono.px);
+    let relative_x = local_pos.x - text_area_left;
+    if relative_x > last_x + mono.px && fold_state.is_foldable_line(buffer_line) {
+        if let Some(region) = fold_state
+            .regions
+            .iter_mut()
+            .find(|r| r.start_line == buffer_line && r.is_folded)
+        {
+            region.is_folded = false;
+        }
+    }
+}
+
 /// Alt+click observer: add a secondary cursor at the clicked character.
 ///
 /// `bevy_instanced_text_interaction::on_pointer_press` already skips writing

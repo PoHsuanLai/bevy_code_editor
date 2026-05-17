@@ -45,6 +45,27 @@ pub fn should_skip_auto_close(cursor: &CursorState, rope: &Rope, closing: char) 
     rope.char(cursor_pos) == closing
 }
 
+/// True when an [`AutoClosingPairs`] policy permits inserting the closing
+/// character at the cursor's current position.
+pub fn auto_close_allowed(
+    mode: crate::settings::AutoClosingPairs,
+    rope: &Rope,
+    cursor_pos: usize,
+) -> bool {
+    use crate::settings::AutoClosingPairs;
+    match mode {
+        AutoClosingPairs::Never => false,
+        AutoClosingPairs::Always | AutoClosingPairs::LanguageDefined => true,
+        AutoClosingPairs::BeforeWhitespace => {
+            if cursor_pos >= rope.len_chars() {
+                return true;
+            }
+            let next = rope.char(cursor_pos);
+            next.is_whitespace()
+        }
+    }
+}
+
 /// Apply selected completion item.
 ///
 /// Emits a `ReplaceRangeRequested` event for the editor entity to apply the

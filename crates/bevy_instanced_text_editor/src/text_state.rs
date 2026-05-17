@@ -45,6 +45,9 @@ pub struct EditHistoryState {
     /// incremental sync. Drained into [`OnEdit`] by `emit_edit_triggers`.
     #[doc(hidden)]
     pub pre_edit_rope: Option<Rope>,
+    /// Char indices where an auto-close inserted the closing bracket/quote.
+    /// Read by backspace to delete the matching pair.
+    pub auto_inserted_pairs: std::collections::HashSet<(usize, char)>,
 }
 
 impl Default for EditHistoryState {
@@ -55,6 +58,7 @@ impl Default for EditHistoryState {
             pending_byte_edit: None,
             snapshot_pre_edits: false,
             pre_edit_rope: None,
+            auto_inserted_pairs: Default::default(),
         }
     }
 }
@@ -98,6 +102,12 @@ pub struct IndentConfig {
     pub tab_width: usize,
     /// `false` inserts a literal `\t`.
     pub use_spaces: bool,
+    /// Spaces inserted on Tab snap to the next multiple of `tab_width`.
+    pub use_tab_stops: bool,
+    /// Backspace inside leading whitespace deletes back to the previous tab stop.
+    pub sticky_tab_stops: bool,
+    /// Backspace at the end of a run of trailing whitespace deletes the whole run.
+    pub trim_whitespace_on_delete: bool,
 }
 
 impl Default for IndentConfig {
@@ -105,6 +115,9 @@ impl Default for IndentConfig {
         Self {
             tab_width: 4,
             use_spaces: true,
+            use_tab_stops: true,
+            sticky_tab_stops: false,
+            trim_whitespace_on_delete: false,
         }
     }
 }

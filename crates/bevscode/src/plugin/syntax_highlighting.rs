@@ -90,24 +90,44 @@ impl EditorSyntaxState {
     /// sense — i.e. *not* inside a string literal or comment. Callers pass
     /// the tree from `SyntaxTree` directly; returns `true` when absent.
     pub fn is_completion_context(tree: &bevy_tree_sitter::ts::Tree, byte_offset: usize) -> bool {
-        let root = tree.root_node();
-        if byte_offset > root.end_byte() {
-            return true;
-        }
-        let Some(node) = root.descendant_for_byte_range(byte_offset, byte_offset) else {
-            return true;
-        };
-        let mut cur = Some(node);
-        while let Some(n) = cur {
-            let kind = n.kind();
-            if kind.contains("string") || kind.contains("comment") || kind == "raw_string_literal" {
-                return false;
-            }
-            cur = n.parent();
-        }
-        true
+        matches!(syntax_context(tree, byte_offset), SyntaxContext::Other)
     }
+}
 
+/// Coarse tree-sitter context bucket — drives Monaco-style `quickSuggestions`
+/// per-context toggles.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SyntaxContext {
+    Other,
+    Comment,
+    String,
+}
+
+/// Classify the cursor's context for `quickSuggestions`: comment, string, or
+/// "other" (code).
+pub fn syntax_context(tree: &bevy_tree_sitter::ts::Tree, byte_offset: usize) -> SyntaxContext {
+    let root = tree.root_node();
+    if byte_offset > root.end_byte() {
+        return SyntaxContext::Other;
+    }
+    let Some(node) = root.descendant_for_byte_range(byte_offset, byte_offset) else {
+        return SyntaxContext::Other;
+    };
+    let mut cur = Some(node);
+    while let Some(n) = cur {
+        let kind = n.kind();
+        if kind.contains("comment") {
+            return SyntaxContext::Comment;
+        }
+        if kind.contains("string") || kind == "raw_string_literal" {
+            return SyntaxContext::String;
+        }
+        cur = n.parent();
+    }
+    SyntaxContext::Other
+}
+
+impl EditorSyntaxState {
     /// Highlight `text` and return styled per-line segments.
     ///
     /// Reads the tree directly from `syntax_tree` — no internal tree cache.
@@ -135,7 +155,6 @@ impl EditorSyntaxState {
             None => plain_text_segments(text, default_color),
         }
     }
-
 }
 
 /// Build LineSegments for `text` with no highlights — fallback for when no

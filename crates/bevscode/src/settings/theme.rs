@@ -31,6 +31,12 @@ pub struct EditorTheme {
     pub separator: Color,
     pub indent_guide: Color,
     pub bracket_match: Color,
+    /// Rotating palette for bracket-pair colorization.
+    pub bracket_pair_colors: Vec<Color>,
+    pub placeholder_color: Color,
+    /// Underline color drawn on the last visible row of a folded region
+    /// when `Folding::highlight` is true.
+    pub fold_marker: Color,
 }
 
 impl Default for EditorTheme {
@@ -46,6 +52,16 @@ impl Default for EditorTheme {
             separator: Color::srgb(0.2, 0.2, 0.2),
             indent_guide: Color::srgba(0.4, 0.4, 0.4, 0.2),
             bracket_match: Color::srgba(0.0, 1.0, 0.5, 0.3),
+            bracket_pair_colors: vec![
+                Color::srgb(0.86, 0.86, 0.26),
+                Color::srgb(0.85, 0.42, 0.85),
+                Color::srgb(0.20, 0.74, 0.91),
+                Color::srgb(0.96, 0.55, 0.24),
+                Color::srgb(0.40, 0.83, 0.40),
+                Color::srgb(0.93, 0.36, 0.39),
+            ],
+            placeholder_color: Color::srgba(0.5, 0.5, 0.5, 0.6),
+            fold_marker: Color::srgba(0.5, 0.5, 0.5, 0.5),
         }
     }
 }

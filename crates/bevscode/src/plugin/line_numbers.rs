@@ -89,6 +89,7 @@ pub(crate) fn sync_gutter_text_view(
             &EditorTheme,
             &EditorUi,
             &crate::settings::Padding,
+            &crate::settings::RenderSettings,
         ),
         (With<CodeEditor>, Without<GutterTextView>),
     >,
@@ -106,8 +107,20 @@ pub(crate) fn sync_gutter_text_view(
         Without<CodeEditor>,
     >,
 ) {
-    for (editor_entity, sel, buffer, editor_scroll, gutter, fold_state, theme, ui, padding) in
-        editor_query.iter()
+    use crate::settings::LineNumbers as LineNumbersMode;
+    use crate::settings::RenderFinalNewline;
+    for (
+        editor_entity,
+        sel,
+        buffer,
+        editor_scroll,
+        gutter,
+        fold_state,
+        theme,
+        ui,
+        padding,
+        render,
+    ) in editor_query.iter()
     {
         let Some((
             _,
@@ -161,58 +174,65 @@ pub(crate) fn sync_gutter_text_view(
             g_scroll.y = editor_scroll.y;
         }
 
-        // Ropey counts a phantom empty line after a trailing '\n'; subtract it
-        // so the gutter shows exactly as many numbers as there are real lines.
         let raw_line_count = buffer.len_lines();
-        let line_count = if raw_line_count > 0
+        let trailing_empty = raw_line_count > 0
             && bevy_instanced_text::TextContent::line(&**buffer, raw_line_count - 1)
                 .trim()
-                .is_empty()
-        {
-            raw_line_count - 1
+                .is_empty();
+        let strip_trailing =
+            trailing_empty && matches!(render.render_final_newline, RenderFinalNewline::Off);
+        let line_count = if strip_trailing {
+            raw_line_count.saturating_sub(1)
         } else {
             raw_line_count
         }
         .max(1);
 
-        // Update line-number string when line count changes (never on fold-only changes).
+        let cursor_line = sel
+            .selections
+            .primary()
+            .head_offset()
+            .min(buffer.len_chars());
+        let cursor_line_idx = buffer.char_to_line(cursor_line);
+
+        let mode = ui.line_numbers;
         let old_count = if g_buffer.0 .0.is_empty() {
             0
         } else {
             bevy_instanced_text::TextContent::line_count(&g_buffer.0)
         };
         let count_stale = old_count != line_count;
+        let needs_full_rebuild = count_stale || matches!(mode, LineNumbersMode::Relative);
 
-        if count_stale {
-            if old_count > 0 && line_count > old_count {
-                // Lines added: append the new numbers.
-                let s = &mut g_buffer.0 .0;
-                for i in (old_count + 1)..=line_count {
-                    s.push('\n');
-                    s.push_str(&i.to_string());
+        if needs_full_rebuild {
+            let mut text = String::with_capacity(line_count * 4);
+            for i in 0..line_count {
+                if i > 0 {
+                    text.push('\n');
                 }
-            } else if old_count > line_count && line_count > 0 {
-                // Lines removed: find the byte offset of line `line_count` and truncate.
-                // Scan forward to find the Nth '\n' rather than repeated rfind.
-                let s = &mut g_buffer.0 .0;
-                let cut = s
-                    .char_indices()
-                    .filter(|&(_, c)| c == '\n')
-                    .nth(line_count - 1)
-                    .map(|(i, _)| i)
-                    .unwrap_or(s.len());
-                s.truncate(cut);
-            } else {
-                // Initial population or edge case.
-                let mut text = String::with_capacity(line_count * 4);
-                for i in 1..=line_count {
-                    if i > 1 {
-                        text.push('\n');
+                let label = match mode {
+                    LineNumbersMode::Relative => {
+                        if i == cursor_line_idx {
+                            (i + 1).to_string()
+                        } else {
+                            (i as isize - cursor_line_idx as isize)
+                                .unsigned_abs()
+                                .to_string()
+                        }
                     }
-                    text.push_str(&i.to_string());
-                }
-                g_buffer.0 = TextSpan(text);
+                    LineNumbersMode::Interval => {
+                        let n = i + 1;
+                        if n % 10 == 0 || i == cursor_line_idx {
+                            n.to_string()
+                        } else {
+                            String::new()
+                        }
+                    }
+                    _ => (i + 1).to_string(),
+                };
+                text.push_str(&label);
             }
+            g_buffer.0 = TextSpan(text);
         }
 
         // Update hidden lines when fold state changes (independent of line count).

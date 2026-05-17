@@ -145,19 +145,24 @@ pub fn on_lsp_diagnostics(
     mut commands: Commands,
     mut events: MessageReader<LspDiagnosticsUpdated>,
     diagnostics_q: Query<Entity, With<DiagnosticMarker>>,
-    editors: Query<Entity, With<CodeEditor>>,
+    editors: Query<(&crate::settings::RenderSettings, &crate::settings::Misc), With<CodeEditor>>,
 ) {
     for ev in events.read() {
-        if editors.get(ev.entity).is_err() {
+        let Ok((render, misc)) = editors.get(ev.entity) else {
             continue;
-        }
-        // Clear old diagnostics. Silenced because another sync system or
-        // hierarchy cleanup may have already despawned these markers in the
-        // same tick.
+        };
+        let render_decorations = match render.render_validation_decorations {
+            crate::settings::RenderValidationDecorations::Off => false,
+            crate::settings::RenderValidationDecorations::On => true,
+            crate::settings::RenderValidationDecorations::Editable => !misc.read_only,
+        };
         for entity in diagnostics_q.iter() {
             commands
                 .entity(entity)
                 .queue_silenced(bevy::ecs::system::entity_command::despawn());
+        }
+        if !render_decorations {
+            continue;
         }
         for diagnostic in &ev.diagnostics {
             commands.spawn(DiagnosticMarker {

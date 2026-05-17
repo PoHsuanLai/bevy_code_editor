@@ -83,6 +83,17 @@ pub enum IndentSize {
     Cells(u32),
 }
 
+impl IndentSize {
+    /// Resolve to a concrete column count, falling back to `tab_size`
+    /// for [`IndentSize::TabSize`].
+    pub fn resolve(self, tab_size: u32) -> usize {
+        match self {
+            Self::TabSize => tab_size as usize,
+            Self::Cells(n) => n as usize,
+        }
+    }
+}
+
 impl Default for Indentation {
     fn default() -> Self {
         Self {

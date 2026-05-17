@@ -55,12 +55,11 @@ pub use bevy_instanced_text_interaction::SystemClipboard;
 pub use bevy_instanced_text_interaction::{
     caret_overlay, copy_selection, cursor_blink_visible, screen_to_char_pos, selection_text,
     Anchor, AnchorBias, AnchorSet, BlinkPhase, ClipboardProvider, ClipboardResource,
-    CursorBlinkingMode, CursorSettings, CursorState, CursorStyle,
-    InstancedTextInteractionPlugin, InteractionSettings, KeyRepeatSettings, KeyRepeatState,
-    NullClipboard, ScrollConfig, ScrollbarConfig, ScrollbarVisibility, Selection,
-    SelectionCollection, SelectionMode, SelectionState, SmoothCaretAnimation,
-    SurroundingLinesStyle, TextCursorColor, TextEdit, TextSelectionColor, TextViewDragState,
-    DEFAULT_SEMANTIC_ESCAPE_CHARS,
+    CursorBlinkingMode, CursorSettings, CursorState, CursorStyle, InstancedTextInteractionPlugin,
+    InteractionSettings, KeyRepeatSettings, KeyRepeatState, NullClipboard, ScrollConfig,
+    ScrollbarConfig, ScrollbarVisibility, Selection, SelectionCollection, SelectionMode,
+    SelectionState, SmoothCaretAnimation, SurroundingLinesStyle, TextCursorColor, TextEdit,
+    TextSelectionColor, TextViewDragState, DEFAULT_SEMANTIC_ESCAPE_CHARS,
 };
 
 pub mod prelude {
