@@ -345,6 +345,7 @@ type DispatchLspQuery<'w, 's> = Query<
         &'static mut crate::lsp_ui::state::LspCompletionPopup,
         &'static crate::lsp_ui::state::LspRenamePopup,
         &'static crate::settings::LspConfig,
+        Option<&'static crate::settings::Suggest>,
     ),
     With<CodeEditor>,
 >;
@@ -358,7 +359,7 @@ pub fn dispatch_action_events(
         With<EditorInputManager>,
     >,
     cursor_settings_q: Query<&CursorSettings, With<CodeEditor>>,
-    misc_q: Query<&crate::settings::Misc, With<CodeEditor>>,
+    mut misc_q: Query<&mut crate::settings::Misc, With<CodeEditor>>,
     #[cfg(feature = "lsp")] mut pending: ResMut<PendingActionFollowup>,
     #[cfg(feature = "lsp")] mut editor_q: Query<
         (
@@ -391,7 +392,7 @@ pub fn dispatch_action_events(
     // Rename modal eats all action input until dismissed (input flows
     // through `crate::input::keyboard` instead).
     #[cfg(feature = "lsp")]
-    if let Ok((_, _, _, rename_state, _)) = lsp_q.get(focused) {
+    if let Ok((_, _, _, rename_state, _, _)) = lsp_q.get(focused) {
         if rename_state.visible {
             return;
         }
@@ -445,11 +446,26 @@ pub fn dispatch_action_events(
         }
     }
 
+    if matches!(action, EditorAction::InsertTab) {
+        if let Ok(misc) = misc_q.get(focused) {
+            if misc.tab_focus_mode {
+                return;
+            }
+        }
+    }
+    if matches!(action, EditorAction::ClearSelection) {
+        if let Ok(mut misc) = misc_q.get_mut(focused) {
+            if misc.tab_focus_mode {
+                misc.tab_focus_mode = false;
+            }
+        }
+    }
+
     // Feature-owned interceptors get first crack at the action. Each returns
     // `true` if it consumed the action; the dispatcher early-returns and the
     // bevy_instanced_text_editor / IDE handlers never see the event.
     #[cfg(feature = "lsp")]
-    if let Ok((lsp_client, mut lsp_document, mut completion_state, _, lsp_settings)) =
+    if let Ok((lsp_client, mut lsp_document, mut completion_state, _, lsp_settings, suggest)) =
         lsp_q.get_mut(focused)
     {
         if crate::lsp_ui::interceptors::completion_popup_intercept(
@@ -460,6 +476,7 @@ pub fn dispatch_action_events(
             lsp_document.as_deref_mut(),
             &mut editor_q,
             lsp_settings,
+            suggest,
             &mut writers.replace_range,
         ) {
             return;

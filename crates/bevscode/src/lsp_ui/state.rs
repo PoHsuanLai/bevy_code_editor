@@ -14,6 +14,7 @@ use crate::settings::WordsCompletionMode;
 use bevy::prelude::*;
 use bevy_instanced_text_editor::Anchor;
 use lsp_types::*;
+use std::collections::{HashMap, VecDeque};
 
 /// One tabstop in an active snippet session, anchored so it survives
 /// edits that happen while the session is live (e.g. typing into the
@@ -146,7 +147,7 @@ pub struct LspCompletionPopup {
     /// Cache of `completionItem/resolve` results, keyed by the **label**
     /// of the original item. Label-keying survives reordering when the
     /// filter changes; index-keying would not.
-    pub resolved: std::collections::HashMap<String, CompletionItem>,
+    pub resolved: HashMap<String, CompletionItem>,
     /// Bumped on each resolve request and on every dismiss / item-list
     /// change so stale resolve responses are dropped before they reach
     /// the popup data.
@@ -154,7 +155,21 @@ pub struct LspCompletionPopup {
     /// `(label, request_id)` of the in-flight resolve. None when no
     /// resolve is in flight.
     pub pending_resolve: Option<(String, u64)>,
+    /// Most-recently-accepted completion labels, newest at the front,
+    /// capped at [`RECENT_LABELS_CAP`]. Drives
+    /// [`crate::settings::SuggestSelection::RecentlyUsed`] preselection.
+    pub recent_labels: VecDeque<String>,
+    /// Last-accepted label per `RECENT_PREFIX_LEN`-char prefix of the
+    /// typed word at acceptance time. Drives
+    /// [`crate::settings::SuggestSelection::RecentlyUsedByPrefix`].
+    pub recent_by_prefix: HashMap<String, String>,
 }
+
+/// Maximum number of remembered recently-accepted labels.
+pub const RECENT_LABELS_CAP: usize = 32;
+
+/// Prefix length used to key `LspCompletionPopup::recent_by_prefix`.
+pub const RECENT_PREFIX_LEN: usize = 3;
 
 impl LspCompletionPopup {
     /// Hide the popup and bump `request_id` so any in-flight LSP response
@@ -340,6 +355,58 @@ impl LspCompletionPopup {
         self.is_incomplete = false;
         self.resolved.clear();
         self.pending_resolve = None;
+    }
+
+    /// Record the acceptance of `label` against the typed prefix `query`
+    /// so [`crate::settings::SuggestSelection::RecentlyUsed`] and
+    /// [`crate::settings::SuggestSelection::RecentlyUsedByPrefix`] can
+    /// preselect it next time.
+    pub fn remember_acceptance(&mut self, label: &str, query: &str) {
+        self.recent_labels.retain(|l| l != label);
+        self.recent_labels.push_front(label.to_string());
+        while self.recent_labels.len() > RECENT_LABELS_CAP {
+            self.recent_labels.pop_back();
+        }
+        let prefix_key: String = query.chars().take(RECENT_PREFIX_LEN).collect();
+        if !prefix_key.is_empty() {
+            self.recent_by_prefix.insert(prefix_key, label.to_string());
+        }
+    }
+
+    /// Return the index in `filtered` of the item to preselect under
+    /// `mode`. `None` ⇒ caller should keep `0` (best fuzzy match).
+    pub fn preselect_index(
+        &self,
+        filtered: &[UnifiedCompletionItem],
+        mode: crate::settings::SuggestSelection,
+    ) -> Option<usize> {
+        use crate::settings::SuggestSelection;
+        match mode {
+            SuggestSelection::First => None,
+            SuggestSelection::RecentlyUsed => self.recent_match(filtered),
+            SuggestSelection::RecentlyUsedByPrefix => {
+                let prefix_key: String = self.filter.chars().take(RECENT_PREFIX_LEN).collect();
+                if !prefix_key.is_empty() {
+                    if let Some(label) = self.recent_by_prefix.get(&prefix_key) {
+                        if let Some(idx) = filtered.iter().position(|it| it.label() == label) {
+                            return Some(idx);
+                        }
+                    }
+                }
+                self.recent_match(filtered)
+            }
+        }
+    }
+
+    /// Newest-first scan of `recent_labels` for the first item that appears
+    /// in `filtered`.
+    fn recent_match(&self, filtered: &[UnifiedCompletionItem]) -> Option<usize> {
+        for label in &self.recent_labels {
+            if let Some(idx) = filtered.iter().position(|it| it.label() == label) {
+                return Some(idx);
+            }
+        }
+        None
     }
 }
 

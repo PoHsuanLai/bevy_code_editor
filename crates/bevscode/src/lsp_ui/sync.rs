@@ -474,10 +474,10 @@ pub fn sync_rename_input(
 /// changes — the renderer reads live state.
 pub fn sync_inlay_hints(
     mut commands: Commands,
-    query: Query<Ref<LspInlayHints>, With<CodeEditor>>,
+    query: Query<(Ref<LspInlayHints>, Option<&crate::settings::Suggest>), With<CodeEditor>>,
     existing: Query<Entity, With<InlayHintData>>,
 ) {
-    let Ok(hint_state) = query.single() else {
+    let Ok((hint_state, suggest)) = query.single() else {
         return;
     };
 
@@ -495,8 +495,10 @@ pub fn sync_inlay_hints(
         return;
     }
 
+    let max_len = suggest.map(|s| s.inlay_hints.maximum_length as usize);
+
     for hint in &hint_state.hints {
-        let label_text = match &hint.label {
+        let mut label_text = match &hint.label {
             lsp_types::InlayHintLabel::String(s) => s.clone(),
             lsp_types::InlayHintLabel::LabelParts(parts) => parts
                 .iter()
@@ -504,6 +506,14 @@ pub fn sync_inlay_hints(
                 .collect::<Vec<_>>()
                 .join(""),
         };
+
+        if let Some(max) = max_len {
+            if max > 0 && label_text.chars().count() > max {
+                let keep = max.saturating_sub(1);
+                let truncated: String = label_text.chars().take(keep).collect();
+                label_text = format!("{truncated}\u{2026}");
+            }
+        }
 
         let kind = match hint.kind {
             Some(lsp_types::InlayHintKind::TYPE) => InlayHintKind::Type,
