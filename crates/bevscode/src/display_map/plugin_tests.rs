@@ -32,15 +32,15 @@ use bevy::time::TimePlugin;
 use bevy::ui::ui_transform::UiGlobalTransform;
 use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::gpu::{GlyphAtlas, GlyphAtlasPlugin};
-use bevy_instanced_text::view::text_access::produce_layouts;
+use bevy_instanced_text::view::measurement::LayoutTuning;
 use bevy_instanced_text::view::plugin::update_text_views;
 use bevy_instanced_text::view::render::{GlyphBatchComponent, GlyphInstance};
-use bevy_instanced_text::view::measurement::LayoutTuning;
+use bevy_instanced_text::view::text_access::produce_layouts;
 use bevy_instanced_text::{
     DisplayLayout, LineStyles, MonoCellWidth, TextBounds, TextBuffer, TextOverlays, TextUnderlays,
     TextViewBatchEntity,
 };
-use bevy_instanced_text_editor::{RopeBuffer, BlinkPhase, EditDelta, EditPoint};
+use bevy_instanced_text_editor::{BlinkPhase, EditDelta, EditPoint, RopeBuffer};
 use bevy_tree_sitter::{SyntaxTree, TreeSitterGrammar, TreeSitterPlugin};
 use std::time::{Duration, Instant};
 
@@ -194,7 +194,9 @@ fn await_initial_parse(app: &mut App, entity: Entity) -> usize {
 /// Used after seeding state for tests that don't run a full PostUpdate
 /// schedule.
 fn drive_layout_and_render_once(app: &mut App) {
-    app.world_mut().run_system_once(produce_layouts::<RopeBuffer>).unwrap();
+    app.world_mut()
+        .run_system_once(produce_layouts::<RopeBuffer>)
+        .unwrap();
     app.world_mut().run_system_once(update_text_views).unwrap();
     app.update();
 }
@@ -265,11 +267,7 @@ fn cluster_instances_to_display_rows<'a>(
 
 /// Diagnostic dump for failing layer assertions. Prints the full
 /// `DisplayLayout` and the top-N glyph instances sorted by y.
-fn dump_layout_and_batch(
-    layout: &DisplayLayout,
-    batch: &GlyphBatchComponent,
-    kw_linear: [f32; 4],
-) {
+fn dump_layout_and_batch(layout: &DisplayLayout, batch: &GlyphBatchComponent, kw_linear: [f32; 4]) {
     eprintln!(
         "\n=== DIAGNOSTIC DUMP ===\n\
          line_height = {}\n\
@@ -400,8 +398,11 @@ fn assert_pipeline_consistent_for_keyword(
     //   DisplayLayout placed `fn` on, AND no stale keyword color on any
     //   display_row DisplayLayout says is empty.
     let kw_linear = to_linear_rgba(kw_color);
-    let cluster_rows =
-        cluster_instances_to_display_rows(&batch.instances, display_layout, display_layout.line_height);
+    let cluster_rows = cluster_instances_to_display_rows(
+        &batch.instances,
+        display_layout,
+        display_layout.line_height,
+    );
     let kw_rows: std::collections::HashSet<u32> = cluster_rows
         .iter()
         .filter(|(_, is)| is.iter().any(|i| color_eq(i.color, kw_linear)))
@@ -425,7 +426,10 @@ fn assert_pipeline_consistent_for_keyword(
         eprintln!(
             "Cluster→display_row mapping: {:?}\nkw_rows: {:?}\n\
              expected_fn_display_row: {}\nempty_rows: {:?}\nstale_rows: {:?}",
-            cluster_rows.iter().map(|(r, i)| (*r, i.len())).collect::<Vec<_>>(),
+            cluster_rows
+                .iter()
+                .map(|(r, i)| (*r, i.len()))
+                .collect::<Vec<_>>(),
             kw_rows,
             expected_fn_display_row,
             empty_rows,
@@ -437,13 +441,17 @@ fn assert_pipeline_consistent_for_keyword(
         "{}: LAYER 3: GlyphBatch has no keyword-colored instance on \
          display_row={} (where DisplayLayout placed `fn`). Keyword color \
          found on rows: {:?}.",
-        label, expected_fn_display_row, kw_rows,
+        label,
+        expected_fn_display_row,
+        kw_rows,
     );
     assert!(
         stale_rows.is_empty(),
         "{}: LAYER 3 STALE: keyword color {:?} appears on display row(s) \
          {:?} which DisplayLayout says are EMPTY. Stale-glyph bug.",
-        label, kw_color, stale_rows,
+        label,
+        kw_color,
+        stale_rows,
     );
 }
 
@@ -487,8 +495,14 @@ fn computed_node_logical_pixel_conversion() {
     let inv = computed.inverse_scale_factor();
     assert_eq!((computed.size().x * inv) as u32, 800, "logical width");
     assert_eq!((computed.size().y * inv) as u32, 600, "logical height");
-    assert!((computed.content_inset().min_inset.x * inv - 50.0).abs() < 0.1, "padding.left logical");
-    assert!((computed.content_inset().min_inset.y * inv - 10.0).abs() < 0.1, "padding.top logical");
+    assert!(
+        (computed.content_inset().min_inset.x * inv - 50.0).abs() < 0.1,
+        "padding.left logical"
+    );
+    assert!(
+        (computed.content_inset().min_inset.y * inv - 10.0).abs() < 0.1,
+        "padding.top logical"
+    );
 }
 
 /// Regression: tree-sitter highlights must be applied to every visible row,
@@ -544,7 +558,10 @@ fn pipeline_consistency_initial() {
         .get::<TextViewBatchEntity>(entity)
         .expect("update_text_views must spawn a batch entity")
         .0;
-    let batch = world.get::<GlyphBatchComponent>(batch_entity).unwrap().clone();
+    let batch = world
+        .get::<GlyphBatchComponent>(batch_entity)
+        .unwrap()
+        .clone();
 
     assert_pipeline_consistent_for_keyword(
         &line_styles,
@@ -574,7 +591,10 @@ fn pipeline_consistency_after_newline_insert() {
     // EDIT: insert `\n` at byte 0 → `fn` moves from buffer_row=0 to row 1.
     let new_source = "\nfn main() {\n    let x = 42;\n}\n";
     {
-        let mut buf = app.world_mut().get_mut::<TextBuffer<RopeBuffer>>(entity).unwrap();
+        let mut buf = app
+            .world_mut()
+            .get_mut::<TextBuffer<RopeBuffer>>(entity)
+            .unwrap();
         buf.0 = RopeBuffer(ropey::Rope::from_str(new_source));
     }
     app.world_mut()
@@ -614,7 +634,10 @@ fn pipeline_consistency_after_newline_insert() {
     let line_styles = world.get::<LineStyles>(entity).unwrap().clone();
     let display_layout = world.get::<DisplayLayout>(entity).unwrap().clone();
     let batch_entity = world.get::<TextViewBatchEntity>(entity).unwrap().0;
-    let batch = world.get::<GlyphBatchComponent>(batch_entity).unwrap().clone();
+    let batch = world
+        .get::<GlyphBatchComponent>(batch_entity)
+        .unwrap()
+        .clone();
 
     // `fn` moved to buffer_row=1.
     assert_pipeline_consistent_for_keyword(
@@ -627,11 +650,7 @@ fn pipeline_consistency_after_newline_insert() {
 
     // Index-shift regression: row 2 must hold the shifted-down `let` line,
     // not stale pre-edit row 2 content (`}`).
-    let row2_styled = line_styles
-        .by_line
-        .get(&2u32)
-        .cloned()
-        .unwrap_or_default();
+    let row2_styled = line_styles.by_line.get(&2u32).cloned().unwrap_or_default();
     assert!(
         row2_styled.iter().any(|r| r.text == "let"),
         "INDEX-SHIFT REGRESSION: row 2 should hold `    let x = 42;` \
@@ -666,7 +685,10 @@ fn pipeline_consistency_after_backspace_join() {
     // EDIT: delete the leading `\n` (backspace-join row 1 into row 0).
     let new_source = "fn main() {\n    let x = 42;\n}\n";
     {
-        let mut buf = app.world_mut().get_mut::<TextBuffer<RopeBuffer>>(entity).unwrap();
+        let mut buf = app
+            .world_mut()
+            .get_mut::<TextBuffer<RopeBuffer>>(entity)
+            .unwrap();
         buf.0 = RopeBuffer(ropey::Rope::from_str(new_source));
     }
     app.world_mut()
@@ -705,7 +727,10 @@ fn pipeline_consistency_after_backspace_join() {
     let line_styles = world.get::<LineStyles>(entity).unwrap().clone();
     let display_layout = world.get::<DisplayLayout>(entity).unwrap().clone();
     let batch_entity = world.get::<TextViewBatchEntity>(entity).unwrap().0;
-    let batch = world.get::<GlyphBatchComponent>(batch_entity).unwrap().clone();
+    let batch = world
+        .get::<GlyphBatchComponent>(batch_entity)
+        .unwrap()
+        .clone();
 
     assert_pipeline_consistent_for_keyword(
         &line_styles,
@@ -717,11 +742,7 @@ fn pipeline_consistency_after_backspace_join() {
 
     // The bug-regression check: row 1 must hold the new `let` line, not the
     // stale `fn main() {` runs that were under by_line[1] pre-edit.
-    let row1_styled = line_styles
-        .by_line
-        .get(&1u32)
-        .cloned()
-        .unwrap_or_default();
+    let row1_styled = line_styles.by_line.get(&1u32).cloned().unwrap_or_default();
     assert!(
         !row1_styled.iter().any(|r| r.text == "fn"),
         "INDEX-SHIFT REGRESSION: row 1 still has stale `fn` runs after \
@@ -766,13 +787,16 @@ fn pipeline_consistency_after_repeated_line_deletion() {
     // This catches the intermediate-frame bug where incremental rebuild leaves
     // old entries under shifted indices.
     let simulate_backspace_join = |app: &mut App,
-                                       from_rope: &str,
-                                       to_rope: &str,
-                                       delete_row: u32,
-                                       content_version: u64,
-                                       expected_total_lines: usize| {
+                                   from_rope: &str,
+                                   to_rope: &str,
+                                   delete_row: u32,
+                                   content_version: u64,
+                                   expected_total_lines: usize| {
         {
-            let mut buf = app.world_mut().get_mut::<TextBuffer<RopeBuffer>>(entity).unwrap();
+            let mut buf = app
+                .world_mut()
+                .get_mut::<TextBuffer<RopeBuffer>>(entity)
+                .unwrap();
             buf.0 = RopeBuffer(ropey::Rope::from_str(to_rope));
         }
         let newline_byte = from_rope
@@ -793,9 +817,18 @@ fn pipeline_consistency_after_repeated_line_deletion() {
                     start_byte: newline_byte,
                     old_end_byte: newline_byte + 1,
                     new_end_byte: newline_byte,
-                    start_position: EditPoint { row: delete_row, column_byte: col },
-                    old_end_position: EditPoint { row: delete_row + 1, column_byte: 0 },
-                    new_end_position: EditPoint { row: delete_row, column_byte: col },
+                    start_position: EditPoint {
+                        row: delete_row,
+                        column_byte: col,
+                    },
+                    old_end_position: EditPoint {
+                        row: delete_row + 1,
+                        column_byte: 0,
+                    },
+                    new_end_position: EditPoint {
+                        row: delete_row,
+                        column_byte: col,
+                    },
                 },
                 content_version,
                 pre_edit_rope: None,
@@ -881,7 +914,9 @@ fn pipeline_consistency_after_repeated_line_deletion() {
         row0.iter().any(|r| r.text == "fn"),
         "REGRESSION: row 0 lost `fn` color after repeated line-deleting backspaces. \
          Got runs: {:?}",
-        row0.iter().map(|r| (r.text.clone(), r.format.fg)).collect::<Vec<_>>()
+        row0.iter()
+            .map(|r| (r.text.clone(), r.format.fg))
+            .collect::<Vec<_>>()
     );
 
     // No rows beyond 0 should have any styled content (buffer only has 1 line).
@@ -891,7 +926,10 @@ fn pipeline_consistency_after_repeated_line_deletion() {
             stale.is_empty(),
             "STALE RUNS: row {} has leftover styled runs after deletion: {:?}",
             row,
-            stale.iter().map(|r| (r.text.clone(), r.format.fg)).collect::<Vec<_>>()
+            stale
+                .iter()
+                .map(|r| (r.text.clone(), r.format.fg))
+                .collect::<Vec<_>>()
         );
     }
 }
@@ -958,11 +996,18 @@ fn full_postupdate_schedule_with_real_overlays() {
             break;
         }
         let world = app.world();
-        let Some(bh) = world.get::<TextViewBatchEntity>(entity) else { continue };
-        let Some(batch) = world.get::<GlyphBatchComponent>(bh.0) else { continue };
+        let Some(bh) = world.get::<TextViewBatchEntity>(entity) else {
+            continue;
+        };
+        let Some(batch) = world.get::<GlyphBatchComponent>(bh.0) else {
+            continue;
+        };
         last_instances = batch.instances.len();
         if !batch.instances.is_empty()
-            && batch.instances.iter().any(|i| !color_eq(i.color, default_fg_linear))
+            && batch
+                .instances
+                .iter()
+                .any(|i| !color_eq(i.color, default_fg_linear))
         {
             return;
         }
@@ -1123,6 +1168,9 @@ fn gpu_readback_renders_colored_pixels() {
         nonbg > 100,
         "screenshot has only {} pixels differing from background by >60 \
          (max delta={}) — GPU likely didn't draw the text. Size: {}×{}",
-        nonbg, max_dist, img.width(), img.height(),
+        nonbg,
+        max_dist,
+        img.width(),
+        img.height(),
     );
 }

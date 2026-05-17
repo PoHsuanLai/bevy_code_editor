@@ -6,8 +6,8 @@ use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition};
 
 use bevy_instanced_text::{
-    LineStyles, MonoCellWidth, FormattedSpan, TextFormat, TextBackgroundColor, TextBuffer, TextColor,
-    TextSpan,
+    FormattedSpan, LineStyles, MonoCellWidth, TextBackgroundColor, TextBuffer, TextColor,
+    TextFormat, TextSpan,
 };
 use wezterm_surface::SequenceNo;
 use wezterm_term::Line as VtLine;
@@ -77,7 +77,10 @@ type SnapshotQuery<'w, 's> = Query<
     ),
 >;
 
-pub(crate) fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<Entity, RebuildCache>>) {
+pub(crate) fn sync_grid_snapshot(
+    mut q: SnapshotQuery,
+    mut cache: Local<HashMap<Entity, RebuildCache>>,
+) {
     cache.retain(|e, _| q.contains(*e));
     for (
         entity,
@@ -110,7 +113,14 @@ pub(crate) fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<
         let needs_rebuild = cache_entry.last_seqno != Some(seqno) || cache_entry.last_rows != rows;
 
         if !needs_rebuild {
-            anchor_scroll_to_bottom(&mut scroll, computed, line_height, total_lines, &mut follow, &mut follow_state);
+            anchor_scroll_to_bottom(
+                &mut scroll,
+                computed,
+                line_height,
+                total_lines,
+                &mut follow,
+                &mut follow_state,
+            );
             continue;
         }
 
@@ -151,7 +161,7 @@ pub(crate) fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<
 
         // Replace buffer text if it changed. DerefMut triggers Bevy's
         // change detection automatically — no manual version bump needed.
-        if buffer.0.0 != text {
+        if buffer.0 .0 != text {
             buffer.0 = TextSpan(text);
         }
 
@@ -175,7 +185,14 @@ pub(crate) fn sync_grid_snapshot(mut q: SnapshotQuery, mut cache: Local<HashMap<
         cache_entry.last_cols = cols;
         cache_entry.last_total_lines = total_lines;
         cache_entry.lines = next_lines;
-        anchor_scroll_to_bottom(&mut scroll, computed, line_height, total_lines, &mut follow, &mut follow_state);
+        anchor_scroll_to_bottom(
+            &mut scroll,
+            computed,
+            line_height,
+            total_lines,
+            &mut follow,
+            &mut follow_state,
+        );
     }
 }
 

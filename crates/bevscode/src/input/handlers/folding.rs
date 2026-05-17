@@ -2,8 +2,8 @@
 //! plus the change-detection system that fans `is_folded` transitions
 //! onto the message bus as `FoldStateChanged`.
 
-use std::collections::HashMap;
 use bevy_instanced_text_editor::RopeBuffer;
+use std::collections::HashMap;
 
 use crate::input::action_events::*;
 use crate::types::events::FoldStateChanged;
@@ -14,7 +14,14 @@ use bevy::prelude::*;
 pub fn handle_toggle_fold(
     mut events: MessageReader<ToggleFoldRequested>,
     input_focus: Res<InputFocus>,
-    mut q: Query<(&CursorState, &crate::text_view::TextBuffer<RopeBuffer>, &mut FoldState), With<CodeEditor>>,
+    mut q: Query<
+        (
+            &CursorState,
+            &crate::text_view::TextBuffer<RopeBuffer>,
+            &mut FoldState,
+        ),
+        With<CodeEditor>,
+    >,
 ) {
     if events.read().next().is_none() {
         return;
@@ -32,7 +39,14 @@ pub fn handle_toggle_fold(
 pub fn handle_fold(
     mut events: MessageReader<FoldRequested>,
     input_focus: Res<InputFocus>,
-    mut q: Query<(&CursorState, &crate::text_view::TextBuffer<RopeBuffer>, &mut FoldState), With<CodeEditor>>,
+    mut q: Query<
+        (
+            &CursorState,
+            &crate::text_view::TextBuffer<RopeBuffer>,
+            &mut FoldState,
+        ),
+        With<CodeEditor>,
+    >,
 ) {
     if events.read().next().is_none() {
         return;
@@ -50,7 +64,14 @@ pub fn handle_fold(
 pub fn handle_unfold(
     mut events: MessageReader<UnfoldRequested>,
     input_focus: Res<InputFocus>,
-    mut q: Query<(&CursorState, &crate::text_view::TextBuffer<RopeBuffer>, &mut FoldState), With<CodeEditor>>,
+    mut q: Query<
+        (
+            &CursorState,
+            &crate::text_view::TextBuffer<RopeBuffer>,
+            &mut FoldState,
+        ),
+        With<CodeEditor>,
+    >,
 ) {
     if events.read().next().is_none() {
         return;

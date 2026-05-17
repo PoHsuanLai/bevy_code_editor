@@ -11,7 +11,7 @@ use bevy::prelude::*;
 use bevy::text::{Justify, TextLayout};
 use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{
-    HiddenLines, LineStyles, MonoFontFaces, FormattedSpan, TextBuffer, TextFormat, TextSpan,
+    FormattedSpan, HiddenLines, LineStyles, MonoFontFaces, TextBuffer, TextFormat, TextSpan,
 };
 use bevy_instanced_text_editor::RopeBuffer;
 
@@ -39,11 +39,16 @@ pub(crate) fn setup_gutter_text_view(
         }
 
         let mut gutter_cmds = commands.spawn((
-            GutterTextView { editor: editor_entity },
+            GutterTextView {
+                editor: editor_entity,
+            },
             TextBuffer::<TextSpan>::default(),
             font.clone(),
             faces.clone(),
-            TextLayout { justify: Justify::Right, ..default() },
+            TextLayout {
+                justify: Justify::Right,
+                ..default()
+            },
             bevy_instanced_text::TextColor(theme.line_numbers),
             Node {
                 position_type: PositionType::Absolute,
@@ -100,7 +105,9 @@ pub(crate) fn sync_gutter_text_view(
         Without<CodeEditor>,
     >,
 ) {
-    for (editor_entity, sel, buffer, editor_scroll, gutter, fold_state, theme, ui) in editor_query.iter() {
+    for (editor_entity, sel, buffer, editor_scroll, gutter, fold_state, theme, ui) in
+        editor_query.iter()
+    {
         let Some((
             _,
             mut g_buffer,
@@ -135,6 +142,15 @@ pub(crate) fn sync_gutter_text_view(
             g_node.width = target_width;
         }
 
+        // Match the editor's top inset so line numbers vertically align with
+        // the first code line. The editor's main padding.top is `ui.margin_top`
+        // (set in `sync_gutter_width`); the gutter starts at the same row, so
+        // it needs the same vertical offset.
+        let target_top = Val::Px(ui.margin_top);
+        if g_node.padding.top != target_top {
+            g_node.padding.top = target_top;
+        }
+
         // Keep default color in sync with theme (theme might change at runtime).
         let default_color = bevy_instanced_text::TextColor(theme.line_numbers);
         if g_color.0 != default_color.0 {
@@ -150,14 +166,19 @@ pub(crate) fn sync_gutter_text_view(
         // Ropey counts a phantom empty line after a trailing '\n'; subtract it
         // so the gutter shows exactly as many numbers as there are real lines.
         let raw_line_count = buffer.len_lines();
-        let line_count = if raw_line_count > 0 && bevy_instanced_text::TextContent::line(&**buffer, raw_line_count - 1).trim().is_empty() {
+        let line_count = if raw_line_count > 0
+            && bevy_instanced_text::TextContent::line(&**buffer, raw_line_count - 1)
+                .trim()
+                .is_empty()
+        {
             raw_line_count - 1
         } else {
             raw_line_count
-        }.max(1);
+        }
+        .max(1);
 
         // Update line-number string when line count changes (never on fold-only changes).
-        let old_count = if g_buffer.0.0.is_empty() {
+        let old_count = if g_buffer.0 .0.is_empty() {
             0
         } else {
             bevy_instanced_text::TextContent::line_count(&g_buffer.0)
@@ -167,7 +188,7 @@ pub(crate) fn sync_gutter_text_view(
         if count_stale {
             if old_count > 0 && line_count > old_count {
                 // Lines added: append the new numbers.
-                let s = &mut g_buffer.0.0;
+                let s = &mut g_buffer.0 .0;
                 for i in (old_count + 1)..=line_count {
                     s.push('\n');
                     s.push_str(&i.to_string());
@@ -175,7 +196,7 @@ pub(crate) fn sync_gutter_text_view(
             } else if old_count > line_count && line_count > 0 {
                 // Lines removed: find the byte offset of line `line_count` and truncate.
                 // Scan forward to find the Nth '\n' rather than repeated rfind.
-                let s = &mut g_buffer.0.0;
+                let s = &mut g_buffer.0 .0;
                 let cut = s
                     .char_indices()
                     .filter(|&(_, c)| c == '\n')
@@ -228,11 +249,7 @@ pub(crate) fn sync_gutter_text_view(
             })
             .collect();
 
-        let current_active: HashSet<usize> = g_styles
-            .by_line
-            .keys()
-            .map(|&k| k as usize)
-            .collect();
+        let current_active: HashSet<usize> = g_styles.by_line.keys().map(|&k| k as usize).collect();
 
         if cursor_lines != current_active || count_stale {
             let active_color = theme.line_numbers_active;

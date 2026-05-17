@@ -6,11 +6,11 @@
 //! arm.
 
 use crate::input::action_events::*;
-use bevy_instanced_text_editor::RopeBuffer;
 use crate::input::actions::request_completion;
 use crate::types::*;
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
+use bevy_instanced_text_editor::RopeBuffer;
 
 pub fn handle_request_completion(
     mut events: MessageReader<RequestCompletionRequested>,
@@ -91,5 +91,11 @@ pub fn handle_rename_symbol(
         bevy_lsp::PositionEncoding::Utf16,
     );
     rename_state.start_prepare(position);
-    crate::lsp_ui::systems::request_prepare_rename(entity, capabilities, &doc.uri, position, &mut lsp_w);
+    crate::lsp_ui::systems::request_prepare_rename(
+        entity,
+        capabilities,
+        &doc.uri,
+        position,
+        &mut lsp_w,
+    );
 }

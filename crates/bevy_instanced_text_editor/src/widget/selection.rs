@@ -11,10 +11,10 @@ use crate::cursor_movement::{
 use crate::text::RopeBuffer;
 use crate::text_edit::*;
 use crate::text_state::TextEditor;
-use bevy_instanced_text_interaction::{CursorState, SelectionState};
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy_instanced_text::TextBuffer;
+use bevy_instanced_text_interaction::{CursorState, SelectionState};
 
 type EditorView<'w, 's> = Query<
     'w,

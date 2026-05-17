@@ -12,11 +12,11 @@ use crate::cursor_movement::{
 use crate::text::RopeBuffer;
 use crate::text_edit::*;
 use crate::text_state::TextEditor;
-use bevy_instanced_text_interaction::{CursorState, SelectionState};
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy::ui::ComputedNode;
 use bevy_instanced_text::{MonoCellWidth, TextBuffer};
+use bevy_instanced_text_interaction::{CursorState, SelectionState};
 
 type EditorView<'w, 's> = Query<
     'w,
@@ -254,7 +254,14 @@ pub fn handle_move_cursor_page_up(
     let Ok((mut sel, mut cursor, buffer, computed, font, lh, _mono)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor_lines(&mut cursor, buffer.rope(), -page_lines(computed, bevy_instanced_text::resolve_line_height(*lh, font.font_size)));
+    move_cursor_lines(
+        &mut cursor,
+        buffer.rope(),
+        -page_lines(
+            computed,
+            bevy_instanced_text::resolve_line_height(*lh, font.font_size),
+        ),
+    );
     sel.apply_primary_cursor(&cursor);
 }
 
@@ -272,6 +279,13 @@ pub fn handle_move_cursor_page_down(
     let Ok((mut sel, mut cursor, buffer, computed, font, lh, _mono)) = q.get_mut(entity) else {
         return;
     };
-    move_cursor_lines(&mut cursor, buffer.rope(), page_lines(computed, bevy_instanced_text::resolve_line_height(*lh, font.font_size)));
+    move_cursor_lines(
+        &mut cursor,
+        buffer.rope(),
+        page_lines(
+            computed,
+            bevy_instanced_text::resolve_line_height(*lh, font.font_size),
+        ),
+    );
     sel.apply_primary_cursor(&cursor);
 }

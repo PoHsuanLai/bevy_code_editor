@@ -20,7 +20,6 @@
 //! click land on the right buffer line.
 
 use crate::settings::GutterConfig;
-use bevy_instanced_text_editor::RopeBuffer;
 use crate::text_view::TextBuffer;
 use crate::types::*;
 #[cfg(feature = "lsp")]
@@ -31,6 +30,7 @@ use bevy::prelude::*;
 use bevy::ui::ComputedNode;
 use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{DisplayLayout, MonoCellWidth};
+use bevy_instanced_text_editor::RopeBuffer;
 use ropey::Rope;
 
 type AltClickQuery<'w, 's> = Query<
@@ -152,7 +152,15 @@ fn screen_to_char_pos(screen_pos: Vec2, ctx: &HitTestCtx<'_>) -> usize {
 pub fn on_fold_gutter_press(
     trigger: On<Pointer<Press>>,
     mut editor_query: Query<
-        (&ScrollPosition, &ComputedNode, &GutterConfig, &mut FoldState, &TextFont, &bevy::text::LineHeight, &MonoCellWidth),
+        (
+            &ScrollPosition,
+            &ComputedNode,
+            &GutterConfig,
+            &mut FoldState,
+            &TextFont,
+            &bevy::text::LineHeight,
+            &MonoCellWidth,
+        ),
         With<CodeEditor>,
     >,
 ) {
@@ -160,7 +168,9 @@ pub fn on_fold_gutter_press(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((scroll, computed, gutter, mut fold_state, font, lh, _mono)) = editor_query.get_mut(entity) else {
+    let Ok((scroll, computed, gutter, mut fold_state, font, lh, _mono)) =
+        editor_query.get_mut(entity)
+    else {
         return;
     };
     let Some(local_pos) = trigger.event().hit.position.map(|p| Vec2::new(p.x, p.y)) else {
@@ -249,7 +259,10 @@ pub fn on_alt_click(
 pub fn on_ctrl_click_goto_definition(
     trigger: On<Pointer<Press>>,
     editor_query: CtrlClickQuery,
-    mut lsp_query: Query<(&mut bevy_lsp::LspClient, Option<&bevy_lsp::LspDocument>), With<CodeEditor>>,
+    mut lsp_query: Query<
+        (&mut bevy_lsp::LspClient, Option<&bevy_lsp::LspDocument>),
+        With<CodeEditor>,
+    >,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     if trigger.event().button != PointerButton::Primary {
@@ -259,7 +272,9 @@ pub fn on_ctrl_click_goto_definition(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((buffer, scroll, computed, fold_state, font, lh, mono, layout)) = editor_query.get(entity) else {
+    let Ok((buffer, scroll, computed, fold_state, font, lh, mono, layout)) =
+        editor_query.get(entity)
+    else {
         return;
     };
     let Ok((mut lsp_client, lsp_document)) = lsp_query.get_mut(entity) else {

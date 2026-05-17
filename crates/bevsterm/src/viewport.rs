@@ -29,7 +29,13 @@ pub fn cells_from_viewport(
 #[allow(clippy::type_complexity)]
 pub fn sync_terminal_size(
     mut q: Query<
-        (&ComputedNode, &TextFont, &bevy::text::LineHeight, &MonoCellWidth, &mut TerminalSession),
+        (
+            &ComputedNode,
+            &TextFont,
+            &bevy::text::LineHeight,
+            &MonoCellWidth,
+            &mut TerminalSession,
+        ),
         Or<(Changed<ComputedNode>, Changed<MonoCellWidth>)>,
     >,
     windows: Query<&bevy::window::Window, With<bevy::window::PrimaryWindow>>,
@@ -43,7 +49,8 @@ pub fn sync_terminal_size(
     for (computed, font, lh, mono, mut session) in q.iter_mut() {
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
         let char_width = mono.px;
-        let Some((raw_cols, raw_rows)) = cells_from_viewport(computed, char_width, line_height) else {
+        let Some((raw_cols, raw_rows)) = cells_from_viewport(computed, char_width, line_height)
+        else {
             continue;
         };
         let cols = raw_cols.max(MIN_COLS);

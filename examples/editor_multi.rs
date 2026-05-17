@@ -59,10 +59,9 @@ fn spawn_two_editors(
     let log_half = phys_half as f32 / scale;
     let log_h = window.height();
 
-    let font = TextFont::from_font_size(14.0)
-        .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"));
-    let faces = MonoFontFaces::default()
-        .with_bold(asset_server.load("fonts/FiraMono-Medium.ttf"));
+    let font =
+        TextFont::from_font_size(14.0).with_font(asset_server.load("fonts/FiraMono-Regular.ttf"));
+    let faces = MonoFontFaces::default().with_bold(asset_server.load("fonts/FiraMono-Medium.ttf"));
 
     let left_layer = RenderLayers::layer(0);
     let right_layer = RenderLayers::layer(1);

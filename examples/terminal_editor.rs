@@ -61,10 +61,9 @@ fn layout_panes(
     let editor_layer = RenderLayers::layer(0);
     let terminal_layer = RenderLayers::layer(1);
 
-    let font = TextFont::from_font_size(14.0)
-        .with_font(asset_server.load("fonts/FiraMono-Regular.ttf"));
-    let faces = MonoFontFaces::default()
-        .with_bold(asset_server.load("fonts/FiraMono-Medium.ttf"));
+    let font =
+        TextFont::from_font_size(14.0).with_font(asset_server.load("fonts/FiraMono-Regular.ttf"));
+    let faces = MonoFontFaces::default().with_bold(asset_server.load("fonts/FiraMono-Medium.ttf"));
 
     // Left camera → editor.
     commands.spawn((

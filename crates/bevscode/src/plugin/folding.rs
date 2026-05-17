@@ -13,9 +13,9 @@
 #![allow(dead_code)]
 
 use crate::text_view::TextBuffer;
-use bevy_instanced_text_editor::RopeBuffer;
 use crate::types::*;
 use bevy::prelude::*;
+use bevy_instanced_text_editor::RopeBuffer;
 
 #[cfg(feature = "tree-sitter")]
 use bevy::tasks::{block_on, futures_lite, AsyncComputeTaskPool, Task};

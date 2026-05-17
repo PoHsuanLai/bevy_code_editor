@@ -54,10 +54,8 @@ fn setup_editor_with_treesitter(
     };
 
     commands.entity(entity).insert((
-        TextFont::from_font_size(14.0)
-            .with_font(asset_server.load("fonts/FiraMono-Regular.ttf")),
-        MonoFontFaces::default()
-            .with_bold(asset_server.load("fonts/FiraMono-Medium.ttf")),
+        TextFont::from_font_size(14.0).with_font(asset_server.load("fonts/FiraMono-Regular.ttf")),
+        MonoFontFaces::default().with_bold(asset_server.load("fonts/FiraMono-Medium.ttf")),
     ));
 
     #[cfg(feature = "tree-sitter")]

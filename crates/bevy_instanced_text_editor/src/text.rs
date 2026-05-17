@@ -33,11 +33,15 @@ impl RopeBuffer {
 
 impl Deref for RopeBuffer {
     type Target = Rope;
-    fn deref(&self) -> &Rope { &self.0 }
+    fn deref(&self) -> &Rope {
+        &self.0
+    }
 }
 
 impl DerefMut for RopeBuffer {
-    fn deref_mut(&mut self) -> &mut Rope { &mut self.0 }
+    fn deref_mut(&mut self) -> &mut Rope {
+        &mut self.0
+    }
 }
 
 impl TextContent for RopeBuffer {

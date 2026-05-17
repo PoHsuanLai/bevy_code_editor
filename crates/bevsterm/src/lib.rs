@@ -54,17 +54,17 @@
 
 pub mod backend;
 pub mod blocks;
-pub mod picking_backend;
 pub mod clipboard;
 pub mod cursor;
 pub mod drain;
 pub mod input;
 pub mod messages;
+pub mod picking_backend;
+pub mod pipeline;
 pub mod plugin;
 #[cfg(feature = "pty")]
 pub mod session;
 pub mod shell_integration;
-pub mod pipeline;
 pub mod text;
 pub mod viewport;
 
@@ -92,6 +92,6 @@ pub mod prelude {
     // Backend-side primitives hosts need when wiring their own IO (WASM,
     // alternative PTY drivers, mock terminals for tests).
     pub use crate::backend::{DefaultConfig, TerminalSize};
-    pub use bevy_instanced_text::{MonoCellWidth, MonoFontFaces};
     pub use bevy::text::TextFont;
+    pub use bevy_instanced_text::{MonoCellWidth, MonoFontFaces};
 }

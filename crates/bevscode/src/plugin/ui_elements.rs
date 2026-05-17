@@ -1,12 +1,12 @@
 //! UI elements: selection, indent guides
 
 use crate::settings::*;
-use bevy_instanced_text_editor::RopeBuffer;
 use crate::text_view::{DisplayLayout, RectOverlay, RowVertical, TextBuffer};
 use crate::types::*;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::{visible_buffer_range, HiddenLines, MonoCellWidth, TextBounds};
+use bevy_instanced_text_editor::RopeBuffer;
 
 use crate::plugin::scroll_animator::ScrollAnimator;
 
@@ -115,7 +115,16 @@ pub(crate) fn update_selection_highlight(
         let viewport_height = computed.size().y * inv;
         let text_area_top = computed.content_inset().min_inset.y * inv;
         let wrap_cfg = wrap.copied().unwrap_or_default();
-        let visible = visible_buffer_range(&**buffer, scroll.y, viewport_height, text_area_top, line_height, char_width, wrap_cfg, hidden);
+        let visible = visible_buffer_range(
+            &**buffer,
+            scroll.y,
+            viewport_height,
+            text_area_top,
+            line_height,
+            char_width,
+            wrap_cfg,
+            hidden,
+        );
         if visible.start >= visible.end {
             continue;
         }
@@ -188,7 +197,6 @@ pub(crate) fn update_selection_highlight(
                 );
             }
         }
-
     }
 }
 
@@ -334,8 +342,20 @@ pub(crate) fn update_indent_guides(
         With<CodeEditor>,
     >,
 ) {
-    for (_editor_entity, buffer, scroll, computed, fold_state, font, lh, mono, theme, mut guide_rects, ui, indentation) in
-        editor_query.iter_mut()
+    for (
+        _editor_entity,
+        buffer,
+        scroll,
+        computed,
+        fold_state,
+        font,
+        lh,
+        mono,
+        theme,
+        mut guide_rects,
+        ui,
+        indentation,
+    ) in editor_query.iter_mut()
     {
         if !ui.show_indent_guides {
             if !guide_rects.0.is_empty() {
@@ -452,7 +472,9 @@ pub(crate) fn should_auto_scroll(
 }
 
 pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
-    for (buffer, scroll, mut animator, metrics, mut cursor, computed, font, lh, mono) in editor_query.iter_mut() {
+    for (buffer, scroll, mut animator, metrics, mut cursor, computed, font, lh, mono) in
+        editor_query.iter_mut()
+    {
         let cursor_pos = cursor.cursor_pos.min(buffer.len_chars());
         cursor.last_cursor_pos = cursor_pos;
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);

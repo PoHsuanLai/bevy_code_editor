@@ -16,11 +16,11 @@ pub mod action_events;
 pub mod actions;
 pub mod dispatch;
 pub mod editing;
-pub mod picking_backend;
 pub mod handlers;
 pub mod keybindings;
 pub mod keyboard;
 pub mod mouse;
+pub mod picking_backend;
 pub mod selection_ops;
 
 pub use dispatch::dispatch_action_events;

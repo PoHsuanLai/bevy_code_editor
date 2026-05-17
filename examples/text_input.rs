@@ -11,9 +11,9 @@
 //! crate one tier up.
 
 use bevy::prelude::*;
-use bevy_instanced_text::prelude::*;
-use bevy::text::TextFont;
 use bevy::text::LineHeight;
+use bevy::text::TextFont;
+use bevy_instanced_text::prelude::*;
 use bevy_instanced_text_editor::{InstancedTextEditPlugin, TextEditor};
 
 fn main() {
@@ -44,11 +44,9 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     commands.spawn((
         TextEditor,
-        TextFont::from_font_size(20.0)
-            .with_font(asset_server.load("fonts/FiraMono-Regular.ttf")),
+        TextFont::from_font_size(20.0).with_font(asset_server.load("fonts/FiraMono-Regular.ttf")),
         LineHeight::RelativeToFont(1.4),
-        MonoFontFaces::default()
-            .with_bold(asset_server.load("fonts/FiraMono-Medium.ttf")),
+        MonoFontFaces::default().with_bold(asset_server.load("fonts/FiraMono-Medium.ttf")),
         Name::new("simple-text-input"),
     ));
 }

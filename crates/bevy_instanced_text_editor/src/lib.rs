@@ -29,20 +29,20 @@
 
 pub mod cursor_movement;
 pub mod editing;
-pub mod text_edit;
-pub mod widget;
 pub mod history;
 pub mod plugin;
 pub mod text;
+pub mod text_edit;
 pub mod text_state;
 pub mod typing;
+pub mod widget;
 
 pub use cursor_movement::*;
 pub use editing::{point_at_byte, EditOutcome};
-pub use text_edit::*;
 pub use history::{EditHistory, EditKind, EditOperation, EditTransaction};
 pub use plugin::{EditEmitSet, InstancedTextEditPlugin};
 pub use text::RopeBuffer;
+pub use text_edit::*;
 pub use text_state::{
     EditDelta, EditHistoryState, EditPoint, IndentConfig, OnEdit, SnapshotPreEdit, TextEditor,
 };
@@ -50,22 +50,22 @@ pub use text_state::{
 // Re-export everything from bevy_instanced_text_interaction so downstream editors
 // (bevscode) can depend on this single crate and still reach the shared
 // interaction primitives (clipboard, selection, caret).
-pub use bevy_instanced_text_interaction::{
-    caret_overlay, copy_selection, cursor_blink_visible, screen_to_char_pos, selection_text,
-    Anchor, AnchorBias, AnchorSet, BlinkPhase, ClipboardProvider, ClipboardResource, CursorSettings,
-    CursorState, CursorStyle, InstancedTextInteractionPlugin, InteractionSettings,
-    KeyRepeatSettings, KeyRepeatState, NullClipboard, ScrollConfig, Selection, SelectionCollection,
-    SelectionMode, SelectionState, TextCursorColor, TextEdit, TextSelectionColor, TextViewDragState,
-    DEFAULT_SEMANTIC_ESCAPE_CHARS,
-};
 #[cfg(feature = "arboard")]
 pub use bevy_instanced_text_interaction::SystemClipboard;
+pub use bevy_instanced_text_interaction::{
+    caret_overlay, copy_selection, cursor_blink_visible, screen_to_char_pos, selection_text,
+    Anchor, AnchorBias, AnchorSet, BlinkPhase, ClipboardProvider, ClipboardResource,
+    CursorSettings, CursorState, CursorStyle, InstancedTextInteractionPlugin, InteractionSettings,
+    KeyRepeatSettings, KeyRepeatState, NullClipboard, ScrollConfig, Selection, SelectionCollection,
+    SelectionMode, SelectionState, TextCursorColor, TextEdit, TextSelectionColor,
+    TextViewDragState, DEFAULT_SEMANTIC_ESCAPE_CHARS,
+};
 
 pub mod prelude {
     //! Common types for spawning editable text views.
     pub use crate::{
-        EditDelta, EditEmitSet, EditHistoryState, EditKind, EditOperation, EditOutcome,
-        EditPoint, EditTransaction, IndentConfig, InstancedTextEditPlugin, OnEdit, RopeBuffer,
+        EditDelta, EditEmitSet, EditHistoryState, EditKind, EditOperation, EditOutcome, EditPoint,
+        EditTransaction, IndentConfig, InstancedTextEditPlugin, OnEdit, RopeBuffer,
         SnapshotPreEdit, TextEditor,
     };
     pub use bevy_instanced_text_interaction::prelude::*;

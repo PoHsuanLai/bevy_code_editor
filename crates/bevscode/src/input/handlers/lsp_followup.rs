@@ -13,9 +13,9 @@
 //! fires the same three side-effects. Behavior matches the original.
 
 use crate::types::*;
-use bevy_instanced_text_editor::RopeBuffer;
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
+use bevy_instanced_text_editor::RopeBuffer;
 
 /// Carries the action snapshot from `dispatch_action_events` to
 /// `lsp_followup`. Cleared at the end of `lsp_followup` so it never leaks

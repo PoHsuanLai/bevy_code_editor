@@ -6,14 +6,14 @@
 //! involved handler ahead of this one — or skip emitting the event when
 //! their indentation policy is non-default.
 
-use crate::text_edit::*;
-use crate::text::RopeBuffer;
 use crate::history::EditKind;
+use crate::text::RopeBuffer;
+use crate::text_edit::*;
 use crate::text_state::{EditHistoryState, IndentConfig, TextEditor};
-use bevy_instanced_text_interaction::{CursorState, SelectionState};
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy_instanced_text::{ContentMetrics, TextBuffer};
+use bevy_instanced_text_interaction::{CursorState, SelectionState};
 
 type EditorBufQuery<'w, 's> = Query<
     'w,

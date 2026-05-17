@@ -14,7 +14,11 @@ pub fn extract_blocks(
     mut finished_w: MessageWriter<TerminalBlockFinished>,
 ) {
     for (entity, session, mut state) in q.iter_mut() {
-        let zones = session.terminal.lock().get_semantic_zones().unwrap_or_default();
+        let zones = session
+            .terminal
+            .lock()
+            .get_semantic_zones()
+            .unwrap_or_default();
         let new_blocks = group_zones_into_blocks(&zones);
 
         for nb in &new_blocks {

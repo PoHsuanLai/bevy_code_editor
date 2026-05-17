@@ -30,7 +30,6 @@
 //! 6. **Emit the typed `*Requested` event** via `ActionEventWriters::emit`.
 
 use super::action_events::*;
-use bevy_instanced_text_editor::RopeBuffer;
 #[cfg(feature = "lsp")]
 use super::handlers::lsp_followup::PendingActionFollowup;
 use super::keybindings::EditorAction;
@@ -40,6 +39,7 @@ use crate::types::*;
 use bevy::ecs::system::SystemParam;
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
+use bevy_instanced_text_editor::RopeBuffer;
 use leafwing_input_manager::prelude::*;
 use std::time::Instant;
 

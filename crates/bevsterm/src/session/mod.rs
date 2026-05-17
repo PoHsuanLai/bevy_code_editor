@@ -270,10 +270,7 @@ impl Plugin for TerminalPtyPlugin {
                 )
                     .in_set(TerminalApplyStateSet),
             )
-            .add_systems(
-                Update,
-                handle_send_signal.in_set(TerminalApplyStateSet),
-            )
+            .add_systems(Update, handle_send_signal.in_set(TerminalApplyStateSet))
             .add_observer(on_terminal_removed);
     }
 }

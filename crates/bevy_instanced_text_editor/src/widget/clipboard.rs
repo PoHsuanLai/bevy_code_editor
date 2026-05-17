@@ -4,14 +4,14 @@
 //! `*Requested` event and operates on the focused [`crate::TextEditor`] entity
 //! via [`crate::clipboard::ClipboardResource`].
 
-use bevy_instanced_text_interaction::{ClipboardResource, CursorState, SelectionState};
+use crate::history::EditKind;
 use crate::text::RopeBuffer;
 use crate::text_edit::*;
-use crate::history::EditKind;
 use crate::text_state::{EditHistoryState, TextEditor};
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy_instanced_text::TextBuffer;
+use bevy_instanced_text_interaction::{ClipboardResource, CursorState, SelectionState};
 
 pub fn handle_copy(
     mut events: MessageReader<CopyRequested>,

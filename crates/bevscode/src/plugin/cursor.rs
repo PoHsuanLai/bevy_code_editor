@@ -1,12 +1,12 @@
 //! Cursor rendering and animation.
 
 use crate::settings::{CursorLine, CursorSettings, EditorTheme};
-use bevy_instanced_text_editor::RopeBuffer;
 use crate::text_view::{DisplayLayout, RectOverlay, RowVertical, TextBuffer};
-use bevy::ui::ComputedNode;
 use crate::types::*;
 use bevy::prelude::*;
+use bevy::ui::ComputedNode;
 use bevy_instanced_text::MonoCellWidth;
+use bevy_instanced_text_editor::RopeBuffer;
 
 type PushCursorOverlaysQuery<'w, 's> = Query<
     'w,
@@ -97,7 +97,10 @@ impl Plugin for CursorPlugin {
 
 pub(crate) fn track_cursor_movement(
     mut editor_query: Query<
-        (&mut CursorState, &mut bevy_instanced_text_editor::BlinkPhase),
+        (
+            &mut CursorState,
+            &mut bevy_instanced_text_editor::BlinkPhase,
+        ),
         With<CodeEditor>,
     >,
     time: Res<Time>,
@@ -116,8 +119,19 @@ pub(crate) fn push_cursor_overlays(
     input_focus: Res<bevy::input_focus::InputFocus>,
     time: Res<Time>,
 ) {
-    for (entity, sel, cursor, blink, buffer, mut carets, fold_state, mono, layout, theme, cursor_settings) in
-        editor_query.iter_mut()
+    for (
+        entity,
+        sel,
+        cursor,
+        blink,
+        buffer,
+        mut carets,
+        fold_state,
+        mono,
+        layout,
+        theme,
+        cursor_settings,
+    ) in editor_query.iter_mut()
     {
         let focused = input_focus.get() == Some(entity);
         let visible = focused
@@ -143,7 +157,9 @@ pub(crate) fn push_cursor_overlays(
                 let (display_row, byte_in_row) = layout
                     .and_then(|l| l.buffer_to_display(line_index as u32, byte_in_line))
                     .map(|(r, b)| (r as usize, b))
-                    .unwrap_or_else(|| (fold_state.actual_to_display_line(line_index), byte_in_line));
+                    .unwrap_or_else(|| {
+                        (fold_state.actual_to_display_line(line_index), byte_in_line)
+                    });
                 let glyph_x = layout.and_then(|l| l.x_at_byte(display_row as u32, byte_in_row));
                 let x_left = glyph_x.unwrap_or(col_index as f32 * char_width);
                 new_rects.push(bevy_instanced_text_editor::caret_overlay(
@@ -162,8 +178,18 @@ pub(crate) fn push_cursor_overlays(
 }
 
 pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlightQuery) {
-    for (sel, cursor, buffer, computed, mut cursor_line_rects, fold_state, mono, layout, theme, cursor_line) in
-        editor_query.iter_mut()
+    for (
+        sel,
+        cursor,
+        buffer,
+        computed,
+        mut cursor_line_rects,
+        fold_state,
+        mono,
+        layout,
+        theme,
+        cursor_line,
+    ) in editor_query.iter_mut()
     {
         if !cursor_line.enabled || theme.line_highlight.is_none() {
             if !cursor_line_rects.0.is_empty() {
@@ -187,7 +213,9 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
         for selection in sel.selections.iter() {
             let cursor_pos = selection.head_offset().min(buffer.len_chars());
             let line_index = buffer.char_to_line(cursor_pos);
-            if fold_state.is_line_hidden(line_index) { continue; }
+            if fold_state.is_line_hidden(line_index) {
+                continue;
+            }
 
             let line_start = buffer.line_to_char(line_index);
             let col_in_line = cursor_pos - line_start;
@@ -203,7 +231,9 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
                 new_rects.push(RectOverlay {
                     display_row: display_row as u32,
                     x_range: band_x_left..band_x_right,
-                    vertical: RowVertical::TopBand { thickness: border_thickness },
+                    vertical: RowVertical::TopBand {
+                        thickness: border_thickness,
+                    },
                     color: border_color,
                     z: 0,
                     corners: bevy_instanced_text::CornerRadii::ZERO,
@@ -211,14 +241,18 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
                 new_rects.push(RectOverlay {
                     display_row: display_row as u32,
                     x_range: band_x_left..band_x_right,
-                    vertical: RowVertical::BottomBand { thickness: border_thickness },
+                    vertical: RowVertical::BottomBand {
+                        thickness: border_thickness,
+                    },
                     color: border_color,
                     z: 0,
                     corners: bevy_instanced_text::CornerRadii::ZERO,
                 });
             }
 
-            if !cursor_line.highlight_word { continue; }
+            if !cursor_line.highlight_word {
+                continue;
+            }
 
             let col = cursor_pos - line_start;
             let line = buffer.line(line_index);
@@ -230,11 +264,19 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
                 col > 0 && col <= line_chars.len() && is_word_char(line_chars[col - 1])
             };
             let (word_start, word_end) = if on_word {
-                let start_col = if col < line_chars.len() && is_word_char(line_chars[col]) { col } else { col - 1 };
+                let start_col = if col < line_chars.len() && is_word_char(line_chars[col]) {
+                    col
+                } else {
+                    col - 1
+                };
                 let mut ws = start_col;
-                while ws > 0 && is_word_char(line_chars[ws - 1]) { ws -= 1; }
+                while ws > 0 && is_word_char(line_chars[ws - 1]) {
+                    ws -= 1;
+                }
                 let mut we = start_col;
-                while we < line_chars.len() && is_word_char(line_chars[we]) { we += 1; }
+                while we < line_chars.len() && is_word_char(line_chars[we]) {
+                    we += 1;
+                }
                 (ws, we)
             } else {
                 (col, col)
@@ -252,8 +294,12 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
                     .and_then(|l| l.buffer_to_display(line_index as u32, we_byte))
                     .unwrap_or((display_row as u32, we_byte));
                 if start_row == end_row {
-                    let xl = layout.and_then(|l| l.x_at_byte(start_row, start_byte)).unwrap_or(word_start as f32 * char_width);
-                    let xr = layout.and_then(|l| l.x_at_byte(end_row, end_byte)).unwrap_or(word_end as f32 * char_width);
+                    let xl = layout
+                        .and_then(|l| l.x_at_byte(start_row, start_byte))
+                        .unwrap_or(word_start as f32 * char_width);
+                    let xr = layout
+                        .and_then(|l| l.x_at_byte(end_row, end_byte))
+                        .unwrap_or(word_end as f32 * char_width);
                     new_rects.push(RectOverlay {
                         display_row: start_row,
                         x_range: xl..xr,
@@ -263,7 +309,9 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
                         corners: bevy_instanced_text::CornerRadii::ZERO,
                     });
                 } else {
-                    let xl = layout.and_then(|l| l.x_at_byte(start_row, start_byte)).unwrap_or(word_start as f32 * char_width);
+                    let xl = layout
+                        .and_then(|l| l.x_at_byte(start_row, start_byte))
+                        .unwrap_or(word_start as f32 * char_width);
                     new_rects.push(RectOverlay {
                         display_row: start_row,
                         x_range: xl..f32::MAX,

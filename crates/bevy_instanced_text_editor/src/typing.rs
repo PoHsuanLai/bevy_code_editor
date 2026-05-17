@@ -9,14 +9,14 @@
 //! handled by the host's editing-event dispatcher (e.g. the code editor's
 //! leafwing keymap fan-out).
 
-use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
 use crate::text::RopeBuffer;
+use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
 use bevy::input_focus::FocusedInput;
 use bevy::prelude::*;
 use bevy_instanced_text::TextBuffer;
 
-use crate::widget::text_input::insert_char;
 use crate::text_state::{EditHistoryState, TextEditor};
+use crate::widget::text_input::insert_char;
 use bevy_instanced_text_interaction::{CursorState, SelectionState};
 
 /// `true` when any modifier key is held — used by the typing observer to

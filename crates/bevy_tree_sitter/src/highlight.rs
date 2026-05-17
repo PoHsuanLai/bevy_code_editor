@@ -70,8 +70,7 @@ pub fn highlight_ranges(
     // lose their highlight color for that frame only.
     query_cursor.set_match_limit(64);
 
-    let mut captures =
-        query_cursor.captures(query, tree.root_node(), RopeProvider(rope));
+    let mut captures = query_cursor.captures(query, tree.root_node(), RopeProvider(rope));
 
     let mut out: Vec<HighlightRange> = Vec::new();
 

@@ -4,15 +4,15 @@
 //! is added transitively).
 
 use bevy::prelude::*;
-use bevy_instanced_text_interaction::{CursorState, InstancedTextInteractionPlugin, SelectionState};
-
-use crate::text_edit::{CursorMoved as EditorCursorMoved, SelectionChanged, *};
-use crate::widget;
-use crate::text::RopeBuffer;
-use crate::text_state::{
-    EditHistoryState, IndentConfig, OnEdit, SnapshotPreEdit, TextEditor,
+use bevy_instanced_text_interaction::{
+    CursorState, InstancedTextInteractionPlugin, SelectionState,
 };
+
+use crate::text::RopeBuffer;
+use crate::text_edit::{CursorMoved as EditorCursorMoved, SelectionChanged, *};
+use crate::text_state::{EditHistoryState, IndentConfig, OnEdit, SnapshotPreEdit, TextEditor};
 use crate::typing::on_focused_keyboard_typing;
+use crate::widget;
 
 type ChangedCursorQuery<'w, 's> =
     Query<'w, 's, (Entity, &'static CursorState), (With<TextEditor>, Changed<CursorState>)>;
@@ -236,8 +236,6 @@ fn register_editing_events(app: &mut App) {
 }
 
 fn register_handler_systems(app: &mut App) {
-
-
     app.add_systems(
         Update,
         (

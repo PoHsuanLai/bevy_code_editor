@@ -2,10 +2,10 @@
 //! handlers — bracket auto-close predicates and LSP completion glue.
 
 use crate::text_view::TextBuffer;
-use bevy_instanced_text_editor::RopeBuffer;
 use crate::types::*;
 #[cfg(feature = "lsp")]
 use bevy::prelude::{Entity, MessageWriter};
+use bevy_instanced_text_editor::RopeBuffer;
 use ropey::Rope;
 
 #[cfg(feature = "lsp")]

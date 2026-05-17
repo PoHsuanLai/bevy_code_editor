@@ -10,8 +10,8 @@ use bevy_instanced_text_editor::RopeBuffer;
 use lsp_types::*;
 
 use crate::text_view::TextBuffer;
-use bevy::ui::{ComputedNode, ScrollPosition};
 use crate::types::{CodeEditor, CursorState};
+use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::MonoCellWidth;
 
 use super::state::{
@@ -21,10 +21,10 @@ use super::state::{
 use bevy_lsp::{
     CodeActionOrCommand, LspClient, LspCodeActionsResponse, LspCompletionResponse,
     LspDefinitionResponse, LspDiagnosticsUpdated, LspDocument, LspDocumentHighlightsResponse,
-    LspFormatResponse, LspHoverResponse, LspInlayHintsResponse, LspMessage, LspRequest,
-    LspPrepareRenameResponse, LspReferencesResponse, LspRenameResponse, LspResolvedCompletionItem,
-    LspServerCrashed, LspServerInitialized, LspShutdownAck, LspSignatureHelpResponse,
-    ServerCapabilities,
+    LspFormatResponse, LspHoverResponse, LspInlayHintsResponse, LspMessage,
+    LspPrepareRenameResponse, LspReferencesResponse, LspRenameResponse, LspRequest,
+    LspResolvedCompletionItem, LspServerCrashed, LspServerInitialized, LspShutdownAck,
+    LspSignatureHelpResponse, ServerCapabilities,
 };
 
 type LspServerCrashedQuery<'w, 's> = Query<
@@ -174,7 +174,14 @@ pub fn on_lsp_diagnostics(
 /// based on whether the cursor is still in the prefix word.
 pub fn on_lsp_completion(
     mut events: MessageReader<LspCompletionResponse>,
-    mut q: Query<(&CursorState, &TextBuffer<RopeBuffer>, &mut LspCompletionPopup), With<CodeEditor>>,
+    mut q: Query<
+        (
+            &CursorState,
+            &TextBuffer<RopeBuffer>,
+            &mut LspCompletionPopup,
+        ),
+        With<CodeEditor>,
+    >,
 ) {
     for ev in events.read() {
         let Ok((cursor_state, buffer, mut completion_state)) = q.get_mut(ev.entity) else {
@@ -267,7 +274,14 @@ pub fn on_lsp_hover(
 
 pub fn on_lsp_definition(
     mut events: MessageReader<LspDefinitionResponse>,
-    mut q: Query<(&mut CursorState, &TextBuffer<RopeBuffer>, Option<&LspDocument>), With<CodeEditor>>,
+    mut q: Query<
+        (
+            &mut CursorState,
+            &TextBuffer<RopeBuffer>,
+            Option<&LspDocument>,
+        ),
+        With<CodeEditor>,
+    >,
     mut navigate_events: MessageWriter<NavigateToFileEvent>,
     mut multi_location_events: MessageWriter<MultipleLocationsEvent>,
 ) {
@@ -444,7 +458,14 @@ pub fn on_lsp_prepare_rename(
 
 pub fn on_lsp_rename(
     mut events: MessageReader<LspRenameResponse>,
-    mut q: Query<(&TextBuffer<RopeBuffer>, Option<&LspDocument>, &mut LspRenamePopup), With<CodeEditor>>,
+    mut q: Query<
+        (
+            &TextBuffer<RopeBuffer>,
+            Option<&LspDocument>,
+            &mut LspRenamePopup,
+        ),
+        With<CodeEditor>,
+    >,
     mut workspace_edit_events: MessageWriter<WorkspaceEditEvent>,
     mut replace_writer: MessageWriter<bevy_instanced_text_editor::ReplaceRangeRequested>,
 ) {
@@ -528,8 +549,7 @@ fn apply_text_edits(
         if start_line >= buffer.len_lines() {
             continue;
         }
-        let start_pos =
-            (buffer.line_to_char(start_line) + start_char_col).min(buffer.len_chars());
+        let start_pos = (buffer.line_to_char(start_line) + start_char_col).min(buffer.len_chars());
         let end_pos = if end_line < buffer.len_lines() {
             (buffer.line_to_char(end_line) + end_char_col).min(buffer.len_chars())
         } else {
@@ -596,9 +616,23 @@ pub fn sync_lsp_document(
 }
 
 /// System to request inlay hints for visible range
-pub fn request_inlay_hints(mut query: RequestInlayHintsQuery, mut lsp_w: MessageWriter<LspRequest>) {
-    let Ok((entity, lsp_client, capabilities, buffer, scroll, computed, lsp_document, mut hint_state, font, lh, _mono)) =
-        query.single_mut()
+pub fn request_inlay_hints(
+    mut query: RequestInlayHintsQuery,
+    mut lsp_w: MessageWriter<LspRequest>,
+) {
+    let Ok((
+        entity,
+        lsp_client,
+        capabilities,
+        buffer,
+        scroll,
+        computed,
+        lsp_document,
+        mut hint_state,
+        font,
+        lh,
+        _mono,
+    )) = query.single_mut()
     else {
         return;
     };

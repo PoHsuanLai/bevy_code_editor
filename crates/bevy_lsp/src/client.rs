@@ -70,7 +70,7 @@ pub struct LspClient {
     server: Option<ServerSocket>,
     response_tx: async_channel::Sender<LspResponse>,
     response_rx: async_channel::Receiver<LspResponse>,
-    pub(crate) initialized: bool,  // set by plugin.rs on LspServerInitialized
+    pub(crate) initialized: bool, // set by plugin.rs on LspServerInitialized
     // Holds the background tasks alive. Dropped on shutdown/drop.
     _tasks: Vec<Task<()>>,
     // Messages queued before initialize completes. Drained by plugin.rs on
@@ -568,12 +568,7 @@ fn fulfill_slot<T>(
     }
 }
 
-fn dispatch(
-    server: &ServerSocket,
-    tx: &Tx,
-    slots: &Arc<InboundReplySlots>,
-    message: LspMessage,
-) {
+fn dispatch(server: &ServerSocket, tx: &Tx, slots: &Arc<InboundReplySlots>, message: LspMessage) {
     use LspMessage as M;
     match message {
         M::Initialize { .. } | M::Initialized => {}
@@ -1251,9 +1246,7 @@ fn dispatch(
             fulfill_slot(&slots.work_done_progress_create, id, ())
         }
         M::RespondRegisterCapability { id } => fulfill_slot(&slots.register_capability, id, ()),
-        M::RespondUnregisterCapability { id } => {
-            fulfill_slot(&slots.unregister_capability, id, ())
-        }
+        M::RespondUnregisterCapability { id } => fulfill_slot(&slots.unregister_capability, id, ()),
         M::RespondWorkspaceFolders { id, folders } => {
             fulfill_slot(&slots.workspace_folders, id, folders)
         }

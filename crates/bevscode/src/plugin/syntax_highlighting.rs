@@ -17,10 +17,10 @@
 
 #[cfg(feature = "tree-sitter")]
 use crate::text_view::TextBuffer;
-use bevy_instanced_text_editor::RopeBuffer;
 use crate::types::CodeEditor;
 use crate::types::LineSegment;
 use bevy::prelude::*;
+use bevy_instanced_text_editor::RopeBuffer;
 
 #[cfg(feature = "tree-sitter")]
 use std::sync::{Arc, RwLock};
@@ -41,14 +41,20 @@ type ReactLanguageChangedQuery<'w, 's> = Query<
         &'static bevy_tree_sitter::TreeSitterGrammar,
         &'static mut EditorSyntaxState,
     ),
-    (With<CodeEditor>, Changed<bevy_tree_sitter::TreeSitterGrammar>),
+    (
+        With<CodeEditor>,
+        Changed<bevy_tree_sitter::TreeSitterGrammar>,
+    ),
 >;
 
 #[cfg(feature = "tree-sitter")]
 type SyncEditorParseSourceQuery<'w, 's> = Query<
     'w,
     's,
-    (Ref<'static, TextBuffer<RopeBuffer>>, &'static EditorParseBufferRef),
+    (
+        Ref<'static, TextBuffer<RopeBuffer>>,
+        &'static EditorParseBufferRef,
+    ),
     With<CodeEditor>,
 >;
 
@@ -83,7 +89,10 @@ impl EditorSyntaxState {
     pub fn is_available(&self) -> bool {
         #[cfg(feature = "tree-sitter")]
         {
-            self.provider.as_ref().map(|p| p.is_available()).unwrap_or(false)
+            self.provider
+                .as_ref()
+                .map(|p| p.is_available())
+                .unwrap_or(false)
         }
         #[cfg(not(feature = "tree-sitter"))]
         {
@@ -95,10 +104,7 @@ impl EditorSyntaxState {
     /// sense — i.e. *not* inside a string literal or comment. Callers pass
     /// the tree from `SyntaxTree` directly; returns `true` when absent.
     #[cfg(feature = "tree-sitter")]
-    pub fn is_completion_context(
-        tree: &bevy_tree_sitter::ts::Tree,
-        byte_offset: usize,
-    ) -> bool {
+    pub fn is_completion_context(tree: &bevy_tree_sitter::ts::Tree, byte_offset: usize) -> bool {
         let root = tree.root_node();
         if byte_offset > root.end_byte() {
             return true;
@@ -144,7 +150,9 @@ impl EditorSyntaxState {
         };
         let end_byte = start_byte + text.len();
         match provider.highlight_range(tree, rope, start_byte..end_byte) {
-            Some(highlights) => ranges_to_segments(text, start_byte, &highlights, theme, default_color),
+            Some(highlights) => {
+                ranges_to_segments(text, start_byte, &highlights, theme, default_color)
+            }
             None => plain_text_segments(text, default_color),
         }
     }
@@ -207,9 +215,7 @@ fn ranges_to_segments(
         let abs_line_start = start_byte + line_start;
         let abs_line_end = start_byte + line_end;
 
-        while hi_idx < highlights.len()
-            && highlights[hi_idx].byte_range.end <= abs_line_start
-        {
+        while hi_idx < highlights.len() && highlights[hi_idx].byte_range.end <= abs_line_start {
             hi_idx += 1;
         }
 
@@ -218,9 +224,7 @@ fn ranges_to_segments(
         let mut local_hi = hi_idx;
 
         while cursor < abs_line_end {
-            while local_hi < highlights.len()
-                && highlights[local_hi].byte_range.end <= cursor
-            {
+            while local_hi < highlights.len() && highlights[local_hi].byte_range.end <= cursor {
                 local_hi += 1;
             }
 

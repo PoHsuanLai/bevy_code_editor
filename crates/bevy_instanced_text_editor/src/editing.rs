@@ -7,15 +7,15 @@
 //! Editor-level systems read [`EditHistoryState::pending_byte_edit`] (set by
 //! every edit op for incremental tree-sitter reparse) then clear it.
 
-use bevy_instanced_text::{ContentMetrics, TextBuffer};
 use crate::text::RopeBuffer;
+use bevy_instanced_text::{ContentMetrics, TextBuffer};
 use ropey::Rope;
 
+use crate::history::{EditKind, EditOperation};
+use crate::text_state::{EditDelta, EditHistoryState, EditPoint};
 use bevy_instanced_text_interaction::{
     Anchor, AnchorBias, CursorState, SelectionCollection, SelectionState, TextEdit,
 };
-use crate::history::{EditKind, EditOperation};
-use crate::text_state::{EditDelta, EditHistoryState, EditPoint};
 
 /// Compute (row, byte_column) for a given byte offset in `rope`.
 pub fn point_at_byte(rope: &Rope, byte_offset: usize) -> EditPoint {
@@ -313,14 +313,21 @@ mod tests {
     use bevy_instanced_text_interaction::{CursorState, SelectionState};
 
     /// Build (buffer, cursor at `pos`, fresh history & selection).
-    fn editor_at(text: &str, pos: usize) -> (
+    fn editor_at(
+        text: &str,
+        pos: usize,
+    ) -> (
         TextBuffer<RopeBuffer>,
         CursorState,
         SelectionState,
         EditHistoryState,
     ) {
         let buffer = TextBuffer::new(RopeBuffer::new(text));
-        let cursor = CursorState { cursor_pos: pos, last_cursor_pos: pos, last_cursor_pos_for_blink: pos };
+        let cursor = CursorState {
+            cursor_pos: pos,
+            last_cursor_pos: pos,
+            last_cursor_pos_for_blink: pos,
+        };
         let mut sel = SelectionState::default();
         sel.selections.set_cursor(pos);
         let hist = EditHistoryState::default();

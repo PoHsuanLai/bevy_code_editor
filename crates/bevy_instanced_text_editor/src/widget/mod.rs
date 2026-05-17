@@ -4,5 +4,5 @@
 
 pub mod clipboard;
 pub mod cursor_move;
-pub mod text_input;
 pub mod selection;
+pub mod text_input;

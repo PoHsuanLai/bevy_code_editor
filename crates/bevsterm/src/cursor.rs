@@ -59,7 +59,12 @@ pub fn push_terminal_caret(
 
         let new_rect: Option<RectOverlay> = if visible {
             let x_left = snapshot.cursor_col as f32 * mono.px;
-            Some(caret_overlay(snapshot.cursor_row, x_left, cursor_settings, **theme))
+            Some(caret_overlay(
+                snapshot.cursor_row,
+                x_left,
+                cursor_settings,
+                **theme,
+            ))
         } else {
             None
         };

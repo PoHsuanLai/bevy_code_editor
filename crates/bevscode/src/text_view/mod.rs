@@ -17,12 +17,12 @@
 //! stores have been collapsed into the unified `SelectionState`.
 
 pub use bevy_instanced_text::view::{
-    pipeline, overlay, render, glyph, text, ContentMetrics, DisplayLayout,
-    GlyphBatchComponent, RectOverlay, RowVertical, ShapedLine, TextFormat,
-    TextBuffer, TextOverlays, TextUnderlays, TextViewBatchEntity, TextViewRenderSet,
+    glyph, overlay, pipeline, render, text, ContentMetrics, DisplayLayout, GlyphBatchComponent,
+    RectOverlay, RowVertical, ShapedLine, TextBuffer, TextFormat, TextOverlays, TextUnderlays,
+    TextViewBatchEntity, TextViewRenderSet,
 };
 
-pub use bevy_instanced_text_editor::{RopeBuffer, 
-    copy_selection, screen_to_char_pos, InstancedTextInteractionPlugin, ScrollConfig,
+pub use bevy_instanced_text_editor::{
+    copy_selection, screen_to_char_pos, InstancedTextInteractionPlugin, RopeBuffer, ScrollConfig,
     TextViewDragState,
 };

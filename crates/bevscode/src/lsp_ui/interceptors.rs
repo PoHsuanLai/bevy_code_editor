@@ -7,7 +7,6 @@
 //! consumed event.
 
 use crate::input::actions;
-use bevy_instanced_text_editor::RopeBuffer;
 use crate::input::keybindings::EditorAction;
 use crate::lsp_ui::state::LspCompletionPopup;
 use crate::settings::LspConfig;
@@ -15,6 +14,7 @@ use crate::text_view::TextBuffer;
 use crate::types::{CodeEditor, CursorState};
 use bevy::ecs::world::Mut;
 use bevy::prelude::*;
+use bevy_instanced_text_editor::RopeBuffer;
 
 /// LSP completion popup interceptor.
 ///

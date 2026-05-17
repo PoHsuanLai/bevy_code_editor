@@ -9,8 +9,8 @@
 use bevy::prelude::*;
 use ropey::Rope;
 
-use bevy_instanced_text_interaction::text_edit::AnchorSet;
 use crate::history::EditHistory;
+use bevy_instanced_text_interaction::text_edit::AnchorSet;
 
 /// Marker requesting that [`EditHistoryState`] keep a clone of the rope
 /// from before each edit. Consumers that need pre-edit positions in the

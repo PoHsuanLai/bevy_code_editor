@@ -8,11 +8,11 @@
 #![cfg(test)]
 #![allow(clippy::field_reassign_with_default)]
 
+use bevy::input::mouse::MouseScrollUnit;
 use bevy::math::{Affine2, Vec2, Vec3};
 use bevy::picking::backend::HitData;
 use bevy::picking::events::{Pointer, Scroll};
 use bevy::picking::pointer::{Location, PointerId};
-use bevy::input::mouse::MouseScrollUnit;
 use bevy::prelude::*;
 use bevy::ui::ui_transform::UiGlobalTransform;
 use bevy::ui::{ComputedNode, ScrollPosition};
@@ -71,10 +71,7 @@ fn spawn_editor(app: &mut App, text: &str) -> Entity {
         bevy_instanced_text::MonoFontFaces::default(),
         bevy::text::TextLayout::default(),
     );
-    let scroll_bundle = (
-        ScrollPosition::default(),
-        ScrollAnimator::default(),
-    );
+    let scroll_bundle = (ScrollPosition::default(), ScrollAnimator::default());
     let layout_bundle = (
         TextBuffer::<RopeBuffer>::new(RopeBuffer::new(text)),
         ContentMetrics::default(),
@@ -176,7 +173,10 @@ fn auto_scroll_settles_after_single_cursor_move() {
         .map(|(i, w)| (i + 1, w[0], w[1]))
         .collect();
 
-    assert!(first > 0.0, "Tick 1 should have moved ScrollAnimator.target.y off zero (got {first})");
+    assert!(
+        first > 0.0,
+        "Tick 1 should have moved ScrollAnimator.target.y off zero (got {first})"
+    );
     assert!(
         later_changes.is_empty(),
         "ScrollAnimator.target.y kept changing after tick 1 — auto_scroll_to_cursor doesn't settle.\n\

@@ -74,7 +74,7 @@ use bevy::prelude::*;
     IndentGuideRects,
     CaretRects,
     CursorLineRects,
-    BracketMatchRects,
+    BracketMatchRects
 )]
 pub struct CodeEditor;
 

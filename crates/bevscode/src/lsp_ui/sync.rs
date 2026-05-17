@@ -138,7 +138,15 @@ pub fn sync_completion_popup(
 /// Sync hover state to marker entity
 pub fn sync_hover_popup(
     mut commands: Commands,
-    query: Query<(&LspHoverPopup, &TextBuffer<RopeBuffer>, &TextFont, &MonoCellWidth), With<CodeEditor>>,
+    query: Query<
+        (
+            &LspHoverPopup,
+            &TextBuffer<RopeBuffer>,
+            &TextFont,
+            &MonoCellWidth,
+        ),
+        With<CodeEditor>,
+    >,
     existing: Query<Entity, With<HoverPopupData>>,
 ) {
     let Ok((hover_state, buffer, font, mono)) = query.single() else {
@@ -197,7 +205,16 @@ pub fn sync_hover_popup(
 /// Sync signature help state to marker entity
 pub fn sync_signature_help_popup(
     mut commands: Commands,
-    query: Query<(&LspSignatureHelpPopup, &CursorState, &TextBuffer<RopeBuffer>, &TextFont, &MonoCellWidth), With<CodeEditor>>,
+    query: Query<
+        (
+            &LspSignatureHelpPopup,
+            &CursorState,
+            &TextBuffer<RopeBuffer>,
+            &TextFont,
+            &MonoCellWidth,
+        ),
+        With<CodeEditor>,
+    >,
     existing: Query<Entity, With<SignatureHelpPopupData>>,
 ) {
     let Ok((sig_state, cursor_state, buffer, font, mono)) = query.single() else {
@@ -228,8 +245,8 @@ pub fn sync_signature_help_popup(
     let padding = 8.0;
 
     let sig_label = &signature.label;
-    let box_width = (sig_label.chars().count() as f32 * mono.px * 0.9 + padding * 2.0)
-        .clamp(100.0, 600.0);
+    let box_width =
+        (sig_label.chars().count() as f32 * mono.px * 0.9 + padding * 2.0).clamp(100.0, 600.0);
     let box_height = font_size * 1.4 + padding * 2.0;
 
     let parameter_ranges = signature
@@ -375,7 +392,15 @@ pub fn sync_code_actions_popup(
 /// Sync rename state to marker entity
 pub fn sync_rename_input(
     mut commands: Commands,
-    query: Query<(&LspRenamePopup, &TextFont, &bevy::text::LineHeight, &MonoCellWidth), With<CodeEditor>>,
+    query: Query<
+        (
+            &LspRenamePopup,
+            &TextFont,
+            &bevy::text::LineHeight,
+            &MonoCellWidth,
+        ),
+        With<CodeEditor>,
+    >,
     existing: Query<Entity, With<RenameInputData>>,
 ) {
     let Ok((rename_state, font, lh, mono)) = query.single() else {
@@ -413,8 +438,7 @@ pub fn sync_rename_input(
         &rename_state.new_name
     };
 
-    let text_width =
-        (display_text.chars().count().max(8) as f32 * mono.px) + padding_x * 2.0 + 4.0;
+    let text_width = (display_text.chars().count().max(8) as f32 * mono.px) + padding_x * 2.0 + 4.0;
     let box_width = text_width.clamp(100.0, 300.0);
     let box_height = line_height + padding_y * 2.0;
 

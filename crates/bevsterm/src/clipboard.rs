@@ -30,7 +30,7 @@ pub fn handle_copy_selection(
             continue;
         }
         let (start, end) = (primary.start(), primary.end());
-        let text = &buffer.0.0;
+        let text = &buffer.0 .0;
         let chars: Vec<char> = text.chars().collect();
         let s = start.min(chars.len());
         let e = end.min(chars.len());

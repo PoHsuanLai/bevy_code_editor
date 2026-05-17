@@ -10,7 +10,6 @@
 //! capabilities` we'll thread that through here instead.
 
 use super::snippet;
-use bevy_instanced_text_editor::RopeBuffer;
 use super::state::{
     LspCompletionPopup, LspDebounceTimers, LspDidChangeBatcher, LspRenamePopup,
     LspSignatureHelpPopup, PendingLspRequest, SessionTabstop, TabstopSession,
@@ -24,9 +23,9 @@ use crate::types::events::{
 };
 use crate::types::{CodeEditor, CursorState};
 use bevy::prelude::*;
+use bevy_instanced_text_editor::RopeBuffer;
 use bevy_lsp::{
-    rope_byte_to_lsp_position, rope_char_to_lsp_position, LspDocument, LspMessage,
-    LspRequest,
+    rope_byte_to_lsp_position, rope_char_to_lsp_position, LspDocument, LspMessage, LspRequest,
 };
 use lsp_types::{Range, TextDocumentContentChangeEvent};
 
@@ -337,7 +336,14 @@ pub fn drive_completion_resolve(
 /// (clicked elsewhere, typed `;` / `(` / space, hit Backspace past the
 /// anchor) hides the menu immediately.
 pub fn dismiss_completion_on_cursor_move(
-    mut query: Query<(Ref<CursorState>, &TextBuffer<RopeBuffer>, &mut LspCompletionPopup), With<CodeEditor>>,
+    mut query: Query<
+        (
+            Ref<CursorState>,
+            &TextBuffer<RopeBuffer>,
+            &mut LspCompletionPopup,
+        ),
+        With<CodeEditor>,
+    >,
 ) {
     let Ok((cursor, buffer, mut completion_state)) = query.single_mut() else {
         return;
@@ -362,10 +368,7 @@ pub fn dismiss_completion_on_cursor_move(
 /// arming in `LspCodeActionsPopup`.
 pub fn tick_lsp_debounce_timers(
     time: Res<Time>,
-    mut query: Query<
-        (Entity, &mut LspDebounceTimers, &mut LspCompletionPopup),
-        With<CodeEditor>,
-    >,
+    mut query: Query<(Entity, &mut LspDebounceTimers, &mut LspCompletionPopup), With<CodeEditor>>,
     mut lsp_w: MessageWriter<LspRequest>,
 ) {
     let Ok((entity, mut debounce, mut completion_state)) = query.single_mut() else {

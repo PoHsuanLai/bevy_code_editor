@@ -94,7 +94,11 @@ fn build_composite(from: f32, to: f32, viewport_size: f32) -> Option<CompositeSt
         } else {
             (from - inset, to + inset)
         };
-        Some(CompositeStops { stop1, stop2, split: COMPOSITE_SPLIT })
+        Some(CompositeStops {
+            stop1,
+            stop2,
+            split: COMPOSITE_SPLIT,
+        })
     } else {
         None
     }
@@ -135,7 +139,11 @@ impl Plugin for ScrollAnimatorPlugin {
 /// `ScrollPosition`. Only entities carrying both components are touched.
 pub fn drive_scroll_animator(
     time: Res<Time>,
-    mut q: Query<(&mut ScrollAnimator, &mut ScrollPosition, &bevy::ui::ComputedNode)>,
+    mut q: Query<(
+        &mut ScrollAnimator,
+        &mut ScrollPosition,
+        &bevy::ui::ComputedNode,
+    )>,
 ) {
     let dt = time.delta_secs();
     for (mut animator, mut scroll, computed) in q.iter_mut() {

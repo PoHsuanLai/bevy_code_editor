@@ -176,10 +176,7 @@ struct LspResponseWriters<'w> {
     crashed: MessageWriter<'w, LspServerCrashed>,
 }
 
-fn drain_lsp_responses(
-    mut clients: Query<(Entity, &mut LspClient)>,
-    mut w: LspResponseWriters,
-) {
+fn drain_lsp_responses(mut clients: Query<(Entity, &mut LspClient)>, mut w: LspResponseWriters) {
     use crate::messages::LspResponse as R;
     for (entity, mut client) in clients.iter_mut() {
         client.cleanup_timeouts();
@@ -191,187 +188,387 @@ fn drain_lsp_responses(
                     for msg in std::mem::take(&mut client.pre_init_queue) {
                         client.send(msg);
                     }
-                    w.initialized.write(LspServerInitialized { entity, capabilities: *capabilities });
+                    w.initialized.write(LspServerInitialized {
+                        entity,
+                        capabilities: *capabilities,
+                    });
                 }
                 R::Diagnostics { uri, diagnostics } => {
-                    w.diagnostics.write(LspDiagnosticsUpdated { entity, uri, diagnostics });
+                    w.diagnostics.write(LspDiagnosticsUpdated {
+                        entity,
+                        uri,
+                        diagnostics,
+                    });
                 }
                 R::LogMessage { typ, message } => {
-                    w.log_message.write(LspLogMessage { entity, typ, message });
+                    w.log_message.write(LspLogMessage {
+                        entity,
+                        typ,
+                        message,
+                    });
                 }
                 R::ShowMessage { typ, message } => {
-                    w.show_message.write(LspShowMessage { entity, typ, message });
+                    w.show_message.write(LspShowMessage {
+                        entity,
+                        typ,
+                        message,
+                    });
                 }
                 R::Progress { token, value } => {
-                    w.progress.write(LspProgress { entity, token, value });
+                    w.progress.write(LspProgress {
+                        entity,
+                        token,
+                        value,
+                    });
                 }
                 R::Telemetry { data } => {
                     w.telemetry.write(LspTelemetry { entity, data });
                 }
                 R::LogTrace { message, verbose } => {
-                    w.log_trace.write(LspLogTrace { entity, message, verbose });
+                    w.log_trace.write(LspLogTrace {
+                        entity,
+                        message,
+                        verbose,
+                    });
                 }
                 R::ConfigurationRequested { request_id, items } => {
-                    w.configuration_req.write(LspConfigurationRequested { entity, request_id, items });
+                    w.configuration_req.write(LspConfigurationRequested {
+                        entity,
+                        request_id,
+                        items,
+                    });
                 }
-                R::ApplyEditRequested { request_id, label, edit } => {
-                    w.apply_edit_req.write(LspApplyEditRequested { entity, request_id, label, edit });
+                R::ApplyEditRequested {
+                    request_id,
+                    label,
+                    edit,
+                } => {
+                    w.apply_edit_req.write(LspApplyEditRequested {
+                        entity,
+                        request_id,
+                        label,
+                        edit,
+                    });
                 }
-                R::ShowMessageRequestRequested { request_id, typ, message, actions } => {
-                    w.show_message_req.write(LspShowMessageRequestRequested { entity, request_id, typ, message, actions });
+                R::ShowMessageRequestRequested {
+                    request_id,
+                    typ,
+                    message,
+                    actions,
+                } => {
+                    w.show_message_req.write(LspShowMessageRequestRequested {
+                        entity,
+                        request_id,
+                        typ,
+                        message,
+                        actions,
+                    });
                 }
-                R::ShowDocumentRequested { request_id, uri, external, take_focus, selection } => {
-                    w.show_document_req.write(LspShowDocumentRequested { entity, request_id, uri, external, take_focus, selection });
+                R::ShowDocumentRequested {
+                    request_id,
+                    uri,
+                    external,
+                    take_focus,
+                    selection,
+                } => {
+                    w.show_document_req.write(LspShowDocumentRequested {
+                        entity,
+                        request_id,
+                        uri,
+                        external,
+                        take_focus,
+                        selection,
+                    });
                 }
                 R::WorkDoneProgressCreateRequested { request_id, token } => {
-                    w.work_done_create_req.write(LspWorkDoneProgressCreateRequested { entity, request_id, token });
+                    w.work_done_create_req
+                        .write(LspWorkDoneProgressCreateRequested {
+                            entity,
+                            request_id,
+                            token,
+                        });
                 }
-                R::RegisterCapabilityRequested { request_id, registrations } => {
-                    w.register_cap_req.write(LspRegisterCapabilityRequested { entity, request_id, registrations });
+                R::RegisterCapabilityRequested {
+                    request_id,
+                    registrations,
+                } => {
+                    w.register_cap_req.write(LspRegisterCapabilityRequested {
+                        entity,
+                        request_id,
+                        registrations,
+                    });
                 }
-                R::UnregisterCapabilityRequested { request_id, unregistrations } => {
-                    w.unregister_cap_req.write(LspUnregisterCapabilityRequested { entity, request_id, unregistrations });
+                R::UnregisterCapabilityRequested {
+                    request_id,
+                    unregistrations,
+                } => {
+                    w.unregister_cap_req
+                        .write(LspUnregisterCapabilityRequested {
+                            entity,
+                            request_id,
+                            unregistrations,
+                        });
                 }
                 R::WorkspaceFoldersRequested { request_id } => {
-                    w.workspace_folders_req.write(LspWorkspaceFoldersRequested { entity, request_id });
+                    w.workspace_folders_req
+                        .write(LspWorkspaceFoldersRequested { entity, request_id });
                 }
                 R::SemanticTokensRefreshRequested => {
-                    w.semantic_refresh_req.write(LspSemanticTokensRefreshRequested { entity });
+                    w.semantic_refresh_req
+                        .write(LspSemanticTokensRefreshRequested { entity });
                 }
                 R::InlayHintRefreshRequested => {
-                    w.inlay_refresh_req.write(LspInlayHintRefreshRequested { entity });
+                    w.inlay_refresh_req
+                        .write(LspInlayHintRefreshRequested { entity });
                 }
                 R::CodeLensRefreshRequested => {
-                    w.code_lens_refresh_req.write(LspCodeLensRefreshRequested { entity });
+                    w.code_lens_refresh_req
+                        .write(LspCodeLensRefreshRequested { entity });
                 }
                 R::DiagnosticsRefreshRequested => {
-                    w.diagnostics_refresh_req.write(LspDiagnosticsRefreshRequested { entity });
+                    w.diagnostics_refresh_req
+                        .write(LspDiagnosticsRefreshRequested { entity });
                 }
-                R::Completion { id, items, is_incomplete } => {
-                    w.completion.write(LspCompletionResponse { entity, id, items, is_incomplete });
+                R::Completion {
+                    id,
+                    items,
+                    is_incomplete,
+                } => {
+                    w.completion.write(LspCompletionResponse {
+                        entity,
+                        id,
+                        items,
+                        is_incomplete,
+                    });
                 }
                 R::ResolvedCompletionItem { id, item } => {
-                    w.resolved_completion.write(LspResolvedCompletionItem { entity, id, item: *item });
+                    w.resolved_completion.write(LspResolvedCompletionItem {
+                        entity,
+                        id,
+                        item: *item,
+                    });
                 }
-                R::Hover { id, content, kind, range } => {
-                    w.hover.write(LspHoverResponse { entity, id, content, kind, range });
+                R::Hover {
+                    id,
+                    content,
+                    kind,
+                    range,
+                } => {
+                    w.hover.write(LspHoverResponse {
+                        entity,
+                        id,
+                        content,
+                        kind,
+                        range,
+                    });
                 }
-                R::SignatureHelp { id, signatures, active_signature, active_parameter } => {
-                    w.signature_help.write(LspSignatureHelpResponse { entity, id, signatures, active_signature, active_parameter });
+                R::SignatureHelp {
+                    id,
+                    signatures,
+                    active_signature,
+                    active_parameter,
+                } => {
+                    w.signature_help.write(LspSignatureHelpResponse {
+                        entity,
+                        id,
+                        signatures,
+                        active_signature,
+                        active_parameter,
+                    });
                 }
                 R::Declaration { id, locations } => {
-                    w.declaration.write(LspDeclarationResponse { entity, id, locations });
+                    w.declaration.write(LspDeclarationResponse {
+                        entity,
+                        id,
+                        locations,
+                    });
                 }
                 R::Definition { id, locations } => {
-                    w.definition.write(LspDefinitionResponse { entity, id, locations });
+                    w.definition.write(LspDefinitionResponse {
+                        entity,
+                        id,
+                        locations,
+                    });
                 }
                 R::TypeDefinition { id, locations } => {
-                    w.type_definition.write(LspTypeDefinitionResponse { entity, id, locations });
+                    w.type_definition.write(LspTypeDefinitionResponse {
+                        entity,
+                        id,
+                        locations,
+                    });
                 }
                 R::Implementation { id, locations } => {
-                    w.implementation.write(LspImplementationResponse { entity, id, locations });
+                    w.implementation.write(LspImplementationResponse {
+                        entity,
+                        id,
+                        locations,
+                    });
                 }
                 R::References { id, locations } => {
-                    w.references.write(LspReferencesResponse { entity, id, locations });
+                    w.references.write(LspReferencesResponse {
+                        entity,
+                        id,
+                        locations,
+                    });
                 }
                 R::DocumentHighlights { id, highlights } => {
-                    w.highlights.write(LspDocumentHighlightsResponse { entity, id, highlights });
+                    w.highlights.write(LspDocumentHighlightsResponse {
+                        entity,
+                        id,
+                        highlights,
+                    });
                 }
                 R::DocumentSymbols { id, flat, nested } => {
-                    w.document_symbols.write(LspDocumentSymbolsResponse { entity, id, flat, nested });
+                    w.document_symbols.write(LspDocumentSymbolsResponse {
+                        entity,
+                        id,
+                        flat,
+                        nested,
+                    });
                 }
                 R::WorkspaceSymbols { id, symbols } => {
-                    w.workspace_symbols.write(LspWorkspaceSymbolsResponse { entity, id, symbols });
+                    w.workspace_symbols.write(LspWorkspaceSymbolsResponse {
+                        entity,
+                        id,
+                        symbols,
+                    });
                 }
                 R::ResolvedWorkspaceSymbol { id, symbol } => {
-                    w.resolved_workspace_symbol.write(LspResolvedWorkspaceSymbol { entity, id, symbol });
+                    w.resolved_workspace_symbol
+                        .write(LspResolvedWorkspaceSymbol { entity, id, symbol });
                 }
                 R::FoldingRanges { id, ranges } => {
-                    w.folding.write(LspFoldingRangesResponse { entity, id, ranges });
+                    w.folding
+                        .write(LspFoldingRangesResponse { entity, id, ranges });
                 }
                 R::SelectionRanges { id, ranges } => {
-                    w.selection.write(LspSelectionRangesResponse { entity, id, ranges });
+                    w.selection
+                        .write(LspSelectionRangesResponse { entity, id, ranges });
                 }
                 R::CodeActions { id, actions } => {
-                    w.code_actions.write(LspCodeActionsResponse { entity, id, actions });
+                    w.code_actions.write(LspCodeActionsResponse {
+                        entity,
+                        id,
+                        actions,
+                    });
                 }
                 R::ResolvedCodeAction { id, action } => {
-                    w.resolved_code_action.write(LspResolvedCodeAction { entity, id, action: *action });
+                    w.resolved_code_action.write(LspResolvedCodeAction {
+                        entity,
+                        id,
+                        action: *action,
+                    });
                 }
                 R::Format { id, edits } => {
                     w.format.write(LspFormatResponse { entity, id, edits });
                 }
                 R::RangeFormatting { id, edits } => {
-                    w.range_formatting.write(LspRangeFormattingResponse { entity, id, edits });
+                    w.range_formatting
+                        .write(LspRangeFormattingResponse { entity, id, edits });
                 }
                 R::OnTypeFormatting { id, edits } => {
-                    w.on_type_formatting.write(LspOnTypeFormattingResponse { entity, id, edits });
+                    w.on_type_formatting
+                        .write(LspOnTypeFormattingResponse { entity, id, edits });
                 }
                 R::WillSaveWaitUntil { id, edits } => {
-                    w.will_save_wait.write(LspWillSaveWaitUntilResponse { entity, id, edits });
+                    w.will_save_wait
+                        .write(LspWillSaveWaitUntilResponse { entity, id, edits });
                 }
                 R::InlayHints { id, hints } => {
                     w.inlay.write(LspInlayHintsResponse { entity, id, hints });
                 }
                 R::ResolvedInlayHint { id, hint } => {
-                    w.resolved_inlay.write(LspResolvedInlayHint { entity, id, hint });
+                    w.resolved_inlay
+                        .write(LspResolvedInlayHint { entity, id, hint });
                 }
                 R::DocumentLinks { id, links } => {
-                    w.doc_links.write(LspDocumentLinksResponse { entity, id, links });
+                    w.doc_links
+                        .write(LspDocumentLinksResponse { entity, id, links });
                 }
                 R::ResolvedDocumentLink { id, link } => {
-                    w.resolved_doc_link.write(LspResolvedDocumentLink { entity, id, link });
+                    w.resolved_doc_link
+                        .write(LspResolvedDocumentLink { entity, id, link });
                 }
                 R::DocumentColors { id, colors } => {
-                    w.doc_colors.write(LspDocumentColorsResponse { entity, id, colors });
+                    w.doc_colors
+                        .write(LspDocumentColorsResponse { entity, id, colors });
                 }
                 R::ColorPresentations { id, presentations } => {
-                    w.color_presentations.write(LspColorPresentationsResponse { entity, id, presentations });
+                    w.color_presentations.write(LspColorPresentationsResponse {
+                        entity,
+                        id,
+                        presentations,
+                    });
                 }
                 R::LinkedEditingRanges { id, ranges } => {
-                    w.linked_editing.write(LspLinkedEditingRangesResponse { entity, id, ranges });
+                    w.linked_editing
+                        .write(LspLinkedEditingRangesResponse { entity, id, ranges });
                 }
                 R::Monikers { id, monikers } => {
-                    w.monikers.write(LspMonikersResponse { entity, id, monikers });
+                    w.monikers.write(LspMonikersResponse {
+                        entity,
+                        id,
+                        monikers,
+                    });
                 }
-                R::PrepareRename { id, range, placeholder } => {
-                    w.prepare_rename.write(LspPrepareRenameResponse { entity, id, range, placeholder });
+                R::PrepareRename {
+                    id,
+                    range,
+                    placeholder,
+                } => {
+                    w.prepare_rename.write(LspPrepareRenameResponse {
+                        entity,
+                        id,
+                        range,
+                        placeholder,
+                    });
                 }
                 R::Rename { id, edit } => {
                     w.rename.write(LspRenameResponse { entity, id, edit });
                 }
                 R::PrepareCallHierarchy { id, items } => {
-                    w.prepare_call.write(LspPrepareCallHierarchyResponse { entity, id, items });
+                    w.prepare_call
+                        .write(LspPrepareCallHierarchyResponse { entity, id, items });
                 }
                 R::CallHierarchyIncomingCalls { id, calls } => {
-                    w.incoming_calls.write(LspCallHierarchyIncomingCallsResponse { entity, id, calls });
+                    w.incoming_calls
+                        .write(LspCallHierarchyIncomingCallsResponse { entity, id, calls });
                 }
                 R::CallHierarchyOutgoingCalls { id, calls } => {
-                    w.outgoing_calls.write(LspCallHierarchyOutgoingCallsResponse { entity, id, calls });
+                    w.outgoing_calls
+                        .write(LspCallHierarchyOutgoingCallsResponse { entity, id, calls });
                 }
                 R::PrepareTypeHierarchy { id, items } => {
-                    w.prepare_type.write(LspPrepareTypeHierarchyResponse { entity, id, items });
+                    w.prepare_type
+                        .write(LspPrepareTypeHierarchyResponse { entity, id, items });
                 }
                 R::TypeHierarchySupertypes { id, items } => {
-                    w.super_types.write(LspTypeHierarchySupertypesResponse { entity, id, items });
+                    w.super_types
+                        .write(LspTypeHierarchySupertypesResponse { entity, id, items });
                 }
                 R::TypeHierarchySubtypes { id, items } => {
-                    w.sub_types.write(LspTypeHierarchySubtypesResponse { entity, id, items });
+                    w.sub_types
+                        .write(LspTypeHierarchySubtypesResponse { entity, id, items });
                 }
                 R::SemanticTokens { id, result } => {
-                    w.semantic_tokens.write(LspSemanticTokensResponse { entity, id, result });
+                    w.semantic_tokens
+                        .write(LspSemanticTokensResponse { entity, id, result });
                 }
                 R::SemanticTokensDelta { id, result } => {
-                    w.semantic_delta.write(LspSemanticTokensDeltaResponse { entity, id, result });
+                    w.semantic_delta
+                        .write(LspSemanticTokensDeltaResponse { entity, id, result });
                 }
                 R::SemanticTokensRange { id, result } => {
-                    w.semantic_range.write(LspSemanticTokensRangeResponse { entity, id, result });
+                    w.semantic_range
+                        .write(LspSemanticTokensRangeResponse { entity, id, result });
                 }
                 R::DocumentDiagnostic { id, report } => {
-                    w.doc_diagnostic.write(LspDocumentDiagnosticResponse { entity, id, report });
+                    w.doc_diagnostic
+                        .write(LspDocumentDiagnosticResponse { entity, id, report });
                 }
                 R::WorkspaceDiagnostic { id, report } => {
-                    w.ws_diagnostic.write(LspWorkspaceDiagnosticResponse { entity, id, report });
+                    w.ws_diagnostic
+                        .write(LspWorkspaceDiagnosticResponse { entity, id, report });
                 }
                 R::ShutdownAck { id } => {
                     w.shutdown_ack.write(LspShutdownAck { entity, id });
@@ -383,7 +580,6 @@ fn drain_lsp_responses(
         }
     }
 }
-
 
 fn flush_document_changes(
     mut query: Query<(Entity, &mut LspDocument), Changed<LspDocument>>,
@@ -411,7 +607,10 @@ fn dispatch_lsp_request(trigger: On<LspRequest>, mut clients: Query<&mut LspClie
     client.send(trigger.event().msg.clone());
 }
 
-fn shutdown_clients_on_app_exit(mut exit: MessageReader<AppExit>, mut clients: Query<&mut LspClient>) {
+fn shutdown_clients_on_app_exit(
+    mut exit: MessageReader<AppExit>,
+    mut clients: Query<&mut LspClient>,
+) {
     if exit.read().next().is_none() {
         return;
     }
