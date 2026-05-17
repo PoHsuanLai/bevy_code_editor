@@ -17,7 +17,6 @@ use super::actions::{
     get_closing_bracket, get_closing_quote, insert_closing_char, should_skip_auto_close,
 };
 use super::picking_backend::move_cursor;
-use crate::settings::BracketConfig;
 #[cfg(feature = "lsp")]
 use crate::settings::LspConfig;
 use crate::types::*;
@@ -67,7 +66,7 @@ pub fn on_focused_keyboard(
             &mut EditHistoryState,
             &mut CursorState,
             &mut crate::text_view::TextBuffer<RopeBuffer>,
-            &BracketConfig,
+            &crate::settings::AutoEdit,
         ),
         With<CodeEditor>,
     >,
@@ -77,7 +76,7 @@ pub fn on_focused_keyboard(
 ) {
     let entity = trigger.event().focused_entity;
 
-    let Ok((mut sel, mut hist, mut cursor, mut buffer, brackets)) = editor_query.get_mut(entity)
+    let Ok((mut sel, mut hist, mut cursor, mut buffer, auto_edit)) = editor_query.get_mut(entity)
     else {
         return;
     };
@@ -156,7 +155,7 @@ pub fn on_focused_keyboard(
                     &mut hist,
                     &mut cursor,
                     &mut buffer,
-                    brackets,
+                    auto_edit,
                     #[cfg(feature = "lsp")]
                     lsp,
                     #[cfg(feature = "lsp")]
@@ -202,7 +201,7 @@ fn insert_typed_char(
     hist: &mut EditHistoryState,
     cursor: &mut CursorState,
     buffer: &mut crate::text_view::TextBuffer<RopeBuffer>,
-    brackets: &BracketConfig,
+    auto_edit: &crate::settings::AutoEdit,
     #[cfg(feature = "lsp")] lsp: &LspConfig,
     #[cfg(feature = "lsp")] entity: Entity,
     #[cfg(feature = "lsp")] capabilities: &bevy_lsp::ServerCapabilities,
@@ -211,15 +210,24 @@ fn insert_typed_char(
     #[cfg(feature = "lsp")] syntax_tree: Option<&bevy_tree_sitter::SyntaxTree>,
     #[cfg(feature = "lsp")] lsp_w: &mut MessageWriter<bevy_lsp::LspRequest>,
 ) {
-    if brackets.auto_close_quotes
+    let quotes_on = !matches!(
+        auto_edit.auto_closing_quotes,
+        crate::settings::AutoClosingPairs::Never
+    );
+    let brackets_on = !matches!(
+        auto_edit.auto_closing_brackets,
+        crate::settings::AutoClosingPairs::Never
+    );
+
+    if quotes_on
         && get_closing_quote(c).is_some()
         && should_skip_auto_close(cursor, buffer.rope(), c)
     {
         move_cursor(cursor, buffer.rope(), 1);
         return;
     }
-    if brackets.auto_close {
-        let is_closing_bracket = brackets.pairs.iter().any(|(_, close)| *close == c);
+    if brackets_on {
+        let is_closing_bracket = auto_edit.pairs.iter().any(|(_, close)| *close == c);
         if is_closing_bracket && should_skip_auto_close(cursor, buffer.rope(), c) {
             move_cursor(cursor, buffer.rope(), 1);
             return;
@@ -228,12 +236,12 @@ fn insert_typed_char(
 
     bevy_instanced_text_editor::widget::text_input::insert_char(sel, hist, cursor, buffer, c);
 
-    if brackets.auto_close {
-        if let Some(closing) = get_closing_bracket(c, &brackets.pairs) {
+    if brackets_on {
+        if let Some(closing) = get_closing_bracket(c, &auto_edit.pairs) {
             insert_closing_char(cursor, buffer, closing);
         }
     }
-    if brackets.auto_close_quotes {
+    if quotes_on {
         if let Some(closing) = get_closing_quote(c) {
             let should_close = if c == '\'' {
                 let cur_pos = cursor.cursor_pos;
@@ -263,7 +271,6 @@ fn insert_typed_char(
             // string or comment per tree-sitter — Zed's "is_completion_context"
             // gate. When tree-sitter isn't ready, default to allow.
             let in_completion_context = match syntax_tree.and_then(|st| st.tree.as_ref()) {
-                #[cfg(feature = "tree-sitter")]
                 Some(tree) => {
                     let byte = buffer.char_to_byte(cursor_pos);
                     crate::plugin::syntax_highlighting::EditorSyntaxState::is_completion_context(

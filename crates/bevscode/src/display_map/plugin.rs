@@ -26,7 +26,6 @@ use super::styling::segs_to_runs;
 use crate::plugin::syntax_highlighting::EditorSyntaxState;
 use crate::settings::{EditorTheme, Indentation, SyntaxColors, Wrapping};
 use crate::types::CodeEditor;
-#[cfg(feature = "tree-sitter")]
 use crate::types::FoldState;
 
 /// System set for sync systems that update the engine's data Components
@@ -68,7 +67,6 @@ impl Plugin for DisplayMapPlugin {
         app.add_systems(
             Update,
             (
-                #[cfg(feature = "tree-sitter")]
                 produce_hidden_lines,
                 produce_line_styles,
                 sync_layout_wrap,
@@ -99,7 +97,6 @@ pub(crate) fn insert_styling_components(
 /// (which preserves `is_folded` flags across reparses), so without this check
 /// every reparse would invalidate `HiddenLines` and cascade into a full
 /// `produce_line_styles` rebuild via `Changed<HiddenLines>`.
-#[cfg(feature = "tree-sitter")]
 type ProduceHiddenLinesQuery<'w, 's> = Query<
     'w,
     's,
@@ -107,7 +104,6 @@ type ProduceHiddenLinesQuery<'w, 's> = Query<
     (With<CodeEditor>, Changed<FoldState>),
 >;
 
-#[cfg(feature = "tree-sitter")]
 pub(crate) fn produce_hidden_lines(mut editors: ProduceHiddenLinesQuery) {
     for (fold_state, mut hidden) in editors.iter_mut() {
         let mut set = HashSet::new();
@@ -154,14 +150,11 @@ pub(crate) fn produce_line_styles(
         ),
         With<CodeEditor>,
     >,
-    #[cfg(feature = "tree-sitter")] content_changed: Query<
-        Entity,
-        (With<CodeEditor>, Changed<TextBuffer<RopeBuffer>>),
-    >,
+    content_changed: Query<Entity, (With<CodeEditor>, Changed<TextBuffer<RopeBuffer>>)>,
     // Full viewport rebuild: layout/theme/viewport changes that invalidate
     // the entire visible window. Does NOT include Changed<SyntaxTree> —
     // that's handled incrementally via SyntaxTree::dirty_rows below.
-    #[cfg(feature = "tree-sitter")] full_rebuild_changed: Query<
+    full_rebuild_changed: Query<
         Entity,
         (
             With<CodeEditor>,
@@ -176,26 +169,9 @@ pub(crate) fn produce_line_styles(
     >,
     // Async parse completions: SyntaxTree changed, but only the rows touched
     // by the original edit need rehighlighting. dirty_rows carries that range.
-    #[cfg(feature = "tree-sitter")] syntax_tree_changed: Query<
+    syntax_tree_changed: Query<
         (Entity, &bevy_tree_sitter::SyntaxTree),
         (With<CodeEditor>, Changed<bevy_tree_sitter::SyntaxTree>),
-    >,
-    #[cfg(not(feature = "tree-sitter"))] content_changed: Query<
-        Entity,
-        (With<CodeEditor>, Changed<TextBuffer<RopeBuffer>>),
-    >,
-    #[cfg(not(feature = "tree-sitter"))] full_rebuild_changed: Query<
-        Entity,
-        (
-            With<CodeEditor>,
-            Or<(
-                Changed<ScrollPosition>,
-                Changed<ComputedNode>,
-                Changed<HiddenLines>,
-                Changed<EditorTheme>,
-                Changed<SyntaxColors>,
-            )>,
-        ),
     >,
     mut edit_events: MessageReader<TextEdited>,
     // Per-entity pending edit: (dirty_range, line_shift, shift_pivot).
@@ -237,7 +213,6 @@ pub(crate) fn produce_line_styles(
     // When an async parse completes, union SyntaxTree::dirty_rows into our
     // dirty_lines map. `None` dirty_rows = full rebuild (first parse / huge edit).
     // Syntax completions don't shift line indices, so line_delta stays 0.
-    #[cfg(feature = "tree-sitter")]
     for (entity, syntax_tree) in syntax_tree_changed.iter() {
         let incoming = (syntax_tree.dirty_rows, 0i32, 0u32);
         let entry = dirty_lines.entry(entity).or_insert(incoming);
@@ -253,10 +228,7 @@ pub(crate) fn produce_line_styles(
 
     let full_rebuild: HashSet<Entity> = full_rebuild_changed.iter().collect();
     let content_only: HashSet<Entity> = content_changed.iter().collect();
-    #[cfg(feature = "tree-sitter")]
     let syntax_changed: HashSet<Entity> = syntax_tree_changed.iter().map(|(e, _)| e).collect();
-    #[cfg(not(feature = "tree-sitter"))]
-    let syntax_changed: HashSet<Entity> = HashSet::new();
 
     let any_dirty =
         !full_rebuild.is_empty() || !content_only.is_empty() || !syntax_changed.is_empty();
@@ -415,7 +387,6 @@ pub(crate) fn produce_line_styles(
             block.pop();
 
             let _hl_span = bevy::prelude::info_span!("highlight_line").entered();
-            #[cfg(feature = "tree-sitter")]
             let per_line_segs = if let Some(st) = syntax_tree {
                 syntax.highlight_range(
                     &block,
@@ -428,10 +399,6 @@ pub(crate) fn produce_line_styles(
             } else {
                 vec![vec![]; batch.len()]
             };
-            #[cfg(not(feature = "tree-sitter"))]
-            let per_line_segs =
-                syntax.highlight_range(&block, batch_start_byte, syntax_theme, theme.foreground);
-
             for (i, (buffer_line, _)) in batch.iter().enumerate() {
                 let segs = per_line_segs.get(i).cloned().unwrap_or_default();
                 if segs.iter().all(|s| s.text.trim().is_empty()) {
@@ -526,21 +493,30 @@ pub(crate) fn sync_layout_wrap(
 ) {
     for (computed, mono, mut wrap, wrapping, indentation) in editors.iter_mut() {
         let char_width = mono.px;
-        let width: Option<f32> = if wrapping.enabled {
+        let wrap_enabled = !matches!(
+            wrapping.word_wrap,
+            crate::settings::WordWrapMode::Off
+        );
+        let width: Option<f32> = if wrap_enabled {
             let inv = computed.inverse_scale_factor();
             let viewport_text_w = (computed.size().x * inv
                 - computed.content_inset().min_inset.x * inv)
                 .max(char_width);
-            let budget = match wrapping.wrap_column {
-                Some(col) => (col as f32) * char_width,
-                None => viewport_text_w,
+            let budget = match wrapping.word_wrap {
+                crate::settings::WordWrapMode::WordWrapColumn
+                | crate::settings::WordWrapMode::Bounded => {
+                    (wrapping.word_wrap_column as f32) * char_width
+                }
+                _ => viewport_text_w,
             };
             Some(budget.max(char_width))
         } else {
             None
         };
-        let indent_px = if wrapping.enabled && wrapping.indent_wrapped_lines {
-            indentation.tab_width as f32 * char_width
+        let indent_px = if wrap_enabled
+            && !matches!(wrapping.wrapping_indent, crate::settings::WrappingIndent::None)
+        {
+            indentation.tab_size as f32 * char_width
         } else {
             0.0
         };

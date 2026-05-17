@@ -1,25 +1,63 @@
-//! Text wrapping settings
+//! Word-wrap settings — Monaco `wordWrap`, `wordWrapColumn`, `wrappingIndent`,
+//! `wrappingStrategy`, `wordBreak`.
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// Per-editor soft-wrap settings. Disabled by default; enable and set
-/// `wrap_column` to a fixed column count, or leave it `None` to wrap at the viewport edge.
 #[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct Wrapping {
-    pub enabled: bool,
-    /// `None` = wrap at viewport width.
-    pub wrap_column: Option<usize>,
-    pub indent_wrapped_lines: bool,
+    pub word_wrap: WordWrapMode,
+    pub word_wrap_column: u32,
+    pub wrapping_indent: WrappingIndent,
+    pub wrapping_strategy: WrappingStrategy,
+    pub word_break: WordBreak,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+#[reflect(Debug, PartialEq)]
+pub enum WordWrapMode {
+    #[default]
+    Off,
+    On,
+    WordWrapColumn,
+    Bounded,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+#[reflect(Debug, PartialEq)]
+pub enum WrappingIndent {
+    None,
+    #[default]
+    Same,
+    Indent,
+    DeepIndent,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+#[reflect(Debug, PartialEq)]
+pub enum WrappingStrategy {
+    #[default]
+    Simple,
+    Advanced,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+#[reflect(Debug, PartialEq)]
+pub enum WordBreak {
+    #[default]
+    Normal,
+    KeepAll,
 }
 
 impl Default for Wrapping {
     fn default() -> Self {
         Self {
-            enabled: false,
-            wrap_column: None,
-            indent_wrapped_lines: true,
+            word_wrap: WordWrapMode::Off,
+            word_wrap_column: 80,
+            wrapping_indent: WrappingIndent::Same,
+            wrapping_strategy: WrappingStrategy::Simple,
+            word_break: WordBreak::Normal,
         }
     }
 }

@@ -39,9 +39,8 @@
 //! freely without any coupling to the plugin internals:
 //!
 //! - [`crate::types::fold::FoldState`] — which line ranges are currently
-//!   folded (tree-sitter feature only). Drive fold/unfold via the
-//!   [`crate::types::events`] messages or listen to
-//!   [`crate::types::events::FoldStateChanged`] for transitions.
+//!   folded. Drive fold/unfold via the [`crate::types::events`] messages
+//!   or listen to [`crate::types::events::FoldStateChanged`] for transitions.
 //! - [`crate::plugin::syntax_highlighting::EditorSyntaxState`] — the current
 //!   highlight ranges, keyed by capture name. Useful for outline panels, AI
 //!   context extraction, or custom overlays.
@@ -168,18 +167,15 @@ pub mod prelude {
 
     // Editor marker + save/open events.
     pub use crate::types::editor::{CodeEditor, OpenRequested, SaveRequested};
-    #[cfg(feature = "tree-sitter")]
     pub use crate::types::events::FoldStateChanged;
-    #[cfg(feature = "tree-sitter")]
     pub use crate::types::events::SetLanguageRequested;
-    #[cfg(feature = "tree-sitter")]
     pub use bevy_tree_sitter::TreeSitterGrammar;
 
     // Editable-text widget types from `bevy_instanced_text_editor`. Re-exported so
     // prelude users get them without a separate import.
     pub use bevy_instanced_text_editor::{
-        InstancedTextEditPlugin, InstancedTextInteractionPlugin, RopeBuffer, ScrollConfig,
-        SetTextRequested, TextEditor,
+        InstancedTextEditPlugin, InstancedTextInteractionPlugin, RopeBuffer, SetTextRequested,
+        TextEditor,
     };
 
     // System-set ordering anchor for hosts that schedule overlay-producing
@@ -193,4 +189,13 @@ pub mod prelude {
     // Theme — hosts that match the editor's clear color in their own
     // Camera2d setup grab `EditorTheme::default().background`.
     pub use crate::settings::{EditorTheme, GutterConfig};
+
+    // Monaco-parity settings Components, reachable as `crate::prelude::*`.
+    pub use crate::settings::{
+        AutoEdit, BracketConfig, CursorLine, EditorUi, Find, Folding, Guides, Indentation, Minimap,
+        Misc, Padding, Performance, RenderSettings, Rulers, ScrollConfig, SelectionConfig,
+        StickyScroll, SyntaxColors, Wrapping,
+    };
+    #[cfg(feature = "lsp")]
+    pub use crate::settings::{DiagnosticColors, LspConfig, Suggest};
 }

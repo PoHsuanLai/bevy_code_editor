@@ -16,6 +16,7 @@ type BracketMatchQuery<'w, 's> = Query<
         &'static TextBuffer<RopeBuffer>,
         &'static mut BracketMatchState,
         &'static BracketConfig,
+        &'static AutoEdit,
     ),
     (
         With<CodeEditor>,
@@ -156,15 +157,15 @@ pub(crate) fn find_opening_bracket(
 }
 
 pub(crate) fn update_bracket_match(mut editor_query: BracketMatchQuery) {
-    for (cursor, buffer, mut bracket_state, brackets) in editor_query.iter_mut() {
-        if !brackets.enabled {
+    for (cursor, buffer, mut bracket_state, brackets, auto_edit) in editor_query.iter_mut() {
+        if matches!(brackets.match_brackets, MatchBrackets::Never) {
             bracket_state.current_match = None;
             continue;
         }
 
         let cursor_pos = cursor.cursor_pos.min(buffer.len_chars());
         bracket_state.current_match =
-            find_matching_bracket(buffer.rope(), cursor_pos, &brackets.pairs);
+            find_matching_bracket(buffer.rope(), cursor_pos, &auto_edit.pairs);
     }
 }
 

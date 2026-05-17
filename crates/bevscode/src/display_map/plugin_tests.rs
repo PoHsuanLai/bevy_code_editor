@@ -9,7 +9,7 @@
 //! When a test fails, the failure message identifies *which* layer dropped
 //! or corrupted the color, not just "colors are wrong."
 
-#![cfg(all(test, feature = "tree-sitter"))]
+#![cfg(test)]
 // `ComputedNode` has no constructor that accepts size/scale — tests must
 // build it via `default()` then assign fields.
 #![allow(clippy::field_reassign_with_default)]

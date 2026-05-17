@@ -1,25 +1,39 @@
-//! UI settings - visual elements and layout
+//! Gutter + line-number + indentation + bracket-match settings.
+//!
+//! Monaco parity:
+//! - `EditorUi` → `lineNumbers`, `lineNumbersMinChars`, `glyphMargin`,
+//!   `lineDecorationsWidth`, `selectOnLineNumbers`, `placeholder`.
+//! - `Indentation` → `tabSize`, `insertSpaces`, `detectIndentation`,
+//!   `indentSize`, `useTabStops`, `stickyTabStops`, `trimWhitespaceOnDelete`.
+//! - `BracketConfig` → `matchBrackets`, `bracketPairColorization`.
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// Per-editor UI visual settings. Layout dimensions are computed from these
-/// and written into `Node::padding` each frame via `sync_gutter_width`.
 #[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct EditorUi {
-    pub show_line_numbers: bool,
-    /// Vim-style relative line numbers.
-    pub relative_line_numbers: bool,
+    pub line_numbers: LineNumbers,
+    pub line_numbers_min_chars: u32,
+    pub glyph_margin: bool,
+    pub line_decorations_width: f32,
+    pub select_on_line_numbers: bool,
     pub show_gutter: bool,
-    pub show_indent_guides: bool,
-    pub show_whitespace: WhitespaceMode,
-    pub highlight_active_line: bool,
     pub show_separator: bool,
     pub gutter_padding_left: f32,
     pub gutter_padding_right: f32,
     pub code_margin_left: f32,
-    pub margin_top: f32,
+    pub placeholder: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+#[reflect(Debug, PartialEq)]
+pub enum LineNumbers {
+    #[default]
+    On,
+    Off,
+    Relative,
+    Interval,
 }
 
 /// Resolved gutter geometry, populated every frame by `sync_gutter_width`.
@@ -31,91 +45,106 @@ pub struct GutterConfig {
     pub gutter_width: f32,
 }
 
-/// Controls which whitespace characters are rendered as visible glyphs.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Reflect)]
-#[reflect(Debug, PartialEq)]
-pub enum WhitespaceMode {
-    /// No whitespace markers shown.
-    None,
-    /// Show markers only within the current selection.
-    Selection,
-    /// Show markers for trailing whitespace only.
-    Trailing,
-    /// Show all whitespace markers.
-    All,
-}
-
 impl Default for EditorUi {
     fn default() -> Self {
         Self {
-            show_line_numbers: true,
-            relative_line_numbers: false,
+            line_numbers: LineNumbers::On,
+            line_numbers_min_chars: 5,
+            glyph_margin: true,
+            line_decorations_width: 10.0,
+            select_on_line_numbers: true,
             show_gutter: true,
-            show_indent_guides: false,
-            show_whitespace: WhitespaceMode::None,
-            highlight_active_line: true,
             show_separator: true,
             gutter_padding_left: 10.0,
             gutter_padding_right: 10.0,
             code_margin_left: 10.0,
-            margin_top: 10.0,
+            placeholder: None,
         }
     }
 }
 
-/// Per-editor indentation rules: spaces vs tabs, width, and auto-indent on newline.
 #[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct Indentation {
-    pub use_spaces: bool,
-    /// Width of one indent level in columns. Drives both tab rendering
-    /// (a `\t` advances this many cells) and the column count inserted
-    /// when `use_spaces` is true.
-    pub tab_width: usize,
-    pub auto_indent: bool,
+    pub tab_size: u32,
+    pub insert_spaces: bool,
+    pub detect_indentation: bool,
+    pub indent_size: IndentSize,
+    pub use_tab_stops: bool,
+    pub sticky_tab_stops: bool,
+    pub trim_whitespace_on_delete: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+#[reflect(Debug, PartialEq)]
+pub enum IndentSize {
+    #[default]
+    TabSize,
+    Cells(u32),
 }
 
 impl Default for Indentation {
     fn default() -> Self {
         Self {
-            use_spaces: true,
-            tab_width: 4,
-            auto_indent: true,
+            tab_size: 4,
+            insert_spaces: true,
+            detect_indentation: true,
+            indent_size: IndentSize::TabSize,
+            use_tab_stops: true,
+            sticky_tab_stops: false,
+            trim_whitespace_on_delete: false,
         }
     }
 }
 
-/// Per-editor bracket matching and auto-close settings.
 #[derive(Component, Clone, Debug, Serialize, Deserialize, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct BracketConfig {
-    pub enabled: bool,
+    pub match_brackets: MatchBrackets,
     pub style: BracketHighlightStyle,
-    pub auto_close: bool,
-    pub auto_close_quotes: bool,
-    pub pairs: Vec<(char, char)>,
+    pub colorization: BracketPairColorization,
 }
 
-/// Visual style used to highlight a matched bracket pair.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+#[reflect(Debug, PartialEq)]
+pub enum MatchBrackets {
+    Never,
+    Near,
+    #[default]
+    Always,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
 #[reflect(Debug, PartialEq)]
 pub enum BracketHighlightStyle {
-    /// Underline both brackets.
     Underline,
-    /// Background fill on both brackets.
+    #[default]
     Background,
-    /// Both underline and background fill.
     Both,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Reflect)]
+#[reflect(Debug)]
+pub struct BracketPairColorization {
+    pub enabled: bool,
+    pub independent_color_pool_per_type: bool,
+}
+
+impl Default for BracketPairColorization {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            independent_color_pool_per_type: false,
+        }
+    }
 }
 
 impl Default for BracketConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
+            match_brackets: MatchBrackets::Always,
             style: BracketHighlightStyle::Background,
-            auto_close: true,
-            auto_close_quotes: true,
-            pairs: vec![('(', ')'), ('[', ']'), ('{', '}'), ('<', '>')],
+            colorization: BracketPairColorization::default(),
         }
     }
 }

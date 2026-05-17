@@ -58,7 +58,6 @@ fn setup_editor_with_treesitter(
         MonoFontFaces::default().with_bold(asset_server.load("fonts/FiraMono-Medium.ttf")),
     ));
 
-    #[cfg(feature = "tree-sitter")]
     let text = r#"// Rust syntax highlighting with tree-sitter
 use std::collections::HashMap;
 
@@ -122,15 +121,11 @@ fn main() {
 }
 "#;
 
-    #[cfg(not(feature = "tree-sitter"))]
-    let text = "Tree-sitter feature is not enabled!\n\nRun with `--features tree-sitter`.";
-
     set_text_writer.write(SetTextRequested {
         entity,
         text: text.to_string(),
     });
 
-    #[cfg(feature = "tree-sitter")]
     commands.entity(entity).insert(TreeSitterGrammar::new(
         tree_sitter_rust::LANGUAGE.into(),
         tree_sitter_rust::HIGHLIGHTS_QUERY,

@@ -88,6 +88,7 @@ pub(crate) fn sync_gutter_text_view(
             Ref<FoldState>,
             &EditorTheme,
             &EditorUi,
+            &crate::settings::Padding,
         ),
         (With<CodeEditor>, Without<GutterTextView>),
     >,
@@ -105,7 +106,7 @@ pub(crate) fn sync_gutter_text_view(
         Without<CodeEditor>,
     >,
 ) {
-    for (editor_entity, sel, buffer, editor_scroll, gutter, fold_state, theme, ui) in
+    for (editor_entity, sel, buffer, editor_scroll, gutter, fold_state, theme, ui, padding) in
         editor_query.iter()
     {
         let Some((
@@ -124,7 +125,8 @@ pub(crate) fn sync_gutter_text_view(
             continue;
         };
 
-        let target_vis = if ui.show_line_numbers {
+        let show_numbers = !matches!(ui.line_numbers, crate::settings::LineNumbers::Off);
+        let target_vis = if show_numbers {
             Visibility::Inherited
         } else {
             Visibility::Hidden
@@ -133,7 +135,7 @@ pub(crate) fn sync_gutter_text_view(
             *g_vis = target_vis;
         }
 
-        if !ui.show_line_numbers {
+        if !show_numbers {
             continue;
         }
 
@@ -142,11 +144,7 @@ pub(crate) fn sync_gutter_text_view(
             g_node.width = target_width;
         }
 
-        // Match the editor's top inset so line numbers vertically align with
-        // the first code line. The editor's main padding.top is `ui.margin_top`
-        // (set in `sync_gutter_width`); the gutter starts at the same row, so
-        // it needs the same vertical offset.
-        let target_top = Val::Px(ui.margin_top);
+        let target_top = Val::Px(padding.top);
         if g_node.padding.top != target_top {
             g_node.padding.top = target_top;
         }

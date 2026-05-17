@@ -238,7 +238,6 @@ fn full_code_editor_plugin_does_not_move_scroll_target_on_idle_frames() {
     app.add_plugins(crate::plugin::CodeEditorPlugin);
     app.add_plugins(crate::plugin::CursorPlugin);
     app.add_plugins(crate::plugin::SyntaxPlugin);
-    #[cfg(feature = "tree-sitter")]
     app.add_plugins(crate::plugin::FoldingPlugin);
     app.add_plugins(crate::plugin::BracketPlugin);
     app.add_plugins(crate::display_map::DisplayMapPlugin);

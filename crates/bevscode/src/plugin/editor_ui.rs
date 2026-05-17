@@ -155,16 +155,27 @@ fn sync_node_from_window(
 /// Runs every frame (not change-filtered) so async `char_width` updates
 /// from `update_font_metrics` are picked up immediately.
 fn sync_gutter_width(
-    mut editors: Query<(&mut Node, &mut GutterConfig, &MonoCellWidth, &EditorUi), With<CodeEditor>>,
+    mut editors: Query<
+        (
+            &mut Node,
+            &mut GutterConfig,
+            &MonoCellWidth,
+            &EditorUi,
+            &crate::settings::Padding,
+        ),
+        With<CodeEditor>,
+    >,
 ) {
-    for (mut node, mut gutter_config, mono, ui) in editors.iter_mut() {
-        let gutter_width = if ui.show_line_numbers {
-            ui.gutter_padding_left + ui.gutter_padding_right + (mono.px * 4.0)
+    for (mut node, mut gutter_config, mono, ui, padding) in editors.iter_mut() {
+        let show_numbers = !matches!(ui.line_numbers, crate::settings::LineNumbers::Off);
+        let min_chars = ui.line_numbers_min_chars.max(1) as f32;
+        let gutter_width = if show_numbers {
+            ui.gutter_padding_left + ui.gutter_padding_right + (mono.px * min_chars)
         } else {
             0.0
         };
         let padding_left = Val::Px(gutter_width + ui.code_margin_left);
-        let padding_top = Val::Px(ui.margin_top);
+        let padding_top = Val::Px(padding.top);
         if node.padding.left != padding_left || node.padding.top != padding_top {
             node.padding.left = padding_left;
             node.padding.top = padding_top;

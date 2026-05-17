@@ -46,16 +46,11 @@ pub(crate) fn update_selection_highlight(
     mut editor_query: Query<
         (
             Entity,
-            &TextBuffer<RopeBuffer>,
-            &ComputedNode,
-            &ScrollPosition,
+            EditorBufferView,
+            EditorLayoutView,
+            EditorFontView,
             &SelectionState,
             &mut SelectionRects,
-            &FoldState,
-            &TextFont,
-            &bevy::text::LineHeight,
-            &MonoCellWidth,
-            Option<&DisplayLayout>,
             Option<&HiddenLines>,
             Option<&TextBounds>,
             &EditorTheme,
@@ -85,16 +80,11 @@ pub(crate) fn update_selection_highlight(
 
     for (
         editor_entity,
-        buffer,
-        computed,
-        scroll,
+        buf,
+        layout_view,
+        font_view,
         sel,
         mut sel_rects,
-        fold_state,
-        font,
-        lh,
-        mono,
-        layout,
         hidden,
         wrap,
         theme,
@@ -105,19 +95,22 @@ pub(crate) fn update_selection_highlight(
         }
         sel_rects.0.clear();
 
-        let char_width = mono.px;
-        let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
+        let char_width = layout_view.mono.px;
+        let line_height = bevy_instanced_text::resolve_line_height(
+            *font_view.line_height,
+            font_view.font.font_size,
+        );
 
         // Visible buffer-line window. Selections are clipped to this band so
         // a multi-thousand-line selection doesn't allocate per-line rects for
         // off-viewport rows.
-        let inv = computed.inverse_scale_factor();
-        let viewport_height = computed.size().y * inv;
-        let text_area_top = computed.content_inset().min_inset.y * inv;
+        let inv = layout_view.computed.inverse_scale_factor();
+        let viewport_height = layout_view.computed.size().y * inv;
+        let text_area_top = layout_view.computed.content_inset().min_inset.y * inv;
         let wrap_cfg = wrap.copied().unwrap_or_default();
         let visible = visible_buffer_range(
-            &**buffer,
-            scroll.y,
+            &**buf.buffer,
+            layout_view.scroll.y,
             viewport_height,
             text_area_top,
             line_height,
@@ -140,8 +133,8 @@ pub(crate) fn update_selection_highlight(
             .collect();
 
         for (start, end) in selections {
-            let sel_start_line = buffer.char_to_line(start);
-            let sel_end_line = buffer.char_to_line(end);
+            let sel_start_line = buf.buffer.char_to_line(start);
+            let sel_end_line = buf.buffer.char_to_line(end);
 
             // Iterate only the part of the selection that overlaps the
             // visible window. Off-viewport portions still exist in
@@ -153,12 +146,12 @@ pub(crate) fn update_selection_highlight(
             }
 
             for line_idx in iter_start..=iter_end {
-                if fold_state.is_line_hidden(line_idx) {
+                if buf.fold.is_line_hidden(line_idx) {
                     continue;
                 }
 
-                let line_start_char = buffer.line_to_char(line_idx);
-                let line = buffer.line(line_idx);
+                let line_start_char = buf.buffer.line_to_char(line_idx);
+                let line = buf.buffer.line(line_idx);
                 let line_chars = line.len_chars();
 
                 let sel_start_col = if line_idx == sel_start_line {
@@ -187,8 +180,8 @@ pub(crate) fn update_selection_highlight(
                         is_last_buffer_line: line_idx == sel_end_line,
                     },
                     &RowMap {
-                        layout,
-                        fold_state,
+                        layout: layout_view.layout,
+                        fold_state: buf.fold,
                         line_idx,
                     },
                     char_width,
@@ -326,62 +319,46 @@ fn selection_rect(display_row: u32, x_range: std::ops::Range<f32>, color: Color)
 pub(crate) fn update_indent_guides(
     mut editor_query: Query<
         (
-            Entity,
-            &TextBuffer<RopeBuffer>,
-            &ScrollPosition,
-            &ComputedNode,
-            &FoldState,
-            &TextFont,
-            &bevy::text::LineHeight,
-            &MonoCellWidth,
+            EditorBufferView,
+            EditorLayoutView,
+            EditorFontView,
             &EditorTheme,
             &mut IndentGuideRects,
-            &EditorUi,
+            &Guides,
             &Indentation,
         ),
         With<CodeEditor>,
     >,
 ) {
-    for (
-        _editor_entity,
-        buffer,
-        scroll,
-        computed,
-        fold_state,
-        font,
-        lh,
-        mono,
-        theme,
-        mut guide_rects,
-        ui,
-        indentation,
-    ) in editor_query.iter_mut()
+    for (text, layout_view, font_view, theme, mut guide_rects, guides, indentation) in
+        editor_query.iter_mut()
     {
-        if !ui.show_indent_guides {
+        if !guides.indentation {
             if !guide_rects.0.is_empty() {
                 guide_rects.0.clear();
             }
             continue;
         }
 
-        let inv = computed.inverse_scale_factor();
-        let indent_size = indentation.tab_width;
-        let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
-        let char_width = mono.px;
-        let viewport_height = computed.size().y * inv;
+        let inv = layout_view.computed.inverse_scale_factor();
+        let indent_size = indentation.tab_size as usize;
+        let line_height =
+            bevy_instanced_text::resolve_line_height(*font_view.line_height, font_view.font.font_size);
+        let char_width = layout_view.mono.px;
+        let viewport_height = layout_view.computed.size().y * inv;
 
-        let visible_start_row = (scroll.y / line_height).floor().max(0.0) as usize;
+        let visible_start_row = (layout_view.scroll.y / line_height).floor().max(0.0) as usize;
         let visible_lines = ((viewport_height / line_height).ceil() as usize) + 2;
         let visible_end_row = visible_start_row + visible_lines;
 
-        let total_lines = buffer.len_lines();
-        let has_folding = !fold_state.regions.is_empty();
+        let total_lines = text.buffer.len_lines();
+        let has_folding = !text.fold.regions.is_empty();
 
         let start_buffer_line = if has_folding {
             let mut display_row = 0;
             let mut buffer_line = 0;
             while buffer_line < total_lines && display_row < visible_start_row {
-                if !fold_state.is_line_hidden(buffer_line) {
+                if !text.fold.is_line_hidden(buffer_line) {
                     display_row += 1;
                 }
                 buffer_line += 1;
@@ -394,7 +371,7 @@ pub(crate) fn update_indent_guides(
         let mut current_display_row: usize = if has_folding {
             let mut display_row = 0;
             for bl in 0..start_buffer_line {
-                if !fold_state.is_line_hidden(bl) {
+                if !text.fold.is_line_hidden(bl) {
                     display_row += 1;
                 }
             }
@@ -405,14 +382,14 @@ pub(crate) fn update_indent_guides(
 
         let mut new_rects: Vec<RectOverlay> = Vec::new();
         for buffer_line in start_buffer_line..total_lines {
-            if fold_state.is_line_hidden(buffer_line) {
+            if text.fold.is_line_hidden(buffer_line) {
                 continue;
             }
             if current_display_row > visible_end_row {
                 break;
             }
 
-            let line = buffer.line(buffer_line);
+            let line = text.buffer.line(buffer_line);
             let mut leading_spaces = 0;
             for c in line.chars() {
                 match c {

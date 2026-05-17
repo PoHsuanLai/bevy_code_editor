@@ -13,7 +13,7 @@ categories = ["game-development", "text-editors"]
 [dependencies]
 bevy_instanced_text = { path = "../../../bevy_instanced_text/crates/bevy_instanced_text", version = "0.1.1" }
 bevy_instanced_text_editor = { path = "../bevy_instanced_text_editor", version = "0.1.1" }
-bevy_tree_sitter = { path = "../bevy_tree_sitter", version = "0.1.1", optional = true }
+bevy_tree_sitter = { path = "../bevy_tree_sitter", version = "0.1.1" }
 bevy_lsp = { path = "../bevy_lsp", version = "0.1.1", optional = true }
 
 bevy = { version = "0.18", default-features = false, features = [
@@ -47,9 +47,8 @@ bevy = { version = "0.18", features = ["bevy_window", "bevy_winit"] }
 tree-sitter-rust = "0.23"
 
 [features]
-default = ["tree-sitter", "clipboard"]
+default = ["clipboard"]
 
-tree-sitter = ["dep:bevy_tree_sitter"]
 clipboard = ["bevy_instanced_text_editor/arboard"]
 clipboard-wasm = ["bevy_instanced_text_editor/clipboard-wasm"]
 lsp = ["dep:bevy_lsp", "lsp-types", "serde_json", "fuzzy-matcher"]

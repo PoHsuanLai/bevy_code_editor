@@ -17,13 +17,11 @@ use crate::types::*;
 use bevy::prelude::*;
 use bevy_instanced_text_editor::RopeBuffer;
 
-#[cfg(feature = "tree-sitter")]
 use bevy::tasks::{block_on, futures_lite, AsyncComputeTaskPool, Task};
 
 /// In-flight fold-detection task. Lives on a child entity so the parent's
 /// `Changed<FoldState>` doesn't fire on each task spawn/despawn. Mirrors
 /// the `bevy_tree_sitter::ParseTask` pattern.
-#[cfg(feature = "tree-sitter")]
 #[derive(Component)]
 pub(crate) struct FoldDetectTask {
     task: Task<Vec<FoldRegion>>,
@@ -45,7 +43,6 @@ pub(crate) struct FoldDetectTask {
 /// in-flight task lands. The check we then run in `apply` (`tree_version`
 /// equality) catches the case where another tree version arrived during
 /// the walk and re-spawns naturally on the next tick.
-#[cfg(feature = "tree-sitter")]
 type FoldDetectQuery<'w, 's> = Query<
     'w,
     's,
@@ -58,7 +55,6 @@ type FoldDetectQuery<'w, 's> = Query<
     (With<CodeEditor>, Changed<bevy_tree_sitter::SyntaxTree>),
 >;
 
-#[cfg(feature = "tree-sitter")]
 pub(crate) fn spawn_fold_detect_tasks(
     mut commands: Commands,
     editor_query: FoldDetectQuery,
@@ -104,7 +100,6 @@ pub(crate) fn spawn_fold_detect_tasks(
 /// Poll in-flight `FoldDetectTask`s; merge completed results into the
 /// target editor's `FoldState` (preserving prior `is_folded` flags) and
 /// despawn the task entity.
-#[cfg(feature = "tree-sitter")]
 pub(crate) fn apply_fold_detect_tasks(
     mut commands: Commands,
     mut tasks: Query<(Entity, &mut FoldDetectTask)>,
@@ -164,7 +159,6 @@ pub(crate) fn apply_fold_detect_tasks(
     }
 }
 
-#[cfg(feature = "tree-sitter")]
 pub(crate) fn collect_foldable_regions(
     node: &bevy_tree_sitter::ts::Node,
     rope: &ropey::Rope,
@@ -216,7 +210,6 @@ pub(crate) fn collect_foldable_regions(
     }
 }
 
-#[cfg(feature = "tree-sitter")]
 pub(crate) fn node_to_fold_region(
     node: &bevy_tree_sitter::ts::Node,
     rope: &ropey::Rope,
@@ -310,11 +303,9 @@ impl Plugin for FoldingPlugin {
     fn build(&self, _app: &mut App) {
         _app.register_type::<crate::types::fold::GotoLineState>()
             .register_type::<crate::types::fold::FoldState>();
-        #[cfg(feature = "tree-sitter")]
         _app.register_type::<crate::types::fold::FoldKind>()
             .register_type::<crate::types::fold::FoldRegion>();
 
-        #[cfg(feature = "tree-sitter")]
         _app.add_systems(
             Update,
             (

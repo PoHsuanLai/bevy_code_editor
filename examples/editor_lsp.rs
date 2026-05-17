@@ -1139,7 +1139,6 @@ fn setup_editor(
     // it up and configures the per-entity highlight provider. LSP wiring
     // is the host's responsibility (we call `lsp_client.start` further
     // down).
-    #[cfg(feature = "tree-sitter")]
     commands
         .entity(editor_entity)
         .insert(TreeSitterGrammar::new(

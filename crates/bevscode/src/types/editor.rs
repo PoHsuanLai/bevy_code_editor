@@ -33,6 +33,17 @@ use bevy::prelude::*;
         crate::settings::CursorLine,
         crate::settings::Performance,
         crate::settings::Wrapping,
+        crate::settings::Guides,
+        crate::settings::Padding,
+        crate::settings::Rulers,
+        crate::settings::Minimap,
+        crate::settings::StickyScroll,
+        crate::settings::RenderSettings,
+        crate::settings::Folding,
+        crate::settings::AutoEdit,
+        crate::settings::SelectionConfig,
+        crate::settings::Find,
+        crate::settings::Misc,
     )
 )]
 #[cfg_attr(
@@ -51,6 +62,18 @@ use bevy::prelude::*;
         crate::settings::CursorLine,
         crate::settings::Performance,
         crate::settings::Wrapping,
+        crate::settings::Guides,
+        crate::settings::Padding,
+        crate::settings::Rulers,
+        crate::settings::Minimap,
+        crate::settings::StickyScroll,
+        crate::settings::RenderSettings,
+        crate::settings::Folding,
+        crate::settings::AutoEdit,
+        crate::settings::SelectionConfig,
+        crate::settings::Find,
+        crate::settings::Misc,
+        crate::settings::Suggest,
         crate::settings::LspConfig,
         // LSP-side state. `LspDocument` is NOT in this cascade because it
         // requires a URI which the host must supply.

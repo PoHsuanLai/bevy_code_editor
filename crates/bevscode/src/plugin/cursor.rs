@@ -1,26 +1,20 @@
 //! Cursor rendering and animation.
 
-use crate::settings::{CursorLine, CursorSettings, EditorTheme};
-use crate::text_view::{DisplayLayout, RectOverlay, RowVertical, TextBuffer};
+use crate::settings::{CursorLine, CursorSettings, EditorBufferView, EditorLayoutView, EditorTheme};
+use crate::text_view::{RectOverlay, RowVertical};
 use crate::types::*;
 use bevy::prelude::*;
-use bevy::ui::ComputedNode;
-use bevy_instanced_text::MonoCellWidth;
-use bevy_instanced_text_editor::RopeBuffer;
 
 type PushCursorOverlaysQuery<'w, 's> = Query<
     'w,
     's,
     (
         Entity,
+        EditorBufferView,
+        EditorLayoutView,
         &'static SelectionState,
-        &'static CursorState,
         &'static bevy_instanced_text_editor::BlinkPhase,
-        &'static TextBuffer<RopeBuffer>,
         &'static mut CaretRects,
-        &'static FoldState,
-        &'static MonoCellWidth,
-        Option<&'static DisplayLayout>,
         &'static EditorTheme,
         &'static CursorSettings,
     ),
@@ -31,14 +25,10 @@ type CursorLineHighlightQuery<'w, 's> = Query<
     'w,
     's,
     (
+        EditorBufferView,
+        EditorLayoutView,
         &'static SelectionState,
-        &'static CursorState,
-        &'static TextBuffer<RopeBuffer>,
-        &'static ComputedNode,
         &'static mut CursorLineRects,
-        &'static FoldState,
-        &'static MonoCellWidth,
-        Option<&'static DisplayLayout>,
         &'static EditorTheme,
         &'static CursorLine,
     ),
@@ -71,24 +61,36 @@ impl Plugin for CursorPlugin {
             .register_type::<crate::input::EditorAction>()
             .register_type::<GutterTextView>();
 
-        app.register_type::<crate::settings::BracketHighlightStyle>()
+        app.register_type::<crate::settings::AutoEdit>()
             .register_type::<crate::settings::BracketConfig>()
-            .register_type::<crate::settings::GutterConfig>()
+            .register_type::<crate::settings::BracketHighlightStyle>()
             .register_type::<crate::settings::CursorLine>()
-            .register_type::<crate::settings::CursorLineStyle>()
             .register_type::<crate::settings::CursorSettings>()
             .register_type::<crate::settings::CursorStyle>()
-            .register_type::<crate::settings::Indentation>()
-            .register_type::<crate::settings::KeyRepeatSettings>()
-            .register_type::<crate::settings::Performance>()
-            .register_type::<crate::settings::SyntaxColors>()
             .register_type::<crate::settings::EditorTheme>()
             .register_type::<crate::settings::EditorUi>()
-            .register_type::<crate::settings::WhitespaceMode>()
+            .register_type::<crate::settings::Find>()
+            .register_type::<crate::settings::Folding>()
+            .register_type::<crate::settings::Guides>()
+            .register_type::<crate::settings::GutterConfig>()
+            .register_type::<crate::settings::Indentation>()
+            .register_type::<crate::settings::KeyRepeatSettings>()
+            .register_type::<crate::settings::Minimap>()
+            .register_type::<crate::settings::Misc>()
+            .register_type::<crate::settings::Padding>()
+            .register_type::<crate::settings::Performance>()
+            .register_type::<crate::settings::RenderLineHighlight>()
+            .register_type::<crate::settings::RenderSettings>()
+            .register_type::<crate::settings::RenderWhitespace>()
+            .register_type::<crate::settings::Rulers>()
+            .register_type::<crate::settings::SelectionConfig>()
+            .register_type::<crate::settings::StickyScroll>()
+            .register_type::<crate::settings::SyntaxColors>()
             .register_type::<crate::settings::Wrapping>();
 
         #[cfg(feature = "lsp")]
-        app.register_type::<crate::settings::LspConfig>();
+        app.register_type::<crate::settings::LspConfig>()
+            .register_type::<crate::settings::Suggest>();
 
         app.add_systems(Update, track_cursor_movement.in_set(super::ApplyStateSet));
         app.add_systems(PostUpdate, push_cursor_overlays.in_set(super::RenderingSet));
@@ -119,19 +121,8 @@ pub(crate) fn push_cursor_overlays(
     input_focus: Res<bevy::input_focus::InputFocus>,
     time: Res<Time>,
 ) {
-    for (
-        entity,
-        sel,
-        cursor,
-        blink,
-        buffer,
-        mut carets,
-        fold_state,
-        mono,
-        layout,
-        theme,
-        cursor_settings,
-    ) in editor_query.iter_mut()
+    for (entity, buf, layout_view, sel, blink, mut carets, theme, cursor_settings) in
+        editor_query.iter_mut()
     {
         let focused = input_focus.get() == Some(entity);
         let visible = focused
@@ -144,23 +135,25 @@ pub(crate) fn push_cursor_overlays(
 
         let mut new_rects: Vec<RectOverlay> = Vec::new();
         if visible {
-            let char_width = mono.px;
-            let _ = cursor;
+            let char_width = layout_view.mono.px;
             for selection in sel.selections.iter() {
-                let cursor_pos = selection.head_offset().min(buffer.len_chars());
-                let line_index = buffer.char_to_line(cursor_pos);
-                let line_start = buffer.line_to_char(line_index);
+                let cursor_pos = selection.head_offset().min(buf.buffer.len_chars());
+                let line_index = buf.buffer.char_to_line(cursor_pos);
+                let line_start = buf.buffer.line_to_char(line_index);
                 let col_index = cursor_pos - line_start;
-                let line = buffer.line(line_index);
+                let line = buf.buffer.line(line_index);
                 let col_clamped = col_index.min(line.len_chars());
                 let byte_in_line = line.slice(..col_clamped).len_bytes();
-                let (display_row, byte_in_row) = layout
+                let (display_row, byte_in_row) = layout_view
+                    .layout
                     .and_then(|l| l.buffer_to_display(line_index as u32, byte_in_line))
                     .map(|(r, b)| (r as usize, b))
                     .unwrap_or_else(|| {
-                        (fold_state.actual_to_display_line(line_index), byte_in_line)
+                        (buf.fold.actual_to_display_line(line_index), byte_in_line)
                     });
-                let glyph_x = layout.and_then(|l| l.x_at_byte(display_row as u32, byte_in_row));
+                let glyph_x = layout_view
+                    .layout
+                    .and_then(|l| l.x_at_byte(display_row as u32, byte_in_row));
                 let x_left = glyph_x.unwrap_or(col_index as f32 * char_width);
                 new_rects.push(bevy_instanced_text_editor::caret_overlay(
                     display_row as u32,
@@ -178,56 +171,59 @@ pub(crate) fn push_cursor_overlays(
 }
 
 pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlightQuery) {
-    for (
-        sel,
-        cursor,
-        buffer,
-        computed,
-        mut cursor_line_rects,
-        fold_state,
-        mono,
-        layout,
-        theme,
-        cursor_line,
-    ) in editor_query.iter_mut()
+    for (buf, layout_view, sel, mut cursor_line_rects, theme, cursor_line) in
+        editor_query.iter_mut()
     {
-        if !cursor_line.enabled || theme.line_highlight.is_none() {
+        if matches!(
+            cursor_line.render_line_highlight,
+            crate::settings::RenderLineHighlight::None
+        ) || theme.line_highlight.is_none()
+        {
             if !cursor_line_rects.0.is_empty() {
                 cursor_line_rects.0.clear();
             }
             continue;
         }
+        let show_band = matches!(
+            cursor_line.render_line_highlight,
+            crate::settings::RenderLineHighlight::Line | crate::settings::RenderLineHighlight::All
+        );
+        let show_border = matches!(
+            cursor_line.render_line_highlight,
+            crate::settings::RenderLineHighlight::All
+        );
 
-        let char_width = mono.px;
+        let char_width = layout_view.mono.px;
         let border_thickness = cursor_line.border_thickness;
         let border_color = cursor_line.border_color;
         let word_highlight_color = cursor_line.word_highlight_color;
-        let inv = computed.inverse_scale_factor();
-        let text_area_left = computed.content_inset().min_inset.x * inv;
-        let viewport_width = computed.size().x * inv;
+        let inv = layout_view.computed.inverse_scale_factor();
+        let text_area_left = layout_view.computed.content_inset().min_inset.x * inv;
+        let viewport_width = layout_view.computed.size().x * inv;
         let band_x_left = -text_area_left;
         let band_x_right = viewport_width - text_area_left;
-        let _ = cursor;
 
         let mut new_rects: Vec<RectOverlay> = Vec::new();
         for selection in sel.selections.iter() {
-            let cursor_pos = selection.head_offset().min(buffer.len_chars());
-            let line_index = buffer.char_to_line(cursor_pos);
-            if fold_state.is_line_hidden(line_index) {
+            let cursor_pos = selection.head_offset().min(buf.buffer.len_chars());
+            let line_index = buf.buffer.char_to_line(cursor_pos);
+            if buf.fold.is_line_hidden(line_index) {
                 continue;
             }
 
-            let line_start = buffer.line_to_char(line_index);
+            let line_start = buf.buffer.line_to_char(line_index);
             let col_in_line = cursor_pos - line_start;
-            let line_for_byte = buffer.line(line_index);
+            let line_for_byte = buf.buffer.line(line_index);
             let col_clamped = col_in_line.min(line_for_byte.len_chars());
             let cursor_byte = line_for_byte.slice(..col_clamped).len_bytes();
-            let display_row = layout
+            let display_row = layout_view
+                .layout
                 .and_then(|l| l.buffer_to_display(line_index as u32, cursor_byte))
                 .map(|(r, _)| r as usize)
-                .unwrap_or_else(|| fold_state.actual_to_display_line(line_index));
+                .unwrap_or_else(|| buf.fold.actual_to_display_line(line_index));
 
-            if cursor_line.show_border {
+            let _ = show_band;
+            if show_border {
                 new_rects.push(RectOverlay {
                     display_row: display_row as u32,
                     x_range: band_x_left..band_x_right,
@@ -255,7 +251,7 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
             }
 
             let col = cursor_pos - line_start;
-            let line = buffer.line(line_index);
+            let line = buf.buffer.line(line_index);
             let line_chars: Vec<char> = line.chars().collect();
             let is_word_char = |ch: char| ch.is_alphanumeric() || ch == '_';
             let on_word = if col < line_chars.len() && is_word_char(line_chars[col]) {
@@ -287,17 +283,21 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
                 let we_clamped = word_end.min(line_for_byte.len_chars());
                 let ws_byte = line_for_byte.slice(..ws_clamped).len_bytes();
                 let we_byte = line_for_byte.slice(..we_clamped).len_bytes();
-                let (start_row, start_byte) = layout
+                let (start_row, start_byte) = layout_view
+                    .layout
                     .and_then(|l| l.buffer_to_display(line_index as u32, ws_byte))
                     .unwrap_or((display_row as u32, ws_byte));
-                let (end_row, end_byte) = layout
+                let (end_row, end_byte) = layout_view
+                    .layout
                     .and_then(|l| l.buffer_to_display(line_index as u32, we_byte))
                     .unwrap_or((display_row as u32, we_byte));
                 if start_row == end_row {
-                    let xl = layout
+                    let xl = layout_view
+                        .layout
                         .and_then(|l| l.x_at_byte(start_row, start_byte))
                         .unwrap_or(word_start as f32 * char_width);
-                    let xr = layout
+                    let xr = layout_view
+                        .layout
                         .and_then(|l| l.x_at_byte(end_row, end_byte))
                         .unwrap_or(word_end as f32 * char_width);
                     new_rects.push(RectOverlay {
@@ -309,7 +309,8 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
                         corners: bevy_instanced_text::CornerRadii::ZERO,
                     });
                 } else {
-                    let xl = layout
+                    let xl = layout_view
+                        .layout
                         .and_then(|l| l.x_at_byte(start_row, start_byte))
                         .unwrap_or(word_start as f32 * char_width);
                     new_rects.push(RectOverlay {

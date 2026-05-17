@@ -15,17 +15,14 @@
 //! `SyntaxTree` (written by `parse_dirty`) is the single source of truth for the
 //! parsed tree. Highlighting queries read from it directly — no mirror system.
 
-#[cfg(feature = "tree-sitter")]
 use crate::text_view::TextBuffer;
 use crate::types::CodeEditor;
 use crate::types::LineSegment;
 use bevy::prelude::*;
 use bevy_instanced_text_editor::RopeBuffer;
 
-#[cfg(feature = "tree-sitter")]
 use std::sync::{Arc, RwLock};
 
-#[cfg(feature = "tree-sitter")]
 type InitEditorSyntaxQuery<'w, 's> = Query<
     'w,
     's,
@@ -33,7 +30,6 @@ type InitEditorSyntaxQuery<'w, 's> = Query<
     (With<CodeEditor>, Without<EditorSyntaxState>),
 >;
 
-#[cfg(feature = "tree-sitter")]
 type ReactLanguageChangedQuery<'w, 's> = Query<
     'w,
     's,
@@ -47,7 +43,6 @@ type ReactLanguageChangedQuery<'w, 's> = Query<
     ),
 >;
 
-#[cfg(feature = "tree-sitter")]
 type SyncEditorParseSourceQuery<'w, 's> = Query<
     'w,
     's,
@@ -68,7 +63,6 @@ type SyncEditorParseSourceQuery<'w, 's> = Query<
 /// types that don't implement `Reflect`.
 #[derive(Component, Default)]
 pub struct EditorSyntaxState {
-    #[cfg(feature = "tree-sitter")]
     pub(crate) provider: Option<bevy_tree_sitter::TreeSitterProvider>,
     /// Buffer-line range covered by the last `produce_line_styles` pass.
     /// Tracked here (not on `LineStyles`) because it's producer state, not
@@ -81,29 +75,20 @@ impl EditorSyntaxState {
         Self::default()
     }
 
-    #[cfg(feature = "tree-sitter")]
     pub fn set_provider(&mut self, provider: bevy_tree_sitter::TreeSitterProvider) {
         self.provider = Some(provider);
     }
 
     pub fn is_available(&self) -> bool {
-        #[cfg(feature = "tree-sitter")]
-        {
-            self.provider
-                .as_ref()
-                .map(|p| p.is_available())
-                .unwrap_or(false)
-        }
-        #[cfg(not(feature = "tree-sitter"))]
-        {
-            false
-        }
+        self.provider
+            .as_ref()
+            .map(|p| p.is_available())
+            .unwrap_or(false)
     }
 
     /// True when `byte_offset` is somewhere a completion request makes
     /// sense — i.e. *not* inside a string literal or comment. Callers pass
     /// the tree from `SyntaxTree` directly; returns `true` when absent.
-    #[cfg(feature = "tree-sitter")]
     pub fn is_completion_context(tree: &bevy_tree_sitter::ts::Tree, byte_offset: usize) -> bool {
         let root = tree.root_node();
         if byte_offset > root.end_byte() {
@@ -123,16 +108,10 @@ impl EditorSyntaxState {
         true
     }
 
-    #[cfg(not(feature = "tree-sitter"))]
-    pub fn is_completion_context(_byte_offset: usize) -> bool {
-        true
-    }
-
     /// Highlight `text` and return styled per-line segments.
     ///
     /// Reads the tree directly from `syntax_tree` — no internal tree cache.
     /// Returns plain-text segments when the provider or tree is absent.
-    #[cfg(feature = "tree-sitter")]
     pub fn highlight_range(
         &mut self,
         text: &str,
@@ -157,16 +136,6 @@ impl EditorSyntaxState {
         }
     }
 
-    #[cfg(not(feature = "tree-sitter"))]
-    pub fn highlight_range(
-        &mut self,
-        text: &str,
-        _start_byte: usize,
-        _theme: &crate::settings::SyntaxColors,
-        default_color: Color,
-    ) -> Vec<Vec<LineSegment>> {
-        plain_text_segments(text, default_color)
-    }
 }
 
 /// Build LineSegments for `text` with no highlights — fallback for when no
@@ -196,7 +165,6 @@ fn plain_text_segments(text: &str, default_color: Color) -> Vec<Vec<LineSegment>
 /// `highlights` is document-absolute and sorted by `byte_range.start`.
 /// `start_byte` is the document byte offset of the first byte of `text`.
 /// Two-pointer walk: O(L + H) where L = bytes in text, H = highlight count.
-#[cfg(feature = "tree-sitter")]
 fn ranges_to_segments(
     text: &str,
     start_byte: usize,
@@ -300,7 +268,6 @@ fn ranges_to_segments(
 }
 
 /// Snapshot of an editor's buffer state for the async parse pipeline.
-#[cfg(feature = "tree-sitter")]
 #[derive(Default)]
 pub(crate) struct EditorBufferSnapshot {
     pub(crate) rope: ropey::Rope,
@@ -309,12 +276,10 @@ pub(crate) struct EditorBufferSnapshot {
 
 /// `ParseSource` impl wired into `bevy_tree_sitter`'s parse pipeline.
 /// Only carries the buffer snapshot — no tree state.
-#[cfg(feature = "tree-sitter")]
 pub(crate) struct EditorParseSource {
     pub(crate) buf: Arc<RwLock<EditorBufferSnapshot>>,
 }
 
-#[cfg(feature = "tree-sitter")]
 impl bevy_tree_sitter::ParseSource for EditorParseSource {
     fn content_version(&self) -> u64 {
         self.buf.read().unwrap().content_version
@@ -328,7 +293,6 @@ impl bevy_tree_sitter::ParseSource for EditorParseSource {
 /// On startup, attach `EditorSyntaxState` + `ParseSourceComp` + `SyntaxTree`
 /// to every `CodeEditor` entity. `TreeSitterGrammar`, if present, drives the
 /// initial provider setup.
-#[cfg(feature = "tree-sitter")]
 pub fn init_editor_syntax(mut commands: Commands, editors: InitEditorSyntaxQuery) {
     for (entity, grammar) in editors.iter() {
         let mut syntax_state = EditorSyntaxState::new();
@@ -351,23 +315,11 @@ pub fn init_editor_syntax(mut commands: Commands, editors: InitEditorSyntaxQuery
     }
 }
 
-#[cfg(not(feature = "tree-sitter"))]
-pub fn init_editor_syntax(
-    mut commands: Commands,
-    editors: Query<Entity, (With<CodeEditor>, Without<EditorSyntaxState>)>,
-) {
-    for entity in editors.iter() {
-        commands.entity(entity).insert(EditorSyntaxState::new());
-    }
-}
-
 /// Per-entity handle to the `EditorBufferSnapshot` the `ParseSource` reads from.
-#[cfg(feature = "tree-sitter")]
 #[derive(Component)]
 pub(crate) struct EditorParseBufferRef(pub(crate) Arc<RwLock<EditorBufferSnapshot>>);
 
 /// React to a `TreeSitterGrammar` change by (re-)configuring the provider.
-#[cfg(feature = "tree-sitter")]
 pub(crate) fn react_language_changed(mut editors: ReactLanguageChangedQuery) {
     for (grammar, mut syntax_state) in editors.iter_mut() {
         if let Some(provider) = grammar.create_provider() {
@@ -376,7 +328,6 @@ pub(crate) fn react_language_changed(mut editors: ReactLanguageChangedQuery) {
     }
 }
 
-#[cfg(feature = "tree-sitter")]
 /// Mirror `TextBuffer<RopeBuffer>` into the per-entity `EditorBufferSnapshot`
 /// so the next `parse_dirty` tick sees the latest content. Bumps an internal
 /// `content_version` counter on every change so `ParseSource::content_version`
@@ -401,7 +352,6 @@ pub(crate) fn sync_editor_parse_source(editors: SyncEditorParseSourceQuery) {
     }
 }
 
-#[cfg(feature = "tree-sitter")]
 /// Apply edits synchronously to `SyntaxTree::tree` (tree interpolation).
 ///
 /// `tree.edit()` shifts byte offsets in O(log n) so highlight queries stay
@@ -470,7 +420,6 @@ impl Plugin for SyntaxPlugin {
             init_editor_syntax.in_set(crate::plugin::ApplyStateSet),
         );
 
-        #[cfg(feature = "tree-sitter")]
         {
             if !app.is_plugin_added::<bevy_tree_sitter::TreeSitterPlugin>() {
                 app.add_plugins(bevy_tree_sitter::TreeSitterPlugin);

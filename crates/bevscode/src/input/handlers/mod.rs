@@ -11,7 +11,6 @@
 //! and hide / refilter the completion popup on cursor moves.
 
 pub mod file;
-#[cfg(feature = "tree-sitter")]
 pub mod folding;
 #[cfg(feature = "lsp")]
 pub mod lsp;

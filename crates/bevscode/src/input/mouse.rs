@@ -148,7 +148,6 @@ fn screen_to_char_pos(screen_pos: Vec2, ctx: &HitTestCtx<'_>) -> usize {
 
 /// Fold-gutter click observer: toggle fold regions when the click lands in
 /// the narrow strip just before the gutter separator.
-#[cfg(feature = "tree-sitter")]
 pub fn on_fold_gutter_press(
     trigger: On<Pointer<Press>>,
     mut editor_query: Query<

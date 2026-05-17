@@ -188,11 +188,8 @@ impl Plugin for CodeEditorPlugin {
         // registered here.
         app.add_message::<SaveRequested>();
         app.add_message::<OpenRequested>();
-        #[cfg(feature = "tree-sitter")]
         app.add_message::<crate::types::events::FoldStateChanged>();
-        #[cfg(feature = "tree-sitter")]
         app.register_type::<crate::types::events::FoldStateChanged>();
-        #[cfg(feature = "tree-sitter")]
         app.add_message::<crate::types::events::SetLanguageRequested>();
         register_ide_action_events(app);
 
@@ -217,7 +214,6 @@ impl Plugin for CodeEditorPlugin {
         // `bevy_instanced_text_editor::interaction`'s observers (registered by
         // `InstancedTextInteractionPlugin`); the editor adds modifier-click
         // behaviors and the LSP hover trigger on top.
-        #[cfg(feature = "tree-sitter")]
         app.add_observer(crate::input::on_fold_gutter_press);
         app.add_observer(crate::input::on_alt_click);
         #[cfg(feature = "lsp")]
@@ -345,7 +341,6 @@ fn register_handler_systems(app: &mut App) {
             .after(ActionDispatchSet),
     );
 
-    #[cfg(feature = "tree-sitter")]
     app.add_systems(
         Update,
         (
@@ -359,7 +354,6 @@ fn register_handler_systems(app: &mut App) {
             .after(ActionDispatchSet),
     );
 
-    #[cfg(feature = "tree-sitter")]
     app.add_systems(
         Update,
         folding::emit_fold_state_changed
@@ -367,7 +361,6 @@ fn register_handler_systems(app: &mut App) {
             .after(folding::handle_unfold_all),
     );
 
-    #[cfg(feature = "tree-sitter")]
     app.add_systems(
         Update,
         crate::syntax::language_swap::handle_set_language
