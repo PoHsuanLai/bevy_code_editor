@@ -27,6 +27,7 @@ bevy = { version = "0.18", default-features = false, features = [
     "bevy_input_focus",
     "bevy_picking",
     "bevy_ui",
+    "ui_picking",
     "bevy_window",
     "bevy_winit",
     "bevy_log",
