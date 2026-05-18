@@ -99,9 +99,26 @@ use bevy::prelude::*;
     FoldHighlightRects,
     CaretRects,
     CursorLineRects,
-    BracketMatchRects
+    BracketMatchRects,
+    HoveredGutterLine,
+    HoveredInGutter
 )]
 pub struct CodeEditor;
+
+/// Buffer line currently under the pointer, used by gutter chevrons under
+/// `Folding::show_controls::Mouseover`. `None` when the pointer is outside
+/// the editor or has not moved since the last frame.
+#[derive(Component, Default, Clone, Copy, Reflect)]
+#[reflect(Component, Default)]
+pub struct HoveredGutterLine(pub Option<usize>);
+
+/// `true` when the pointer is over the gutter strip (line numbers,
+/// chevrons), not the text area. Drives `sync_cursor_icon` so the OS
+/// arrow shows over the gutter and the I-beam over text — matching
+/// VSCode / Sublime behavior.
+#[derive(Component, Default, Clone, Copy, Reflect)]
+#[reflect(Component, Default)]
+pub struct HoveredInGutter(pub bool);
 
 /// Marker for a cursor sprite entity. `cursor_index` 0 is the primary cursor;
 /// higher indices are additional cursors added via multi-cursor commands.

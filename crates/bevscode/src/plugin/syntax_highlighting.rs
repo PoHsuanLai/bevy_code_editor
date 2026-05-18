@@ -128,45 +128,54 @@ pub fn syntax_context(tree: &bevy_tree_sitter::ts::Tree, byte_offset: usize) -> 
 }
 
 impl EditorSyntaxState {
-    /// Highlight `text` and return styled per-line segments.
+    /// Highlight a sequence of buffer lines, each tagged with its absolute
+    /// rope byte offset. Returns one styled-segment vector per input line.
     ///
-    /// Reads the tree directly from `syntax_tree` — no internal tree cache.
-    /// Returns plain-text segments when the provider or tree is absent.
-    pub fn highlight_range(
+    /// Passing per-line rope offsets (rather than a single joined block with
+    /// cumulative offsets) is what lets the styler stay correct across
+    /// hidden / folded lines: each visible line maps to its true position
+    /// in the rope, so tree-sitter highlight ranges align even when the
+    /// caller skipped buffer rows in between.
+    pub fn highlight_lines(
         &mut self,
-        text: &str,
-        start_byte: usize,
+        lines: &[(usize, &str)],
         syntax_tree: &bevy_tree_sitter::SyntaxTree,
         rope: &ropey::Rope,
         theme: &crate::settings::SyntaxColors,
         default_color: Color,
     ) -> Vec<Vec<LineSegment>> {
+        let Some((first_byte, last_byte)) = lines.first().zip(lines.last()).map(|(f, l)| {
+            let f_byte = f.0;
+            let l_byte = l.0 + l.1.len();
+            (f_byte, l_byte)
+        }) else {
+            return Vec::new();
+        };
         let Some(provider) = &mut self.provider else {
-            return plain_text_segments(text, default_color);
+            return plain_lines(lines, default_color);
         };
         let Some(tree) = syntax_tree.tree.as_ref() else {
-            return plain_text_segments(text, default_color);
+            return plain_lines(lines, default_color);
         };
-        let end_byte = start_byte + text.len();
-        match provider.highlight_range(tree, rope, start_byte..end_byte) {
-            Some(highlights) => {
-                ranges_to_segments(text, start_byte, &highlights, theme, default_color)
-            }
-            None => plain_text_segments(text, default_color),
+        match provider.highlight_range(tree, rope, first_byte..last_byte) {
+            Some(highlights) => lines_to_segments(lines, &highlights, theme, default_color),
+            None => plain_lines(lines, default_color),
         }
     }
 }
 
-/// Build LineSegments for `text` with no highlights — fallback for when no
-/// provider or tree is available.
-fn plain_text_segments(text: &str, default_color: Color) -> Vec<Vec<LineSegment>> {
-    text.lines()
-        .map(|line| {
-            if line.trim().is_empty() {
+/// Plain-text fallback for `highlight_lines` when no tree-sitter provider
+/// is available. One segment per non-blank line in `lines`.
+fn plain_lines(lines: &[(usize, &str)], default_color: Color) -> Vec<Vec<LineSegment>> {
+    lines
+        .iter()
+        .map(|(_, line)| {
+            let stripped = line.strip_suffix('\n').unwrap_or(line);
+            if stripped.trim().is_empty() {
                 vec![]
             } else {
                 vec![LineSegment {
-                    text: line.to_string(),
+                    text: stripped.to_string(),
                     color: default_color,
                     background: None,
                     corner_radius: 0.0,
@@ -181,26 +190,25 @@ fn plain_text_segments(text: &str, default_color: Color) -> Vec<Vec<LineSegment>
 /// Translate a flat sorted `HighlightRange` slice into per-line `LineSegment`s,
 /// mapping capture names through the editor's `SyntaxColors`.
 ///
+/// Each `lines` entry is `(absolute_rope_byte_start, line_text)`. Lines may
+/// be non-contiguous in the rope (the caller can skip rows hidden by folds)
+/// as long as each one carries its true rope offset.
+///
 /// `highlights` is document-absolute and sorted by `byte_range.start`.
-/// `start_byte` is the document byte offset of the first byte of `text`.
-/// Two-pointer walk: O(L + H) where L = bytes in text, H = highlight count.
-fn ranges_to_segments(
-    text: &str,
-    start_byte: usize,
+/// Two-pointer walk: O(sum(line_len) + H) where H = highlight count.
+fn lines_to_segments(
+    lines: &[(usize, &str)],
     highlights: &[bevy_tree_sitter::HighlightRange],
     theme: &crate::settings::SyntaxColors,
     default_color: Color,
 ) -> Vec<Vec<LineSegment>> {
-    let mut out: Vec<Vec<LineSegment>> = Vec::with_capacity(text.lines().count());
-    let mut byte_pos = 0usize;
+    let mut out: Vec<Vec<LineSegment>> = Vec::with_capacity(lines.len());
     let mut hi_idx = 0usize;
 
-    for line in text.lines() {
-        let line_start = byte_pos;
+    for (abs_line_start, raw_line) in lines.iter().copied() {
+        let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
         let line_len = line.len();
-        let line_end = line_start + line_len;
-        let abs_line_start = start_byte + line_start;
-        let abs_line_end = start_byte + line_end;
+        let abs_line_end = abs_line_start + line_len;
 
         while hi_idx < highlights.len() && highlights[hi_idx].byte_range.end <= abs_line_start {
             hi_idx += 1;
@@ -279,8 +287,6 @@ fn ranges_to_segments(
         } else {
             out.push(segments);
         }
-
-        byte_pos = line_end + 1;
     }
 
     out

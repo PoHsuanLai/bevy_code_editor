@@ -389,25 +389,15 @@ pub(crate) fn produce_line_styles(
         }
 
         if !batch.is_empty() {
-            // Build a single text block: lines joined with \n, no trailing \n.
-            // Record each line's start byte in the block for splitting results.
-            let batch_start_byte = buffer.line_to_byte(batch[0].0);
-            let mut block = String::new();
-            let mut line_offsets: Vec<usize> = Vec::with_capacity(batch.len());
-            for (_, line_text) in &batch {
-                line_offsets.push(block.len());
-                let no_nl = line_text.strip_suffix('\n').unwrap_or(line_text);
-                block.push_str(no_nl);
-                block.push('\n');
-            }
-            // Strip the trailing \n added above.
-            block.pop();
+            let line_inputs: Vec<(usize, &str)> = batch
+                .iter()
+                .map(|(li, line_text)| (buffer.line_to_byte(*li), line_text.as_str()))
+                .collect();
 
             let _hl_span = bevy::prelude::info_span!("highlight_line").entered();
             let per_line_segs = if let Some(st) = syntax_tree {
-                syntax.highlight_range(
-                    &block,
-                    batch_start_byte,
+                syntax.highlight_lines(
+                    &line_inputs,
                     st,
                     buffer.rope(),
                     syntax_theme,

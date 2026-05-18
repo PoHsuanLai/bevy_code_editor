@@ -34,8 +34,10 @@ pub struct EditorTheme {
     /// Rotating palette for bracket-pair colorization.
     pub bracket_pair_colors: Vec<Color>,
     pub placeholder_color: Color,
-    /// Underline color drawn on the last visible row of a folded region
-    /// when `Folding::highlight` is true.
+    /// Row-background tint drawn across the visible line of a folded region
+    /// when `Folding::highlight` is true. Mirrors VSCode's
+    /// `editor.foldBackground` — a subtle selection-like wash, not an
+    /// underline.
     pub fold_marker: Color,
 }
 
@@ -61,7 +63,7 @@ impl Default for EditorTheme {
                 Color::srgb(0.93, 0.36, 0.39),
             ],
             placeholder_color: Color::srgba(0.5, 0.5, 0.5, 0.6),
-            fold_marker: Color::srgba(0.5, 0.5, 0.5, 0.5),
+            fold_marker: Color::srgba(0.231, 0.373, 0.604, 0.18),
         }
     }
 }

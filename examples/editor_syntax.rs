@@ -30,7 +30,23 @@ fn main() {
 }
 
 fn spawn_editor(mut commands: Commands) {
-    commands.spawn((CodeEditor, AutoResizeViewport, Name::new("CodeEditor")));
+    use bevscode::settings::RulerOption;
+
+    commands.spawn((
+        CodeEditor,
+        AutoResizeViewport,
+        Rulers(vec![
+            RulerOption {
+                column: 80,
+                color: None,
+            },
+            RulerOption {
+                column: 120,
+                color: None,
+            },
+        ]),
+        Name::new("CodeEditor"),
+    ));
 }
 
 fn setup_camera(mut commands: Commands) {

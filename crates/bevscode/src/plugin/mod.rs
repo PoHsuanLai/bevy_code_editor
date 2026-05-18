@@ -219,6 +219,7 @@ impl Plugin for CodeEditorPlugin {
         app.add_observer(crate::input::on_fold_gutter_press);
         app.add_observer(crate::input::on_alt_click);
         app.add_observer(crate::input::on_click_past_eol_unfold);
+        app.add_observer(crate::input::on_pointer_move_for_gutter_hover);
         #[cfg(feature = "lsp")]
         {
             app.add_observer(crate::input::on_ctrl_click_goto_definition);

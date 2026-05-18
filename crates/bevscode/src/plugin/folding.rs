@@ -210,6 +210,30 @@ pub(crate) fn collect_foldable_regions(
     }
 }
 
+/// Start-of-fold row for a foldable item, skipping leading attribute,
+/// annotation, decorator, and doc-comment children. Many tree-sitter
+/// grammars attach those as the *first* children of an item, which makes
+/// `node.start_position().row` point at the decoration rather than the
+/// keyword line a user expects the fold chevron on. Skipping past those
+/// children lets the chevron land on the same row LSP-driven editors
+/// (which sanitize fold ranges in the server) place it.
+fn fold_start_row_skipping_attributes(node: &bevy_tree_sitter::ts::Node) -> usize {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        let kind = child.kind();
+        let is_decoration = kind.starts_with("attribute")
+            || kind.starts_with("annotation")
+            || kind.starts_with("decorator")
+            || kind == "attributes"
+            || kind.ends_with("comment");
+        if is_decoration {
+            continue;
+        }
+        return child.start_position().row;
+    }
+    node.start_position().row
+}
+
 pub(crate) fn node_to_fold_region(
     node: &bevy_tree_sitter::ts::Node,
     rope: &ropey::Rope,
@@ -265,7 +289,7 @@ pub(crate) fn node_to_fold_region(
     };
 
     fold_kind.and_then(|kind| {
-        let start_line = node.start_position().row;
+        let start_line = fold_start_row_skipping_attributes(node);
         let end_line = node.end_position().row;
 
         // Bounds check: tree might have stale line numbers after text deletion

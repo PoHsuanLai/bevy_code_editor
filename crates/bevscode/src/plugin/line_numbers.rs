@@ -91,6 +91,7 @@ pub(crate) fn sync_gutter_text_view(
             &crate::settings::Padding,
             &crate::settings::RenderSettings,
             &crate::settings::Folding,
+            Ref<HoveredGutterLine>,
         ),
         (With<CodeEditor>, Without<GutterTextView>),
     >,
@@ -123,6 +124,7 @@ pub(crate) fn sync_gutter_text_view(
         padding,
         render,
         folding,
+        hovered,
     ) in editor_query.iter()
     {
         let Some((
@@ -199,7 +201,31 @@ pub(crate) fn sync_gutter_text_view(
         let cursor_line_idx = buffer.char_to_line(cursor_line);
 
         let mode = ui.line_numbers;
-        let show_chevrons = matches!(folding.show_controls, ShowFoldingControls::Always);
+        let reserve_chevron_slot = matches!(
+            folding.show_controls,
+            ShowFoldingControls::Always | ShowFoldingControls::Mouseover
+        );
+        let mouseover_chevrons = matches!(folding.show_controls, ShowFoldingControls::Mouseover);
+        let always_chevrons = matches!(folding.show_controls, ShowFoldingControls::Always);
+        let hovered_line = hovered.0;
+        let chevron_suffix = |line: usize| -> &'static str {
+            if !reserve_chevron_slot {
+                return "";
+            }
+            let render_here = always_chevrons
+                || (mouseover_chevrons && hovered_line == Some(line));
+            if render_here {
+                if fold_state.is_folded_line(line) {
+                    " \u{203A}"
+                } else if fold_state.is_foldable_line(line) {
+                    " \u{2304}"
+                } else {
+                    "  "
+                }
+            } else {
+                "  "
+            }
+        };
         let old_count = if g_buffer.0 .0.is_empty() {
             0
         } else {
@@ -208,23 +234,14 @@ pub(crate) fn sync_gutter_text_view(
         let count_stale = old_count != line_count;
         let needs_full_rebuild = count_stale
             || matches!(mode, LineNumbersMode::Relative)
-            || (show_chevrons && fold_state.is_changed());
+            || (always_chevrons && fold_state.is_changed())
+            || (mouseover_chevrons && (hovered.is_changed() || fold_state.is_changed()));
 
         if needs_full_rebuild {
             let mut text = String::with_capacity(line_count * 6);
             for i in 0..line_count {
                 if i > 0 {
                     text.push('\n');
-                }
-                if show_chevrons {
-                    let chevron = if fold_state.is_folded_line(i) {
-                        "\u{25B6} "
-                    } else if fold_state.is_foldable_line(i) {
-                        "\u{25BC} "
-                    } else {
-                        "  "
-                    };
-                    text.push_str(chevron);
                 }
                 let label = match mode {
                     LineNumbersMode::Relative => {
@@ -247,6 +264,7 @@ pub(crate) fn sync_gutter_text_view(
                     _ => (i + 1).to_string(),
                 };
                 text.push_str(&label);
+                text.push_str(chevron_suffix(i));
             }
             g_buffer.0 = TextSpan(text);
         }
@@ -287,24 +305,16 @@ pub(crate) fn sync_gutter_text_view(
 
         if cursor_lines != current_active
             || count_stale
-            || (show_chevrons && fold_state.is_changed())
+            || (always_chevrons && fold_state.is_changed())
+            || (mouseover_chevrons && (hovered.is_changed() || fold_state.is_changed()))
         {
             let active_color = theme.line_numbers_active;
             let mut by_line: HashMap<u32, Vec<FormattedSpan>> = HashMap::new();
             for &line in &cursor_lines {
                 if line < line_count {
                     let mut payload = String::with_capacity(8);
-                    if show_chevrons {
-                        let chevron = if fold_state.is_folded_line(line) {
-                            "\u{25B6} "
-                        } else if fold_state.is_foldable_line(line) {
-                            "\u{25BC} "
-                        } else {
-                            "  "
-                        };
-                        payload.push_str(chevron);
-                    }
                     payload.push_str(&(line + 1).to_string());
+                    payload.push_str(chevron_suffix(line));
                     let byte_len = payload.len();
                     by_line.insert(
                         line as u32,

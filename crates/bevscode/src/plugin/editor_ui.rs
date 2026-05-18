@@ -353,26 +353,35 @@ fn sync_automatic_layout(
 }
 
 /// Mirror the focused editor's `Misc::mouse_style` to the primary window's
-/// [`CursorIcon`]. Unfocused editors don't drive the OS cursor.
+/// [`CursorIcon`]. The OS arrow shows over the gutter; `mouse_style` (the
+/// text cursor, by default) shows over the text area. Unfocused editors
+/// don't drive the OS cursor.
 fn sync_cursor_icon(
     mut commands: Commands,
     input_focus: Res<bevy::input_focus::InputFocus>,
-    editors: Query<&crate::settings::Misc, With<CodeEditor>>,
+    editors: Query<
+        (&crate::settings::Misc, &crate::types::HoveredInGutter),
+        With<CodeEditor>,
+    >,
     windows: Query<(Entity, Option<&bevy::window::CursorIcon>), With<bevy::window::PrimaryWindow>>,
 ) {
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok(misc) = editors.get(entity) else {
+    let Ok((misc, in_gutter)) = editors.get(entity) else {
         return;
     };
     let Ok((window_entity, current)) = windows.single() else {
         return;
     };
-    let target = match misc.mouse_style {
-        crate::settings::MouseStyle::Text => bevy::window::SystemCursorIcon::Text,
-        crate::settings::MouseStyle::Default => bevy::window::SystemCursorIcon::Default,
-        crate::settings::MouseStyle::Copy => bevy::window::SystemCursorIcon::Copy,
+    let target = if in_gutter.0 {
+        bevy::window::SystemCursorIcon::Default
+    } else {
+        match misc.mouse_style {
+            crate::settings::MouseStyle::Text => bevy::window::SystemCursorIcon::Text,
+            crate::settings::MouseStyle::Default => bevy::window::SystemCursorIcon::Default,
+            crate::settings::MouseStyle::Copy => bevy::window::SystemCursorIcon::Copy,
+        }
     };
     let next = bevy::window::CursorIcon::System(target);
     if current.map(|c| *c != next).unwrap_or(true) {
@@ -399,6 +408,7 @@ fn sync_gutter_width(
         let chevron_chars = if matches!(
             folding.show_controls,
             crate::settings::ShowFoldingControls::Always
+                | crate::settings::ShowFoldingControls::Mouseover
         ) {
             2.0
         } else {

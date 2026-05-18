@@ -594,7 +594,7 @@ pub(crate) fn update_fold_highlights(
             new_rects.push(RectOverlay {
                 display_row,
                 x_range: 0.0..viewport_width,
-                vertical: RowVertical::BottomBand { thickness: 1.0 },
+                vertical: RowVertical::Full,
                 color: theme.fold_marker,
                 z: -1,
                 corners: bevy_instanced_text::CornerRadii::ZERO,

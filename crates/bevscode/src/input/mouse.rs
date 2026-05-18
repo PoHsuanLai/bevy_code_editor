@@ -22,7 +22,6 @@
 use crate::settings::GutterConfig;
 use crate::text_view::TextBuffer;
 use crate::types::*;
-#[cfg(feature = "lsp")]
 use bevy::picking::events::Move;
 use bevy::picking::events::{Pointer, Press};
 use bevy::picking::pointer::PointerButton;
@@ -90,6 +89,28 @@ type HoverMoveQuery<'w, 's> = Query<
 use crate::lsp_ui::reset_hover_state;
 #[cfg(feature = "lsp")]
 use bevy_lsp::LspMessage;
+
+/// Convert a Bevy picking [`HitData`] position to viewport-local pixel
+/// coordinates. The UI picking backend reports `hit.position` as a
+/// `(-0.5, -0.5)..(0.5, 0.5)` Vec3 normalized to the node's center;
+/// editor observers want top-left-origin logical pixels. Returns `None`
+/// when the hit didn't carry a position (touch begin without coords, etc.).
+///
+/// Mirrors [`bevy_instanced_text::RowMetrics::pick_row_from_hit`]'s
+/// normalization step so every observer in this module agrees on the
+/// coordinate space before doing fold / scroll math.
+fn hit_to_local_px(
+    hit: &bevy::picking::backend::HitData,
+    computed: &ComputedNode,
+) -> Option<Vec2> {
+    let norm = hit.position?;
+    let inv = computed.inverse_scale_factor();
+    let size = computed.size() * inv;
+    Some(Vec2::new(
+        (norm.x + 0.5) * size.x,
+        (norm.y + 0.5) * size.y,
+    ))
+}
 
 /// Read-only context for the fold-aware screen→char hit-test.
 struct HitTestCtx<'a> {
@@ -168,7 +189,7 @@ pub fn on_fold_gutter_press(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((scroll, computed, gutter, mut fold_state, font, lh, _mono, folding)) =
+    let Ok((scroll, computed, gutter, mut fold_state, font, lh, mono, folding)) =
         editor_query.get_mut(entity)
     else {
         return;
@@ -176,11 +197,17 @@ pub fn on_fold_gutter_press(
     if !folding.enabled {
         return;
     }
-    let Some(local_pos) = trigger.event().hit.position.map(|p| Vec2::new(p.x, p.y)) else {
+    let Some(local_pos) = hit_to_local_px(&trigger.event().hit, computed) else {
         return;
     };
 
-    let gutter_start = gutter.gutter_width - 18.0;
+    let chevron_active = matches!(
+        folding.show_controls,
+        crate::settings::ShowFoldingControls::Always
+            | crate::settings::ShowFoldingControls::Mouseover
+    );
+    let chevron_width = if chevron_active { 2.0 * mono.px } else { 0.0 };
+    let gutter_start = gutter.gutter_width - 18.0 - chevron_width;
     let gutter_end = gutter.gutter_width + 5.0;
     if local_pos.x < gutter_start || local_pos.x >= gutter_end {
         return;
@@ -190,7 +217,10 @@ pub fn on_fold_gutter_press(
     let inv = computed.inverse_scale_factor();
     let text_area_top = computed.content_inset().min_inset.y * inv;
     let relative_y = local_pos.y - text_area_top + scroll.y;
-    let display_row = (relative_y / line_height).max(0.0) as usize;
+    if relative_y < 0.0 || line_height <= 0.0 {
+        return;
+    }
+    let display_row = (relative_y / line_height) as usize;
     let buffer_line = fold_state.display_to_actual_line(display_row);
 
     if fold_state.is_foldable_line(buffer_line) {
@@ -239,7 +269,7 @@ pub fn on_click_past_eol_unfold(
     if !folding.unfold_on_click_after_eol {
         return;
     }
-    let Some(local_pos) = trigger.event().hit.position.map(|p| Vec2::new(p.x, p.y)) else {
+    let Some(local_pos) = hit_to_local_px(&trigger.event().hit, computed) else {
         return;
     };
     let inv = computed.inverse_scale_factor();
@@ -247,7 +277,10 @@ pub fn on_click_past_eol_unfold(
     let text_area_top = computed.content_inset().min_inset.y * inv;
     let text_area_left = computed.content_inset().min_inset.x * inv;
     let relative_y = local_pos.y - text_area_top + scroll.y;
-    let display_row = (relative_y / line_height).max(0.0) as usize;
+    if relative_y < 0.0 || line_height <= 0.0 {
+        return;
+    }
+    let display_row = (relative_y / line_height) as usize;
     let buffer_line = fold_state.display_to_actual_line(display_row);
     if buffer_line >= buffer.rope().len_lines() {
         return;
@@ -295,7 +328,7 @@ pub fn on_alt_click(
     else {
         return;
     };
-    let Some(local_pos) = trigger.event().hit.position.map(|p| Vec2::new(p.x, p.y)) else {
+    let Some(local_pos) = hit_to_local_px(&trigger.event().hit, computed) else {
         return;
     };
 
@@ -356,7 +389,7 @@ pub fn on_ctrl_click_goto_definition(
     let Some(doc) = lsp_document else {
         return;
     };
-    let Some(local_pos) = trigger.event().hit.position.map(|p| Vec2::new(p.x, p.y)) else {
+    let Some(local_pos) = hit_to_local_px(&trigger.event().hit, computed) else {
         return;
     };
 
@@ -412,7 +445,7 @@ pub fn on_pointer_move_for_hover(
     let Ok(mut hover_state) = hover_query.get_mut(entity) else {
         return;
     };
-    let Some(local_pos) = trigger.event().hit.position.map(|p| Vec2::new(p.x, p.y)) else {
+    let Some(local_pos) = hit_to_local_px(&trigger.event().hit, computed) else {
         return;
     };
 
@@ -517,5 +550,64 @@ pub fn tick_lsp_hover_timer(
         });
         hover_state.request_sent = true;
         hover_state.pending_char_index = Some(current_char_pos);
+    }
+}
+
+/// Track the buffer line currently under the pointer and whether the pointer
+/// sits over the gutter strip. Drives gutter chevron rendering for
+/// `Folding::show_controls::Mouseover` and the OS cursor toggle in
+/// `sync_cursor_icon`.
+pub fn on_pointer_move_for_gutter_hover(
+    trigger: On<Pointer<Move>>,
+    mut editor_query: Query<
+        (
+            &ScrollPosition,
+            &ComputedNode,
+            &GutterConfig,
+            &FoldState,
+            &TextFont,
+            &bevy::text::LineHeight,
+            &mut HoveredGutterLine,
+            &mut HoveredInGutter,
+        ),
+        With<CodeEditor>,
+    >,
+) {
+    let entity = trigger.event().entity;
+    let Ok((scroll, computed, gutter, fold_state, font, lh, mut hovered, mut in_gutter)) =
+        editor_query.get_mut(entity)
+    else {
+        return;
+    };
+    let Some(local_pos) = hit_to_local_px(&trigger.event().hit, computed) else {
+        if hovered.0.is_some() {
+            hovered.0 = None;
+        }
+        if in_gutter.0 {
+            in_gutter.0 = false;
+        }
+        return;
+    };
+
+    let over_gutter = local_pos.x < gutter.gutter_width;
+    if in_gutter.0 != over_gutter {
+        in_gutter.0 = over_gutter;
+    }
+
+    let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
+    let inv = computed.inverse_scale_factor();
+    let text_area_top = computed.content_inset().min_inset.y * inv;
+    let relative_y = local_pos.y - text_area_top + scroll.y;
+    if relative_y < 0.0 || line_height <= 0.0 {
+        if hovered.0.is_some() {
+            hovered.0 = None;
+        }
+        return;
+    }
+    let display_row = (relative_y / line_height) as usize;
+    let buffer_line = fold_state.display_to_actual_line(display_row);
+    let next = Some(buffer_line);
+    if hovered.0 != next {
+        hovered.0 = next;
     }
 }
