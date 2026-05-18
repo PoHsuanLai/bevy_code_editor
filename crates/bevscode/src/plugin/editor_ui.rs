@@ -6,13 +6,14 @@ use bevy_instanced_text::{MonoCellWidth, TextOverlays, TextUnderlays};
 use crate::settings::*;
 use crate::types::{
     BracketMatchRects, CaretRects, CodeEditor, CursorLineRects, FoldHighlightRects,
-    IndentGuideRects, RulerRects, SelectionRects, Separator,
+    IndentGuideRects, RulerRects, SelectionRects, Separator, WhitespaceRects,
 };
 
+use super::links::{update_link_overlays, LinkRects};
 use super::{
     setup_gutter_text_view, sync_gutter_text_view, to_bevy_coords_left_aligned,
     update_cursor_line_highlight, update_fold_highlights, update_indent_guides, update_rulers,
-    update_selection_highlight, EditorSetupSet,
+    update_selection_highlight, update_whitespace_markers, EditorSetupSet,
 };
 use bevy_instanced_text::gpu::GlyphAtlas;
 
@@ -74,7 +75,13 @@ impl Plugin for EditorUiPlugin {
 
         app.add_systems(
             PostUpdate,
-            (update_indent_guides, update_rulers, update_fold_highlights)
+            (
+                update_indent_guides,
+                update_rulers,
+                update_fold_highlights,
+                update_link_overlays,
+                update_whitespace_markers,
+            )
                 .in_set(super::RenderingSet),
         );
 
@@ -109,6 +116,8 @@ fn merge_overlay_components(
             &CursorLineRects,
             &CaretRects,
             &BracketMatchRects,
+            &LinkRects,
+            &WhitespaceRects,
             &mut TextUnderlays,
             &mut TextOverlays,
         ),
@@ -122,6 +131,8 @@ fn merge_overlay_components(
                 Changed<CursorLineRects>,
                 Changed<CaretRects>,
                 Changed<BracketMatchRects>,
+                Changed<LinkRects>,
+                Changed<WhitespaceRects>,
             )>,
         ),
     >,
@@ -134,6 +145,8 @@ fn merge_overlay_components(
         cursor_line,
         carets,
         brackets,
+        links,
+        whitespace,
         mut underlays,
         mut overlays,
     ) in &mut query
@@ -148,6 +161,8 @@ fn merge_overlay_components(
         overlays.0.extend_from_slice(&cursor_line.0);
         overlays.0.extend_from_slice(&carets.0);
         overlays.0.extend_from_slice(&brackets.0);
+        overlays.0.extend_from_slice(&links.0);
+        overlays.0.extend_from_slice(&whitespace.0);
     }
 }
 
@@ -360,22 +375,33 @@ fn sync_cursor_icon(
     mut commands: Commands,
     input_focus: Res<bevy::input_focus::InputFocus>,
     editors: Query<
-        (&crate::settings::Misc, &crate::types::HoveredInGutter),
+        (
+            &crate::settings::Misc,
+            &crate::types::HoveredInGutter,
+            &crate::plugin::HoveredLink,
+        ),
         With<CodeEditor>,
     >,
     windows: Query<(Entity, Option<&bevy::window::CursorIcon>), With<bevy::window::PrimaryWindow>>,
+    keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((misc, in_gutter)) = editors.get(entity) else {
+    let Ok((misc, in_gutter, hovered_link)) = editors.get(entity) else {
         return;
     };
     let Ok((window_entity, current)) = windows.single() else {
         return;
     };
+    let ctrl_held = keyboard.pressed(KeyCode::ControlLeft)
+        || keyboard.pressed(KeyCode::ControlRight)
+        || keyboard.pressed(KeyCode::SuperLeft)
+        || keyboard.pressed(KeyCode::SuperRight);
     let target = if in_gutter.0 {
         bevy::window::SystemCursorIcon::Default
+    } else if misc.links && hovered_link.0.is_some() && ctrl_held {
+        bevy::window::SystemCursorIcon::Pointer
     } else {
         match misc.mouse_style {
             crate::settings::MouseStyle::Text => bevy::window::SystemCursorIcon::Text,

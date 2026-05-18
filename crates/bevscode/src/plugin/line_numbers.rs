@@ -212,8 +212,7 @@ pub(crate) fn sync_gutter_text_view(
             if !reserve_chevron_slot {
                 return "";
             }
-            let render_here = always_chevrons
-                || (mouseover_chevrons && hovered_line == Some(line));
+            let render_here = always_chevrons || (mouseover_chevrons && hovered_line == Some(line));
             if render_here {
                 if fold_state.is_folded_line(line) {
                     " \u{203A}"

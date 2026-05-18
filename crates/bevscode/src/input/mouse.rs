@@ -63,6 +63,7 @@ type CtrlClickQuery<'w, 's> = Query<
         &'static bevy::text::LineHeight,
         &'static MonoCellWidth,
         Option<&'static DisplayLayout>,
+        &'static crate::plugin::links::LinkRanges,
     ),
     With<CodeEditor>,
 >;
@@ -99,17 +100,14 @@ use bevy_lsp::LspMessage;
 /// Mirrors [`bevy_instanced_text::RowMetrics::pick_row_from_hit`]'s
 /// normalization step so every observer in this module agrees on the
 /// coordinate space before doing fold / scroll math.
-fn hit_to_local_px(
+pub(crate) fn hit_to_local_px(
     hit: &bevy::picking::backend::HitData,
     computed: &ComputedNode,
 ) -> Option<Vec2> {
     let norm = hit.position?;
     let inv = computed.inverse_scale_factor();
     let size = computed.size() * inv;
-    Some(Vec2::new(
-        (norm.x + 0.5) * size.x,
-        (norm.y + 0.5) * size.y,
-    ))
+    Some(Vec2::new((norm.x + 0.5) * size.x, (norm.y + 0.5) * size.y))
 }
 
 /// Read-only context for the fold-aware screen→char hit-test.
@@ -378,7 +376,7 @@ pub fn on_ctrl_click_goto_definition(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((buffer, scroll, computed, fold_state, font, lh, mono, layout)) =
+    let Ok((buffer, scroll, computed, fold_state, font, lh, mono, layout, link_ranges)) =
         editor_query.get(entity)
     else {
         return;
@@ -407,6 +405,16 @@ pub fn on_ctrl_click_goto_definition(
             scroll_y: scroll.y,
         },
     );
+
+    let click_line = buffer.rope().char_to_line(char_pos);
+    let click_col = char_pos - buffer.rope().line_to_char(click_line);
+    if link_ranges
+        .0
+        .iter()
+        .any(|r| r.buffer_line == click_line && click_col >= r.start_char && click_col < r.end_char)
+    {
+        return;
+    }
 
     let lsp_position = bevy_lsp::rope_char_to_lsp_position(
         buffer.rope(),

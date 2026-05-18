@@ -100,6 +100,10 @@ use bevy::prelude::*;
     CaretRects,
     CursorLineRects,
     BracketMatchRects,
+    WhitespaceRects,
+    crate::plugin::LinkRects,
+    crate::plugin::LinkRanges,
+    crate::plugin::HoveredLink,
     HoveredGutterLine,
     HoveredInGutter
 )]
@@ -228,6 +232,12 @@ pub struct CursorLineRects(pub Vec<RectOverlay>);
 #[derive(Component, Default, Clone, Reflect)]
 #[reflect(Component, Default)]
 pub struct BracketMatchRects(pub Vec<RectOverlay>);
+
+/// Whitespace marker rects (centered dots for spaces, thin bars for tabs)
+/// — written by `update_whitespace_markers`.
+#[derive(Component, Default, Clone, Reflect)]
+#[reflect(Component, Default)]
+pub struct WhitespaceRects(pub Vec<RectOverlay>);
 
 /// Event emitted when save is requested (Ctrl+S)
 /// The host application should handle this event to save the buffer contents.

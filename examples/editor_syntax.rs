@@ -30,7 +30,9 @@ fn main() {
 }
 
 fn spawn_editor(mut commands: Commands) {
-    use bevscode::settings::RulerOption;
+    use bevscode::settings::{
+        CursorLine, RenderLineHighlight, RenderSettings, RenderWhitespace, RulerOption,
+    };
 
     commands.spawn((
         CodeEditor,
@@ -45,6 +47,14 @@ fn spawn_editor(mut commands: Commands) {
                 color: None,
             },
         ]),
+        CursorLine {
+            render_line_highlight: RenderLineHighlight::All,
+            ..Default::default()
+        },
+        RenderSettings {
+            render_whitespace: RenderWhitespace::All,
+            ..Default::default()
+        },
         Name::new("CodeEditor"),
     ));
 }
@@ -75,6 +85,7 @@ fn setup_editor_with_treesitter(
     ));
 
     let text = r#"// Rust syntax highlighting with tree-sitter
+// See docs at https://bevyengine.org/learn/ for more.
 use std::collections::HashMap;
 
 /// A simple struct to demonstrate syntax highlighting

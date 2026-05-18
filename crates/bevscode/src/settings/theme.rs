@@ -39,6 +39,15 @@ pub struct EditorTheme {
     /// `editor.foldBackground` — a subtle selection-like wash, not an
     /// underline.
     pub fold_marker: Color,
+    /// Color used for whitespace markers (centered dot for spaces, thin
+    /// bar for tabs) when `RenderSettings::render_whitespace` enables
+    /// any visible mode. Mirrors VSCode's `editorWhitespace.foreground` —
+    /// a low-alpha foreground tone so markers stay subtle.
+    pub whitespace: Color,
+    /// Color used to underline detected URLs when `Misc::links` is on.
+    /// Mirrors VSCode's `textLink.foreground` — a muted blue that reads
+    /// as a link without competing with syntax colors.
+    pub link: Color,
 }
 
 impl Default for EditorTheme {
@@ -64,6 +73,8 @@ impl Default for EditorTheme {
             ],
             placeholder_color: Color::srgba(0.5, 0.5, 0.5, 0.6),
             fold_marker: Color::srgba(0.231, 0.373, 0.604, 0.18),
+            whitespace: Color::srgba(0.5, 0.5, 0.5, 0.18),
+            link: Color::srgba(0.29, 0.56, 0.89, 0.6),
         }
     }
 }
