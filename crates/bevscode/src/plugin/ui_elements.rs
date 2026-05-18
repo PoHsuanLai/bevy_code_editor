@@ -14,16 +14,10 @@ type AutoScrollQuery<'w, 's> = Query<
     'w,
     's,
     (
-        &'static TextBuffer<RopeBuffer>,
-        &'static ScrollPosition,
-        &'static mut ScrollAnimator,
-        &'static crate::text_view::ContentMetrics,
-        &'static mut CursorState,
-        &'static ComputedNode,
-        &'static TextFont,
-        &'static bevy::text::LineHeight,
-        &'static MonoCellWidth,
-        &'static bevy_instanced_text_editor::ScrollConfig,
+        EditorBufferView,
+        EditorLayoutView,
+        EditorFontView,
+        ScrollTargetView,
     ),
     With<CodeEditor>,
 >;
@@ -807,18 +801,18 @@ fn line_leading_ws_end_col(chars: &[char]) -> usize {
 pub(crate) fn should_auto_scroll(
     editor_query: Query<
         (
-            &TextBuffer<RopeBuffer>,
+            EditorBufferView,
             &CursorState,
             &bevy_instanced_text_editor::TextViewDragState,
         ),
         With<CodeEditor>,
     >,
 ) -> bool {
-    for (buffer, cursor, mouse_drag) in editor_query.iter() {
+    for (buf, cursor, mouse_drag) in editor_query.iter() {
         if mouse_drag.is_dragging {
             continue;
         }
-        let cursor_pos = cursor.cursor_pos.min(buffer.len_chars());
+        let cursor_pos = cursor.cursor_pos.min(buf.buffer.len_chars());
         if cursor_pos != cursor.last_cursor_pos {
             return true;
         }
@@ -827,31 +821,32 @@ pub(crate) fn should_auto_scroll(
 }
 
 pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
-    for (buffer, scroll, mut animator, metrics, mut cursor, computed, font, lh, mono, scroll_cfg) in
-        editor_query.iter_mut()
-    {
-        let cursor_pos = cursor.cursor_pos.min(buffer.len_chars());
-        cursor.last_cursor_pos = cursor_pos;
-        let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
-        let inv = computed.inverse_scale_factor();
-        let viewport_height = computed.size().y * inv;
+    for (buf, layout, fonts, mut scroll_target) in editor_query.iter_mut() {
+        let cursor_pos = scroll_target.cursor.cursor_pos.min(buf.buffer.len_chars());
+        scroll_target.cursor.last_cursor_pos = cursor_pos;
+        let line_height =
+            bevy_instanced_text::resolve_line_height(*fonts.line_height, fonts.font.font_size);
+        let inv = layout.computed.inverse_scale_factor();
+        let viewport_height = layout.computed.size().y * inv;
         if viewport_height < 1.0 || line_height < 1.0 {
             continue;
         }
-        let line_index = buffer.char_to_line(cursor_pos);
-        let viewport_width = computed.size().x * inv;
-        let text_area_top = computed.content_inset().min_inset.y * inv;
-        let text_area_left = computed.content_inset().min_inset.x * inv;
+        let line_index = buf.buffer.char_to_line(cursor_pos);
+        let viewport_width = layout.computed.size().x * inv;
+        let text_area_top = layout.computed.content_inset().min_inset.y * inv;
+        let text_area_left = layout.computed.content_inset().min_inset.x * inv;
 
         // Animator-target-relative cursor pos: where the cursor *will be*
         // after the current animation lands. Stacks repeated cursor moves
         // monotonically instead of fighting the animator.
         // When the animator has no in-flight target (just woke up), seed from
         // the current ScrollPosition so we don't snap.
-        let mut target = if animator.target == Vec2::ZERO && scroll.0 != Vec2::ZERO {
-            scroll.0
+        let mut target = if scroll_target.animator.target == Vec2::ZERO
+            && layout.scroll.0 != Vec2::ZERO
+        {
+            layout.scroll.0
         } else {
-            animator.target
+            scroll_target.animator.target
         };
         let cursor_y = text_area_top - target.y + line_index as f32 * line_height;
 
@@ -869,34 +864,47 @@ pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
         }
 
         if vertical_changed {
-            let line_count = buffer.len_lines();
+            let line_count = buf.buffer.len_lines();
             let content_height = line_count as f32 * line_height;
             let max_scroll = (content_height - viewport_height + text_area_top).max(0.0);
             target.y = target.y.clamp(0.0, max_scroll);
         }
 
         // === HORIZONTAL AUTO-SCROLL ===
-        let line_start = buffer.line_to_char(line_index);
-        let col_index = cursor_pos - line_start;
-        let char_width = mono.px;
-        let cursor_x = col_index as f32 * char_width;
+        // Skip entirely when soft-wrap is on: content cannot extend past the
+        // viewport, so there's nothing to chase horizontally.
+        let wrap_on = scroll_target.bounds.is_some_and(|b| b.width.is_some());
+        if wrap_on {
+            target.x = 0.0;
+        } else {
+            let line_start = buf.buffer.line_to_char(line_index);
+            let col_index = cursor_pos - line_start;
+            let char_width = layout.mono.px;
+            let cursor_x = col_index as f32 * char_width;
 
-        let margin_horizontal = scroll_cfg.reveal_horizontal_right_padding.max(char_width);
-        let visible_left = target.x;
-        let visible_right = target.x + viewport_width - text_area_left - margin_horizontal;
+            let margin_horizontal = scroll_target
+                .scroll_cfg
+                .reveal_horizontal_right_padding
+                .max(char_width);
+            let visible_left = target.x;
+            let visible_right = target.x + viewport_width - text_area_left - margin_horizontal;
 
-        if cursor_x < visible_left {
-            target.x = cursor_x.max(0.0);
-        } else if cursor_x > visible_right {
-            target.x = cursor_x - (viewport_width - text_area_left - margin_horizontal);
+            if cursor_x < visible_left {
+                target.x = cursor_x.max(0.0);
+            } else if cursor_x > visible_right {
+                target.x = cursor_x - (viewport_width - text_area_left - margin_horizontal);
+            }
+
+            let max_horizontal_scroll =
+                (scroll_target.metrics.max_content_width - viewport_width).max(0.0);
+            target.x = target.x.clamp(0.0, max_horizontal_scroll);
         }
 
-        let max_horizontal_scroll = (metrics.max_content_width - viewport_width).max(0.0);
-        target.x = target.x.clamp(0.0, max_horizontal_scroll);
-
-        if !vertical_changed && (target.x - animator.target.x).abs() < f32::EPSILON {
+        if !vertical_changed
+            && (target.x - scroll_target.animator.target.x).abs() < f32::EPSILON
+        {
             continue;
         }
-        animator.target = target;
+        scroll_target.animator.target = target;
     }
 }

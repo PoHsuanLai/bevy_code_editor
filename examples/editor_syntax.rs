@@ -31,7 +31,8 @@ fn main() {
 
 fn spawn_editor(mut commands: Commands) {
     use bevscode::settings::{
-        CursorLine, RenderLineHighlight, RenderSettings, RenderWhitespace, RulerOption,
+        CursorLine, RenderLineHighlight, RenderSettings, RenderWhitespace, RulerOption, WordWrapMode,
+        Wrapping,
     };
 
     commands.spawn((
@@ -53,6 +54,10 @@ fn spawn_editor(mut commands: Commands) {
         },
         RenderSettings {
             render_whitespace: RenderWhitespace::All,
+            ..Default::default()
+        },
+        Wrapping {
+            word_wrap: WordWrapMode::On,
             ..Default::default()
         },
         Name::new("CodeEditor"),
@@ -86,6 +91,7 @@ fn setup_editor_with_treesitter(
 
     let text = r#"// Rust syntax highlighting with tree-sitter
 // See docs at https://bevyengine.org/learn/ for more.
+// Long line to demonstrate soft-wrap: lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
 use std::collections::HashMap;
 
 /// A simple struct to demonstrate syntax highlighting

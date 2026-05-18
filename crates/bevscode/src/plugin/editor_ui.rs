@@ -176,18 +176,21 @@ pub struct AutoResizeViewport;
 /// Keep `Node` pixel size in sync with the primary window for `AutoResizeViewport` editors.
 /// Val::Px is used (not Val::Percent) so Bevy UI layout can resolve the size without
 /// needing a UI camera to compute percentages against.
+/// Set the editor's `Node` to fill 100% of the primary window viewport.
+/// Writes `Val::Vw(100)` / `Val::Vh(100)` once when the marker is first
+/// observed — Bevy's layout pass resolves viewport-relative units against
+/// the live window on every resize, so no explicit resize listener is
+/// needed.
 fn sync_node_from_window(
     mut editors: Query<&mut Node, (With<CodeEditor>, With<AutoResizeViewport>)>,
-    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
 ) {
-    let Ok(window) = windows.single() else { return };
-    let w = window.width();
-    let h = window.height();
+    let target_w = Val::Vw(100.0);
+    let target_h = Val::Vh(100.0);
     for mut node in editors.iter_mut() {
-        let target_w = Val::Px(w);
-        let target_h = Val::Px(h);
-        if node.width != target_w || node.height != target_h {
+        if node.width != target_w {
             node.width = target_w;
+        }
+        if node.height != target_h {
             node.height = target_h;
         }
     }

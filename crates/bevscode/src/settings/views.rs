@@ -9,9 +9,11 @@
 use bevy::ecs::query::QueryData;
 use bevy::text::TextFont;
 use bevy::ui::{ComputedNode, ScrollPosition};
-use bevy_instanced_text::{DisplayLayout, MonoCellWidth, TextBuffer};
-use bevy_instanced_text_editor::RopeBuffer;
+use bevy_instanced_text::{DisplayLayout, MonoCellWidth, TextBounds, TextBuffer};
+use bevy_instanced_text_editor::{CursorState, RopeBuffer, ScrollConfig};
 
+use crate::plugin::ScrollAnimator;
+use crate::text_view::ContentMetrics;
 use crate::types::FoldState;
 
 /// Buffer + fold state. Every overlay producer that reads text and needs
@@ -41,4 +43,18 @@ pub struct EditorLayoutView {
 pub struct EditorFontView {
     pub font: &'static TextFont,
     pub line_height: &'static bevy::text::LineHeight,
+}
+
+/// Scroll-target shape — animator + content metrics + scroll config +
+/// mutable cursor + optional [`TextBounds`] (for wrap-aware horizontal
+/// gating). Mutability lets the auto-scroll system both *seed* the
+/// animator's target and *clear* the cursor's `last_cursor_pos`.
+#[derive(QueryData)]
+#[query_data(mutable)]
+pub struct ScrollTargetView {
+    pub animator: &'static mut ScrollAnimator,
+    pub metrics: &'static ContentMetrics,
+    pub cursor: &'static mut CursorState,
+    pub scroll_cfg: &'static ScrollConfig,
+    pub bounds: Option<&'static TextBounds>,
 }

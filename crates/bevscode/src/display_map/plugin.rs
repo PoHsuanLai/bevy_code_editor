@@ -44,6 +44,17 @@ impl Plugin for DisplayMapPlugin {
                 .after(crate::plugin::ApplyStateSet)
                 .before(LayoutProduceSet),
         );
+        // `sync_layout_wrap` also runs in PostUpdate after the Bevy UI
+        // layout pass refreshes `ComputedNode`, so window resizes pick up
+        // the new viewport width in the same frame — otherwise the wrap
+        // budget would lag one frame behind and re-wrap would only happen
+        // after the next user input.
+        app.configure_sets(
+            PostUpdate,
+            LayoutSyncSet
+                .after(bevy::ui::UiSystems::Layout)
+                .before(LayoutProduceSet),
+        );
         // Engine's `LayoutProduceSet` is scheduled by `InstancedTextPlugin`;
         // we configure it to live inside `RenderingSet` so downstream
         // observers (cursor / selection) see the freshly-built layout.
@@ -68,6 +79,9 @@ impl Plugin for DisplayMapPlugin {
             Update,
             (produce_hidden_lines, produce_line_styles, sync_layout_wrap).in_set(LayoutSyncSet),
         );
+        // PostUpdate re-run of just the wrap sync. Hidden-lines / styles
+        // don't depend on viewport size, so they stay in Update.
+        app.add_systems(PostUpdate, sync_layout_wrap.in_set(LayoutSyncSet));
     }
 }
 
