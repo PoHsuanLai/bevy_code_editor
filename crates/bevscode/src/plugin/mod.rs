@@ -32,7 +32,9 @@ pub use self::syntax_highlighting::{EditorSyntaxState, SyntaxPlugin};
 pub(crate) use self::brackets::{update_bracket_highlight, update_bracket_match};
 pub(crate) use self::cursor::update_cursor_line_highlight;
 pub(crate) use self::line_numbers::{setup_gutter_text_view, sync_gutter_text_view};
-pub(crate) use self::ui_elements::{update_indent_guides, update_selection_highlight};
+pub(crate) use self::ui_elements::{
+    update_fold_highlights, update_indent_guides, update_rulers, update_selection_highlight,
+};
 
 /// Marker component for the entity that handles editor input (InputManager).
 ///

@@ -5,13 +5,14 @@ use bevy_instanced_text::{MonoCellWidth, TextOverlays, TextUnderlays};
 
 use crate::settings::*;
 use crate::types::{
-    BracketMatchRects, CaretRects, CodeEditor, CursorLineRects, IndentGuideRects, SelectionRects,
-    Separator,
+    BracketMatchRects, CaretRects, CodeEditor, CursorLineRects, FoldHighlightRects,
+    IndentGuideRects, RulerRects, SelectionRects, Separator,
 };
 
 use super::{
     setup_gutter_text_view, sync_gutter_text_view, to_bevy_coords_left_aligned,
-    update_cursor_line_highlight, update_indent_guides, update_selection_highlight, EditorSetupSet,
+    update_cursor_line_highlight, update_fold_highlights, update_indent_guides, update_rulers,
+    update_selection_highlight, EditorSetupSet,
 };
 use bevy_instanced_text::gpu::GlyphAtlas;
 
@@ -71,7 +72,11 @@ impl Plugin for EditorUiPlugin {
             (update_selection_highlight, update_cursor_line_highlight).in_set(super::RenderingSet),
         );
 
-        app.add_systems(PostUpdate, update_indent_guides.in_set(super::RenderingSet));
+        app.add_systems(
+            PostUpdate,
+            (update_indent_guides, update_rulers, update_fold_highlights)
+                .in_set(super::RenderingSet),
+        );
 
         // State update stays in Update; overlay producer reads DisplayLayout so it runs in PostUpdate.
         app.add_systems(Update, update_bracket_match.in_set(super::ApplyStateSet));
@@ -99,6 +104,8 @@ fn merge_overlay_components(
         (
             &SelectionRects,
             &IndentGuideRects,
+            &RulerRects,
+            &FoldHighlightRects,
             &CursorLineRects,
             &CaretRects,
             &BracketMatchRects,
@@ -110,6 +117,8 @@ fn merge_overlay_components(
             Or<(
                 Changed<SelectionRects>,
                 Changed<IndentGuideRects>,
+                Changed<RulerRects>,
+                Changed<FoldHighlightRects>,
                 Changed<CursorLineRects>,
                 Changed<CaretRects>,
                 Changed<BracketMatchRects>,
@@ -117,9 +126,22 @@ fn merge_overlay_components(
         ),
     >,
 ) {
-    for (sel, guides, cursor_line, carets, brackets, mut underlays, mut overlays) in &mut query {
+    for (
+        sel,
+        guides,
+        rulers,
+        fold_hl,
+        cursor_line,
+        carets,
+        brackets,
+        mut underlays,
+        mut overlays,
+    ) in &mut query
+    {
         underlays.0.clear();
         underlays.0.extend_from_slice(&guides.0);
+        underlays.0.extend_from_slice(&rulers.0);
+        underlays.0.extend_from_slice(&fold_hl.0);
         underlays.0.extend_from_slice(&sel.0);
 
         overlays.0.clear();
@@ -366,15 +388,26 @@ fn sync_gutter_width(
             &MonoCellWidth,
             &EditorUi,
             &crate::settings::Padding,
+            &crate::settings::Folding,
         ),
         With<CodeEditor>,
     >,
 ) {
-    for (mut node, mut gutter_config, mono, ui, padding) in editors.iter_mut() {
+    for (mut node, mut gutter_config, mono, ui, padding, folding) in editors.iter_mut() {
         let show_numbers = !matches!(ui.line_numbers, crate::settings::LineNumbers::Off);
         let min_chars = ui.line_numbers_min_chars.max(1) as f32;
+        let chevron_chars = if matches!(
+            folding.show_controls,
+            crate::settings::ShowFoldingControls::Always
+        ) {
+            2.0
+        } else {
+            0.0
+        };
         let gutter_width = if show_numbers {
-            ui.gutter_padding_left + ui.gutter_padding_right + (mono.px * min_chars)
+            ui.gutter_padding_left
+                + ui.gutter_padding_right
+                + (mono.px * (min_chars + chevron_chars))
         } else {
             0.0
         };

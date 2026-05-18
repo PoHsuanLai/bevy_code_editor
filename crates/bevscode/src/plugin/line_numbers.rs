@@ -90,6 +90,7 @@ pub(crate) fn sync_gutter_text_view(
             &EditorUi,
             &crate::settings::Padding,
             &crate::settings::RenderSettings,
+            &crate::settings::Folding,
         ),
         (With<CodeEditor>, Without<GutterTextView>),
     >,
@@ -109,6 +110,7 @@ pub(crate) fn sync_gutter_text_view(
 ) {
     use crate::settings::LineNumbers as LineNumbersMode;
     use crate::settings::RenderFinalNewline;
+    use crate::settings::ShowFoldingControls;
     for (
         editor_entity,
         sel,
@@ -120,6 +122,7 @@ pub(crate) fn sync_gutter_text_view(
         ui,
         padding,
         render,
+        folding,
     ) in editor_query.iter()
     {
         let Some((
@@ -196,19 +199,32 @@ pub(crate) fn sync_gutter_text_view(
         let cursor_line_idx = buffer.char_to_line(cursor_line);
 
         let mode = ui.line_numbers;
+        let show_chevrons = matches!(folding.show_controls, ShowFoldingControls::Always);
         let old_count = if g_buffer.0 .0.is_empty() {
             0
         } else {
             bevy_instanced_text::TextContent::line_count(&g_buffer.0)
         };
         let count_stale = old_count != line_count;
-        let needs_full_rebuild = count_stale || matches!(mode, LineNumbersMode::Relative);
+        let needs_full_rebuild = count_stale
+            || matches!(mode, LineNumbersMode::Relative)
+            || (show_chevrons && fold_state.is_changed());
 
         if needs_full_rebuild {
-            let mut text = String::with_capacity(line_count * 4);
+            let mut text = String::with_capacity(line_count * 6);
             for i in 0..line_count {
                 if i > 0 {
                     text.push('\n');
+                }
+                if show_chevrons {
+                    let chevron = if fold_state.is_folded_line(i) {
+                        "\u{25B6} "
+                    } else if fold_state.is_foldable_line(i) {
+                        "\u{25BC} "
+                    } else {
+                        "  "
+                    };
+                    text.push_str(chevron);
                 }
                 let label = match mode {
                     LineNumbersMode::Relative => {
@@ -269,17 +285,31 @@ pub(crate) fn sync_gutter_text_view(
 
         let current_active: HashSet<usize> = g_styles.by_line.keys().map(|&k| k as usize).collect();
 
-        if cursor_lines != current_active || count_stale {
+        if cursor_lines != current_active
+            || count_stale
+            || (show_chevrons && fold_state.is_changed())
+        {
             let active_color = theme.line_numbers_active;
             let mut by_line: HashMap<u32, Vec<FormattedSpan>> = HashMap::new();
             for &line in &cursor_lines {
                 if line < line_count {
-                    let num_str = (line + 1).to_string();
-                    let byte_len = num_str.len();
+                    let mut payload = String::with_capacity(8);
+                    if show_chevrons {
+                        let chevron = if fold_state.is_folded_line(line) {
+                            "\u{25B6} "
+                        } else if fold_state.is_foldable_line(line) {
+                            "\u{25BC} "
+                        } else {
+                            "  "
+                        };
+                        payload.push_str(chevron);
+                    }
+                    payload.push_str(&(line + 1).to_string());
+                    let byte_len = payload.len();
                     by_line.insert(
                         line as u32,
                         vec![FormattedSpan {
-                            text: num_str,
+                            text: payload,
                             format: TextFormat::fg(0..byte_len, active_color),
                         }],
                     );

@@ -95,6 +95,8 @@ use bevy::prelude::*;
     crate::types::fold::FoldState,
     SelectionRects,
     IndentGuideRects,
+    RulerRects,
+    FoldHighlightRects,
     CaretRects,
     CursorLineRects,
     BracketMatchRects
@@ -184,6 +186,16 @@ pub struct SelectionRects(pub Vec<RectOverlay>);
 #[derive(Component, Default, Clone, Reflect)]
 #[reflect(Component, Default)]
 pub struct IndentGuideRects(pub Vec<RectOverlay>);
+
+/// Vertical ruler rects — written by `update_rulers`.
+#[derive(Component, Default, Clone, Reflect)]
+#[reflect(Component, Default)]
+pub struct RulerRects(pub Vec<RectOverlay>);
+
+/// Folded-region underline rects — written by `update_fold_highlights`.
+#[derive(Component, Default, Clone, Reflect)]
+#[reflect(Component, Default)]
+pub struct FoldHighlightRects(pub Vec<RectOverlay>);
 
 /// Caret rects — written by `push_cursor_overlays`.
 #[derive(Component, Default, Clone, Reflect)]

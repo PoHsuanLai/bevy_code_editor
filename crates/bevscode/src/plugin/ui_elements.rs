@@ -448,6 +448,165 @@ pub(crate) fn update_indent_guides(
     }
 }
 
+/// Push a 1-px vertical `RectOverlay` per ruler column per visible row.
+///
+/// Mirrors `update_indent_guides`'s display-row walk so ruler columns align
+/// with the same row geometry the renderer paints. Skips the write when
+/// no rulers are configured and no rects are currently pushed.
+pub(crate) fn update_rulers(
+    mut editor_query: Query<
+        (
+            EditorBufferView,
+            EditorLayoutView,
+            EditorFontView,
+            &EditorTheme,
+            &mut RulerRects,
+            &Rulers,
+        ),
+        With<CodeEditor>,
+    >,
+) {
+    for (text, layout_view, font_view, theme, mut ruler_rects, rulers) in editor_query.iter_mut() {
+        if rulers.0.is_empty() {
+            if !ruler_rects.0.is_empty() {
+                ruler_rects.0.clear();
+            }
+            continue;
+        }
+
+        let inv = layout_view.computed.inverse_scale_factor();
+        let line_height = bevy_instanced_text::resolve_line_height(
+            *font_view.line_height,
+            font_view.font.font_size,
+        );
+        let char_width = layout_view.mono.px;
+        let viewport_height = layout_view.computed.size().y * inv;
+
+        let visible_start_row = (layout_view.scroll.y / line_height).floor().max(0.0) as usize;
+        let visible_lines = ((viewport_height / line_height).ceil() as usize) + 2;
+        let visible_end_row = visible_start_row + visible_lines;
+
+        let total_lines = text.buffer.len_lines();
+        let has_folding = !text.fold.regions.is_empty();
+
+        let start_buffer_line = if has_folding {
+            let mut display_row = 0;
+            let mut buffer_line = 0;
+            while buffer_line < total_lines && display_row < visible_start_row {
+                if !text.fold.is_line_hidden(buffer_line) {
+                    display_row += 1;
+                }
+                buffer_line += 1;
+            }
+            buffer_line
+        } else {
+            visible_start_row.min(total_lines)
+        };
+
+        let mut current_display_row: usize = if has_folding {
+            let mut display_row = 0;
+            for bl in 0..start_buffer_line {
+                if !text.fold.is_line_hidden(bl) {
+                    display_row += 1;
+                }
+            }
+            display_row
+        } else {
+            start_buffer_line
+        };
+
+        let mut new_rects: Vec<RectOverlay> = Vec::new();
+        for buffer_line in start_buffer_line..total_lines {
+            if text.fold.is_line_hidden(buffer_line) {
+                continue;
+            }
+            if current_display_row > visible_end_row {
+                break;
+            }
+
+            for ruler in &rulers.0 {
+                let x = ruler.column as f32 * char_width;
+                new_rects.push(RectOverlay {
+                    display_row: current_display_row as u32,
+                    x_range: x..(x + 1.0),
+                    vertical: RowVertical::FullLeaded,
+                    color: ruler.color.unwrap_or(theme.indent_guide),
+                    z: 0,
+                    corners: bevy_instanced_text::CornerRadii::ZERO,
+                });
+            }
+
+            current_display_row += 1;
+        }
+
+        if ruler_rects.0 != new_rects {
+            ruler_rects.0 = new_rects;
+        }
+    }
+}
+
+/// Push a 1-px-tall underline at the bottom of every folded region's
+/// visible (placeholder) row when `Folding::highlight` is enabled.
+///
+/// The underline spans the full viewport width so the band reads as a
+/// continuous boundary even when the folded line is short.
+pub(crate) fn update_fold_highlights(
+    mut editor_query: Query<
+        (
+            EditorBufferView,
+            EditorLayoutView,
+            &EditorTheme,
+            &mut FoldHighlightRects,
+            &Folding,
+        ),
+        With<CodeEditor>,
+    >,
+) {
+    for (text, layout_view, theme, mut fold_rects, folding) in editor_query.iter_mut() {
+        if !folding.highlight {
+            if !fold_rects.0.is_empty() {
+                fold_rects.0.clear();
+            }
+            continue;
+        }
+
+        let folded_regions: Vec<usize> = text
+            .fold
+            .regions
+            .iter()
+            .filter(|r| r.is_folded)
+            .map(|r| r.start_line)
+            .collect();
+
+        if folded_regions.is_empty() {
+            if !fold_rects.0.is_empty() {
+                fold_rects.0.clear();
+            }
+            continue;
+        }
+
+        let inv = layout_view.computed.inverse_scale_factor();
+        let viewport_width = layout_view.computed.size().x * inv;
+
+        let mut new_rects: Vec<RectOverlay> = Vec::with_capacity(folded_regions.len());
+        for start_line in folded_regions {
+            let display_row = text.fold.actual_to_display_line(start_line) as u32;
+            new_rects.push(RectOverlay {
+                display_row,
+                x_range: 0.0..viewport_width,
+                vertical: RowVertical::BottomBand { thickness: 1.0 },
+                color: theme.fold_marker,
+                z: -1,
+                corners: bevy_instanced_text::CornerRadii::ZERO,
+            });
+        }
+
+        if fold_rects.0 != new_rects {
+            fold_rects.0 = new_rects;
+        }
+    }
+}
+
 /// Run condition: auto-scroll only fires for editors that have moved their
 /// cursor and aren't currently being mouse-dragged.
 ///
