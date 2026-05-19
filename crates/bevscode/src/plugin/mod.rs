@@ -7,6 +7,7 @@ pub mod copy_highlight;
 pub mod cursor;
 pub mod editor_ui;
 pub mod folding;
+pub mod gutter_decorations;
 pub mod line_numbers;
 pub mod links;
 #[cfg(feature = "lsp")]
@@ -25,6 +26,10 @@ pub use self::brackets::BracketPlugin;
 pub use self::cursor::CursorPlugin;
 pub use self::editor_ui::{AutoResizeViewport, EditorUiPlugin};
 pub use self::folding::FoldingPlugin;
+pub use self::gutter_decorations::{
+    DecorationKind, GlyphKind, GlyphMarginClicked, GlyphMarginRects, GlyphMarker, GlyphMarkers,
+    GutterDecorations, GutterIcon, IconAtlas, LineDecoration, LineDecorationRects,
+};
 pub use self::links::{HoveredLink, LinkRange, LinkRanges, LinkRects};
 pub use self::scroll_animator::{ScrollAnimator, ScrollAnimatorPlugin};
 
@@ -226,6 +231,8 @@ impl Plugin for CodeEditorPlugin {
         app.add_observer(crate::input::on_pointer_move_for_gutter_hover);
         app.add_observer(crate::plugin::links::on_ctrl_click_open_url);
         app.add_observer(crate::plugin::links::on_pointer_move_for_link_hover);
+        app.add_observer(crate::plugin::gutter_decorations::on_glyph_margin_press);
+        app.add_message::<crate::plugin::gutter_decorations::GlyphMarginClicked>();
         #[cfg(feature = "lsp")]
         {
             app.add_observer(crate::input::on_ctrl_click_goto_definition);

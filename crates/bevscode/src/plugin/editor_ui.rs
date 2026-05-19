@@ -9,6 +9,10 @@ use crate::types::{
     IndentGuideRects, RulerRects, SelectionRects, Separator, WhitespaceRects,
 };
 
+use super::gutter_decorations::{
+    setup_icon_atlas, sync_gutter_icons, update_glyph_margin_overlays,
+    update_line_decoration_overlays, GlyphMarginRects, LineDecorationRects,
+};
 use super::links::{update_link_overlays, LinkRects};
 use super::{
     setup_gutter_text_view, sync_gutter_text_view, to_bevy_coords_left_aligned,
@@ -27,6 +31,18 @@ pub struct EditorUiPlugin;
 impl Plugin for EditorUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_editor_ui.after(EditorSetupSet));
+        // Gutter icons need bevy_resvg's pipeline, which in turn needs
+        // `Assets<Image>` from `bevy::image::ImagePlugin`. Test apps that
+        // omit ImagePlugin (e.g. `MinimalPlugins` setups) will skip icon
+        // rendering — they'd panic on bevy_resvg's `Assets<Image>` access
+        // otherwise.
+        if app.is_plugin_added::<bevy::image::ImagePlugin>() {
+            if !app.is_plugin_added::<bevy_resvg::plugin::SvgPlugin>() {
+                app.add_plugins(bevy_resvg::plugin::SvgPlugin);
+            }
+            app.add_systems(PreStartup, setup_icon_atlas);
+            app.add_systems(Update, sync_gutter_icons.after(setup_gutter_text_view));
+        }
 
         // Gutter setup runs every frame because the editor's required
         // components may not all be present during Startup; idempotent
@@ -43,6 +59,7 @@ impl Plugin for EditorUiPlugin {
         // Observer-driven so the schedule has zero per-frame cost — fires
         // only on the entity that just had `Indentation` inserted or replaced.
         app.add_observer(sync_indent_config_on_change);
+        app.add_observer(disable_scroll_beyond_last_line);
 
         app.add_observer(detect_indentation_on_buffer_insert);
         app.add_observer(detect_indentation_on_first_edit);
@@ -81,8 +98,16 @@ impl Plugin for EditorUiPlugin {
                 update_fold_highlights,
                 update_link_overlays,
                 update_whitespace_markers,
+                update_glyph_margin_overlays,
+                update_line_decoration_overlays,
             )
                 .in_set(super::RenderingSet),
+        );
+
+        #[cfg(feature = "lsp")]
+        app.add_systems(
+            Update,
+            super::gutter_decorations::sync_lsp_glyph_markers.in_set(super::ApplyStateSet),
         );
 
         // State update stays in Update; overlay producer reads DisplayLayout so it runs in PostUpdate.
@@ -118,6 +143,8 @@ fn merge_overlay_components(
             &BracketMatchRects,
             &LinkRects,
             &WhitespaceRects,
+            &GlyphMarginRects,
+            &LineDecorationRects,
             &mut TextUnderlays,
             &mut TextOverlays,
         ),
@@ -133,6 +160,8 @@ fn merge_overlay_components(
                 Changed<BracketMatchRects>,
                 Changed<LinkRects>,
                 Changed<WhitespaceRects>,
+                Changed<GlyphMarginRects>,
+                Changed<LineDecorationRects>,
             )>,
         ),
     >,
@@ -147,6 +176,8 @@ fn merge_overlay_components(
         brackets,
         links,
         whitespace,
+        glyph_margin,
+        line_dec,
         mut underlays,
         mut overlays,
     ) in &mut query
@@ -156,6 +187,7 @@ fn merge_overlay_components(
         underlays.0.extend_from_slice(&rulers.0);
         underlays.0.extend_from_slice(&fold_hl.0);
         underlays.0.extend_from_slice(&sel.0);
+        underlays.0.extend_from_slice(&line_dec.0);
 
         overlays.0.clear();
         overlays.0.extend_from_slice(&cursor_line.0);
@@ -163,6 +195,7 @@ fn merge_overlay_components(
         overlays.0.extend_from_slice(&brackets.0);
         overlays.0.extend_from_slice(&links.0);
         overlays.0.extend_from_slice(&whitespace.0);
+        overlays.0.extend_from_slice(&glyph_margin.0);
     }
 }
 
@@ -210,6 +243,30 @@ fn sync_node_from_window(
 /// `IndentConfig` (the widget-layer Component the Tab / typing handlers
 /// read). Fires on insert *and* on replace of `Indentation`, so the
 /// initial `#[require]` cascade and any later mutation both trip it.
+/// Default `ScrollConfig::scroll_beyond_last_line` to `false` for code
+/// editors. The engine-side default mirrors Monaco (`true`) which is
+/// "park the last line at the top of the viewport" — fine in Monaco
+/// where a scrollbar tells you you've gone past the end, but in a
+/// scrollbar-less embed it just looks like the file scrolled into
+/// nothing. Hosts that want the Monaco behavior can re-enable on the
+/// `ScrollConfig` Component after spawn.
+///
+/// Fires on `CodeEditor` insertion (rather than on `ScrollConfig`
+/// insertion) so the cascade order doesn't matter — by the time
+/// `CodeEditor` is in place, every Component it requires (including
+/// `ScrollConfig` via the `TextEditor` chain) is present.
+fn disable_scroll_beyond_last_line(
+    trigger: On<bevy::ecs::lifecycle::Insert, CodeEditor>,
+    mut editors: Query<&mut bevy_instanced_text_editor::ScrollConfig>,
+) {
+    let Ok(mut cfg) = editors.get_mut(trigger.event().entity) else {
+        return;
+    };
+    if cfg.scroll_beyond_last_line {
+        cfg.scroll_beyond_last_line = false;
+    }
+}
+
 fn sync_indent_config_on_change(
     trigger: On<bevy::ecs::lifecycle::Insert, crate::settings::Indentation>,
     mut editors: Query<
@@ -434,22 +491,40 @@ fn sync_gutter_width(
     for (mut node, mut gutter_config, mono, ui, padding, folding) in editors.iter_mut() {
         let show_numbers = !matches!(ui.line_numbers, crate::settings::LineNumbers::Off);
         let min_chars = ui.line_numbers_min_chars.max(1) as f32;
-        let chevron_chars = if matches!(
+        let chevron_width = if matches!(
             folding.show_controls,
             crate::settings::ShowFoldingControls::Always
                 | crate::settings::ShowFoldingControls::Mouseover
         ) {
-            2.0
+            2.0 * mono.px
         } else {
             0.0
         };
-        let gutter_width = if show_numbers {
-            ui.gutter_padding_left
-                + ui.gutter_padding_right
-                + (mono.px * (min_chars + chevron_chars))
+        let line_decorations_width = ui.line_decorations_width.max(0.0);
+        let glyph_margin_width = if ui.glyph_margin {
+            ui.glyph_margin_width.max(0.0)
         } else {
             0.0
         };
+        let line_numbers_width = if show_numbers {
+            mono.px * min_chars
+        } else {
+            0.0
+        };
+        let total_columns_width =
+            line_decorations_width + line_numbers_width + glyph_margin_width + chevron_width;
+        let any_band = total_columns_width > 0.0;
+        let gutter_width = if any_band {
+            ui.gutter_padding_left + ui.gutter_padding_right + total_columns_width
+        } else {
+            0.0
+        };
+
+        let line_decorations_x = ui.gutter_padding_left;
+        let line_numbers_x = line_decorations_x + line_decorations_width;
+        let glyph_margin_x = line_numbers_x + line_numbers_width;
+        let chevron_x = glyph_margin_x + glyph_margin_width;
+
         let padding_left = Val::Px(gutter_width + ui.code_margin_left);
         let padding_top = Val::Px(padding.top);
         let padding_bottom = Val::Px(padding.bottom);
@@ -461,8 +536,24 @@ fn sync_gutter_width(
             node.padding.top = padding_top;
             node.padding.bottom = padding_bottom;
         }
-        if (gutter_config.gutter_width - gutter_width).abs() > 0.01 {
-            gutter_config.gutter_width = gutter_width;
+        let next = GutterConfig {
+            gutter_width,
+            line_decorations_x,
+            line_decorations_width,
+            line_numbers_x,
+            line_numbers_width,
+            glyph_margin_x,
+            glyph_margin_width,
+            chevron_x,
+            chevron_width,
+        };
+        if (gutter_config.gutter_width - next.gutter_width).abs() > 0.01
+            || (gutter_config.line_decorations_width - next.line_decorations_width).abs() > 0.01
+            || (gutter_config.glyph_margin_width - next.glyph_margin_width).abs() > 0.01
+            || (gutter_config.chevron_width - next.chevron_width).abs() > 0.01
+            || (gutter_config.line_numbers_width - next.line_numbers_width).abs() > 0.01
+        {
+            *gutter_config = next;
         }
     }
 }

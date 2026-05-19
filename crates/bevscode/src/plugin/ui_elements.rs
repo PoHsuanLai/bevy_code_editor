@@ -841,13 +841,12 @@ pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
         // monotonically instead of fighting the animator.
         // When the animator has no in-flight target (just woke up), seed from
         // the current ScrollPosition so we don't snap.
-        let mut target = if scroll_target.animator.target == Vec2::ZERO
-            && layout.scroll.0 != Vec2::ZERO
-        {
-            layout.scroll.0
-        } else {
-            scroll_target.animator.target
-        };
+        let mut target =
+            if scroll_target.animator.target == Vec2::ZERO && layout.scroll.0 != Vec2::ZERO {
+                layout.scroll.0
+            } else {
+                scroll_target.animator.target
+            };
         let cursor_y = text_area_top - target.y + line_index as f32 * line_height;
 
         let margin_vertical = line_height * 2.0;
@@ -900,9 +899,7 @@ pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
             target.x = target.x.clamp(0.0, max_horizontal_scroll);
         }
 
-        if !vertical_changed
-            && (target.x - scroll_target.animator.target.x).abs() < f32::EPSILON
-        {
+        if !vertical_changed && (target.x - scroll_target.animator.target.x).abs() < f32::EPSILON {
             continue;
         }
         scroll_target.animator.target = target;

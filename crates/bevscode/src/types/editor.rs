@@ -104,6 +104,10 @@ use bevy::prelude::*;
     crate::plugin::LinkRects,
     crate::plugin::LinkRanges,
     crate::plugin::HoveredLink,
+    crate::plugin::GlyphMarkers,
+    crate::plugin::GutterDecorations,
+    crate::plugin::GlyphMarginRects,
+    crate::plugin::LineDecorationRects,
     HoveredGutterLine,
     HoveredInGutter
 )]

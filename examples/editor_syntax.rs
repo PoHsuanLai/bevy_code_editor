@@ -30,6 +30,9 @@ fn main() {
 }
 
 fn spawn_editor(mut commands: Commands) {
+    use bevscode::plugin::{
+        DecorationKind, GlyphKind, GlyphMarker, GlyphMarkers, GutterDecorations, LineDecoration,
+    };
     use bevscode::settings::{
         CursorLine, RenderLineHighlight, RenderSettings, RenderWhitespace, RulerOption, WordWrapMode,
         Wrapping,
@@ -60,6 +63,40 @@ fn spawn_editor(mut commands: Commands) {
             word_wrap: WordWrapMode::On,
             ..Default::default()
         },
+        GlyphMarkers(vec![
+            GlyphMarker {
+                line: 5,
+                kind: GlyphKind::Breakpoint,
+                color: Color::srgba(0.93, 0.36, 0.39, 1.0),
+            },
+            GlyphMarker {
+                line: 12,
+                kind: GlyphKind::DebugCurrent,
+                color: Color::srgba(0.40, 0.83, 0.40, 1.0),
+            },
+            GlyphMarker {
+                line: 18,
+                kind: GlyphKind::DiagnosticWarning,
+                color: Color::srgba(0.97, 0.69, 0.0, 1.0),
+            },
+        ]),
+        GutterDecorations(vec![
+            LineDecoration {
+                line: 3,
+                kind: DecorationKind::Added,
+                color: Color::srgb(0.32, 0.71, 0.45),
+            },
+            LineDecoration {
+                line: 4,
+                kind: DecorationKind::Modified,
+                color: Color::srgb(0.31, 0.55, 0.85),
+            },
+            LineDecoration {
+                line: 7,
+                kind: DecorationKind::Deleted,
+                color: Color::srgb(0.86, 0.31, 0.31),
+            },
+        ]),
         Name::new("CodeEditor"),
     ));
 }
