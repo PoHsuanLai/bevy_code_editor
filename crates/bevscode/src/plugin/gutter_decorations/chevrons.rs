@@ -108,17 +108,33 @@ pub(crate) fn sync_fold_chevron_icons(
         let color = theme.line_numbers;
         let pool = by_editor.entry(editor_entity).or_default();
 
-        let mut visible_idx = 0usize;
-        for (line, folded) in desired.iter() {
-            // `RowGeometry::compute` returns None for any buffer line
-            // absent from the renderer's layout — collapsed folds,
-            // off-screen culling, layout not yet produced — so we
-            // don't need a separate `is_line_hidden` filter here.
-            let Some(geom) = RowGeometry::compute(*line, font, line_height, padding, layout) else {
+        // Pool slot N corresponds to `desired[N]` permanently across
+        // frames — hidden chevrons (collapsed inside an ancestor fold)
+        // keep their slot, just hidden in place. The slot's *kind*
+        // (chevron_down vs chevron_right) does legitimately change when
+        // the user folds/unfolds at this line; bevy_resvg ignores
+        // `UiSvg.0` reassignments after the first frame, so when the
+        // handle flips we despawn the slot and respawn fresh.
+        for (idx, (line, folded)) in desired.iter().enumerate() {
+            let geom = RowGeometry::compute(*line, font, line_height, padding, layout);
+            let line = *line;
+            let want_handle = if *folded {
+                atlas.chevron_right.clone()
+            } else {
+                atlas.chevron_down.clone()
+            };
+
+            let Some(geom) = geom else {
+                if let Some(&entity) = pool.get(idx) {
+                    if let Ok((_, _, _, _, _, mut vis)) = existing.get_mut(entity) {
+                        if *vis != Visibility::Hidden {
+                            *vis = Visibility::Hidden;
+                        }
+                    }
+                }
                 continue;
             };
-            let idx = visible_idx;
-            visible_idx += 1;
+
             let icon_size = gutter
                 .chevron_width
                 .min(geom.line_height_px)
@@ -126,26 +142,25 @@ pub(crate) fn sync_fold_chevron_icons(
                 .max(8.0);
             let icon_left = (column_center_x - icon_size * 0.5).round();
             // Centre the icon vertically inside its row — otherwise a
-            // 16-px icon in a 20-px row visibly hugs the row's top edge
-            // and drifts off the digit baseline.
+            // 16-px icon in a 20-px row visibly hugs the row's top
+            // edge and drifts off the digit baseline.
             let icon_top = (geom.top_px + (geom.line_height_px - icon_size) * 0.5).round();
-            let handle = if *folded {
-                atlas.chevron_right.clone()
-            } else {
-                atlas.chevron_down.clone()
-            };
-            let line = *line;
 
-            if let Some(&entity) = pool.get(idx) {
-                if let Ok((_, _ch, mut node, mut svg_color, mut ui_svg, mut vis)) =
+            let pool_entry = pool.get(idx).copied();
+            let handle_matches = pool_entry.is_some_and(|e| {
+                existing
+                    .get(e)
+                    .is_ok_and(|(_, _, _, _, ui_svg, _)| ui_svg.0 == want_handle)
+            });
+
+            if handle_matches {
+                let entity = pool_entry.unwrap();
+                if let Ok((_, _ch, mut node, mut svg_color, _ui_svg, mut vis)) =
                     existing.get_mut(entity)
                 {
                     diff_place(&mut node, icon_left, icon_top, icon_size, icon_size);
                     if svg_color.0 != color {
                         svg_color.0 = color;
-                    }
-                    if ui_svg.0 != handle {
-                        ui_svg.0 = handle;
                     }
                     if *vis != Visibility::Inherited {
                         *vis = Visibility::Inherited;
@@ -156,13 +171,16 @@ pub(crate) fn sync_fold_chevron_icons(
                     });
                 }
             } else {
+                if let Some(stale) = pool_entry {
+                    commands.entity(stale).despawn();
+                }
                 let id = commands
                     .spawn((
                         GutterFoldChevron {
                             editor: editor_entity,
                             line,
                         },
-                        UiSvg(handle),
+                        UiSvg(want_handle),
                         SvgColor(color),
                         Node {
                             position_type: PositionType::Absolute,
@@ -183,11 +201,18 @@ pub(crate) fn sync_fold_chevron_icons(
                 {
                     commands.entity(parent).add_child(id);
                 }
-                pool.push(id);
+                if idx < pool.len() {
+                    pool[idx] = id;
+                } else {
+                    pool.push(id);
+                }
             }
         }
 
-        for &entity in pool.iter().skip(visible_idx) {
+        // Any pool entries past `desired.len()` came from a previous
+        // frame with more chevrons (e.g. user just collapsed a region
+        // making one disappear); hide them.
+        for &entity in pool.iter().skip(desired.len()) {
             if let Ok((_, _, _, _, _, mut vis)) = existing.get_mut(entity) {
                 if *vis != Visibility::Hidden {
                     *vis = Visibility::Hidden;

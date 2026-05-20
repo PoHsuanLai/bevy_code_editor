@@ -119,82 +119,91 @@ pub(crate) fn sync_gutter_icons(
 
         let column_center_x = gutter.glyph_margin_x + gutter.glyph_margin_width * 0.5;
 
-        let mut visible_idx = 0usize;
-        for (line, handle, color) in desired.iter() {
-            // `RowGeometry::compute` returns None for any buffer line
-            // absent from the renderer's layout — collapsed folds,
-            // off-screen culling, layout not yet produced — so we don't
-            // need a separate `is_line_hidden` filter here.
-            let Some(geom) = RowGeometry::compute(*line, font, line_height, padding, layout) else {
-                continue;
-            };
-            let idx = visible_idx;
-            visible_idx += 1;
-            let icon_size = gutter
-                .glyph_margin_width
-                .min(geom.line_height_px)
-                .round()
-                .max(8.0);
-            let icon_left = (column_center_x - icon_size * 0.5).round();
-            // Centre the icon vertically within the row so it sits on
-            // the digit baseline rather than the row top.
-            let icon_top = (geom.top_px + (geom.line_height_px - icon_size) * 0.5).round();
+        // Pool slot N corresponds to `desired[N]` permanently across
+        // frames. Hidden lines (collapsed inside a fold) get their slot
+        // hidden in place rather than skipped-and-compacted, so the
+        // remaining slots retain their original `(line, kind)` and
+        // their `UiSvg` handle never has to change. That sidesteps
+        // `bevy_resvg`'s "only attach ImageNode on Added" quirk
+        // entirely.
+        for (idx, (line, handle, color)) in desired.iter().enumerate() {
+            let geom = RowGeometry::compute(*line, font, line_height, padding, layout);
             let line = *line;
             let color = *color;
             let handle = handle.clone();
 
-            if let Some(&entity) = pool.get(idx) {
-                if let Ok((_, _gi, mut node, mut svg_color, mut ui_svg, mut vis)) =
-                    existing.get_mut(entity)
-                {
-                    diff_place(&mut node, icon_left, icon_top, icon_size, icon_size);
-                    if svg_color.0 != color {
-                        svg_color.0 = color;
-                    }
-                    if ui_svg.0 != handle {
-                        ui_svg.0 = handle;
-                    }
-                    if *vis != Visibility::Inherited {
-                        *vis = Visibility::Inherited;
-                    }
-                    commands.entity(entity).insert(GutterIcon {
-                        editor: editor_entity,
-                        line,
-                    });
-                }
-            } else {
-                let id = commands
-                    .spawn((
-                        GutterIcon {
+            if let Some(geom) = geom {
+                let icon_size = gutter
+                    .glyph_margin_width
+                    .min(geom.line_height_px)
+                    .round()
+                    .max(8.0);
+                let icon_left = (column_center_x - icon_size * 0.5).round();
+                // Centre the icon vertically within the row so it sits
+                // on the digit baseline rather than the row top.
+                let icon_top = (geom.top_px + (geom.line_height_px - icon_size) * 0.5).round();
+
+                if let Some(&entity) = pool.get(idx) {
+                    if let Ok((_, _gi, mut node, mut svg_color, _ui_svg, mut vis)) =
+                        existing.get_mut(entity)
+                    {
+                        diff_place(&mut node, icon_left, icon_top, icon_size, icon_size);
+                        if svg_color.0 != color {
+                            svg_color.0 = color;
+                        }
+                        if *vis != Visibility::Inherited {
+                            *vis = Visibility::Inherited;
+                        }
+                        commands.entity(entity).insert(GutterIcon {
                             editor: editor_entity,
                             line,
-                        },
-                        UiSvg(handle),
-                        SvgColor(color),
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::Px(icon_left),
-                            top: Val::Px(icon_top),
-                            width: Val::Px(icon_size),
-                            height: Val::Px(icon_size),
-                            overflow: Overflow::clip(),
-                            ..default()
-                        },
-                        bevy::picking::Pickable::IGNORE,
-                        Name::new("GutterIcon"),
-                    ))
-                    .id();
-                if let Some(parent) = containers
-                    .iter()
-                    .find_map(|(eid, c)| (c.editor == editor_entity).then_some(eid))
-                {
-                    commands.entity(parent).add_child(id);
+                        });
+                    }
+                } else {
+                    let id = commands
+                        .spawn((
+                            GutterIcon {
+                                editor: editor_entity,
+                                line,
+                            },
+                            UiSvg(handle),
+                            SvgColor(color),
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(icon_left),
+                                top: Val::Px(icon_top),
+                                width: Val::Px(icon_size),
+                                height: Val::Px(icon_size),
+                                overflow: Overflow::clip(),
+                                ..default()
+                            },
+                            bevy::picking::Pickable::IGNORE,
+                            Name::new("GutterIcon"),
+                        ))
+                        .id();
+                    if let Some(parent) = containers
+                        .iter()
+                        .find_map(|(eid, c)| (c.editor == editor_entity).then_some(eid))
+                    {
+                        commands.entity(parent).add_child(id);
+                    }
+                    pool.push(id);
                 }
-                pool.push(id);
+            } else if let Some(&entity) = pool.get(idx) {
+                // Buffer line is hidden by a fold (or layout hasn't
+                // produced it yet) — keep the entity but hide it in
+                // place so its slot identity is preserved.
+                if let Ok((_, _, _, _, _, mut vis)) = existing.get_mut(entity) {
+                    if *vis != Visibility::Hidden {
+                        *vis = Visibility::Hidden;
+                    }
+                }
             }
         }
 
-        for &entity in pool.iter().skip(visible_idx) {
+        // Any pool entries past `desired.len()` came from a previous
+        // frame with more markers; hide them.
+        for &entity in pool.iter().skip(desired.len()) {
             if let Ok((_, _, _, _, _, mut vis)) = existing.get_mut(entity) {
                 if *vis != Visibility::Hidden {
                     *vis = Visibility::Hidden;

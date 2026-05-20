@@ -119,67 +119,73 @@ pub(crate) fn sync_gutter_decoration_bars(
 
         let pool = by_editor.entry(editor_entity).or_default();
 
-        let mut visible_idx = 0usize;
-        for dec in active.iter() {
-            // `RowGeometry::compute` returns None for any buffer line
-            // absent from the renderer's layout — collapsed folds,
-            // off-screen culling, layout not yet produced — so we don't
-            // need a separate `is_line_hidden` filter here.
-            let Some(geom) = RowGeometry::compute(dec.line, font, line_height, padding, layout)
-            else {
-                continue;
-            };
-            let idx = visible_idx;
-            visible_idx += 1;
-            let height_px = geom.line_height_px.round();
+        // Pool slot N corresponds to `active[N]` permanently across
+        // frames. Hidden lines (collapsed by a fold) keep their slot
+        // hidden in place rather than skipped, so the remaining slots
+        // never need to swap colour or kind mid-frame. (Consistency
+        // with `markers.rs` / `chevrons.rs` — keeps decoration
+        // identity tied to the host's input ordering.)
+        for (idx, dec) in active.iter().enumerate() {
+            let geom = RowGeometry::compute(dec.line, font, line_height, padding, layout);
             let line = dec.line;
             let color = dec.color;
 
-            if let Some(&entity) = pool.get(idx) {
-                if let Ok((_, _bar, mut node, mut bg, mut vis)) = existing.get_mut(entity) {
-                    diff_place(&mut node, bar_left, geom.top_px, bar_width, height_px);
-                    if bg.0 != color {
-                        bg.0 = color;
-                    }
-                    if *vis != Visibility::Inherited {
-                        *vis = Visibility::Inherited;
-                    }
-                    commands.entity(entity).insert(GutterDecorationBar {
-                        editor: editor_entity,
-                        line,
-                    });
-                }
-            } else {
-                let id = commands
-                    .spawn((
-                        GutterDecorationBar {
+            if let Some(geom) = geom {
+                let height_px = geom.line_height_px.round();
+                if let Some(&entity) = pool.get(idx) {
+                    if let Ok((_, _bar, mut node, mut bg, mut vis)) = existing.get_mut(entity) {
+                        diff_place(&mut node, bar_left, geom.top_px, bar_width, height_px);
+                        if bg.0 != color {
+                            bg.0 = color;
+                        }
+                        if *vis != Visibility::Inherited {
+                            *vis = Visibility::Inherited;
+                        }
+                        commands.entity(entity).insert(GutterDecorationBar {
                             editor: editor_entity,
                             line,
-                        },
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::Px(bar_left),
-                            top: Val::Px(geom.top_px),
-                            width: Val::Px(bar_width),
-                            height: Val::Px(height_px),
-                            ..default()
-                        },
-                        BackgroundColor(color),
-                        bevy::picking::Pickable::IGNORE,
-                        Name::new("GutterDecorationBar"),
-                    ))
-                    .id();
-                if let Some(parent) = containers
-                    .iter()
-                    .find_map(|(eid, c)| (c.editor == editor_entity).then_some(eid))
-                {
-                    commands.entity(parent).add_child(id);
+                        });
+                    }
+                } else {
+                    let id = commands
+                        .spawn((
+                            GutterDecorationBar {
+                                editor: editor_entity,
+                                line,
+                            },
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(bar_left),
+                                top: Val::Px(geom.top_px),
+                                width: Val::Px(bar_width),
+                                height: Val::Px(height_px),
+                                ..default()
+                            },
+                            BackgroundColor(color),
+                            bevy::picking::Pickable::IGNORE,
+                            Name::new("GutterDecorationBar"),
+                        ))
+                        .id();
+                    if let Some(parent) = containers
+                        .iter()
+                        .find_map(|(eid, c)| (c.editor == editor_entity).then_some(eid))
+                    {
+                        commands.entity(parent).add_child(id);
+                    }
+                    pool.push(id);
                 }
-                pool.push(id);
+            } else if let Some(&entity) = pool.get(idx) {
+                if let Ok((_, _, _, _, mut vis)) = existing.get_mut(entity) {
+                    if *vis != Visibility::Hidden {
+                        *vis = Visibility::Hidden;
+                    }
+                }
             }
         }
 
-        for &entity in pool.iter().skip(visible_idx) {
+        // Any pool entries past `active.len()` came from a previous
+        // frame with more bars; hide them.
+        for &entity in pool.iter().skip(active.len()) {
             if let Ok((_, _, _, _, mut vis)) = existing.get_mut(entity) {
                 if *vis != Visibility::Hidden {
                     *vis = Visibility::Hidden;
