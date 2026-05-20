@@ -15,6 +15,7 @@ bevy_instanced_text = { path = "../../../bevy_instanced_text/crates/bevy_instanc
 bevy_instanced_text_editor = { path = "../bevy_instanced_text_editor", version = "0.1.1", default-features = false }
 bevy_tree_sitter = { path = "../bevy_tree_sitter", version = "0.1.1" }
 bevy_lsp = { path = "../bevy_lsp", version = "0.1.1", optional = true }
+bevy_resvg = "2.3.3"
 
 bevy = { version = "0.18", default-features = false, features = [
     "bevy_render",

@@ -1,5 +1,6 @@
 //! Text search and cursor operations on the editor's rope buffer.
 
+use crate::input::word_boundary::is_word_char;
 use crate::text_view::TextBuffer;
 use crate::types::*;
 use bevy_instanced_text_editor::RopeBuffer;
@@ -16,38 +17,17 @@ pub fn move_cursor(cursor: &mut CursorState, rope: &Rope, delta: isize) {
     }
 }
 
-/// Find word boundaries around a position and return (start, end)
-pub fn word_at_position(rope: &Rope, pos: usize) -> Option<(usize, usize)> {
+/// Find word boundaries around a position and return (start, end).
+pub fn word_at_position(rope: &Rope, pos: usize, separators: &str) -> Option<(usize, usize)> {
     let pos = pos.min(rope.len_chars());
     if pos >= rope.len_chars() {
         return None;
     }
-
-    let c = rope.char(pos);
-    if !c.is_alphanumeric() && c != '_' {
+    if !is_word_char(rope.char(pos), separators) {
         return None;
     }
-
-    let mut start = pos;
-    while start > 0 {
-        let prev = rope.char(start - 1);
-        if prev.is_alphanumeric() || prev == '_' {
-            start -= 1;
-        } else {
-            break;
-        }
-    }
-
-    let mut end = pos;
-    while end < rope.len_chars() {
-        let ch = rope.char(end);
-        if ch.is_alphanumeric() || ch == '_' {
-            end += 1;
-        } else {
-            break;
-        }
-    }
-
+    let start = crate::input::word_boundary::find_word_start(rope, pos, separators);
+    let end = crate::input::word_boundary::find_word_end(rope, pos, separators);
     if start < end {
         Some((start, end))
     } else {
@@ -105,12 +85,15 @@ pub fn add_cursor_at_next_occurrence(
     sel: &mut SelectionState,
     cursor: &mut CursorState,
     buffer: &TextBuffer<RopeBuffer>,
+    separators: &str,
 ) -> bool {
     let primary = sel.selections.primary();
     let search_text = if primary.has_selection() {
         let (start, end) = primary.range();
         buffer.slice(start..end).to_string()
-    } else if let Some((start, end)) = word_at_position(buffer.rope(), primary.head_offset()) {
+    } else if let Some((start, end)) =
+        word_at_position(buffer.rope(), primary.head_offset(), separators)
+    {
         // First Cmd+D on a bare cursor: select the word under the cursor.
         // Match the legacy behavior of placing the head at `end` (so the
         // caret sits at the end of the word) and the anchor at `start`.

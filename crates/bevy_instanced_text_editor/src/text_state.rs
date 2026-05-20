@@ -59,6 +59,22 @@ impl Default for EditHistoryState {
     }
 }
 
+/// True when the char at `pos` looks like the closer of an auto-inserted
+/// pair: either a standard bracket whose opener sits at `pos - 1`, or a
+/// matching quote with a quote immediately before it. This neighbor check
+/// is index-free, so it stays correct as the buffer is edited elsewhere.
+pub fn is_auto_pair_neighbor(rope: &Rope, pos: usize) -> bool {
+    if pos == 0 || pos >= rope.len_chars() {
+        return false;
+    }
+    let opener = rope.char(pos - 1);
+    let closer = rope.char(pos);
+    matches!(
+        (opener, closer),
+        ('(', ')') | ('[', ']') | ('{', '}') | ('<', '>') | ('"', '"') | ('\'', '\'') | ('`', '`')
+    )
+}
+
 /// Emitted per edit by [`crate::plugin::emit_edit_triggers`]. Consumers add
 /// observers to react. `byte_edit` is `None` for line-structure-only signals;
 /// `pre_edit_rope` is `Some` only when [`SnapshotPreEdit`] is on the entity
@@ -98,6 +114,12 @@ pub struct IndentConfig {
     pub tab_width: usize,
     /// `false` inserts a literal `\t`.
     pub use_spaces: bool,
+    /// Spaces inserted on Tab snap to the next multiple of `tab_width`.
+    pub use_tab_stops: bool,
+    /// Backspace inside leading whitespace deletes back to the previous tab stop.
+    pub sticky_tab_stops: bool,
+    /// Backspace at the end of a run of trailing whitespace deletes the whole run.
+    pub trim_whitespace_on_delete: bool,
 }
 
 impl Default for IndentConfig {
@@ -105,6 +127,9 @@ impl Default for IndentConfig {
         Self {
             tab_width: 4,
             use_spaces: true,
+            use_tab_stops: true,
+            sticky_tab_stops: false,
+            trim_whitespace_on_delete: false,
         }
     }
 }

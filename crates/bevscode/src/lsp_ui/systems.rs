@@ -56,6 +56,7 @@ type RequestInlayHintsQuery<'w, 's> = Query<
         &'static TextFont,
         &'static bevy::text::LineHeight,
         &'static MonoCellWidth,
+        Option<&'static crate::settings::Suggest>,
     ),
     With<CodeEditor>,
 >;
@@ -145,19 +146,24 @@ pub fn on_lsp_diagnostics(
     mut commands: Commands,
     mut events: MessageReader<LspDiagnosticsUpdated>,
     diagnostics_q: Query<Entity, With<DiagnosticMarker>>,
-    editors: Query<Entity, With<CodeEditor>>,
+    editors: Query<(&crate::settings::RenderSettings, &crate::settings::Misc), With<CodeEditor>>,
 ) {
     for ev in events.read() {
-        if editors.get(ev.entity).is_err() {
+        let Ok((render, misc)) = editors.get(ev.entity) else {
             continue;
-        }
-        // Clear old diagnostics. Silenced because another sync system or
-        // hierarchy cleanup may have already despawned these markers in the
-        // same tick.
+        };
+        let render_decorations = match render.render_validation_decorations {
+            crate::settings::RenderValidationDecorations::Off => false,
+            crate::settings::RenderValidationDecorations::On => true,
+            crate::settings::RenderValidationDecorations::Editable => !misc.read_only,
+        };
         for entity in diagnostics_q.iter() {
             commands
                 .entity(entity)
                 .queue_silenced(bevy::ecs::system::entity_command::despawn());
+        }
+        if !render_decorations {
+            continue;
         }
         for diagnostic in &ev.diagnostics {
             commands.spawn(DiagnosticMarker {
@@ -179,12 +185,13 @@ pub fn on_lsp_completion(
             &CursorState,
             &TextBuffer<RopeBuffer>,
             &mut LspCompletionPopup,
+            Option<&crate::settings::Suggest>,
         ),
         With<CodeEditor>,
     >,
 ) {
     for ev in events.read() {
-        let Ok((cursor_state, buffer, mut completion_state)) = q.get_mut(ev.entity) else {
+        let Ok((cursor_state, buffer, mut completion_state, suggest)) = q.get_mut(ev.entity) else {
             continue;
         };
         trace!(
@@ -211,7 +218,13 @@ pub fn on_lsp_completion(
         completion_state.items = ev.items.clone();
         completion_state.is_incomplete = ev.is_incomplete;
         completion_state.visible = cursor_in_prefix && !completion_state.items.is_empty();
-        completion_state.selected_index = 0;
+        let mode = suggest
+            .map(|s| s.selection_mode)
+            .unwrap_or(crate::settings::SuggestSelection::First);
+        let filtered = completion_state.filtered_items();
+        completion_state.selected_index = completion_state
+            .preselect_index(&filtered, mode)
+            .unwrap_or(0);
         // New item list invalidates any cached resolves keyed by labels that
         // may no longer be present.
         completion_state.resolved.clear();
@@ -632,6 +645,7 @@ pub fn request_inlay_hints(
         font,
         lh,
         _mono,
+        suggest,
     )) = query.single_mut()
     else {
         return;
@@ -639,6 +653,15 @@ pub fn request_inlay_hints(
     let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
     if !lsp_client.is_ready() || !capabilities.supports_inlay_hints() {
         return;
+    }
+    if let Some(s) = suggest {
+        use crate::settings::InlayHintsEnabled;
+        if matches!(
+            s.inlay_hints.enabled,
+            InlayHintsEnabled::Off | InlayHintsEnabled::OnUnlessPressed
+        ) {
+            return;
+        }
     }
 
     if !hint_state.needs_refresh

@@ -44,6 +44,17 @@ impl Plugin for DisplayMapPlugin {
                 .after(crate::plugin::ApplyStateSet)
                 .before(LayoutProduceSet),
         );
+        // `sync_layout_wrap` also runs in PostUpdate after the Bevy UI
+        // layout pass refreshes `ComputedNode`, so window resizes pick up
+        // the new viewport width in the same frame — otherwise the wrap
+        // budget would lag one frame behind and re-wrap would only happen
+        // after the next user input.
+        app.configure_sets(
+            PostUpdate,
+            LayoutSyncSet
+                .after(bevy::ui::UiSystems::Layout)
+                .before(LayoutProduceSet),
+        );
         // Engine's `LayoutProduceSet` is scheduled by `InstancedTextPlugin`;
         // we configure it to live inside `RenderingSet` so downstream
         // observers (cursor / selection) see the freshly-built layout.
@@ -68,6 +79,9 @@ impl Plugin for DisplayMapPlugin {
             Update,
             (produce_hidden_lines, produce_line_styles, sync_layout_wrap).in_set(LayoutSyncSet),
         );
+        // PostUpdate re-run of just the wrap sync. Hidden-lines / styles
+        // don't depend on viewport size, so they stay in Update.
+        app.add_systems(PostUpdate, sync_layout_wrap.in_set(LayoutSyncSet));
     }
 }
 
@@ -142,6 +156,7 @@ pub(crate) fn produce_line_styles(
             &mut LineStyles,
             &EditorTheme,
             &SyntaxColors,
+            &crate::settings::RenderSettings,
         ),
         With<CodeEditor>,
     >,
@@ -249,6 +264,7 @@ pub(crate) fn produce_line_styles(
         mut line_styles,
         theme,
         syntax_theme,
+        render,
     ) in editors.iter_mut()
     {
         let needs_full = full_rebuild.contains(&entity);
@@ -352,7 +368,27 @@ pub(crate) fn produce_line_styles(
                 }
             }
             let line_text: String = buffer.line(buffer_line).to_string();
-            batch.push((buffer_line, line_text));
+            let capped = if render.stop_rendering_line_after > 0 {
+                let cap = render.stop_rendering_line_after as usize;
+                if line_text.chars().count() > cap {
+                    let mut s = String::with_capacity(cap);
+                    for (i, ch) in line_text.chars().enumerate() {
+                        if i >= cap {
+                            break;
+                        }
+                        s.push(ch);
+                    }
+                    if line_text.ends_with('\n') {
+                        s.push('\n');
+                    }
+                    s
+                } else {
+                    line_text
+                }
+            } else {
+                line_text
+            };
+            batch.push((buffer_line, capped));
         }
 
         let mut map_changed = false;
@@ -367,25 +403,15 @@ pub(crate) fn produce_line_styles(
         }
 
         if !batch.is_empty() {
-            // Build a single text block: lines joined with \n, no trailing \n.
-            // Record each line's start byte in the block for splitting results.
-            let batch_start_byte = buffer.line_to_byte(batch[0].0);
-            let mut block = String::new();
-            let mut line_offsets: Vec<usize> = Vec::with_capacity(batch.len());
-            for (_, line_text) in &batch {
-                line_offsets.push(block.len());
-                let no_nl = line_text.strip_suffix('\n').unwrap_or(line_text);
-                block.push_str(no_nl);
-                block.push('\n');
-            }
-            // Strip the trailing \n added above.
-            block.pop();
+            let line_inputs: Vec<(usize, &str)> = batch
+                .iter()
+                .map(|(li, line_text)| (buffer.line_to_byte(*li), line_text.as_str()))
+                .collect();
 
             let _hl_span = bevy::prelude::info_span!("highlight_line").entered();
             let per_line_segs = if let Some(st) = syntax_tree {
-                syntax.highlight_range(
-                    &block,
-                    batch_start_byte,
+                syntax.highlight_lines(
+                    &line_inputs,
                     st,
                     buffer.rope(),
                     syntax_theme,

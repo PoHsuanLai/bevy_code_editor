@@ -30,11 +30,12 @@
 //! 6. **Emit the typed `*Requested` event** via `ActionEventWriters::emit`.
 
 use super::action_events::*;
+use super::auto_indent::compute_newline_indent;
 #[cfg(feature = "lsp")]
 use super::handlers::lsp_followup::PendingActionFollowup;
 use super::keybindings::EditorAction;
 use crate::plugin::EditorInputManager;
-use crate::settings::CursorSettings;
+use crate::settings::{AutoEdit, AutoIndent, CursorSettings, Indentation};
 use crate::types::*;
 use bevy::ecs::system::SystemParam;
 use bevy::input_focus::InputFocus;
@@ -170,8 +171,7 @@ pub struct ActionEventWriters<'w> {
     save: MessageWriter<'w, SaveRequested>,
     open: MessageWriter<'w, OpenRequested>,
 
-    // Programmatic edits (LSP completion application, etc.)
-    #[cfg(feature = "lsp")]
+    // Programmatic edits (LSP completion application, auto-indent, etc.)
     replace_range: MessageWriter<'w, bevy_instanced_text_editor::ReplaceRangeRequested>,
 }
 
@@ -345,6 +345,7 @@ type DispatchLspQuery<'w, 's> = Query<
         &'static mut crate::lsp_ui::state::LspCompletionPopup,
         &'static crate::lsp_ui::state::LspRenamePopup,
         &'static crate::settings::LspConfig,
+        Option<&'static crate::settings::Suggest>,
     ),
     With<CodeEditor>,
 >;
@@ -358,7 +359,7 @@ pub fn dispatch_action_events(
         With<EditorInputManager>,
     >,
     cursor_settings_q: Query<&CursorSettings, With<CodeEditor>>,
-    misc_q: Query<&crate::settings::Misc, With<CodeEditor>>,
+    mut misc_q: Query<&mut crate::settings::Misc, With<CodeEditor>>,
     #[cfg(feature = "lsp")] mut pending: ResMut<PendingActionFollowup>,
     #[cfg(feature = "lsp")] mut editor_q: Query<
         (
@@ -377,6 +378,7 @@ pub fn dispatch_action_events(
         With<CodeEditor>,
     >,
     #[cfg(feature = "lsp")] mut lsp_q: DispatchLspQuery,
+    auto_indent_q: Query<(&AutoEdit, &Indentation, &SelectionState), With<CodeEditor>>,
     mut writers: ActionEventWriters,
 ) {
     let Some(focused) = input_focus.get() else {
@@ -390,7 +392,7 @@ pub fn dispatch_action_events(
     // Rename modal eats all action input until dismissed (input flows
     // through `crate::input::keyboard` instead).
     #[cfg(feature = "lsp")]
-    if let Ok((_, _, _, rename_state, _)) = lsp_q.get(focused) {
+    if let Ok((_, _, _, rename_state, _, _)) = lsp_q.get(focused) {
         if rename_state.visible {
             return;
         }
@@ -444,11 +446,26 @@ pub fn dispatch_action_events(
         }
     }
 
+    if matches!(action, EditorAction::InsertTab) {
+        if let Ok(misc) = misc_q.get(focused) {
+            if misc.tab_focus_mode {
+                return;
+            }
+        }
+    }
+    if matches!(action, EditorAction::ClearSelection) {
+        if let Ok(mut misc) = misc_q.get_mut(focused) {
+            if misc.tab_focus_mode {
+                misc.tab_focus_mode = false;
+            }
+        }
+    }
+
     // Feature-owned interceptors get first crack at the action. Each returns
     // `true` if it consumed the action; the dispatcher early-returns and the
     // bevy_instanced_text_editor / IDE handlers never see the event.
     #[cfg(feature = "lsp")]
-    if let Ok((lsp_client, mut lsp_document, mut completion_state, _, lsp_settings)) =
+    if let Ok((lsp_client, mut lsp_document, mut completion_state, _, lsp_settings, suggest)) =
         lsp_q.get_mut(focused)
     {
         if crate::lsp_ui::interceptors::completion_popup_intercept(
@@ -459,6 +476,7 @@ pub fn dispatch_action_events(
             lsp_document.as_deref_mut(),
             &mut editor_q,
             lsp_settings,
+            suggest,
             &mut writers.replace_range,
         ) {
             return;
@@ -495,5 +513,61 @@ pub fn dispatch_action_events(
         pending.action_fired = true;
     }
 
+    if matches!(action, EditorAction::InsertNewline) {
+        if let Ok((cursor, buffer, _)) = editor_q.get(focused) {
+            if let Ok((auto_edit, indentation, selection)) = auto_indent_q.get(focused) {
+                if emit_newline_with_indent(
+                    focused,
+                    cursor.cursor_pos,
+                    buffer.rope(),
+                    buffer.len_chars(),
+                    auto_edit,
+                    indentation,
+                    selection,
+                    &mut writers.replace_range,
+                ) {
+                    return;
+                }
+            }
+        }
+    }
+
     writers.emit(action);
+}
+
+/// Returns `true` when the auto-indent path consumed the `InsertNewline`
+/// action via [`bevy_instanced_text_editor::ReplaceRangeRequested`]. Returns
+/// `false` when [`AutoIndent::None`] is set — caller then falls back to
+/// the legacy [`InsertNewlineRequested`] path.
+#[allow(clippy::too_many_arguments)]
+fn emit_newline_with_indent(
+    entity: Entity,
+    cursor_pos: usize,
+    rope: &ropey::Rope,
+    buffer_len_chars: usize,
+    auto_edit: &AutoEdit,
+    indentation: &Indentation,
+    selection: &SelectionState,
+    replace_range: &mut MessageWriter<bevy_instanced_text_editor::ReplaceRangeRequested>,
+) -> bool {
+    if matches!(auto_edit.auto_indent, AutoIndent::None) {
+        return false;
+    }
+    let primary = selection.selections.primary();
+    let (start, end) = if primary.has_selection() {
+        primary.range()
+    } else {
+        (cursor_pos, cursor_pos)
+    };
+    let anchor = start.min(buffer_len_chars);
+    let indent = compute_newline_indent(rope, anchor, auto_edit.auto_indent, indentation);
+    replace_range.write(bevy_instanced_text_editor::ReplaceRangeRequested {
+        entity,
+        start,
+        end,
+        text: format!("\n{indent}"),
+        kind: bevy_instanced_text_editor::EditKind::Newline,
+        record_history: true,
+    });
+    true
 }

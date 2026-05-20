@@ -8,21 +8,26 @@
 
 use crate::input::actions;
 use crate::input::keybindings::EditorAction;
-use crate::lsp_ui::state::LspCompletionPopup;
-use crate::settings::LspConfig;
+use crate::lsp_ui::state::{LspCompletionPopup, UnifiedCompletionItem};
+use crate::settings::{AcceptSuggestionOnEnter, LspConfig, Suggest, TabCompletion};
 use crate::text_view::TextBuffer;
 use crate::types::{CodeEditor, CursorState};
 use bevy::ecs::world::Mut;
 use bevy::prelude::*;
 use bevy_instanced_text_editor::RopeBuffer;
+use lsp_types::CompletionItemKind;
 
 /// LSP completion popup interceptor.
 ///
 /// When the popup is visible on `focused` and has filtered items, certain
 /// `EditorAction`s are reinterpreted as popup navigation:
 /// - `MoveCursorUp` / `MoveCursorDown`: cycle the selected item.
-/// - `InsertNewline` / `InsertTab`: apply the selected item via
-///   [`actions::apply_completion`] and emit `did_change`.
+/// - `InsertNewline`: accept under `Suggest::accept_on_enter`
+///   (`On` always, `Smart` for snippet / function / method / constructor,
+///   `Off` falls through to a literal newline).
+/// - `InsertTab`: accept under `Suggest::tab_completion`
+///   (`On` always, `OnlySnippets` for snippet items, `Off` falls through
+///   to a literal tab).
 /// - `ClearSelection`: dismiss the popup.
 ///
 /// Returns `true` when the action was consumed; the caller (dispatcher)
@@ -43,9 +48,11 @@ pub fn completion_popup_intercept(
         With<CodeEditor>,
     >,
     lsp_settings: &LspConfig,
+    suggest: Option<&Suggest>,
     replace_writer: &mut MessageWriter<bevy_instanced_text_editor::ReplaceRangeRequested>,
 ) -> bool {
-    let filtered_count = completion_state.filtered_items().len();
+    let filtered = completion_state.filtered_items();
+    let filtered_count = filtered.len();
     let max_visible = lsp_settings.completion.max_items;
     if !completion_state.visible || filtered_count == 0 {
         return false;
@@ -69,16 +76,46 @@ pub fn completion_popup_intercept(
             completion_state.ensure_selected_visible_with_max(max_visible);
             true
         }
-        EditorAction::InsertNewline | EditorAction::InsertTab => {
-            if let Ok((cursor, _buffer, _)) = editor_q.get(focused) {
-                actions::apply_completion(
-                    focused,
-                    cursor.cursor_pos,
-                    completion_state,
-                    replace_writer,
-                );
+        EditorAction::InsertNewline => {
+            let accept = match suggest.map(|s| s.accept_on_enter) {
+                Some(AcceptSuggestionOnEnter::Off) => false,
+                Some(AcceptSuggestionOnEnter::Smart) => filtered
+                    .get(completion_state.selected_index)
+                    .is_some_and(is_snippet_or_callable),
+                Some(AcceptSuggestionOnEnter::On) | None => true,
+            };
+            if !accept {
+                return false;
             }
-            // didChange is sent via the OnEdit pipeline.
+            apply_selected(
+                focused,
+                completion_state,
+                &filtered,
+                editor_q,
+                replace_writer,
+            );
+            let _ = (lsp_client, lsp_document);
+            true
+        }
+        EditorAction::InsertTab => {
+            let accept = match suggest.map(|s| s.tab_completion) {
+                Some(TabCompletion::Off) => false,
+                Some(TabCompletion::OnlySnippets) => filtered
+                    .get(completion_state.selected_index)
+                    .is_some_and(is_snippet),
+                Some(TabCompletion::On) => true,
+                None => false,
+            };
+            if !accept {
+                return false;
+            }
+            apply_selected(
+                focused,
+                completion_state,
+                &filtered,
+                editor_q,
+                replace_writer,
+            );
             let _ = (lsp_client, lsp_document);
             true
         }
@@ -87,5 +124,52 @@ pub fn completion_popup_intercept(
             true
         }
         _ => false,
+    }
+}
+
+fn apply_selected(
+    focused: Entity,
+    completion_state: &mut Mut<'_, LspCompletionPopup>,
+    filtered: &[UnifiedCompletionItem],
+    editor_q: &mut Query<
+        (
+            &mut CursorState,
+            &mut TextBuffer<RopeBuffer>,
+            &mut crate::types::fold::GotoLineState,
+        ),
+        With<CodeEditor>,
+    >,
+    replace_writer: &mut MessageWriter<bevy_instanced_text_editor::ReplaceRangeRequested>,
+) {
+    let Ok((cursor, _buffer, _)) = editor_q.get(focused) else {
+        return;
+    };
+    if let Some(item) = filtered.get(completion_state.selected_index) {
+        let label = item.label().to_string();
+        let filter = completion_state.filter.clone();
+        completion_state.remember_acceptance(&label, &filter);
+    }
+    actions::apply_completion(focused, cursor.cursor_pos, completion_state, replace_writer);
+}
+
+fn is_snippet(item: &UnifiedCompletionItem) -> bool {
+    matches!(
+        item,
+        UnifiedCompletionItem::Lsp(lsp) if lsp.kind == Some(CompletionItemKind::SNIPPET)
+    )
+}
+
+fn is_snippet_or_callable(item: &UnifiedCompletionItem) -> bool {
+    match item {
+        UnifiedCompletionItem::Lsp(lsp) => matches!(
+            lsp.kind,
+            Some(
+                CompletionItemKind::SNIPPET
+                    | CompletionItemKind::FUNCTION
+                    | CompletionItemKind::METHOD
+                    | CompletionItemKind::CONSTRUCTOR
+            )
+        ),
+        UnifiedCompletionItem::Word(_) => false,
     }
 }

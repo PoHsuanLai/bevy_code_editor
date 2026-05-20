@@ -14,15 +14,10 @@ type AutoScrollQuery<'w, 's> = Query<
     'w,
     's,
     (
-        &'static TextBuffer<RopeBuffer>,
-        &'static ScrollPosition,
-        &'static mut ScrollAnimator,
-        &'static crate::text_view::ContentMetrics,
-        &'static mut CursorState,
-        &'static ComputedNode,
-        &'static TextFont,
-        &'static bevy::text::LineHeight,
-        &'static MonoCellWidth,
+        EditorBufferView,
+        EditorLayoutView,
+        EditorFontView,
+        ScrollTargetView,
     ),
     With<CodeEditor>,
 >;
@@ -54,6 +49,7 @@ pub(crate) fn update_selection_highlight(
             Option<&HiddenLines>,
             Option<&TextBounds>,
             &EditorTheme,
+            &SelectionConfig,
         ),
         With<CodeEditor>,
     >,
@@ -78,8 +74,18 @@ pub(crate) fn update_selection_highlight(
         return;
     }
 
-    for (editor_entity, buf, layout_view, font_view, sel, mut sel_rects, hidden, wrap, theme) in
-        editor_query.iter_mut()
+    for (
+        editor_entity,
+        buf,
+        layout_view,
+        font_view,
+        sel,
+        mut sel_rects,
+        hidden,
+        wrap,
+        theme,
+        selection_cfg,
+    ) in editor_query.iter_mut()
     {
         if !dirty.contains(&editor_entity) {
             continue;
@@ -177,6 +183,7 @@ pub(crate) fn update_selection_highlight(
                     },
                     char_width,
                     theme.selection_background,
+                    selection_cfg.rounded_selection,
                     &mut sel_rects.0,
                 );
             }
@@ -245,6 +252,7 @@ fn push_selection_for_buffer_range(
     rows: &RowMap<'_>,
     char_width: f32,
     color: Color,
+    rounded: bool,
     out: &mut Vec<RectOverlay>,
 ) {
     let (start_row, start_byte_in_row) = rows.locate(span.s_byte);
@@ -278,29 +286,49 @@ fn push_selection_for_buffer_range(
         row_end_or_chars(end_row)
     };
 
+    let corners = if rounded {
+        bevy_instanced_text::CornerRadii::uniform(2.0)
+    } else {
+        bevy_instanced_text::CornerRadii::ZERO
+    };
+
     if start_row == end_row {
-        out.push(selection_rect(start_row, start_x..trailing_x, color));
+        out.push(selection_rect(
+            start_row,
+            start_x..trailing_x,
+            color,
+            corners,
+        ));
         return;
     }
 
-    // Multi-row span (selection crossed a soft-wrap break).
     let start_row_end = row_end_or_chars(start_row).max(start_x + char_width);
-    out.push(selection_rect(start_row, start_x..start_row_end, color));
+    out.push(selection_rect(
+        start_row,
+        start_x..start_row_end,
+        color,
+        corners,
+    ));
     for r in (start_row + 1)..end_row {
         let r_end = row_end_or_chars(r).max(char_width);
-        out.push(selection_rect(r, 0.0..r_end, color));
+        out.push(selection_rect(r, 0.0..r_end, color, corners));
     }
-    out.push(selection_rect(end_row, 0.0..trailing_x, color));
+    out.push(selection_rect(end_row, 0.0..trailing_x, color, corners));
 }
 
-fn selection_rect(display_row: u32, x_range: std::ops::Range<f32>, color: Color) -> RectOverlay {
+fn selection_rect(
+    display_row: u32,
+    x_range: std::ops::Range<f32>,
+    color: Color,
+    corners: bevy_instanced_text::CornerRadii,
+) -> RectOverlay {
     RectOverlay {
         display_row,
         x_range,
         vertical: RowVertical::Full,
         color,
         z: -1,
-        corners: bevy_instanced_text::CornerRadii::ZERO,
+        corners,
     }
 }
 
@@ -414,6 +442,357 @@ pub(crate) fn update_indent_guides(
     }
 }
 
+/// Push a 1-px vertical `RectOverlay` per ruler column per visible row.
+///
+/// Mirrors `update_indent_guides`'s display-row walk so ruler columns align
+/// with the same row geometry the renderer paints. Skips the write when
+/// no rulers are configured and no rects are currently pushed.
+pub(crate) fn update_rulers(
+    mut editor_query: Query<
+        (
+            EditorBufferView,
+            EditorLayoutView,
+            EditorFontView,
+            &EditorTheme,
+            &mut RulerRects,
+            &Rulers,
+        ),
+        With<CodeEditor>,
+    >,
+) {
+    for (text, layout_view, font_view, theme, mut ruler_rects, rulers) in editor_query.iter_mut() {
+        if rulers.0.is_empty() {
+            if !ruler_rects.0.is_empty() {
+                ruler_rects.0.clear();
+            }
+            continue;
+        }
+
+        let inv = layout_view.computed.inverse_scale_factor();
+        let line_height = bevy_instanced_text::resolve_line_height(
+            *font_view.line_height,
+            font_view.font.font_size,
+        );
+        let char_width = layout_view.mono.px;
+        let viewport_height = layout_view.computed.size().y * inv;
+
+        let visible_start_row = (layout_view.scroll.y / line_height).floor().max(0.0) as usize;
+        let visible_lines = ((viewport_height / line_height).ceil() as usize) + 2;
+        let visible_end_row = visible_start_row + visible_lines;
+
+        let total_lines = text.buffer.len_lines();
+        let has_folding = !text.fold.regions.is_empty();
+
+        let start_buffer_line = if has_folding {
+            let mut display_row = 0;
+            let mut buffer_line = 0;
+            while buffer_line < total_lines && display_row < visible_start_row {
+                if !text.fold.is_line_hidden(buffer_line) {
+                    display_row += 1;
+                }
+                buffer_line += 1;
+            }
+            buffer_line
+        } else {
+            visible_start_row.min(total_lines)
+        };
+
+        let mut current_display_row: usize = if has_folding {
+            let mut display_row = 0;
+            for bl in 0..start_buffer_line {
+                if !text.fold.is_line_hidden(bl) {
+                    display_row += 1;
+                }
+            }
+            display_row
+        } else {
+            start_buffer_line
+        };
+
+        let mut new_rects: Vec<RectOverlay> = Vec::new();
+        for buffer_line in start_buffer_line..total_lines {
+            if text.fold.is_line_hidden(buffer_line) {
+                continue;
+            }
+            if current_display_row > visible_end_row {
+                break;
+            }
+
+            for ruler in &rulers.0 {
+                let x = ruler.column as f32 * char_width;
+                new_rects.push(RectOverlay {
+                    display_row: current_display_row as u32,
+                    x_range: x..(x + 1.0),
+                    vertical: RowVertical::FullLeaded,
+                    color: ruler.color.unwrap_or(theme.indent_guide),
+                    z: 0,
+                    corners: bevy_instanced_text::CornerRadii::ZERO,
+                });
+            }
+
+            current_display_row += 1;
+        }
+
+        if ruler_rects.0 != new_rects {
+            ruler_rects.0 = new_rects;
+        }
+    }
+}
+
+/// Push a 1-px-tall underline at the bottom of every folded region's
+/// visible (placeholder) row when `Folding::highlight` is enabled.
+///
+/// The underline spans the full viewport width so the band reads as a
+/// continuous boundary even when the folded line is short.
+pub(crate) fn update_fold_highlights(
+    mut editor_query: Query<
+        (
+            EditorBufferView,
+            EditorLayoutView,
+            &EditorTheme,
+            &mut FoldHighlightRects,
+            &Folding,
+        ),
+        With<CodeEditor>,
+    >,
+) {
+    for (text, layout_view, theme, mut fold_rects, folding) in editor_query.iter_mut() {
+        if !folding.highlight {
+            if !fold_rects.0.is_empty() {
+                fold_rects.0.clear();
+            }
+            continue;
+        }
+
+        let folded_regions: Vec<usize> = text
+            .fold
+            .regions
+            .iter()
+            .filter(|r| r.is_folded)
+            .map(|r| r.start_line)
+            .collect();
+
+        if folded_regions.is_empty() {
+            if !fold_rects.0.is_empty() {
+                fold_rects.0.clear();
+            }
+            continue;
+        }
+
+        let inv = layout_view.computed.inverse_scale_factor();
+        let viewport_width = layout_view.computed.size().x * inv;
+
+        let mut new_rects: Vec<RectOverlay> = Vec::with_capacity(folded_regions.len());
+        for start_line in folded_regions {
+            let display_row = text.fold.actual_to_display_line(start_line) as u32;
+            new_rects.push(RectOverlay {
+                display_row,
+                x_range: 0.0..viewport_width,
+                vertical: RowVertical::Full,
+                color: theme.fold_marker,
+                z: -1,
+                corners: bevy_instanced_text::CornerRadii::ZERO,
+            });
+        }
+
+        if fold_rects.0 != new_rects {
+            fold_rects.0 = new_rects;
+        }
+    }
+}
+
+/// Push tiny `RectOverlay`s marking whitespace characters according to
+/// [`RenderWhitespace`]. Spaces render as a centered dot (narrow x range,
+/// `Caret { 0.15 }` vertical), tabs as a thin horizontal bar through the
+/// row's midline.
+///
+/// Modes:
+/// - `None`: no markers.
+/// - `Boundary`: leading whitespace and trailing whitespace on each line.
+/// - `Selection`: only whitespace inside the active selection range(s).
+/// - `Trailing`: only trailing whitespace on each line.
+/// - `All`: every whitespace character.
+///
+/// Tab columns are computed by walking the line and snapping to the next
+/// `indentation.tab_size` boundary so the marker bar spans the actual
+/// tab-stop width, not a fixed char cell.
+#[allow(clippy::type_complexity)]
+pub(crate) fn update_whitespace_markers(
+    mut editor_query: Query<
+        (
+            EditorBufferView,
+            EditorLayoutView,
+            EditorFontView,
+            Option<&HiddenLines>,
+            Option<&TextBounds>,
+            &EditorTheme,
+            &RenderSettings,
+            &SelectionState,
+            &Indentation,
+            &mut WhitespaceRects,
+        ),
+        With<CodeEditor>,
+    >,
+) {
+    for (buf, layout_view, font_view, hidden, bounds, theme, render, sel, indentation, mut rects) in
+        editor_query.iter_mut()
+    {
+        if matches!(render.render_whitespace, RenderWhitespace::None) {
+            if !rects.0.is_empty() {
+                rects.0.clear();
+            }
+            continue;
+        }
+
+        let char_width = layout_view.mono.px;
+        let line_height = bevy_instanced_text::resolve_line_height(
+            *font_view.line_height,
+            font_view.font.font_size,
+        );
+        let inv = layout_view.computed.inverse_scale_factor();
+        let viewport_height = layout_view.computed.size().y * inv;
+        let text_area_top = layout_view.computed.content_inset().min_inset.y * inv;
+        let wrap_cfg = bounds.copied().unwrap_or_default();
+        let visible = visible_buffer_range(
+            &**buf.buffer,
+            layout_view.scroll.y,
+            viewport_height,
+            text_area_top,
+            line_height,
+            char_width,
+            wrap_cfg,
+            hidden,
+        );
+
+        let tab_size = indentation.tab_size.max(1) as usize;
+
+        let mut sel_ranges: Vec<(usize, usize)> = Vec::new();
+        if matches!(render.render_whitespace, RenderWhitespace::Selection) {
+            sel_ranges = sel
+                .selections
+                .iter()
+                .filter(|s| s.has_selection())
+                .map(|s| s.range())
+                .collect();
+            if sel_ranges.is_empty() {
+                if !rects.0.is_empty() {
+                    rects.0.clear();
+                }
+                continue;
+            }
+        }
+
+        let mut new_rects: Vec<RectOverlay> = Vec::new();
+
+        if visible.start < visible.end {
+            for buffer_line in visible.start..visible.end {
+                if buf.fold.is_line_hidden(buffer_line) {
+                    continue;
+                }
+                let line = buf.buffer.line(buffer_line);
+                let line_start_char = buf.buffer.line_to_char(buffer_line);
+                let line_chars = line.len_chars();
+                if line_chars == 0 {
+                    continue;
+                }
+
+                let chars: Vec<char> = line.chars().collect();
+                let trim_end_col = line_trim_end_col(&chars);
+                let leading_end_col = line_leading_ws_end_col(&chars);
+
+                let display_row = buf.fold.actual_to_display_line(buffer_line) as u32;
+
+                let mut visual_col = 0usize;
+                for (col, ch) in chars.iter().enumerate() {
+                    if *ch == '\n' || *ch == '\r' {
+                        break;
+                    }
+                    let is_space = *ch == ' ';
+                    let is_tab = *ch == '\t';
+                    if !is_space && !is_tab {
+                        visual_col += 1;
+                        continue;
+                    }
+                    let tab_advance = if is_tab {
+                        tab_size - (visual_col % tab_size)
+                    } else {
+                        1
+                    };
+                    let show = match render.render_whitespace {
+                        RenderWhitespace::None => false,
+                        RenderWhitespace::All => true,
+                        RenderWhitespace::Trailing => col >= trim_end_col,
+                        RenderWhitespace::Boundary => col < leading_end_col || col >= trim_end_col,
+                        RenderWhitespace::Selection => {
+                            let abs = line_start_char + col;
+                            sel_ranges.iter().any(|(s, e)| abs >= *s && abs < *e)
+                        }
+                    };
+                    if show {
+                        let x_start = visual_col as f32 * char_width;
+                        if is_space {
+                            let dot_half = (char_width * 0.07).max(0.4);
+                            let center = x_start + char_width * 0.5;
+                            new_rects.push(RectOverlay {
+                                display_row,
+                                x_range: (center - dot_half)..(center + dot_half),
+                                vertical: RowVertical::Caret {
+                                    height_fraction: 0.1,
+                                },
+                                color: theme.whitespace,
+                                z: 0,
+                                corners: bevy_instanced_text::CornerRadii::ZERO,
+                            });
+                        } else {
+                            let x_end = (visual_col + tab_advance) as f32 * char_width;
+                            let pad = char_width * 0.25;
+                            new_rects.push(RectOverlay {
+                                display_row,
+                                x_range: (x_start + pad)..(x_end - pad).max(x_start + pad + 1.0),
+                                vertical: RowVertical::Strikethrough { thickness: 0.8 },
+                                color: theme.whitespace,
+                                z: 0,
+                                corners: bevy_instanced_text::CornerRadii::ZERO,
+                            });
+                        }
+                    }
+                    visual_col += tab_advance;
+                }
+            }
+        }
+
+        if rects.0 != new_rects {
+            rects.0 = new_rects;
+        }
+    }
+}
+
+fn line_trim_end_col(chars: &[char]) -> usize {
+    let mut end = chars.len();
+    while end > 0 {
+        let c = chars[end - 1];
+        if c == '\n' || c == '\r' || c == ' ' || c == '\t' {
+            end -= 1;
+        } else {
+            break;
+        }
+    }
+    end
+}
+
+fn line_leading_ws_end_col(chars: &[char]) -> usize {
+    let mut col = 0usize;
+    while col < chars.len() {
+        let c = chars[col];
+        if c == ' ' || c == '\t' {
+            col += 1;
+        } else {
+            break;
+        }
+    }
+    col
+}
+
 /// Run condition: auto-scroll only fires for editors that have moved their
 /// cursor and aren't currently being mouse-dragged.
 ///
@@ -422,18 +801,18 @@ pub(crate) fn update_indent_guides(
 pub(crate) fn should_auto_scroll(
     editor_query: Query<
         (
-            &TextBuffer<RopeBuffer>,
+            EditorBufferView,
             &CursorState,
             &bevy_instanced_text_editor::TextViewDragState,
         ),
         With<CodeEditor>,
     >,
 ) -> bool {
-    for (buffer, cursor, mouse_drag) in editor_query.iter() {
+    for (buf, cursor, mouse_drag) in editor_query.iter() {
         if mouse_drag.is_dragging {
             continue;
         }
-        let cursor_pos = cursor.cursor_pos.min(buffer.len_chars());
+        let cursor_pos = cursor.cursor_pos.min(buf.buffer.len_chars());
         if cursor_pos != cursor.last_cursor_pos {
             return true;
         }
@@ -442,32 +821,32 @@ pub(crate) fn should_auto_scroll(
 }
 
 pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
-    for (buffer, scroll, mut animator, metrics, mut cursor, computed, font, lh, mono) in
-        editor_query.iter_mut()
-    {
-        let cursor_pos = cursor.cursor_pos.min(buffer.len_chars());
-        cursor.last_cursor_pos = cursor_pos;
-        let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
-        let inv = computed.inverse_scale_factor();
-        let viewport_height = computed.size().y * inv;
+    for (buf, layout, fonts, mut scroll_target) in editor_query.iter_mut() {
+        let cursor_pos = scroll_target.cursor.cursor_pos.min(buf.buffer.len_chars());
+        scroll_target.cursor.last_cursor_pos = cursor_pos;
+        let line_height =
+            bevy_instanced_text::resolve_line_height(*fonts.line_height, fonts.font.font_size);
+        let inv = layout.computed.inverse_scale_factor();
+        let viewport_height = layout.computed.size().y * inv;
         if viewport_height < 1.0 || line_height < 1.0 {
             continue;
         }
-        let line_index = buffer.char_to_line(cursor_pos);
-        let viewport_width = computed.size().x * inv;
-        let text_area_top = computed.content_inset().min_inset.y * inv;
-        let text_area_left = computed.content_inset().min_inset.x * inv;
+        let line_index = buf.buffer.char_to_line(cursor_pos);
+        let viewport_width = layout.computed.size().x * inv;
+        let text_area_top = layout.computed.content_inset().min_inset.y * inv;
+        let text_area_left = layout.computed.content_inset().min_inset.x * inv;
 
         // Animator-target-relative cursor pos: where the cursor *will be*
         // after the current animation lands. Stacks repeated cursor moves
         // monotonically instead of fighting the animator.
         // When the animator has no in-flight target (just woke up), seed from
         // the current ScrollPosition so we don't snap.
-        let mut target = if animator.target == Vec2::ZERO && scroll.0 != Vec2::ZERO {
-            scroll.0
-        } else {
-            animator.target
-        };
+        let mut target =
+            if scroll_target.animator.target == Vec2::ZERO && layout.scroll.0 != Vec2::ZERO {
+                layout.scroll.0
+            } else {
+                scroll_target.animator.target
+            };
         let cursor_y = text_area_top - target.y + line_index as f32 * line_height;
 
         let margin_vertical = line_height * 2.0;
@@ -484,34 +863,45 @@ pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
         }
 
         if vertical_changed {
-            let line_count = buffer.len_lines();
+            let line_count = buf.buffer.len_lines();
             let content_height = line_count as f32 * line_height;
             let max_scroll = (content_height - viewport_height + text_area_top).max(0.0);
             target.y = target.y.clamp(0.0, max_scroll);
         }
 
         // === HORIZONTAL AUTO-SCROLL ===
-        let line_start = buffer.line_to_char(line_index);
-        let col_index = cursor_pos - line_start;
-        let char_width = mono.px;
-        let cursor_x = col_index as f32 * char_width;
+        // Skip entirely when soft-wrap is on: content cannot extend past the
+        // viewport, so there's nothing to chase horizontally.
+        let wrap_on = scroll_target.bounds.is_some_and(|b| b.width.is_some());
+        if wrap_on {
+            target.x = 0.0;
+        } else {
+            let line_start = buf.buffer.line_to_char(line_index);
+            let col_index = cursor_pos - line_start;
+            let char_width = layout.mono.px;
+            let cursor_x = col_index as f32 * char_width;
 
-        let margin_horizontal = char_width * 5.0;
-        let visible_left = target.x;
-        let visible_right = target.x + viewport_width - text_area_left - margin_horizontal;
+            let margin_horizontal = scroll_target
+                .scroll_cfg
+                .reveal_horizontal_right_padding
+                .max(char_width);
+            let visible_left = target.x;
+            let visible_right = target.x + viewport_width - text_area_left - margin_horizontal;
 
-        if cursor_x < visible_left {
-            target.x = cursor_x.max(0.0);
-        } else if cursor_x > visible_right {
-            target.x = cursor_x - (viewport_width - text_area_left - margin_horizontal);
+            if cursor_x < visible_left {
+                target.x = cursor_x.max(0.0);
+            } else if cursor_x > visible_right {
+                target.x = cursor_x - (viewport_width - text_area_left - margin_horizontal);
+            }
+
+            let max_horizontal_scroll =
+                (scroll_target.metrics.max_content_width - viewport_width).max(0.0);
+            target.x = target.x.clamp(0.0, max_horizontal_scroll);
         }
 
-        let max_horizontal_scroll = (metrics.max_content_width - viewport_width).max(0.0);
-        target.x = target.x.clamp(0.0, max_horizontal_scroll);
-
-        if !vertical_changed && (target.x - animator.target.x).abs() < f32::EPSILON {
+        if !vertical_changed && (target.x - scroll_target.animator.target.x).abs() < f32::EPSILON {
             continue;
         }
-        animator.target = target;
+        scroll_target.animator.target = target;
     }
 }

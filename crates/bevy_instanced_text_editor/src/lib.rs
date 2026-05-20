@@ -44,7 +44,8 @@ pub use plugin::{EditEmitSet, InstancedTextEditPlugin};
 pub use text::RopeBuffer;
 pub use text_edit::*;
 pub use text_state::{
-    EditDelta, EditHistoryState, EditPoint, IndentConfig, OnEdit, SnapshotPreEdit, TextEditor,
+    is_auto_pair_neighbor, EditDelta, EditHistoryState, EditPoint, IndentConfig, OnEdit,
+    SnapshotPreEdit, TextEditor,
 };
 
 // Re-export everything from bevy_instanced_text_interaction so downstream editors

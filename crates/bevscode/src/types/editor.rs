@@ -95,11 +95,38 @@ use bevy::prelude::*;
     crate::types::fold::FoldState,
     SelectionRects,
     IndentGuideRects,
+    RulerRects,
+    FoldHighlightRects,
     CaretRects,
     CursorLineRects,
-    BracketMatchRects
+    BracketMatchRects,
+    WhitespaceRects,
+    crate::plugin::LinkRects,
+    crate::plugin::LinkRanges,
+    crate::plugin::HoveredLink,
+    crate::plugin::GlyphMarkers,
+    crate::plugin::GutterDecorations,
+    crate::plugin::GlyphMarginRects,
+    crate::plugin::LineDecorationRects,
+    HoveredGutterLine,
+    HoveredInGutter
 )]
 pub struct CodeEditor;
+
+/// Buffer line currently under the pointer, used by gutter chevrons under
+/// `Folding::show_controls::Mouseover`. `None` when the pointer is outside
+/// the editor or has not moved since the last frame.
+#[derive(Component, Default, Clone, Copy, Reflect)]
+#[reflect(Component, Default)]
+pub struct HoveredGutterLine(pub Option<usize>);
+
+/// `true` when the pointer is over the gutter strip (line numbers,
+/// chevrons), not the text area. Drives `sync_cursor_icon` so the OS
+/// arrow shows over the gutter and the I-beam over text — matching
+/// VSCode / Sublime behavior.
+#[derive(Component, Default, Clone, Copy, Reflect)]
+#[reflect(Component, Default)]
+pub struct HoveredInGutter(pub bool);
 
 /// Marker for a cursor sprite entity. `cursor_index` 0 is the primary cursor;
 /// higher indices are additional cursors added via multi-cursor commands.
@@ -115,8 +142,20 @@ pub struct EditorCursor {
 #[reflect(Component, Default)]
 pub struct LineNumbers;
 
-/// Marker for the `TextView` entity that renders line numbers in the gutter.
-/// Spawned as a child of the `CodeEditor` entity; managed by `sync_gutter_text_view`.
+/// Marker for the gutter container Node that wraps every gutter
+/// decoration (line numbers, glyph margin icons, line-decoration bars,
+/// fold chevrons). Width tracks `GutterConfig::gutter_width`; children
+/// position themselves relative to this Node (not the editor) so Taffy
+/// clips them to the gutter region. One per editor.
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+pub struct GutterContainer {
+    pub editor: Entity,
+}
+
+/// Marker for the `TextView` entity that renders line numbers in the
+/// gutter. Spawned as a child of [`GutterContainer`]; managed by
+/// `sync_gutter_text_view`.
 #[derive(Component, Reflect)]
 #[reflect(Component)]
 pub struct GutterTextView {
@@ -185,6 +224,16 @@ pub struct SelectionRects(pub Vec<RectOverlay>);
 #[reflect(Component, Default)]
 pub struct IndentGuideRects(pub Vec<RectOverlay>);
 
+/// Vertical ruler rects — written by `update_rulers`.
+#[derive(Component, Default, Clone, Reflect)]
+#[reflect(Component, Default)]
+pub struct RulerRects(pub Vec<RectOverlay>);
+
+/// Folded-region underline rects — written by `update_fold_highlights`.
+#[derive(Component, Default, Clone, Reflect)]
+#[reflect(Component, Default)]
+pub struct FoldHighlightRects(pub Vec<RectOverlay>);
+
 /// Caret rects — written by `push_cursor_overlays`.
 #[derive(Component, Default, Clone, Reflect)]
 #[reflect(Component, Default)]
@@ -199,6 +248,12 @@ pub struct CursorLineRects(pub Vec<RectOverlay>);
 #[derive(Component, Default, Clone, Reflect)]
 #[reflect(Component, Default)]
 pub struct BracketMatchRects(pub Vec<RectOverlay>);
+
+/// Whitespace marker rects (centered dots for spaces, thin bars for tabs)
+/// — written by `update_whitespace_markers`.
+#[derive(Component, Default, Clone, Reflect)]
+#[reflect(Component, Default)]
+pub struct WhitespaceRects(pub Vec<RectOverlay>);
 
 /// Event emitted when save is requested (Ctrl+S)
 /// The host application should handle this event to save the buffer contents.

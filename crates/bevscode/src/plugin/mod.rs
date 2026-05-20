@@ -3,10 +3,13 @@ use bevy::app::{PluginGroup, PluginGroupBuilder};
 use bevy::prelude::*;
 
 pub mod brackets;
+pub mod copy_highlight;
 pub mod cursor;
 pub mod editor_ui;
 pub mod folding;
+pub mod gutter_decorations;
 pub mod line_numbers;
+pub mod links;
 #[cfg(feature = "lsp")]
 pub mod lsp;
 pub mod scroll_animator;
@@ -23,6 +26,11 @@ pub use self::brackets::BracketPlugin;
 pub use self::cursor::CursorPlugin;
 pub use self::editor_ui::{AutoResizeViewport, EditorUiPlugin};
 pub use self::folding::FoldingPlugin;
+pub use self::gutter_decorations::{
+    DecorationKind, GlyphKind, GlyphMarginClicked, GlyphMarginRects, GlyphMarker, GlyphMarkers,
+    GutterDecorations, GutterIcon, IconAtlas, LineDecoration, LineDecorationRects,
+};
+pub use self::links::{HoveredLink, LinkRange, LinkRanges, LinkRects};
 pub use self::scroll_animator::{ScrollAnimator, ScrollAnimatorPlugin};
 
 // Re-export syntax highlighting resources publicly for external use
@@ -31,8 +39,13 @@ pub use self::syntax_highlighting::{EditorSyntaxState, SyntaxPlugin};
 // Re-export helper functions and systems for internal plugin use (crate-visible only)
 pub(crate) use self::brackets::{update_bracket_highlight, update_bracket_match};
 pub(crate) use self::cursor::update_cursor_line_highlight;
-pub(crate) use self::line_numbers::{setup_gutter_text_view, sync_gutter_text_view};
-pub(crate) use self::ui_elements::{update_indent_guides, update_selection_highlight};
+pub(crate) use self::line_numbers::{
+    setup_gutter_text_view, sync_gutter_container, sync_gutter_text_font, sync_gutter_text_view,
+};
+pub(crate) use self::ui_elements::{
+    update_fold_highlights, update_indent_guides, update_rulers, update_selection_highlight,
+    update_whitespace_markers,
+};
 
 /// Marker component for the entity that handles editor input (InputManager).
 ///
@@ -216,6 +229,12 @@ impl Plugin for CodeEditorPlugin {
         // behaviors and the LSP hover trigger on top.
         app.add_observer(crate::input::on_fold_gutter_press);
         app.add_observer(crate::input::on_alt_click);
+        app.add_observer(crate::input::on_click_past_eol_unfold);
+        app.add_observer(crate::input::on_pointer_move_for_gutter_hover);
+        app.add_observer(crate::plugin::links::on_ctrl_click_open_url);
+        app.add_observer(crate::plugin::links::on_pointer_move_for_link_hover);
+        app.add_observer(crate::plugin::gutter_decorations::on_glyph_margin_press);
+        app.add_message::<crate::plugin::gutter_decorations::GlyphMarginClicked>();
         #[cfg(feature = "lsp")]
         {
             app.add_observer(crate::input::on_ctrl_click_goto_definition);
@@ -232,6 +251,11 @@ impl Plugin for CodeEditorPlugin {
         // Per-action IDE handlers — read each `*Requested` event and apply.
         // All handlers run in `InputSet` after the dispatcher.
         register_handler_systems(app);
+
+        app.add_systems(
+            Update,
+            crate::plugin::copy_highlight::handle_copy_with_highlighting.in_set(InputSet),
+        );
 
         // `bevy_instanced_text_editor` fires `OnEdit` triggers per editor entity after
         // every edit op. The editor crate observes those triggers to drive

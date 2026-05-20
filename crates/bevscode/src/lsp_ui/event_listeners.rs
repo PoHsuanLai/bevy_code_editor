@@ -77,6 +77,7 @@ type SignatureHelpRequestQuery<'w, 's> = Query<
         Option<&'static LspDocument>,
         &'static bevy_lsp::ServerCapabilities,
         &'static mut LspSignatureHelpPopup,
+        Option<&'static crate::settings::Suggest>,
     ),
     With<CodeEditor>,
 >;
@@ -239,12 +240,17 @@ pub fn listen_signature_help_requests(
     mut query: SignatureHelpRequestQuery,
     mut lsp_w: MessageWriter<LspRequest>,
 ) {
-    let Ok((entity, buffer, lsp_document, caps, mut sig_help_state)) = query.single_mut() else {
+    let Ok((entity, buffer, lsp_document, caps, mut sig_help_state, suggest)) = query.single_mut()
+    else {
         return;
     };
     let Some(lsp_document) = lsp_document else {
         return;
     };
+    if suggest.is_some_and(|s| !s.parameter_hints.enabled) {
+        let _ = events.read().count();
+        return;
+    }
     let enc = caps.position_encoding();
     for event in events.read() {
         sig_help_state.dismiss();

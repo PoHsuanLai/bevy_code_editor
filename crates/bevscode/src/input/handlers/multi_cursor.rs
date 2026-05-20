@@ -19,10 +19,22 @@ type EditorView<'w, 's> = Query<
     With<CodeEditor>,
 >;
 
+type EditorViewWithSelection<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut SelectionState,
+        &'static mut CursorState,
+        &'static crate::text_view::TextBuffer<RopeBuffer>,
+        &'static crate::settings::SelectionConfig,
+    ),
+    With<CodeEditor>,
+>;
+
 pub fn handle_add_cursor_at_next_occurrence(
     mut events: MessageReader<AddCursorAtNextOccurrenceRequested>,
     input_focus: Res<InputFocus>,
-    mut q: EditorView,
+    mut q: EditorViewWithSelection,
 ) {
     if events.read().next().is_none() {
         return;
@@ -30,10 +42,18 @@ pub fn handle_add_cursor_at_next_occurrence(
     let Some(entity) = input_focus.get() else {
         return;
     };
-    let Ok((mut sel, mut cursor, buffer)) = q.get_mut(entity) else {
+    let Ok((mut sel, mut cursor, buffer, selection_cfg)) = q.get_mut(entity) else {
         return;
     };
-    add_cursor_at_next_occurrence(&mut sel, &mut cursor, buffer);
+    if selection_cfg.limit > 0 && sel.selections.iter().count() >= selection_cfg.limit as usize {
+        return;
+    }
+    let _ = add_cursor_at_next_occurrence(
+        &mut sel,
+        &mut cursor,
+        buffer,
+        &selection_cfg.word_separators,
+    );
 }
 
 pub fn handle_add_cursor_above(

@@ -1,7 +1,8 @@
 //! Cursor rendering and animation.
 
+use crate::input::word_boundary::is_word_char;
 use crate::settings::{
-    CursorLine, CursorSettings, EditorBufferView, EditorLayoutView, EditorTheme,
+    CursorLine, CursorSettings, EditorBufferView, EditorLayoutView, EditorTheme, SelectionConfig,
 };
 use crate::text_view::{RectOverlay, RowVertical};
 use crate::types::*;
@@ -27,12 +28,14 @@ type CursorLineHighlightQuery<'w, 's> = Query<
     'w,
     's,
     (
+        Entity,
         EditorBufferView,
         EditorLayoutView,
         &'static SelectionState,
         &'static mut CursorLineRects,
         &'static EditorTheme,
         &'static CursorLine,
+        &'static SelectionConfig,
     ),
     With<CodeEditor>,
 >;
@@ -61,7 +64,8 @@ impl Plugin for CursorPlugin {
             .register_type::<crate::types::events::TextEdited>()
             .register_type::<super::editor_ui::AutoResizeViewport>()
             .register_type::<crate::input::EditorAction>()
-            .register_type::<GutterTextView>();
+            .register_type::<GutterTextView>()
+            .register_type::<GutterContainer>();
 
         app.register_type::<crate::settings::AutoEdit>()
             .register_type::<crate::settings::BracketConfig>()
@@ -170,8 +174,11 @@ pub(crate) fn push_cursor_overlays(
     }
 }
 
-pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlightQuery) {
-    for (buf, layout_view, sel, mut cursor_line_rects, theme, cursor_line) in
+pub(crate) fn update_cursor_line_highlight(
+    mut editor_query: CursorLineHighlightQuery,
+    input_focus: Res<bevy::input_focus::InputFocus>,
+) {
+    for (entity, buf, layout_view, sel, mut cursor_line_rects, theme, cursor_line, selection_cfg) in
         editor_query.iter_mut()
     {
         if matches!(
@@ -179,6 +186,12 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
             crate::settings::RenderLineHighlight::None
         ) || theme.line_highlight.is_none()
         {
+            if !cursor_line_rects.0.is_empty() {
+                cursor_line_rects.0.clear();
+            }
+            continue;
+        }
+        if cursor_line.only_when_focus && input_focus.get() != Some(entity) {
             if !cursor_line_rects.0.is_empty() {
                 cursor_line_rects.0.clear();
             }
@@ -246,31 +259,35 @@ pub(crate) fn update_cursor_line_highlight(mut editor_query: CursorLineHighlight
                 });
             }
 
-            if !cursor_line.highlight_word {
+            let occurrences_off = matches!(
+                selection_cfg.occurrences_highlight,
+                crate::settings::OccurrencesHighlight::Off
+            );
+            if !cursor_line.highlight_word || occurrences_off {
                 continue;
             }
 
             let col = cursor_pos - line_start;
             let line = buf.buffer.line(line_index);
             let line_chars: Vec<char> = line.chars().collect();
-            let is_word_char = |ch: char| ch.is_alphanumeric() || ch == '_';
-            let on_word = if col < line_chars.len() && is_word_char(line_chars[col]) {
+            let sep = selection_cfg.word_separators.as_str();
+            let on_word = if col < line_chars.len() && is_word_char(line_chars[col], sep) {
                 true
             } else {
-                col > 0 && col <= line_chars.len() && is_word_char(line_chars[col - 1])
+                col > 0 && col <= line_chars.len() && is_word_char(line_chars[col - 1], sep)
             };
             let (word_start, word_end) = if on_word {
-                let start_col = if col < line_chars.len() && is_word_char(line_chars[col]) {
+                let start_col = if col < line_chars.len() && is_word_char(line_chars[col], sep) {
                     col
                 } else {
                     col - 1
                 };
                 let mut ws = start_col;
-                while ws > 0 && is_word_char(line_chars[ws - 1]) {
+                while ws > 0 && is_word_char(line_chars[ws - 1], sep) {
                     ws -= 1;
                 }
                 let mut we = start_col;
-                while we < line_chars.len() && is_word_char(line_chars[we]) {
+                while we < line_chars.len() && is_word_char(line_chars[we], sep) {
                     we += 1;
                 }
                 (ws, we)
