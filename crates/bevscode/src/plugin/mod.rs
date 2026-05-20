@@ -306,7 +306,9 @@ impl PluginGroup for CodeEditorPlugins {
             .add(ScrollAnimatorPlugin)
             .add(crate::display_map::DisplayMapPlugin);
         #[cfg(feature = "lsp")]
-        let group = group.add(LspPlugin);
+        let group = group
+            .add(LspPlugin)
+            .add(crate::lsp_ui_view::LspUiViewPlugin);
         group
     }
 }

@@ -41,6 +41,7 @@ pub fn sync_completion_popup(
     mut commands: Commands,
     query: Query<
         (
+            Entity,
             &LspCompletionPopup,
             &CursorState,
             &TextBuffer<RopeBuffer>,
@@ -53,7 +54,8 @@ pub fn sync_completion_popup(
     >,
     existing: Query<Entity, With<CompletionPopupData>>,
 ) {
-    let Ok((completion_state, cursor_state, buffer, font, lh, mono, lsp)) = query.single() else {
+    let Ok((editor, completion_state, cursor_state, buffer, font, lh, mono, lsp)) = query.single()
+    else {
         return;
     };
     let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
@@ -111,6 +113,7 @@ pub fn sync_completion_popup(
         });
 
     let popup_data = CompletionPopupData {
+        editor,
         line,
         character,
         items,
@@ -140,6 +143,7 @@ pub fn sync_hover_popup(
     mut commands: Commands,
     query: Query<
         (
+            Entity,
             &LspHoverPopup,
             &TextBuffer<RopeBuffer>,
             &TextFont,
@@ -149,7 +153,7 @@ pub fn sync_hover_popup(
     >,
     existing: Query<Entity, With<HoverPopupData>>,
 ) {
-    let Ok((hover_state, buffer, font, mono)) = query.single() else {
+    let Ok((editor, hover_state, buffer, font, mono)) = query.single() else {
         return;
     };
 
@@ -182,6 +186,7 @@ pub fn sync_hover_popup(
     let box_height = (line_count as f32 * font_size * 1.2) + padding * 2.0;
 
     let popup_data = HoverPopupData {
+        editor,
         line,
         character,
         content: hover_state.content.clone(),
@@ -207,6 +212,7 @@ pub fn sync_signature_help_popup(
     mut commands: Commands,
     query: Query<
         (
+            Entity,
             &LspSignatureHelpPopup,
             &CursorState,
             &TextBuffer<RopeBuffer>,
@@ -217,7 +223,7 @@ pub fn sync_signature_help_popup(
     >,
     existing: Query<Entity, With<SignatureHelpPopupData>>,
 ) {
-    let Ok((sig_state, cursor_state, buffer, font, mono)) = query.single() else {
+    let Ok((editor, sig_state, cursor_state, buffer, font, mono)) = query.single() else {
         return;
     };
 
@@ -268,6 +274,7 @@ pub fn sync_signature_help_popup(
         .unwrap_or_default();
 
     let popup_data = SignatureHelpPopupData {
+        editor,
         line,
         character,
         label: sig_label.clone(),
@@ -297,6 +304,7 @@ pub fn sync_code_actions_popup(
     mut commands: Commands,
     query: Query<
         (
+            Entity,
             &LspCodeActionsPopup,
             &CursorState,
             &TextBuffer<RopeBuffer>,
@@ -308,7 +316,7 @@ pub fn sync_code_actions_popup(
     >,
     existing: Query<Entity, With<CodeActionsPopupData>>,
 ) {
-    let Ok((action_state, cursor_state, buffer, font, lh, mono)) = query.single() else {
+    let Ok((editor, action_state, cursor_state, buffer, font, lh, mono)) = query.single() else {
         return;
     };
     let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
@@ -368,6 +376,7 @@ pub fn sync_code_actions_popup(
         .collect();
 
     let popup_data = CodeActionsPopupData {
+        editor,
         line,
         character,
         actions,
@@ -394,6 +403,7 @@ pub fn sync_rename_input(
     mut commands: Commands,
     query: Query<
         (
+            Entity,
             &LspRenamePopup,
             &TextFont,
             &bevy::text::LineHeight,
@@ -403,7 +413,7 @@ pub fn sync_rename_input(
     >,
     existing: Query<Entity, With<RenameInputData>>,
 ) {
-    let Ok((rename_state, font, lh, mono)) = query.single() else {
+    let Ok((editor, rename_state, font, lh, mono)) = query.single() else {
         return;
     };
     let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
@@ -443,6 +453,7 @@ pub fn sync_rename_input(
     let box_height = line_height + padding_y * 2.0;
 
     let popup_data = RenameInputData {
+        editor,
         line,
         character,
         text: display_text.to_string(),

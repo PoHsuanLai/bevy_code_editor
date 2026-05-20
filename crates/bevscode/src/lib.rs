@@ -140,6 +140,8 @@ pub mod types;
 
 #[cfg(feature = "lsp")]
 pub mod lsp_ui;
+#[cfg(feature = "lsp")]
+pub mod lsp_ui_view;
 
 pub mod prelude {
     //! Convenient re-exports for common editor usage.
@@ -198,4 +200,6 @@ pub mod prelude {
     };
     #[cfg(feature = "lsp")]
     pub use crate::settings::{DiagnosticColors, LspConfig, Suggest};
+    #[cfg(feature = "lsp")]
+    pub use crate::lsp_ui_view::{LspPopupRoot, LspUiViewPlugin, LspUiViewSet};
 }

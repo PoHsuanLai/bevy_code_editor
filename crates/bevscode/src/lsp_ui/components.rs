@@ -14,14 +14,24 @@
 use bevy::prelude::*;
 
 use super::state::UnifiedCompletionItem;
+use crate::lsp_ui_view::LspPopupRoot;
 
 /// Completion popup data. Hosts query this and render however they prefer.
 ///
 /// Anchor is given as `(line, character)` of the cursor; the renderer
 /// composes screen position from those + the editor's `RowMetrics`, so
 /// scroll / viewport / font changes don't need to invalidate the data.
+///
+/// `#[require]`s [`Node`] + [`LspPopupRoot`], so the built-in
+/// [`LspUiViewPlugin`](crate::lsp_ui_view::LspUiViewPlugin) renders this
+/// without the host wiring up extra components. The popup entity is
+/// reparented under `editor` by the `on_add: LspPopupRoot` observer.
 #[derive(Component, Clone, Debug)]
+#[require(Node, LspPopupRoot)]
 pub struct CompletionPopupData {
+    /// Owning editor entity. Used by renderers to look up theme, font,
+    /// anchor, etc.
+    pub editor: Entity,
     /// 0-indexed buffer line of the cursor (anchor row).
     pub line: u32,
     /// 0-indexed character column of the cursor (anchor column).
@@ -64,7 +74,9 @@ impl From<&UnifiedCompletionItem> for CompletionItemData {
 /// renderer composes screen position from those + the editor's
 /// `RowMetrics`.
 #[derive(Component, Clone, Debug)]
+#[require(Node, LspPopupRoot)]
 pub struct HoverPopupData {
+    pub editor: Entity,
     /// 0-indexed buffer line of the trigger position.
     pub line: u32,
     /// 0-indexed character column of the trigger position.
@@ -81,7 +93,9 @@ pub struct HoverPopupData {
 /// composes screen position from those + the editor's `RowMetrics` and
 /// flips above/below the line as needed.
 #[derive(Component, Clone, Debug)]
+#[require(Node, LspPopupRoot)]
 pub struct SignatureHelpPopupData {
+    pub editor: Entity,
     /// 0-indexed buffer line of the cursor.
     pub line: u32,
     /// 0-indexed character column of the cursor.
@@ -107,7 +121,9 @@ pub struct SignatureHelpPopupData {
 /// Anchor is given as `(line, character)` of the cursor; the renderer
 /// composes screen position from those + the editor's `RowMetrics`.
 #[derive(Component, Clone, Debug)]
+#[require(Node, LspPopupRoot)]
 pub struct CodeActionsPopupData {
+    pub editor: Entity,
     /// 0-indexed buffer line of the cursor.
     pub line: u32,
     /// 0-indexed character column of the cursor.
@@ -132,7 +148,9 @@ pub struct CodeActionItemData {
 /// renderer composes screen position from those + the editor's
 /// `RowMetrics`.
 #[derive(Component, Clone, Debug)]
+#[require(Node, LspPopupRoot)]
 pub struct RenameInputData {
+    pub editor: Entity,
     /// 0-indexed buffer line of the symbol start.
     pub line: u32,
     /// 0-indexed character column of the symbol start.
