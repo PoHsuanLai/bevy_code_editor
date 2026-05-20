@@ -68,18 +68,21 @@ pub struct GutterConfig {
 
 impl Default for EditorUi {
     fn default() -> Self {
+        // Monaco/VSCode defaults — bands are flush with no outer
+        // padding and no inter-band gap. Layout (left → right):
+        //   [ glyph-margin | line-numbers | line-decorations | text ]
         Self {
             line_numbers: LineNumbers::On,
-            line_numbers_min_chars: 5,
+            line_numbers_min_chars: 2,
             glyph_margin: true,
             glyph_margin_width: 16.0,
-            line_decorations_width: 6.0,
+            line_decorations_width: 10.0,
             select_on_line_numbers: true,
             show_gutter: true,
             show_separator: true,
-            gutter_padding_left: 10.0,
-            gutter_padding_right: 10.0,
-            code_margin_left: 10.0,
+            gutter_padding_left: 0.0,
+            gutter_padding_right: 0.0,
+            code_margin_left: 0.0,
             placeholder: None,
         }
     }

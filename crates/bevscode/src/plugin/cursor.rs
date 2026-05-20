@@ -64,7 +64,8 @@ impl Plugin for CursorPlugin {
             .register_type::<crate::types::events::TextEdited>()
             .register_type::<super::editor_ui::AutoResizeViewport>()
             .register_type::<crate::input::EditorAction>()
-            .register_type::<GutterTextView>();
+            .register_type::<GutterTextView>()
+            .register_type::<GutterContainer>();
 
         app.register_type::<crate::settings::AutoEdit>()
             .register_type::<crate::settings::BracketConfig>()

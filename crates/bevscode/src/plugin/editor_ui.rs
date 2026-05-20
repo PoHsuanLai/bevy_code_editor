@@ -10,14 +10,16 @@ use crate::types::{
 };
 
 use super::gutter_decorations::{
-    setup_icon_atlas, sync_gutter_icons, update_glyph_margin_overlays,
-    update_line_decoration_overlays, GlyphMarginRects, LineDecorationRects,
+    setup_icon_atlas, sync_fold_chevron_icons, sync_gutter_decoration_bars, sync_gutter_icons,
+    update_glyph_margin_overlays, update_line_decoration_overlays, GlyphMarginRects,
+    LineDecorationRects,
 };
 use super::links::{update_link_overlays, LinkRects};
 use super::{
-    setup_gutter_text_view, sync_gutter_text_view, to_bevy_coords_left_aligned,
-    update_cursor_line_highlight, update_fold_highlights, update_indent_guides, update_rulers,
-    update_selection_highlight, update_whitespace_markers, EditorSetupSet,
+    setup_gutter_text_view, sync_gutter_container, sync_gutter_text_font, sync_gutter_text_view,
+    to_bevy_coords_left_aligned, update_cursor_line_highlight, update_fold_highlights,
+    update_indent_guides, update_rulers, update_selection_highlight, update_whitespace_markers,
+    EditorSetupSet,
 };
 use bevy_instanced_text::gpu::GlyphAtlas;
 
@@ -41,7 +43,15 @@ impl Plugin for EditorUiPlugin {
                 app.add_plugins(bevy_resvg::plugin::SvgPlugin);
             }
             app.add_systems(PreStartup, setup_icon_atlas);
-            app.add_systems(Update, sync_gutter_icons.after(setup_gutter_text_view));
+            app.add_systems(
+                Update,
+                (
+                    sync_gutter_icons,
+                    sync_gutter_decoration_bars,
+                    sync_fold_chevron_icons,
+                )
+                    .after(setup_gutter_text_view),
+            );
         }
 
         // Gutter setup runs every frame because the editor's required
@@ -73,7 +83,9 @@ impl Plugin for EditorUiPlugin {
             PostUpdate,
             (
                 sync_gutter_width,
-                sync_gutter_text_view.after(sync_gutter_width),
+                sync_gutter_container.after(sync_gutter_width),
+                sync_gutter_text_font.after(sync_gutter_width),
+                sync_gutter_text_view.after(sync_gutter_text_font),
             )
                 .before(bevy_instanced_text::LayoutProduceSet),
         );
@@ -481,28 +493,51 @@ fn sync_gutter_width(
             &mut Node,
             &mut GutterConfig,
             &MonoCellWidth,
+            &TextFont,
+            &bevy::text::LineHeight,
             &EditorUi,
             &crate::settings::Padding,
             &crate::settings::Folding,
+            &bevy_instanced_text::TextBuffer<bevy_instanced_text_editor::RopeBuffer>,
         ),
         With<CodeEditor>,
     >,
 ) {
-    for (mut node, mut gutter_config, mono, ui, padding, folding) in editors.iter_mut() {
+    for (mut node, mut gutter_config, mono, font, line_height, ui, padding, folding, buffer) in
+        editors.iter_mut()
+    {
         let show_numbers = !matches!(ui.line_numbers, crate::settings::LineNumbers::Off);
-        let min_chars = ui.line_numbers_min_chars.max(1) as f32;
-        let chevron_width = if matches!(
+        // Monaco: line-numbers band sizes to `max(digitCount, minChars)`.
+        // Without this, a small file with `minChars=5` leaves three
+        // unused char slots to the left of every two-digit number,
+        // looking like asymmetric padding.
+        let line_count = buffer.len_lines().max(1) as u32;
+        let digit_count = digit_count_for(line_count);
+        let min_chars = digit_count.max(ui.line_numbers_min_chars).max(1) as f32;
+        let line_height_px = bevy_instanced_text::resolve_line_height(*line_height, font.font_size);
+        // Monaco layout (src/vs/editor/common/config/editorOptions.ts,
+        // `EditorLayoutInfoComputer.computeLayout`):
+        //   [ glyph-margin | line-numbers | line-decorations | text ]
+        // - glyph-margin = lineHeight × decoration-lane-count (1 by default)
+        // - line-numbers = max(digitCount, minChars) × maxDigitWidth
+        // - line-decorations = ui.line_decorations_width (default 10);
+        //   +16 when folding is enabled (chevron lives inside this band)
+        // - chevron sits at the LEFT edge of line-decorations (the +16 slot)
+        // - git-change bar sits at the RIGHT edge of line-decorations
+        // No inter-band gaps.
+        let folding_enabled = matches!(
             folding.show_controls,
             crate::settings::ShowFoldingControls::Always
                 | crate::settings::ShowFoldingControls::Mouseover
-        ) {
-            2.0 * mono.px
-        } else {
-            0.0
-        };
-        let line_decorations_width = ui.line_decorations_width.max(0.0);
+        );
+        let chevron_width = if folding_enabled { 16.0 } else { 0.0 };
+        let line_decorations_width = ui.line_decorations_width.max(0.0) + chevron_width;
         let glyph_margin_width = if ui.glyph_margin {
-            ui.glyph_margin_width.max(0.0)
+            // Monaco sizes the glyph margin to the line height. The
+            // host-facing `ui.glyph_margin_width` acts as a floor —
+            // small text shouldn't squash the band below an icon's
+            // minimum readable size.
+            line_height_px.max(ui.glyph_margin_width)
         } else {
             0.0
         };
@@ -511,8 +546,7 @@ fn sync_gutter_width(
         } else {
             0.0
         };
-        let total_columns_width =
-            line_decorations_width + line_numbers_width + glyph_margin_width + chevron_width;
+        let total_columns_width = glyph_margin_width + line_numbers_width + line_decorations_width;
         let any_band = total_columns_width > 0.0;
         let gutter_width = if any_band {
             ui.gutter_padding_left + ui.gutter_padding_right + total_columns_width
@@ -520,10 +554,12 @@ fn sync_gutter_width(
             0.0
         };
 
-        let line_decorations_x = ui.gutter_padding_left;
-        let line_numbers_x = line_decorations_x + line_decorations_width;
-        let glyph_margin_x = line_numbers_x + line_numbers_width;
-        let chevron_x = glyph_margin_x + glyph_margin_width;
+        let glyph_margin_x = ui.gutter_padding_left;
+        let line_numbers_x = glyph_margin_x + glyph_margin_width;
+        let line_decorations_x = line_numbers_x + line_numbers_width;
+        // Chevron occupies the LEFT 16 px of the line-decorations band;
+        // bar occupies the RIGHT 2 px. CSS-style sub-positioning.
+        let chevron_x = line_decorations_x;
 
         let padding_left = Val::Px(gutter_width + ui.code_margin_left);
         let padding_top = Val::Px(padding.top);
@@ -647,4 +683,17 @@ fn update_font_metrics(
             mono.px = width;
         }
     }
+}
+
+/// Number of decimal digits required to render `n`. Used to size the
+/// line-numbers band dynamically — Monaco does the same so small files
+/// don't reserve column space for line numbers they'll never reach.
+fn digit_count_for(n: u32) -> u32 {
+    let mut digits = 1;
+    let mut v = n;
+    while v >= 10 {
+        v /= 10;
+        digits += 1;
+    }
+    digits
 }

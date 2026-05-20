@@ -18,7 +18,7 @@
 use bevy::picking::events::{Pointer, Press};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
-use bevy::ui::{ComputedNode, ScrollPosition};
+use bevy::ui::ComputedNode;
 use bevy_instanced_text::{
     visible_buffer_range, CornerRadii, HiddenLines, MonoCellWidth, RectOverlay, RowVertical,
     TextBounds, TextBuffer,
@@ -510,11 +510,8 @@ pub fn on_pointer_move_for_link_hover(
     mut editor_query: Query<
         (
             &TextBuffer<RopeBuffer>,
-            &ScrollPosition,
             &ComputedNode,
-            &FoldState,
-            &TextFont,
-            &bevy::text::LineHeight,
+            &bevy_instanced_text::DisplayLayout,
             &MonoCellWidth,
             &LinkRanges,
             &Misc,
@@ -524,7 +521,7 @@ pub fn on_pointer_move_for_link_hover(
     >,
 ) {
     let entity = trigger.event().entity;
-    let Ok((buffer, scroll, computed, fold_state, font, lh, mono, link_ranges, misc, mut hovered)) =
+    let Ok((buffer, computed, layout, mono, link_ranges, misc, mut hovered)) =
         editor_query.get_mut(entity)
     else {
         return;
@@ -543,19 +540,16 @@ pub fn on_pointer_move_for_link_hover(
         return;
     };
     let inv = computed.inverse_scale_factor();
-    let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
     let text_area_left = computed.content_inset().min_inset.x * inv;
-    let text_area_top = computed.content_inset().min_inset.y * inv;
     let relative_x = local_pos.x - text_area_left;
-    let relative_y = local_pos.y - text_area_top + scroll.y;
-    if relative_y < 0.0 || line_height <= 0.0 {
+    let Some(buffer_line) =
+        crate::plugin::gutter_decorations::buffer_line_at_y(layout, local_pos.y)
+    else {
         if hovered.0.is_some() {
             hovered.0 = None;
         }
         return;
-    }
-    let display_row = (relative_y / line_height) as usize;
-    let buffer_line = fold_state.display_to_actual_line(display_row);
+    };
     let rope = buffer.rope();
     if buffer_line >= rope.len_lines() {
         if hovered.0.is_some() {
@@ -610,11 +604,8 @@ pub fn on_ctrl_click_open_url(
     editor_query: Query<
         (
             &TextBuffer<RopeBuffer>,
-            &ScrollPosition,
             &ComputedNode,
-            &FoldState,
-            &TextFont,
-            &bevy::text::LineHeight,
+            &bevy_instanced_text::DisplayLayout,
             &MonoCellWidth,
             &LinkRanges,
             &Misc,
@@ -634,9 +625,7 @@ pub fn on_ctrl_click_open_url(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((buffer, scroll, computed, fold_state, font, lh, mono, link_ranges, misc)) =
-        editor_query.get(entity)
-    else {
+    let Ok((buffer, computed, layout, mono, link_ranges, misc)) = editor_query.get(entity) else {
         return;
     };
     if !misc.links {
@@ -648,16 +637,13 @@ pub fn on_ctrl_click_open_url(
     };
 
     let inv = computed.inverse_scale_factor();
-    let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
     let text_area_left = computed.content_inset().min_inset.x * inv;
-    let text_area_top = computed.content_inset().min_inset.y * inv;
     let relative_x = local_pos.x - text_area_left;
-    let relative_y = local_pos.y - text_area_top + scroll.y;
-    if relative_y < 0.0 || line_height <= 0.0 {
+    let Some(buffer_line) =
+        crate::plugin::gutter_decorations::buffer_line_at_y(layout, local_pos.y)
+    else {
         return;
-    }
-    let display_row = (relative_y / line_height) as usize;
-    let buffer_line = fold_state.display_to_actual_line(display_row);
+    };
 
     let line = buffer.rope().line(buffer_line);
     let col = (relative_x / mono.px).max(0.0) as usize;

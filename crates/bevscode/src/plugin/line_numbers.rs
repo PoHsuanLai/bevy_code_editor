@@ -1,9 +1,19 @@
 //! Gutter line-number rendering via a child `TextView` entity.
 //!
-//! Each `CodeEditor` entity gets one `GutterTextView` child spawned in
-//! `setup_gutter_text_view` (Startup). `sync_gutter_text_view` runs in
-//! PostUpdate before `LayoutProduceSet` and keeps the gutter in sync with
-//! the editor: content, scroll, hidden lines, and per-line colors.
+//! Each `CodeEditor` gets a [`GutterContainer`] child Node sized to the
+//! computed `gutter_width`, and the line-number `TextView` plus every
+//! decoration child (icons, bars, chevrons) live underneath that
+//! container. Taffy clips the container so children can never spill
+//! into the code area, even when their absolute coordinates briefly
+//! disagree with the band math.
+//!
+//! Vertical alignment: the container is offset from the editor's top
+//! by `Padding::top` so that its content-box origin (y=0 in container
+//! local space) lines up with text row 0 in the code area — the
+//! renderer reads the same `padding.top` via `content_inset()`. With
+//! that shared anchor, gutter decorations at `top: row * line_height
+//! - scroll.y` land on the exact y as text row `row`, without any
+//! per-decoration `text_top` term.
 
 use std::collections::{HashMap, HashSet};
 
@@ -18,7 +28,9 @@ use bevy_instanced_text_editor::RopeBuffer;
 use crate::settings::*;
 use crate::types::*;
 
-/// Spawns a `GutterTextView` child entity for each new `CodeEditor`.
+/// Spawn a [`GutterContainer`] (and its child `GutterTextView`) for
+/// each new `CodeEditor`. Idempotent — re-running on an editor that
+/// already has a container is a no-op.
 pub(crate) fn setup_gutter_text_view(
     mut commands: Commands,
     editors: Query<
@@ -27,17 +39,53 @@ pub(crate) fn setup_gutter_text_view(
             &TextFont,
             &MonoFontFaces,
             &EditorTheme,
+            &bevy::text::LineHeight,
             Option<&bevy::camera::visibility::RenderLayers>,
         ),
         With<CodeEditor>,
     >,
-    existing: Query<&GutterTextView>,
+    existing_containers: Query<&GutterContainer>,
 ) {
-    for (editor_entity, font, faces, theme, render_layers) in editors.iter() {
-        if existing.iter().any(|g| g.editor == editor_entity) {
+    for (editor_entity, font, faces, theme, line_height, render_layers) in editors.iter() {
+        if existing_containers
+            .iter()
+            .any(|g| g.editor == editor_entity)
+        {
             continue;
         }
 
+        // Gutter container: anchored at the editor's top-left, offset
+        // down by `Padding::top` each frame in `sync_gutter_container`
+        // so its content-box origin lines up with the text renderer's
+        // row-0 baseline. `bottom: 0` lets it stretch to the editor's
+        // padding-box bottom; width is tracked alongside `top` each frame.
+        // `overflow: clip` guarantees no child renders past the gutter's
+        // right edge into the code area.
+        let mut container_cmds = commands.spawn((
+            GutterContainer {
+                editor: editor_entity,
+            },
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(0.0),
+                top: Val::Px(0.0),
+                bottom: Val::Px(0.0),
+                width: Val::Px(0.0),
+                overflow: Overflow::clip(),
+                ..default()
+            },
+            bevy::picking::Pickable::IGNORE,
+            Name::new("GutterContainer"),
+        ));
+        if let Some(layers) = render_layers {
+            container_cmds.insert(layers.clone());
+        }
+        let container_id = container_cmds.id();
+        commands.entity(editor_entity).add_child(container_id);
+
+        // Line-number TextView: child of the container, filling it
+        // (width 100%, height 100%). Padding carves out the digit
+        // content box; `Justify::Right` right-aligns digits inside.
         let mut gutter_cmds = commands.spawn((
             GutterTextView {
                 editor: editor_entity,
@@ -45,6 +93,14 @@ pub(crate) fn setup_gutter_text_view(
             TextBuffer::<TextSpan>::default(),
             font.clone(),
             faces.clone(),
+            // Mirror the editor's `LineHeight` so the gutter's row
+            // stride matches the code area's. Without this, the gutter
+            // inherits the renderer's default (`RelativeToFont(1.2)`)
+            // and digits drift relative to chevrons / decorations by
+            // `(editor_lh - default_lh) * row` — a compounding bug that
+            // looks like a 2-row offset around row 13 for 14px text
+            // with `LineHeight::Px(21)`.
+            *line_height,
             TextLayout {
                 justify: Justify::Right,
                 ..default()
@@ -54,23 +110,19 @@ pub(crate) fn setup_gutter_text_view(
                 position_type: PositionType::Absolute,
                 left: Val::Px(0.0),
                 top: Val::Px(0.0),
-                width: Val::Px(0.0),
+                width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
-                padding: UiRect::right(Val::Px(8.0)),
                 overflow: Overflow::clip(),
                 ..default()
             },
-            // Disable picking so the gutter doesn't swallow pointer events meant for the editor.
             bevy::picking::Pickable::IGNORE,
             Name::new("GutterTextView"),
         ));
-
         if let Some(layers) = render_layers {
             gutter_cmds.insert(layers.clone());
         }
-
         let gutter_id = gutter_cmds.id();
-        commands.entity(editor_entity).add_child(gutter_id);
+        commands.entity(container_id).add_child(gutter_id);
     }
 }
 
@@ -88,7 +140,6 @@ pub(crate) fn sync_gutter_text_view(
             Ref<FoldState>,
             &EditorTheme,
             &EditorUi,
-            &crate::settings::Padding,
             &crate::settings::RenderSettings,
             &crate::settings::Folding,
             Ref<HoveredGutterLine>,
@@ -121,7 +172,6 @@ pub(crate) fn sync_gutter_text_view(
         fold_state,
         theme,
         ui,
-        padding,
         render,
         folding,
         hovered,
@@ -157,14 +207,34 @@ pub(crate) fn sync_gutter_text_view(
             continue;
         }
 
-        let target_width = Val::Px(gutter.gutter_width);
-        if g_node.width != target_width {
-            g_node.width = target_width;
+        // `padding.top` lives on `GutterContainer` (see
+        // `sync_gutter_container`) — the TextView fills the container
+        // from y=0 so its row 0 matches the code area's row 0.
+        let zero = Val::Px(0.0);
+        if g_node.padding.top != zero {
+            g_node.padding.top = zero;
         }
 
-        let target_top = Val::Px(padding.top);
-        if g_node.padding.top != target_top {
-            g_node.padding.top = target_top;
+        // Monaco layout: bands are flush, no inter-band gap. Pad
+        // past the glyph margin on the left so the line-number
+        // digits start at the right edge of the glyph margin; pad
+        // past the line-decorations strip on the right so the
+        // right-aligned digits stop short of the git-change bar.
+        // The fold chevron overlays the line-numbers band (it
+        // doesn't get its own column), so no chevron reservation
+        // here.
+        let target_left = Val::Px(ui.gutter_padding_left + gutter.glyph_margin_width);
+        if g_node.padding.left != target_left {
+            g_node.padding.left = target_left;
+        }
+        // Monaco layout: line-numbers band sits between glyph-margin
+        // and line-decorations with no inter-band gap. The TextView
+        // node fills the container, so we pad past the line-decorations
+        // strip on the right so right-justified digits stop short of
+        // the chevron / git bar.
+        let target_right = Val::Px(gutter.line_decorations_width + ui.gutter_padding_right);
+        if g_node.padding.right != target_right {
+            g_node.padding.right = target_right;
         }
 
         // Keep default color in sync with theme (theme might change at runtime).
@@ -201,30 +271,12 @@ pub(crate) fn sync_gutter_text_view(
         let cursor_line_idx = buffer.char_to_line(cursor_line);
 
         let mode = ui.line_numbers;
-        let reserve_chevron_slot = matches!(
-            folding.show_controls,
-            ShowFoldingControls::Always | ShowFoldingControls::Mouseover
-        );
         let mouseover_chevrons = matches!(folding.show_controls, ShowFoldingControls::Mouseover);
         let always_chevrons = matches!(folding.show_controls, ShowFoldingControls::Always);
-        let hovered_line = hovered.0;
-        let chevron_suffix = |line: usize| -> &'static str {
-            if !reserve_chevron_slot {
-                return "";
-            }
-            let render_here = always_chevrons || (mouseover_chevrons && hovered_line == Some(line));
-            if render_here {
-                if fold_state.is_folded_line(line) {
-                    " \u{203A}"
-                } else if fold_state.is_foldable_line(line) {
-                    " \u{2304}"
-                } else {
-                    "  "
-                }
-            } else {
-                "  "
-            }
-        };
+        // Chevrons render as overlay SVG icons (see
+        // `sync_fold_chevron_icons`), not as inline text. The text
+        // buffer holds only the digit string so `Justify::Right`
+        // aligns digits flush against the band's right edge.
         let old_count = if g_buffer.0 .0.is_empty() {
             0
         } else {
@@ -263,7 +315,6 @@ pub(crate) fn sync_gutter_text_view(
                     _ => (i + 1).to_string(),
                 };
                 text.push_str(&label);
-                text.push_str(chevron_suffix(i));
             }
             g_buffer.0 = TextSpan(text);
         }
@@ -311,9 +362,7 @@ pub(crate) fn sync_gutter_text_view(
             let mut by_line: HashMap<u32, Vec<FormattedSpan>> = HashMap::new();
             for &line in &cursor_lines {
                 if line < line_count {
-                    let mut payload = String::with_capacity(8);
-                    payload.push_str(&(line + 1).to_string());
-                    payload.push_str(chevron_suffix(line));
+                    let payload = (line + 1).to_string();
                     let byte_len = payload.len();
                     by_line.insert(
                         line as u32,
@@ -326,5 +375,139 @@ pub(crate) fn sync_gutter_text_view(
             }
             *g_styles = LineStyles::new(by_line);
         }
+    }
+}
+
+/// Mirror the editor's [`bevy::text::LineHeight`] / [`TextFont`] onto
+/// the [`GutterTextView`]. Without this, the gutter inherits the
+/// renderer's default `LineHeight` and digits drift relative to
+/// chevrons / decorations — those decoration systems read the
+/// editor's `LineHeight` directly, so a mismatch causes a per-row
+/// stride divergence that compounds with line number.
+pub(crate) fn sync_gutter_text_font(
+    editors: Query<(&TextFont, &bevy::text::LineHeight), With<CodeEditor>>,
+    mut gutter: Query<
+        (&GutterTextView, &mut TextFont, &mut bevy::text::LineHeight),
+        Without<CodeEditor>,
+    >,
+) {
+    for (view, mut g_font, mut g_lh) in gutter.iter_mut() {
+        let Ok((font, lh)) = editors.get(view.editor) else {
+            continue;
+        };
+        if g_font.font_size != font.font_size || g_font.font != font.font {
+            *g_font = font.clone();
+        }
+        if *g_lh != *lh {
+            *g_lh = *lh;
+        }
+    }
+}
+
+/// Track the [`GutterContainer`]'s `Node::width` to the resolved
+/// `GutterConfig::gutter_width` for its editor, and its `Node::top`
+/// to the editor's `Padding::top` — the single source of truth for
+/// the row-0 anchor shared with the code text view (see module docs).
+/// Runs each frame in PostUpdate before line-number layout so the
+/// container is sized + placed before its TextView child paints.
+pub(crate) fn sync_gutter_container(
+    editors: Query<(&GutterConfig, &crate::settings::Padding), With<CodeEditor>>,
+    mut containers: Query<(&GutterContainer, &mut Node)>,
+) {
+    for (container, mut node) in containers.iter_mut() {
+        let Ok((gutter, padding)) = editors.get(container.editor) else {
+            continue;
+        };
+        let target_w = Val::Px(gutter.gutter_width);
+        if node.width != target_w {
+            node.width = target_w;
+        }
+        let target_top = Val::Px(padding.top);
+        if node.top != target_top {
+            node.top = target_top;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Regression tests for the gutter / editor `LineHeight` mirror.
+    //!
+    //! Without the mirror, the `GutterTextView` falls back to the
+    //! renderer's default `LineHeight` (typically
+    //! `RelativeToFont(1.2)`), while the chevrons / decorations read
+    //! the editor's `LineHeight` directly. The two diverge per-row,
+    //! producing a compounding offset that looks like ~2 line-heights
+    //! of drift around buffer line 13 for 14 px fonts.
+    use super::*;
+    use bevy::text::LineHeight;
+
+    fn spawn_minimal_editor(app: &mut App, line_height: LineHeight) -> Entity {
+        // Spawn only the Components `setup_gutter_text_view` reads —
+        // the test does not exercise the full editor cascade.
+        app.world_mut()
+            .spawn((
+                CodeEditor,
+                TextFont::from_font_size(14.0),
+                MonoFontFaces::default(),
+                EditorTheme::default(),
+                line_height,
+            ))
+            .id()
+    }
+
+    fn find_gutter_view(app: &mut App, editor: Entity) -> Entity {
+        let mut q = app.world_mut().query::<(Entity, &GutterTextView)>();
+        q.iter(app.world())
+            .find(|(_, gv)| gv.editor == editor)
+            .map(|(e, _)| e)
+            .expect("GutterTextView spawned")
+    }
+
+    #[test]
+    fn setup_clones_editor_line_height_onto_gutter_view() {
+        let mut app = App::new();
+        app.add_systems(Update, setup_gutter_text_view);
+
+        let editor = spawn_minimal_editor(&mut app, LineHeight::Px(21.0));
+        app.update();
+
+        let view = find_gutter_view(&mut app, editor);
+        let lh = *app
+            .world()
+            .entity(view)
+            .get::<LineHeight>()
+            .expect("GutterTextView should carry LineHeight cloned from the editor");
+        assert_eq!(
+            lh,
+            LineHeight::Px(21.0),
+            "GutterTextView LineHeight must match editor (21.0); got {lh:?}",
+        );
+    }
+
+    #[test]
+    fn sync_propagates_editor_line_height_changes() {
+        let mut app = App::new();
+        app.add_systems(
+            Update,
+            (setup_gutter_text_view, sync_gutter_text_font).chain(),
+        );
+
+        let editor = spawn_minimal_editor(&mut app, LineHeight::Px(21.0));
+        app.update();
+
+        // Host mutates the editor's LineHeight after spawn — common
+        // pattern when settings change at runtime.
+        let mut e = app.world_mut().entity_mut(editor);
+        *e.get_mut::<LineHeight>().unwrap() = LineHeight::Px(28.0);
+        app.update();
+
+        let view = find_gutter_view(&mut app, editor);
+        let lh = *app.world().entity(view).get::<LineHeight>().unwrap();
+        assert_eq!(
+            lh,
+            LineHeight::Px(28.0),
+            "sync_gutter_text_font should propagate editor LineHeight changes",
+        );
     }
 }

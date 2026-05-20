@@ -39,7 +39,9 @@ pub use self::syntax_highlighting::{EditorSyntaxState, SyntaxPlugin};
 // Re-export helper functions and systems for internal plugin use (crate-visible only)
 pub(crate) use self::brackets::{update_bracket_highlight, update_bracket_match};
 pub(crate) use self::cursor::update_cursor_line_highlight;
-pub(crate) use self::line_numbers::{setup_gutter_text_view, sync_gutter_text_view};
+pub(crate) use self::line_numbers::{
+    setup_gutter_text_view, sync_gutter_container, sync_gutter_text_font, sync_gutter_text_view,
+};
 pub(crate) use self::ui_elements::{
     update_fold_highlights, update_indent_guides, update_rulers, update_selection_highlight,
     update_whitespace_markers,

@@ -142,8 +142,20 @@ pub struct EditorCursor {
 #[reflect(Component, Default)]
 pub struct LineNumbers;
 
-/// Marker for the `TextView` entity that renders line numbers in the gutter.
-/// Spawned as a child of the `CodeEditor` entity; managed by `sync_gutter_text_view`.
+/// Marker for the gutter container Node that wraps every gutter
+/// decoration (line numbers, glyph margin icons, line-decoration bars,
+/// fold chevrons). Width tracks `GutterConfig::gutter_width`; children
+/// position themselves relative to this Node (not the editor) so Taffy
+/// clips them to the gutter region. One per editor.
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+pub struct GutterContainer {
+    pub editor: Entity,
+}
+
+/// Marker for the `TextView` entity that renders line numbers in the
+/// gutter. Spawned as a child of [`GutterContainer`]; managed by
+/// `sync_gutter_text_view`.
 #[derive(Component, Reflect)]
 #[reflect(Component)]
 pub struct GutterTextView {

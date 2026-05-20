@@ -171,13 +171,10 @@ pub fn on_fold_gutter_press(
     trigger: On<Pointer<Press>>,
     mut editor_query: Query<
         (
-            &ScrollPosition,
             &ComputedNode,
             &GutterConfig,
             &mut FoldState,
-            &TextFont,
-            &bevy::text::LineHeight,
-            &MonoCellWidth,
+            &bevy_instanced_text::DisplayLayout,
             &crate::settings::Folding,
         ),
         With<CodeEditor>,
@@ -187,8 +184,7 @@ pub fn on_fold_gutter_press(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((scroll, computed, gutter, mut fold_state, font, lh, mono, folding)) =
-        editor_query.get_mut(entity)
+    let Ok((computed, gutter, mut fold_state, layout, folding)) = editor_query.get_mut(entity)
     else {
         return;
     };
@@ -204,7 +200,6 @@ pub fn on_fold_gutter_press(
         crate::settings::ShowFoldingControls::Always
             | crate::settings::ShowFoldingControls::Mouseover
     );
-    let _ = mono;
     let strip_start = if chevron_active {
         gutter.chevron_x
     } else {
@@ -215,15 +210,11 @@ pub fn on_fold_gutter_press(
         return;
     }
 
-    let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
-    let inv = computed.inverse_scale_factor();
-    let text_area_top = computed.content_inset().min_inset.y * inv;
-    let relative_y = local_pos.y - text_area_top + scroll.y;
-    if relative_y < 0.0 || line_height <= 0.0 {
+    let Some(buffer_line) =
+        crate::plugin::gutter_decorations::buffer_line_at_y(layout, local_pos.y)
+    else {
         return;
-    }
-    let display_row = (relative_y / line_height) as usize;
-    let buffer_line = fold_state.display_to_actual_line(display_row);
+    };
 
     if fold_state.is_foldable_line(buffer_line) {
         fold_state.toggle_fold_at_line(buffer_line);
@@ -573,12 +564,9 @@ pub fn on_pointer_move_for_gutter_hover(
     trigger: On<Pointer<Move>>,
     mut editor_query: Query<
         (
-            &ScrollPosition,
             &ComputedNode,
             &GutterConfig,
-            &FoldState,
-            &TextFont,
-            &bevy::text::LineHeight,
+            &DisplayLayout,
             &mut HoveredGutterLine,
             &mut HoveredInGutter,
         ),
@@ -586,8 +574,7 @@ pub fn on_pointer_move_for_gutter_hover(
     >,
 ) {
     let entity = trigger.event().entity;
-    let Ok((scroll, computed, gutter, fold_state, font, lh, mut hovered, mut in_gutter)) =
-        editor_query.get_mut(entity)
+    let Ok((computed, gutter, layout, mut hovered, mut in_gutter)) = editor_query.get_mut(entity)
     else {
         return;
     };
@@ -606,19 +593,7 @@ pub fn on_pointer_move_for_gutter_hover(
         in_gutter.0 = over_gutter;
     }
 
-    let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
-    let inv = computed.inverse_scale_factor();
-    let text_area_top = computed.content_inset().min_inset.y * inv;
-    let relative_y = local_pos.y - text_area_top + scroll.y;
-    if relative_y < 0.0 || line_height <= 0.0 {
-        if hovered.0.is_some() {
-            hovered.0 = None;
-        }
-        return;
-    }
-    let display_row = (relative_y / line_height) as usize;
-    let buffer_line = fold_state.display_to_actual_line(display_row);
-    let next = Some(buffer_line);
+    let next = crate::plugin::gutter_decorations::buffer_line_at_y(layout, local_pos.y);
     if hovered.0 != next {
         hovered.0 = next;
     }

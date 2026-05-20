@@ -34,8 +34,8 @@ fn spawn_editor(mut commands: Commands) {
         DecorationKind, GlyphKind, GlyphMarker, GlyphMarkers, GutterDecorations, LineDecoration,
     };
     use bevscode::settings::{
-        CursorLine, RenderLineHighlight, RenderSettings, RenderWhitespace, RulerOption, WordWrapMode,
-        Wrapping,
+        CursorLine, RenderLineHighlight, RenderSettings, RenderWhitespace, RulerOption,
+        WordWrapMode, Wrapping,
     };
 
     commands.spawn((

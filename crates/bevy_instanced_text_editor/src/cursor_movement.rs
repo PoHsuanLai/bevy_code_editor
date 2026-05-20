@@ -231,8 +231,8 @@ pub fn move_cursor_line_start_display(
     let buffer_row = rope.char_to_line(cursor.cursor_pos);
     let line_start_char = rope.line_to_char(buffer_row);
     let line_start_byte = rope.line_to_byte(buffer_row);
-    cursor.cursor_pos = display_row_byte_to_char(rope, layout, row, 0, buffer_row)
-        .unwrap_or_else(|| {
+    cursor.cursor_pos =
+        display_row_byte_to_char(rope, layout, row, 0, buffer_row).unwrap_or_else(|| {
             line_start_char
                 + rope.byte_to_char(line_start_byte + row_buffer_byte_offset(layout, row))
                 - rope.byte_to_char(line_start_byte)
@@ -313,9 +313,8 @@ fn move_cursor_display_rows(
         .min(target_line.text.len());
     let target_buffer_row = target_line.buffer_row as usize;
     let buffer_line_start_byte = rope.line_to_byte(target_buffer_row);
-    let abs_byte =
-        (buffer_line_start_byte + target_line.buffer_byte_offset + target_byte_in_row)
-            .min(rope.len_bytes());
+    let abs_byte = (buffer_line_start_byte + target_line.buffer_byte_offset + target_byte_in_row)
+        .min(rope.len_bytes());
     cursor.cursor_pos = rope.byte_to_char(abs_byte);
 }
 
@@ -357,10 +356,7 @@ fn display_row_byte_to_char(
     byte_in_row: usize,
     buffer_row_hint: usize,
 ) -> Option<usize> {
-    let line = layout
-        .lines
-        .iter()
-        .find(|l| l.display_row == display_row)?;
+    let line = layout.lines.iter().find(|l| l.display_row == display_row)?;
     let buffer_row = line.buffer_row as usize;
     let line_start_byte = rope.line_to_byte(buffer_row);
     let abs_byte = (line_start_byte + line.buffer_byte_offset + byte_in_row).min(rope.len_bytes());
