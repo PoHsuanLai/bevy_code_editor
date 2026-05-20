@@ -168,7 +168,10 @@ fn sync_node_from_window(
 fn sync_indent_config_on_change(
     trigger: On<bevy::ecs::lifecycle::Insert, crate::settings::Indentation>,
     mut editors: Query<
-        (&crate::settings::Indentation, &mut bevy_instanced_text_editor::IndentConfig),
+        (
+            &crate::settings::Indentation,
+            &mut bevy_instanced_text_editor::IndentConfig,
+        ),
         With<CodeEditor>,
     >,
 ) {

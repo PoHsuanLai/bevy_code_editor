@@ -18,9 +18,9 @@ use bevy_log::{debug, warn};
 use bevy_tasks::{AsyncComputeTaskPool, Task};
 use futures::channel::oneshot;
 
-use crate::transport::{LspTransport, MaybeSend};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::transport::StdioTransport;
+use crate::transport::{LspTransport, MaybeSend};
 
 /// Spawn an async task on Bevy's compute pool. Uses `spawn_local` on wasm32
 /// (single-threaded, where many in-browser handles such as `WebSocket` are

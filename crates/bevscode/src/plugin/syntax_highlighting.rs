@@ -135,7 +135,6 @@ impl EditorSyntaxState {
             None => plain_text_segments(text, default_color),
         }
     }
-
 }
 
 /// Build LineSegments for `text` with no highlights — fallback for when no

@@ -78,17 +78,8 @@ pub(crate) fn update_selection_highlight(
         return;
     }
 
-    for (
-        editor_entity,
-        buf,
-        layout_view,
-        font_view,
-        sel,
-        mut sel_rects,
-        hidden,
-        wrap,
-        theme,
-    ) in editor_query.iter_mut()
+    for (editor_entity, buf, layout_view, font_view, sel, mut sel_rects, hidden, wrap, theme) in
+        editor_query.iter_mut()
     {
         if !dirty.contains(&editor_entity) {
             continue;
@@ -342,8 +333,10 @@ pub(crate) fn update_indent_guides(
 
         let inv = layout_view.computed.inverse_scale_factor();
         let indent_size = indentation.tab_size as usize;
-        let line_height =
-            bevy_instanced_text::resolve_line_height(*font_view.line_height, font_view.font.font_size);
+        let line_height = bevy_instanced_text::resolve_line_height(
+            *font_view.line_height,
+            font_view.font.font_size,
+        );
         let char_width = layout_view.mono.px;
         let viewport_height = layout_view.computed.size().y * inv;
 

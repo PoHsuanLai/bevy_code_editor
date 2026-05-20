@@ -38,10 +38,10 @@ use crate::settings::CursorSettings;
 use crate::types::*;
 use bevy::ecs::system::SystemParam;
 use bevy::input_focus::InputFocus;
+use bevy::platform::time::Instant;
 use bevy::prelude::*;
 use bevy_instanced_text_editor::RopeBuffer;
 use leafwing_input_manager::prelude::*;
-use bevy::platform::time::Instant;
 
 const ALL_ACTIONS: [EditorAction; 49] = [
     EditorAction::DeleteBackward,

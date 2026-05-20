@@ -210,7 +210,10 @@ mod tests {
     async fn ws_reader_round_trips_pushed_bytes() {
         let buffer = Arc::new(Mutex::new(SharedReadBuffer::default()));
         buffer.lock().unwrap().push(b"Conte".to_vec());
-        buffer.lock().unwrap().push(b"nt-Length: 2\r\n\r\nok".to_vec());
+        buffer
+            .lock()
+            .unwrap()
+            .push(b"nt-Length: 2\r\n\r\nok".to_vec());
         buffer.lock().unwrap().close();
 
         let mut reader = WsReader::from_buffer(buffer);
@@ -233,5 +236,4 @@ mod tests {
         reader.read_to_end(&mut out).await.expect("read failed");
         assert_eq!(out, b"hi");
     }
-
 }

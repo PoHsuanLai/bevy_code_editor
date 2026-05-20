@@ -1,6 +1,8 @@
 //! Cursor rendering and animation.
 
-use crate::settings::{CursorLine, CursorSettings, EditorBufferView, EditorLayoutView, EditorTheme};
+use crate::settings::{
+    CursorLine, CursorSettings, EditorBufferView, EditorLayoutView, EditorTheme,
+};
 use crate::text_view::{RectOverlay, RowVertical};
 use crate::types::*;
 use bevy::prelude::*;
@@ -148,9 +150,7 @@ pub(crate) fn push_cursor_overlays(
                     .layout
                     .and_then(|l| l.buffer_to_display(line_index as u32, byte_in_line))
                     .map(|(r, b)| (r as usize, b))
-                    .unwrap_or_else(|| {
-                        (buf.fold.actual_to_display_line(line_index), byte_in_line)
-                    });
+                    .unwrap_or_else(|| (buf.fold.actual_to_display_line(line_index), byte_in_line));
                 let glyph_x = layout_view
                     .layout
                     .and_then(|l| l.x_at_byte(display_row as u32, byte_in_row));

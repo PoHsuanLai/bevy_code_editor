@@ -78,12 +78,10 @@ fn main() {
             text: initial_text.clone(),
         });
 
-        commands
-            .entity(entity)
-            .insert(TreeSitterGrammar::new(
-                bevy_tree_sitter::arborium::lang_rust::language().into(),
-                bevy_tree_sitter::arborium::lang_rust::HIGHLIGHTS_QUERY,
-            ));
+        commands.entity(entity).insert(TreeSitterGrammar::new(
+            bevy_tree_sitter::arborium::lang_rust::language().into(),
+            bevy_tree_sitter::arborium::lang_rust::HIGHLIGHTS_QUERY,
+        ));
 
         // Trunk's `[ws_protocol]` proxy hands /lsp to the local bridge, so a
         // host-relative URL is enough — no hardcoded port.
@@ -117,7 +115,9 @@ fn main() {
             },
         });
 
-        commands.entity(entity).insert(LspDocument::new(doc_uri, "rust"));
+        commands
+            .entity(entity)
+            .insert(LspDocument::new(doc_uri, "rust"));
     }
 
     fn browser_ws_url(path: &str) -> String {

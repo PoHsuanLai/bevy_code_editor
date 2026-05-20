@@ -18,7 +18,10 @@ pub struct StdioTransport {
 }
 
 impl StdioTransport {
-    pub fn new(command: impl Into<String>, args: impl IntoIterator<Item = impl Into<String>>) -> Self {
+    pub fn new(
+        command: impl Into<String>,
+        args: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
         Self {
             command: command.into(),
             args: args.into_iter().map(Into::into).collect(),
@@ -29,8 +32,7 @@ impl StdioTransport {
 impl LspTransport for StdioTransport {
     type Reader = async_process::ChildStdout;
     type Writer = async_process::ChildStdin;
-    type Connect =
-        BoxedFuture<std::io::Result<(Self::Reader, Self::Writer, TransportHandle)>>;
+    type Connect = BoxedFuture<std::io::Result<(Self::Reader, Self::Writer, TransportHandle)>>;
 
     fn connect(self) -> Self::Connect {
         async move {

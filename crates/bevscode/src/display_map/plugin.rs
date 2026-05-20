@@ -66,12 +66,7 @@ impl Plugin for DisplayMapPlugin {
         );
         app.add_systems(
             Update,
-            (
-                produce_hidden_lines,
-                produce_line_styles,
-                sync_layout_wrap,
-            )
-                .in_set(LayoutSyncSet),
+            (produce_hidden_lines, produce_line_styles, sync_layout_wrap).in_set(LayoutSyncSet),
         );
     }
 }
@@ -493,10 +488,7 @@ pub(crate) fn sync_layout_wrap(
 ) {
     for (computed, mono, mut wrap, wrapping, indentation) in editors.iter_mut() {
         let char_width = mono.px;
-        let wrap_enabled = !matches!(
-            wrapping.word_wrap,
-            crate::settings::WordWrapMode::Off
-        );
+        let wrap_enabled = !matches!(wrapping.word_wrap, crate::settings::WordWrapMode::Off);
         let width: Option<f32> = if wrap_enabled {
             let inv = computed.inverse_scale_factor();
             let viewport_text_w = (computed.size().x * inv
@@ -514,8 +506,10 @@ pub(crate) fn sync_layout_wrap(
             None
         };
         let indent_px = if wrap_enabled
-            && !matches!(wrapping.wrapping_indent, crate::settings::WrappingIndent::None)
-        {
+            && !matches!(
+                wrapping.wrapping_indent,
+                crate::settings::WrappingIndent::None
+            ) {
             indentation.tab_size as f32 * char_width
         } else {
             0.0
