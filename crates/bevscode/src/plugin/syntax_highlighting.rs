@@ -229,8 +229,8 @@ fn lines_to_segments(
                 let hl_end = hl.byte_range.end.min(abs_line_end);
 
                 if hl_start > cursor {
-                    let lo = (cursor - abs_line_start).min(line.len());
-                    let hi = (hl_start - abs_line_start).min(line.len());
+                    let lo = line.floor_char_boundary((cursor - abs_line_start).min(line.len()));
+                    let hi = line.floor_char_boundary((hl_start - abs_line_start).min(line.len()));
                     let slice = &line[lo..hi];
                     if !slice.is_empty() {
                         segments.push(LineSegment {
@@ -244,8 +244,8 @@ fn lines_to_segments(
                     }
                     cursor = hl_start;
                 } else {
-                    let lo = (cursor - abs_line_start).min(line.len());
-                    let hi = (hl_end - abs_line_start).min(line.len());
+                    let lo = line.floor_char_boundary((cursor - abs_line_start).min(line.len()));
+                    let hi = line.floor_char_boundary((hl_end - abs_line_start).min(line.len()));
                     let slice = &line[lo..hi];
                     if !slice.is_empty() {
                         let color = crate::syntax::map_highlight_color(
@@ -266,7 +266,7 @@ fn lines_to_segments(
                     local_hi += 1;
                 }
             } else {
-                let lo = (cursor - abs_line_start).min(line.len());
+                let lo = line.floor_char_boundary((cursor - abs_line_start).min(line.len()));
                 let slice = &line[lo..];
                 if !slice.is_empty() {
                     segments.push(LineSegment {
