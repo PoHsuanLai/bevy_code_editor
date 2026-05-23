@@ -53,15 +53,15 @@ pub struct EditorTheme {
 impl Default for EditorTheme {
     fn default() -> Self {
         Self {
-            background: Color::srgb(0.117, 0.117, 0.117),
-            foreground: Color::srgb(0.827, 0.827, 0.827),
-            cursor: Color::srgb(0.933, 0.933, 0.933),
-            selection_background: Color::srgba(0.231, 0.373, 0.604, 0.4),
-            line_highlight: Some(Color::srgba(0.2, 0.2, 0.2, 0.5)),
-            line_numbers: Color::srgb(0.545, 0.545, 0.545),
-            line_numbers_active: Color::srgb(0.827, 0.827, 0.827),
-            separator: Color::srgb(0.2, 0.2, 0.2),
-            indent_guide: Color::srgba(0.4, 0.4, 0.4, 0.2),
+            background: Color::srgb(0.122, 0.122, 0.122),
+            foreground: Color::srgb(0.800, 0.800, 0.800),
+            cursor: Color::srgb(0.682, 0.686, 0.678),
+            selection_background: Color::srgba(0.149, 0.310, 0.471, 1.0),
+            line_highlight: Some(Color::srgba(0.157, 0.157, 0.157, 0.6)),
+            line_numbers: Color::srgb(0.431, 0.471, 0.506),
+            line_numbers_active: Color::srgb(0.800, 0.800, 0.800),
+            separator: Color::srgb(0.165, 0.176, 0.184),
+            indent_guide: Color::srgba(0.251, 0.251, 0.251, 1.0),
             bracket_match: Color::srgba(0.0, 1.0, 0.5, 0.3),
             bracket_pair_colors: vec![
                 Color::srgb(0.86, 0.86, 0.26),
