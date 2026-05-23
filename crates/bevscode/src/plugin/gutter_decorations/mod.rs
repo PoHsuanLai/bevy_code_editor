@@ -9,8 +9,8 @@
 //! - [`IconAtlas`] — rasterised SVG handles for hosts that want to
 //!   spawn additional decorations sharing the same atlas.
 //!
-//! Icons ship bundled as Lucide SVGs (ISC-licensed; see
-//! `assets/icons/LICENSE-LUCIDE`), embedded via `include_bytes!` and
+//! Icons ship bundled as Iconoir SVGs (MIT-licensed; see
+//! `assets/icons/LICENSE-ICONOIR`), embedded via `include_bytes!` and
 //! rasterised once at PreStartup through `bevy_resvg`. Hosts do not
 //! need to copy any asset files.
 

@@ -1,4 +1,4 @@
-//! Icon atlas: rasterise embedded Lucide SVGs into `SvgFile` assets
+//! Icon atlas: rasterise embedded Iconoir SVGs into `SvgFile` assets
 //! and stash their handles in [`IconAtlas`]. Hosts don't deal with
 //! asset files — icons are baked once at PreStartup and consumed by
 //! the per-kind sync systems via the atlas resource.
@@ -56,19 +56,16 @@ impl IconAtlas {
 
 /// Bake one SVG to a tintable `SvgFile`, fitted into the atlas square.
 fn bake_icon(svgs: &mut Assets<SvgFile>, bytes: &[u8]) -> Handle<SvgFile> {
-    // Lucide ships `stroke="currentColor"` and `fill="currentColor"`
-    // (the latter on our filled wrappers). resvg renders `currentColor`
+    // Iconoir ships `stroke="currentColor"` and `fill="currentColor"`
+    // (the latter on solid variants). resvg renders `currentColor`
     // as black by default — and a black sprite multiplied by
     // `Sprite.color` stays black, so the host's `GlyphMarker.color`
     // tint would never land. Substitute white before parse so every
     // `currentColor` becomes white, then tint through the multiplier.
-    // CSS selectors don't cover this cleanly because Lucide sets the
-    // paint on the root `<svg>` and children inherit it without a
-    // local attribute.
-    let text = std::str::from_utf8(bytes).expect("embedded Lucide SVG is UTF-8");
+    let text = std::str::from_utf8(bytes).expect("embedded Iconoir SVG is UTF-8");
     let patched = text.replace("currentColor", "#fff");
     let tree = Tree::from_data(patched.as_bytes(), &usvg::Options::default())
-        .expect("embedded Lucide SVG should parse");
+        .expect("embedded Iconoir SVG should parse");
     let original_size = tree.size();
     let s = ICON_RASTER_PX as f32 / original_size.width().max(original_size.height());
     let offset = (ICON_RASTER_PX as f32 - original_size.width() * s) * 0.5;
@@ -90,7 +87,7 @@ fn bake_icon(svgs: &mut Assets<SvgFile>, bytes: &[u8]) -> Handle<SvgFile> {
     svgs.add(SvgFile(image))
 }
 
-/// PreStartup: build the [`IconAtlas`] from the bundled Lucide set.
+/// PreStartup: build the [`IconAtlas`] from the bundled Iconoir set.
 pub(crate) fn setup_icon_atlas(mut commands: Commands, mut svgs: ResMut<Assets<SvgFile>>) {
     let atlas = IconAtlas {
         breakpoint: bake_icon(&mut svgs, SVG_DOT_FILL),

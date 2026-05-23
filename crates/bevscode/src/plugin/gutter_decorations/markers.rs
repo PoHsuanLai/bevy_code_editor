@@ -31,9 +31,10 @@ pub struct GlyphMarker {
 }
 
 /// Visual kind for a [`GlyphMarker`]. Each variant maps to a specific
-/// Lucide SVG: `Breakpoint` → filled circle, `DebugCurrent` →
-/// filled triangle, severities → `circle-x` / `triangle-alert` /
-/// `info` / `lightbulb`. `Custom` falls back to the breakpoint circle.
+/// Iconoir SVG: `Breakpoint` → filled circle, `DebugCurrent` →
+/// solid play triangle, severities → `xmark-circle` / `warning-triangle`
+/// / `info-circle` / `light-bulb`. `Custom` falls back to the
+/// breakpoint circle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Reflect)]
 #[reflect(Debug, PartialEq, Hash)]
 pub enum GlyphKind {
