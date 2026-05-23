@@ -14,6 +14,7 @@ use bevscode::prelude::*;
 use bevscode::prelude::{BufferAnchorParam, RopeBuffer};
 use bevscode::types::{CodeEditor, CursorState};
 use bevy::prelude::*;
+use bevy_lsp::messages::{LspLogMessage, LspShowMessage};
 
 fn main() {
     let mut app = App::new();
@@ -37,8 +38,30 @@ fn main() {
 
     app.add_systems(Startup, (setup_camera, spawn_editor))
         .add_systems(PostStartup, setup_editor)
-        .add_systems(Update, (display_lsp_info, auto_request_completion))
+        .add_systems(
+            Update,
+            (
+                display_lsp_info,
+                auto_request_completion,
+                log_lsp_server_messages,
+            ),
+        )
         .run();
+}
+
+/// Surface every `window/logMessage` and `window/showMessage` the server
+/// sends. Debugging aid: if rust-analyzer can't load the workspace, you'll
+/// see it complain here.
+fn log_lsp_server_messages(
+    mut logs: MessageReader<LspLogMessage>,
+    mut shows: MessageReader<LspShowMessage>,
+) {
+    for ev in logs.read() {
+        info!("[ra log] {:?}: {}", ev.typ, ev.message);
+    }
+    for ev in shows.read() {
+        info!("[ra show] {:?}: {}", ev.typ, ev.message);
+    }
 }
 
 fn spawn_editor(mut commands: Commands) {
@@ -138,7 +161,7 @@ fn setup_editor(
 
 fn display_lsp_info(query: Query<&LspClient, (With<CodeEditor>, Changed<LspClient>)>) {
     if !query.is_empty() {
-        info!("LSP client state changed");
+        debug!("LSP client state changed");
     }
 }
 

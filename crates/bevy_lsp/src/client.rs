@@ -14,7 +14,7 @@ use async_lsp::router::Router;
 use async_lsp::tracing::TracingLayer;
 use async_lsp::{ResponseError, ServerSocket};
 use bevy_ecs::prelude::*;
-use bevy_log::{debug, warn};
+use bevy_log::{debug, info, warn};
 use bevy_tasks::{AsyncComputeTaskPool, Task};
 use futures::channel::oneshot;
 
@@ -165,9 +165,14 @@ impl LspClient {
         let watchdog_flag = self.shutting_down.clone();
         let pid_slot = self.client_process_id.clone();
 
+        info!("[LSP] start_with: scheduling driver task on AsyncComputeTaskPool");
         let driver = spawn_task(async move {
+            info!("[LSP] driver task started; calling transport.connect()");
             let (reader, writer, handle) = match transport.connect().await {
-                Ok(t) => t,
+                Ok(t) => {
+                    info!("[LSP] transport.connect() succeeded");
+                    t
+                }
                 Err(err) => {
                     warn!("[LSP] transport connect failed: {err}");
                     let _ = watchdog_tx.try_send(LspResponse::Crashed);
@@ -175,10 +180,16 @@ impl LspClient {
                 }
             };
             let _ = pid_slot.set(handle.client_process_id);
+            info!(
+                "[LSP] transport pid={:?}; entering MainLoop::run_buffered",
+                handle.client_process_id,
+            );
             let _aux = handle.auxiliary_tasks;
 
             let outcome = mainloop.run_buffered(reader, writer).await;
+            info!("[LSP] MainLoop::run_buffered returned outcome={:?}", outcome.as_ref().map(|_| ()).map_err(|e| e.to_string()));
             handle.exited.await;
+            info!("[LSP] transport handle exited");
 
             if !watchdog_flag.load(Ordering::Acquire) {
                 if let Err(err) = outcome {
@@ -244,8 +255,10 @@ impl LspClient {
                 }),
                 ..InitializeParams::default()
             };
+            info!("[LSP] sending initialize request");
             match server.request::<InitializeRequest>(params).await {
                 Ok(result) => {
+                    info!("[LSP] initialize response received");
                     if let Err(err) = server.notify::<InitializedNotif>(InitializedParams {}) {
                         warn!("[LSP] initialized notify failed: {err}");
                     }
@@ -350,8 +363,28 @@ fn build_router(tx: Tx, next_id: Arc<AtomicU64>, slots: Arc<InboundReplySlots>) 
 
     let t = tx.clone();
     router.notification::<PublishDiagnostics>(move |_, params| {
+        info!(
+            "[LSP] publishDiagnostics uri={} version={:?} count={}",
+            params.uri,
+            params.version,
+            params.diagnostics.len(),
+        );
+        for (i, d) in params.diagnostics.iter().enumerate() {
+            info!(
+                "[LSP]   raw diag[{}] line={} col={}..{} severity={:?} src={:?} code={:?} msg={:?}",
+                i,
+                d.range.start.line,
+                d.range.start.character,
+                d.range.end.character,
+                d.severity,
+                d.source,
+                d.code,
+                d.message,
+            );
+        }
         let _ = t.try_send(LspResponse::Diagnostics {
             uri: params.uri,
+            version: params.version,
             diagnostics: params.diagnostics,
         });
         ControlFlow::Continue(())

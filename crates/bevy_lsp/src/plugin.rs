@@ -9,6 +9,7 @@
 use bevy_app::{App, AppExit, Last, Plugin, Update};
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
+use bevy_log::{debug, info, trace};
 
 use crate::client::LspClient;
 use crate::document::LspDocument;
@@ -89,7 +90,7 @@ impl Plugin for LspPlugin {
             .add_message::<LspServerCrashed>();
 
         app.add_message::<LspRequest>();
-        app.add_observer(dispatch_lsp_request);
+        app.add_systems(Update, dispatch_lsp_requests);
 
         app.add_systems(Update, (flush_document_changes, drain_lsp_responses));
         app.add_systems(Last, shutdown_clients_on_app_exit);
@@ -176,11 +177,38 @@ struct LspResponseWriters<'w> {
     crashed: MessageWriter<'w, LspServerCrashed>,
 }
 
+fn response_variant_name(r: &crate::messages::LspResponse) -> &'static str {
+    use crate::messages::LspResponse as R;
+    match r {
+        R::Initialized { .. } => "Initialized",
+        R::Diagnostics { .. } => "Diagnostics",
+        R::LogMessage { .. } => "LogMessage",
+        R::ShowMessage { .. } => "ShowMessage",
+        R::Progress { .. } => "Progress",
+        R::Telemetry { .. } => "Telemetry",
+        R::LogTrace { .. } => "LogTrace",
+        R::ConfigurationRequested { .. } => "ConfigurationRequested",
+        R::ApplyEditRequested { .. } => "ApplyEditRequested",
+        R::ShowMessageRequestRequested { .. } => "ShowMessageRequestRequested",
+        R::WorkspaceFoldersRequested { .. } => "WorkspaceFoldersRequested",
+        R::RegisterCapabilityRequested { .. } => "RegisterCapabilityRequested",
+        R::UnregisterCapabilityRequested { .. } => "UnregisterCapabilityRequested",
+        R::WorkDoneProgressCreateRequested { .. } => "WorkDoneProgressCreateRequested",
+        R::ShutdownAck { .. } => "ShutdownAck",
+        R::Crashed => "Crashed",
+        _ => "Other",
+    }
+}
+
 fn drain_lsp_responses(mut clients: Query<(Entity, &mut LspClient)>, mut w: LspResponseWriters) {
     use crate::messages::LspResponse as R;
     for (entity, mut client) in clients.iter_mut() {
         client.cleanup_timeouts();
         while let Some(response) = client.try_recv() {
+            trace!(
+                "[LSP] drain entity={entity} response={}",
+                response_variant_name(&response),
+            );
             match response {
                 R::Initialized { capabilities } => {
                     client.initialized = true;
@@ -193,10 +221,21 @@ fn drain_lsp_responses(mut clients: Query<(Entity, &mut LspClient)>, mut w: LspR
                         capabilities: *capabilities,
                     });
                 }
-                R::Diagnostics { uri, diagnostics } => {
+                R::Diagnostics {
+                    uri,
+                    version,
+                    diagnostics,
+                } => {
+                    if !diagnostics.is_empty() {
+                        debug!(
+                            "[LSP] pump R::Diagnostics entity={entity} uri={uri} version={version:?} count={}",
+                            diagnostics.len(),
+                        );
+                    }
                     w.diagnostics.write(LspDiagnosticsUpdated {
                         entity,
                         uri,
+                        version,
                         diagnostics,
                     });
                 }
@@ -600,11 +639,20 @@ fn flush_document_changes(
     }
 }
 
-fn dispatch_lsp_request(trigger: On<LspRequest>, mut clients: Query<&mut LspClient>) {
-    let Ok(mut client) = clients.get_mut(trigger.entity) else {
-        return;
-    };
-    client.send(trigger.event().msg.clone());
+fn dispatch_lsp_requests(
+    mut requests: MessageReader<LspRequest>,
+    mut clients: Query<&mut LspClient>,
+) {
+    for req in requests.read() {
+        let Ok(mut client) = clients.get_mut(req.entity) else {
+            info!(
+                "[LSP] dispatch_lsp_requests: dropping (entity={} has no LspClient)",
+                req.entity,
+            );
+            continue;
+        };
+        client.send(req.msg.clone());
+    }
 }
 
 fn shutdown_clients_on_app_exit(

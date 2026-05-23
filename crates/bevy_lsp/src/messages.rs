@@ -514,6 +514,11 @@ pub enum LspResponse {
     // ─── Notifications from the server ────────────────────────────────────
     Diagnostics {
         uri: Url,
+        /// Server-supplied document version this batch was computed against.
+        /// `None` means the server didn't supply one (older spec). Consumers
+        /// should discard batches whose `version` is older than the client's
+        /// current [`crate::LspDocument::version`].
+        version: Option<i32>,
         diagnostics: Vec<Diagnostic>,
     },
 
@@ -880,7 +885,7 @@ macro_rules! lsp_msg {
 
 lsp_msg! {
     LspServerInitialized { capabilities: ServerCapabilities },
-    LspDiagnosticsUpdated { uri: Url, diagnostics: Vec<Diagnostic> },
+    LspDiagnosticsUpdated { uri: Url, version: Option<i32>, diagnostics: Vec<Diagnostic> },
     LspLogMessage { typ: MessageType, message: String },
     LspShowMessage { typ: MessageType, message: String },
     LspProgress { token: ProgressToken, value: ProgressParamsValue },
