@@ -9,9 +9,10 @@
 //! - [`IconAtlas`] — rasterised SVG handles for hosts that want to
 //!   spawn additional decorations sharing the same atlas.
 //!
-//! Icons ship bundled as Octicons SVGs (MIT-licensed), embedded via
-//! `include_bytes!` and rasterised once at PreStartup through
-//! `bevy_resvg`. Hosts do not need to copy any asset files.
+//! Icons ship bundled as Lucide SVGs (ISC-licensed; see
+//! `assets/icons/LICENSE-LUCIDE`), embedded via `include_bytes!` and
+//! rasterised once at PreStartup through `bevy_resvg`. Hosts do not
+//! need to copy any asset files.
 
 mod bars;
 mod chevrons;
@@ -35,7 +36,7 @@ pub use self::click::on_glyph_margin_press;
 pub use self::common::buffer_line_at_y;
 
 pub(crate) use self::bars::{sync_gutter_decoration_bars, update_line_decoration_overlays};
-pub(crate) use self::chevrons::sync_fold_chevron_icons;
+pub(crate) use self::chevrons::{drive_chevron_rotation, sync_fold_chevron_icons};
 pub(crate) use self::click::update_glyph_margin_overlays;
 pub(crate) use self::icons::setup_icon_atlas;
 pub(crate) use self::markers::sync_gutter_icons;

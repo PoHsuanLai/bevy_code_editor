@@ -11,6 +11,8 @@ pub mod gutter_decorations;
 pub mod line_numbers;
 pub mod links;
 #[cfg(feature = "lsp")]
+pub mod diagnostic_underlines;
+#[cfg(feature = "lsp")]
 pub mod lsp;
 pub mod scroll_animator;
 pub mod syntax_highlighting;
@@ -31,6 +33,8 @@ pub use self::gutter_decorations::{
     GutterDecorations, GutterIcon, IconAtlas, LineDecoration, LineDecorationRects,
 };
 pub use self::links::{HoveredLink, LinkRange, LinkRanges, LinkRects};
+#[cfg(feature = "lsp")]
+pub use self::diagnostic_underlines::DiagnosticUnderlineRects;
 pub use self::scroll_animator::{ScrollAnimator, ScrollAnimatorPlugin};
 
 // Re-export syntax highlighting resources publicly for external use

@@ -1,4 +1,4 @@
-//! Icon atlas: rasterise embedded Octicons SVGs into `SvgFile` assets
+//! Icon atlas: rasterise embedded Lucide SVGs into `SvgFile` assets
 //! and stash their handles in [`IconAtlas`]. Hosts don't deal with
 //! asset files — icons are baked once at PreStartup and consumed by
 //! the per-kind sync systems via the atlas resource.
@@ -15,7 +15,7 @@ use bevy_resvg::resvg::{
 
 use super::markers::GlyphKind;
 
-const ICON_RASTER_PX: u32 = 48;
+const ICON_RASTER_PX: u32 = 96;
 
 const SVG_DOT_FILL: &[u8] = include_bytes!("../../../assets/icons/dot-fill.svg");
 const SVG_TRIANGLE_RIGHT: &[u8] = include_bytes!("../../../assets/icons/triangle-right.svg");
@@ -54,25 +54,23 @@ impl IconAtlas {
     }
 }
 
-/// Bake one SVG to a tintable `SvgFile`. `optical_scale` is applied
-/// around the pixmap centre on top of the base "fit into 48×48" scale
-/// — values >1 enlarge the visible glyph (e.g. dot-fill needs 1.6 to
-/// match neighbouring icons), <1 pull edge-bleeding glyphs inward.
-fn bake_icon(svgs: &mut Assets<SvgFile>, bytes: &[u8], optical_scale: f32) -> Handle<SvgFile> {
-    // Octicons SVGs ship without an explicit `fill`, so resvg falls
-    // back to the SVG spec default (black) at rasterise time. A
-    // black sprite multiplied by `Sprite.color` stays black, so the
-    // host's `GlyphMarker.color` tint never lands. Inject a CSS
-    // stylesheet that forces white pixels, which then tint correctly
-    // through the sprite multiplier.
-    let opt = usvg::Options {
-        style_sheet: Some("* { fill: #fff !important; }".to_string()),
-        ..usvg::Options::default()
-    };
-    let tree = Tree::from_data(bytes, &opt).expect("embedded Octicons SVG should parse");
+/// Bake one SVG to a tintable `SvgFile`, fitted into the atlas square.
+fn bake_icon(svgs: &mut Assets<SvgFile>, bytes: &[u8]) -> Handle<SvgFile> {
+    // Lucide ships `stroke="currentColor"` and `fill="currentColor"`
+    // (the latter on our filled wrappers). resvg renders `currentColor`
+    // as black by default — and a black sprite multiplied by
+    // `Sprite.color` stays black, so the host's `GlyphMarker.color`
+    // tint would never land. Substitute white before parse so every
+    // `currentColor` becomes white, then tint through the multiplier.
+    // CSS selectors don't cover this cleanly because Lucide sets the
+    // paint on the root `<svg>` and children inherit it without a
+    // local attribute.
+    let text = std::str::from_utf8(bytes).expect("embedded Lucide SVG is UTF-8");
+    let patched = text.replace("currentColor", "#fff");
+    let tree = Tree::from_data(patched.as_bytes(), &usvg::Options::default())
+        .expect("embedded Lucide SVG should parse");
     let original_size = tree.size();
-    let base = ICON_RASTER_PX as f32 / original_size.width().max(original_size.height());
-    let s = base * optical_scale;
+    let s = ICON_RASTER_PX as f32 / original_size.width().max(original_size.height());
     let offset = (ICON_RASTER_PX as f32 - original_size.width() * s) * 0.5;
     let transform = Transform::from_scale(s, s).post_translate(offset, offset);
     let mut pixmap =
@@ -92,23 +90,18 @@ fn bake_icon(svgs: &mut Assets<SvgFile>, bytes: &[u8], optical_scale: f32) -> Ha
     svgs.add(SvgFile(image))
 }
 
-/// PreStartup: build the [`IconAtlas`]. Per-kind optical scales are
-/// tuned to match Monaco's visual hierarchy:
-/// severity icons ≥ debug arrow > breakpoint dot.
+/// PreStartup: build the [`IconAtlas`] from the bundled Lucide set.
 pub(crate) fn setup_icon_atlas(mut commands: Commands, mut svgs: ResMut<Assets<SvgFile>>) {
     let atlas = IconAtlas {
-        // Tuned to match Monaco's denser visual weight: the breakpoint
-        // dot lands ~10 visible px (was 12), chevrons + debug arrow
-        // pull in so they don't fill the full 16-px column.
-        breakpoint: bake_icon(&mut svgs, SVG_DOT_FILL, 1.2),
-        debug_current: bake_icon(&mut svgs, SVG_TRIANGLE_RIGHT, 1.1),
-        diag_error: bake_icon(&mut svgs, SVG_X_CIRCLE_FILL, 0.75),
-        diag_warning: bake_icon(&mut svgs, SVG_ALERT_FILL, 0.75),
-        diag_info: bake_icon(&mut svgs, SVG_INFO, 0.75),
-        diag_hint: bake_icon(&mut svgs, SVG_LIGHT_BULB, 0.75),
-        diff_removed: bake_icon(&mut svgs, SVG_DIFF_REMOVED, 0.75),
-        chevron_down: bake_icon(&mut svgs, SVG_CHEVRON_DOWN, 0.7),
-        chevron_right: bake_icon(&mut svgs, SVG_CHEVRON_RIGHT, 0.7),
+        breakpoint: bake_icon(&mut svgs, SVG_DOT_FILL),
+        debug_current: bake_icon(&mut svgs, SVG_TRIANGLE_RIGHT),
+        diag_error: bake_icon(&mut svgs, SVG_X_CIRCLE_FILL),
+        diag_warning: bake_icon(&mut svgs, SVG_ALERT_FILL),
+        diag_info: bake_icon(&mut svgs, SVG_INFO),
+        diag_hint: bake_icon(&mut svgs, SVG_LIGHT_BULB),
+        diff_removed: bake_icon(&mut svgs, SVG_DIFF_REMOVED),
+        chevron_down: bake_icon(&mut svgs, SVG_CHEVRON_DOWN),
+        chevron_right: bake_icon(&mut svgs, SVG_CHEVRON_RIGHT),
     };
     commands.insert_resource(atlas);
 }

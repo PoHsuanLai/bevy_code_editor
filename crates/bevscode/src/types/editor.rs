@@ -111,6 +111,10 @@ use bevy::prelude::*;
     HoveredGutterLine,
     HoveredInGutter
 )]
+#[cfg_attr(
+    feature = "lsp",
+    require(crate::plugin::DiagnosticUnderlineRects)
+)]
 pub struct CodeEditor;
 
 /// Buffer line currently under the pointer, used by gutter chevrons under

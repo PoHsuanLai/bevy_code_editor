@@ -1,13 +1,18 @@
 //! Fold-chevron SVG icons rendered in the gutter's chevron column.
-//! Switches between `chevron-right` (folded) and `chevron-down`
-//! (foldable but expanded). The set of visible chevrons depends on
-//! `Folding::show_controls`:
+//! A single `chevron-down` handle is used for every chevron; folded
+//! chevrons rotate −90° around the icon centre over [`CHEVRON_ANIM_SECS`]
+//! using a cubic-out easing curve. The set of visible chevrons depends
+//! on `Folding::show_controls`:
 //! - `Always`: one chevron per foldable region.
 //! - `Mouseover`: only the hovered foldable line.
 //! - `Never`: nothing rendered (width is 0).
 
+use std::f32::consts::FRAC_PI_2;
+
+use bevy::math::curve::{Curve, EaseFunction, EasingCurve};
 use bevy::prelude::*;
 use bevy::text::LineHeight;
+use bevy::ui::UiTransform;
 use bevy_instanced_text::DisplayLayout;
 use bevy_resvg::prelude::*;
 
@@ -24,6 +29,23 @@ pub struct GutterFoldChevron {
     pub editor: Entity,
     pub line: usize,
 }
+
+/// Per-chevron rotation state. `target` flips between 0 (expanded,
+/// pointing down) and −π/2 (folded, pointing right). The animator
+/// eases from `start` to `target` over [`CHEVRON_ANIM_SECS`].
+#[derive(Component, Default)]
+pub(crate) struct ChevronRotation {
+    /// Angle the current ease started at (captures mid-flight handoff).
+    start: f32,
+    /// Latest sampled angle — written every frame by the animator.
+    current: f32,
+    /// Goal angle. Setting this resets `elapsed` and re-anchors `start`.
+    target: f32,
+    elapsed: f32,
+}
+
+/// Animation length for the chevron fold toggle, in seconds.
+const CHEVRON_ANIM_SECS: f32 = 0.12;
 
 /// Resolve the per-frame list of `(buffer_line, is_folded)` chevrons
 /// to render for an editor, given the user's `show_controls` choice
@@ -72,7 +94,7 @@ pub(crate) fn sync_fold_chevron_icons(
         &GutterFoldChevron,
         &mut Node,
         &mut SvgColor,
-        &mut UiSvg,
+        &mut ChevronRotation,
         &mut Visibility,
     )>,
     containers: Query<(Entity, &GutterContainer)>,
@@ -104,25 +126,17 @@ pub(crate) fn sync_fold_chevron_icons(
         }
         let desired = desired_chevrons(fold, folding.show_controls, hovered.0);
 
-        let column_center_x = gutter.chevron_x + gutter.chevron_width * 0.5;
+        // The chevron column sits *right* of the digits; anchor icons
+        // to the column's left edge with a small leftward overflow so
+        // they sit hard against the digits instead of in dead-centre.
+        let column_left_x = gutter.chevron_x;
         let color = theme.line_numbers;
         let pool = by_editor.entry(editor_entity).or_default();
 
-        // Pool slot N corresponds to `desired[N]` permanently across
-        // frames — hidden chevrons (collapsed inside an ancestor fold)
-        // keep their slot, just hidden in place. The slot's *kind*
-        // (chevron_down vs chevron_right) does legitimately change when
-        // the user folds/unfolds at this line; bevy_resvg ignores
-        // `UiSvg.0` reassignments after the first frame, so when the
-        // handle flips we despawn the slot and respawn fresh.
         for (idx, (line, folded)) in desired.iter().enumerate() {
             let geom = RowGeometry::compute(*line, font, line_height, padding, layout);
             let line = *line;
-            let want_handle = if *folded {
-                atlas.chevron_right.clone()
-            } else {
-                atlas.chevron_down.clone()
-            };
+            let target_angle = if *folded { -FRAC_PI_2 } else { 0.0 };
 
             let Some(geom) = geom else {
                 if let Some(&entity) = pool.get(idx) {
@@ -135,32 +149,31 @@ pub(crate) fn sync_fold_chevron_icons(
                 continue;
             };
 
-            let icon_size = gutter
-                .chevron_width
-                .min(geom.line_height_px)
+            let icon_size = (gutter.chevron_width.min(geom.line_height_px) * 0.6)
                 .round()
                 .max(8.0);
-            let icon_left = (column_center_x - icon_size * 0.5).round();
-            // Centre the icon vertically inside its row — otherwise a
-            // 16-px icon in a 20-px row visibly hugs the row's top
-            // edge and drifts off the digit baseline.
-            let icon_top = (geom.top_px + (geom.line_height_px - icon_size) * 0.5).round();
+            let nudge_left = (geom.line_height_px * 0.2).round();
+            let optical_lift = (geom.line_height_px * 0.05).round();
+            let icon_left = (column_left_x - nudge_left).round();
+            // Bias the icon slightly above geometric centre so it
+            // tracks the digits' optical centre (which sits above
+            // the row's mid-line because of the descender).
+            let icon_top = (geom.top_px + (geom.line_height_px - icon_size) * 0.5
+                - optical_lift)
+                .round();
 
-            let pool_entry = pool.get(idx).copied();
-            let handle_matches = pool_entry.is_some_and(|e| {
-                existing
-                    .get(e)
-                    .is_ok_and(|(_, _, _, _, ui_svg, _)| ui_svg.0 == want_handle)
-            });
-
-            if handle_matches {
-                let entity = pool_entry.unwrap();
-                if let Ok((_, _ch, mut node, mut svg_color, _ui_svg, mut vis)) =
+            if let Some(&entity) = pool.get(idx) {
+                if let Ok((_, _ch, mut node, mut svg_color, mut rot, mut vis)) =
                     existing.get_mut(entity)
                 {
                     diff_place(&mut node, icon_left, icon_top, icon_size, icon_size);
                     if svg_color.0 != color {
                         svg_color.0 = color;
+                    }
+                    if (rot.target - target_angle).abs() > f32::EPSILON {
+                        rot.start = rot.current;
+                        rot.target = target_angle;
+                        rot.elapsed = 0.0;
                     }
                     if *vis != Visibility::Inherited {
                         *vis = Visibility::Inherited;
@@ -171,16 +184,13 @@ pub(crate) fn sync_fold_chevron_icons(
                     });
                 }
             } else {
-                if let Some(stale) = pool_entry {
-                    commands.entity(stale).despawn();
-                }
                 let id = commands
                     .spawn((
                         GutterFoldChevron {
                             editor: editor_entity,
                             line,
                         },
-                        UiSvg(want_handle),
+                        UiSvg(atlas.chevron_down.clone()),
                         SvgColor(color),
                         Node {
                             position_type: PositionType::Absolute,
@@ -191,8 +201,17 @@ pub(crate) fn sync_fold_chevron_icons(
                             overflow: Overflow::clip(),
                             ..default()
                         },
-                        bevy::picking::Pickable::IGNORE,
-                        Name::new("GutterFoldChevron"),
+                        ChevronRotation {
+                            start: target_angle,
+                            current: target_angle,
+                            target: target_angle,
+                            elapsed: CHEVRON_ANIM_SECS,
+                        },
+                        UiTransform::from_rotation(Rot2::radians(target_angle)),
+                        (
+                            bevy::picking::Pickable::IGNORE,
+                            Name::new("GutterFoldChevron"),
+                        ),
                     ))
                     .id();
                 if let Some(parent) = containers
@@ -201,11 +220,7 @@ pub(crate) fn sync_fold_chevron_icons(
                 {
                     commands.entity(parent).add_child(id);
                 }
-                if idx < pool.len() {
-                    pool[idx] = id;
-                } else {
-                    pool.push(id);
-                }
+                pool.push(id);
             }
         }
 
@@ -219,6 +234,29 @@ pub(crate) fn sync_fold_chevron_icons(
                 }
             }
         }
+    }
+}
+
+/// Per-frame: advance each chevron's `current` toward `target` along a
+/// cubic-out curve over [`CHEVRON_ANIM_SECS`], writing the result as a
+/// [`UiTransform`] rotation. Rotation pivots around the node centre
+/// because the UI layout pass applies the affine before the
+/// node-centre offset.
+pub(crate) fn drive_chevron_rotation(
+    time: Res<Time>,
+    mut q: Query<(&mut ChevronRotation, &mut UiTransform)>,
+) {
+    let dt = time.delta_secs();
+    for (mut rot, mut transform) in q.iter_mut() {
+        if rot.elapsed >= CHEVRON_ANIM_SECS {
+            continue;
+        }
+        rot.elapsed = (rot.elapsed + dt).min(CHEVRON_ANIM_SECS);
+        let t = (rot.elapsed / CHEVRON_ANIM_SECS).clamp(0.0, 1.0);
+        let eased =
+            EasingCurve::new(rot.start, rot.target, EaseFunction::CubicOut).sample_clamped(t);
+        rot.current = eased;
+        transform.rotation = Rot2::radians(eased);
     }
 }
 

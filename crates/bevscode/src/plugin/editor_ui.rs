@@ -10,9 +10,9 @@ use crate::types::{
 };
 
 use super::gutter_decorations::{
-    setup_icon_atlas, sync_fold_chevron_icons, sync_gutter_decoration_bars, sync_gutter_icons,
-    update_glyph_margin_overlays, update_line_decoration_overlays, GlyphMarginRects,
-    LineDecorationRects,
+    drive_chevron_rotation, setup_icon_atlas, sync_fold_chevron_icons,
+    sync_gutter_decoration_bars, sync_gutter_icons, update_glyph_margin_overlays,
+    update_line_decoration_overlays, GlyphMarginRects, LineDecorationRects,
 };
 use super::links::{update_link_overlays, LinkRects};
 use super::{
@@ -49,6 +49,7 @@ impl Plugin for EditorUiPlugin {
                     sync_gutter_icons,
                     sync_gutter_decoration_bars,
                     sync_fold_chevron_icons,
+                    drive_chevron_rotation.after(sync_fold_chevron_icons),
                 )
                     .after(setup_gutter_text_view),
             );
@@ -122,6 +123,13 @@ impl Plugin for EditorUiPlugin {
             super::gutter_decorations::sync_lsp_glyph_markers.in_set(super::ApplyStateSet),
         );
 
+        #[cfg(feature = "lsp")]
+        app.add_systems(
+            PostUpdate,
+            super::diagnostic_underlines::update_diagnostic_underlines
+                .in_set(super::RenderingSet),
+        );
+
         // State update stays in Update; overlay producer reads DisplayLayout so it runs in PostUpdate.
         app.add_systems(Update, update_bracket_match.in_set(super::ApplyStateSet));
         app.add_systems(
@@ -142,6 +150,7 @@ impl Plugin for EditorUiPlugin {
 
 /// Assemble per-producer typed components into the two engine overlay components.
 /// Only runs for editors where at least one source component changed.
+#[cfg(not(feature = "lsp"))]
 #[allow(clippy::type_complexity)]
 fn merge_overlay_components(
     mut query: Query<
@@ -208,6 +217,85 @@ fn merge_overlay_components(
         overlays.0.extend_from_slice(&links.0);
         overlays.0.extend_from_slice(&whitespace.0);
         overlays.0.extend_from_slice(&glyph_margin.0);
+    }
+}
+
+/// LSP-enabled variant: same as the base merger, plus
+/// [`DiagnosticUnderlineRects`] folded into `TextOverlays` *above* glyphs so
+/// the wavy underline isn't masked by descenders. Kept as a single system so
+/// we can never end up with stale-clear / duplicate-append races between
+/// merging passes.
+#[cfg(feature = "lsp")]
+#[allow(clippy::type_complexity)]
+fn merge_overlay_components(
+    mut query: Query<
+        (
+            &SelectionRects,
+            &IndentGuideRects,
+            &RulerRects,
+            &FoldHighlightRects,
+            &CursorLineRects,
+            &CaretRects,
+            &BracketMatchRects,
+            &LinkRects,
+            &WhitespaceRects,
+            &GlyphMarginRects,
+            &LineDecorationRects,
+            &super::diagnostic_underlines::DiagnosticUnderlineRects,
+            &mut TextUnderlays,
+            &mut TextOverlays,
+        ),
+        (
+            With<CodeEditor>,
+            Or<(
+                Changed<SelectionRects>,
+                Changed<IndentGuideRects>,
+                Changed<RulerRects>,
+                Changed<FoldHighlightRects>,
+                Changed<CursorLineRects>,
+                Changed<CaretRects>,
+                Changed<BracketMatchRects>,
+                Changed<LinkRects>,
+                Changed<WhitespaceRects>,
+                Changed<GlyphMarginRects>,
+                Changed<LineDecorationRects>,
+                Changed<super::diagnostic_underlines::DiagnosticUnderlineRects>,
+            )>,
+        ),
+    >,
+) {
+    for (
+        sel,
+        guides,
+        rulers,
+        fold_hl,
+        cursor_line,
+        carets,
+        brackets,
+        links,
+        whitespace,
+        glyph_margin,
+        line_dec,
+        diag_underlines,
+        mut underlays,
+        mut overlays,
+    ) in &mut query
+    {
+        underlays.0.clear();
+        underlays.0.extend_from_slice(&guides.0);
+        underlays.0.extend_from_slice(&rulers.0);
+        underlays.0.extend_from_slice(&fold_hl.0);
+        underlays.0.extend_from_slice(&sel.0);
+        underlays.0.extend_from_slice(&line_dec.0);
+
+        overlays.0.clear();
+        overlays.0.extend_from_slice(&cursor_line.0);
+        overlays.0.extend_from_slice(&carets.0);
+        overlays.0.extend_from_slice(&brackets.0);
+        overlays.0.extend_from_slice(&links.0);
+        overlays.0.extend_from_slice(&whitespace.0);
+        overlays.0.extend_from_slice(&glyph_margin.0);
+        overlays.0.extend_from_slice(&diag_underlines.0);
     }
 }
 
@@ -530,7 +618,14 @@ fn sync_gutter_width(
             crate::settings::ShowFoldingControls::Always
                 | crate::settings::ShowFoldingControls::Mouseover
         );
-        let chevron_width = if folding_enabled { 16.0 } else { 0.0 };
+        // Match the glyph-margin's "line-height × 1 lane" sizing so the
+        // chevron column scales with the font instead of staying pinned
+        // at 16 px.
+        let chevron_width = if folding_enabled {
+            line_height_px.max(16.0)
+        } else {
+            0.0
+        };
         let line_decorations_width = ui.line_decorations_width.max(0.0) + chevron_width;
         let glyph_margin_width = if ui.glyph_margin {
             // Monaco sizes the glyph margin to the line height. The

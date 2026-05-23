@@ -31,9 +31,9 @@ pub struct GlyphMarker {
 }
 
 /// Visual kind for a [`GlyphMarker`]. Each variant maps to a specific
-/// Octicons SVG: `Breakpoint` → `dot-fill`, `DebugCurrent` →
-/// `triangle-right`, severities → `x-circle-fill` / `alert-fill` /
-/// `info` / `light-bulb`. `Custom` falls back to `dot-fill`.
+/// Lucide SVG: `Breakpoint` → filled circle, `DebugCurrent` →
+/// filled triangle, severities → `circle-x` / `triangle-alert` /
+/// `info` / `lightbulb`. `Custom` falls back to the breakpoint circle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Reflect)]
 #[reflect(Debug, PartialEq, Hash)]
 pub enum GlyphKind {
@@ -117,7 +117,10 @@ pub(crate) fn sync_gutter_icons(
 
         let pool = by_editor.entry(editor_entity).or_default();
 
-        let column_center_x = gutter.glyph_margin_x + gutter.glyph_margin_width * 0.5;
+        // The glyph-margin column is *left* of the digits; anchor icons
+        // to the column's right edge with a small overflow so they sit
+        // hard against the digits instead of in dead-centre.
+        let column_right_x = gutter.glyph_margin_x + gutter.glyph_margin_width;
 
         // Pool slot N corresponds to `desired[N]` permanently across
         // frames. Hidden lines (collapsed inside a fold) get their slot
@@ -133,15 +136,18 @@ pub(crate) fn sync_gutter_icons(
             let handle = handle.clone();
 
             if let Some(geom) = geom {
-                let icon_size = gutter
-                    .glyph_margin_width
-                    .min(geom.line_height_px)
+                let icon_size = (gutter.glyph_margin_width.min(geom.line_height_px) * 0.6)
                     .round()
                     .max(8.0);
-                let icon_left = (column_center_x - icon_size * 0.5).round();
-                // Centre the icon vertically within the row so it sits
-                // on the digit baseline rather than the row top.
-                let icon_top = (geom.top_px + (geom.line_height_px - icon_size) * 0.5).round();
+                let nudge_right = (geom.line_height_px * 0.2).round();
+                let optical_lift = (geom.line_height_px * 0.05).round();
+                let icon_left = (column_right_x - icon_size + nudge_right).round();
+                // Bias the icon slightly above geometric centre so it
+                // tracks the digits' optical centre (which sits above
+                // the row's mid-line because of the descender).
+                let icon_top = (geom.top_px + (geom.line_height_px - icon_size) * 0.5
+                    - optical_lift)
+                    .round();
 
                 if let Some(&entity) = pool.get(idx) {
                     if let Ok((_, _gi, mut node, mut svg_color, _ui_svg, mut vis)) =

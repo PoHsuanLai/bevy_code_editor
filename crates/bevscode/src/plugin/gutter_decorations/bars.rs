@@ -106,10 +106,11 @@ pub(crate) fn sync_gutter_decoration_bars(
             continue;
         }
 
-        let bar_width: f32 = 2.0_f32.min(gutter.line_decorations_width);
+        let bar_width: f32 = 3.0_f32.min(gutter.line_decorations_width);
         // Bar sits 6 px right of the line-decorations band's left
         // edge — small breathing room from the digits.
         let bar_left = (gutter.line_decorations_x + 6.0).round().max(0.0);
+        let bar_radius = (bar_width * 0.5).max(0.5);
 
         let active: Vec<&LineDecoration> = decorations
             .0
@@ -132,11 +133,12 @@ pub(crate) fn sync_gutter_decoration_bars(
 
             if let Some(geom) = geom {
                 let height_px = geom.line_height_px.round();
+                let bar_color = color.with_alpha(color.alpha() * 0.85);
                 if let Some(&entity) = pool.get(idx) {
                     if let Ok((_, _bar, mut node, mut bg, mut vis)) = existing.get_mut(entity) {
                         diff_place(&mut node, bar_left, geom.top_px, bar_width, height_px);
-                        if bg.0 != color {
-                            bg.0 = color;
+                        if bg.0 != bar_color {
+                            bg.0 = bar_color;
                         }
                         if *vis != Visibility::Inherited {
                             *vis = Visibility::Inherited;
@@ -159,9 +161,10 @@ pub(crate) fn sync_gutter_decoration_bars(
                                 top: Val::Px(geom.top_px),
                                 width: Val::Px(bar_width),
                                 height: Val::Px(height_px),
+                                border_radius: BorderRadius::all(Val::Px(bar_radius)),
                                 ..default()
                             },
-                            BackgroundColor(color),
+                            BackgroundColor(bar_color),
                             bevy::picking::Pickable::IGNORE,
                             Name::new("GutterDecorationBar"),
                         ))
