@@ -30,6 +30,7 @@ ropey = "1.6"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 async-process = "2"
 async-lsp = { version = "0.2", default-features = false, features = ["client-monitor", "tracing", "stdio"] }
+piper = { version = "0.2", optional = true }
 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -38,3 +39,9 @@ wasm-bindgen-futures = "0.4"
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = "0.3"
+
+[features]
+default = []
+# In-process fake LSP server + FakeTransport for headless integration tests.
+# Pulls in piper for the duplex byte streams; native-only.
+test-support = ["dep:piper"]

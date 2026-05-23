@@ -22,6 +22,11 @@ pub mod websocket;
 #[cfg(target_arch = "wasm32")]
 pub use websocket::WebSocketTransport;
 
+#[cfg(all(not(target_arch = "wasm32"), any(test, feature = "test-support")))]
+pub mod fake;
+#[cfg(all(not(target_arch = "wasm32"), any(test, feature = "test-support")))]
+pub use fake::{FakeTransport, FakeTransportEndpoints};
+
 /// `Pin<Box<dyn Future<Output = T>>>` that's `Send` on native and bare on
 /// wasm32. JS-backed handles (`WebSocket`, `Promise`) are `!Send` and the
 /// single browser thread doesn't need the marker; native uses Bevy's

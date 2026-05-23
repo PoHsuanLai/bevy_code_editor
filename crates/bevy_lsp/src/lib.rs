@@ -60,6 +60,9 @@ pub mod pos;
 pub mod prelude;
 pub mod transport;
 
+#[cfg(all(not(target_arch = "wasm32"), any(test, feature = "test-support")))]
+pub mod test_support;
+
 pub use crate::capabilities::ServerCapabilities;
 pub use crate::client::{LspClient, DEFAULT_REQUEST_TIMEOUT_SECS};
 pub use crate::document::LspDocument;
