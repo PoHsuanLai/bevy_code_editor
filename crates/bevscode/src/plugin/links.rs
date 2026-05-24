@@ -310,13 +310,10 @@ fn push_link(chars: &[char], begin: usize, end: usize, out: &mut Vec<(usize, usi
 ///
 /// `LinkRanges` is populated regardless of hover so the hover observer
 /// and the click observer have hit-test data.
-#[allow(clippy::type_complexity)]
 pub(crate) fn update_link_overlays(
     mut editor_query: Query<
         (
-            EditorBufferView,
-            EditorLayoutView,
-            EditorFontView,
+            EditorRenderView,
             Option<&HiddenLines>,
             Option<&TextBounds>,
             &EditorTheme,
@@ -335,16 +332,7 @@ pub(crate) fn update_link_overlays(
         || keyboard.pressed(KeyCode::SuperRight);
 
     for (
-        buf,
-        layout_view,
-        font_view,
-        hidden,
-        bounds,
-        theme,
-        misc,
-        hovered,
-        mut link_rects,
-        mut link_ranges,
+        rv, hidden, bounds, theme, misc, hovered, mut link_rects, mut link_ranges,
     ) in editor_query.iter_mut()
     {
         if !misc.links {
@@ -357,22 +345,15 @@ pub(crate) fn update_link_overlays(
             continue;
         }
 
-        let char_width = layout_view.mono.px;
-        let line_height = bevy_instanced_text::resolve_line_height(
-            *font_view.line_height,
-            font_view.font.font_size,
-        );
-        let inv = layout_view.computed.inverse_scale_factor();
-        let viewport_height = layout_view.computed.size().y * inv;
-        let text_area_top = layout_view.computed.content_inset().min_inset.y * inv;
+        let m = rv.metrics();
         let wrap_cfg = bounds.copied().unwrap_or_default();
         let visible = visible_buffer_range(
-            &**buf.buffer,
-            layout_view.scroll.y,
-            viewport_height,
-            text_area_top,
-            line_height,
-            char_width,
+            &**rv.buffer,
+            rv.scroll.y,
+            m.viewport_height,
+            m.text_area_top,
+            m.line_height,
+            m.char_width,
             wrap_cfg,
             hidden,
         );
@@ -383,10 +364,10 @@ pub(crate) fn update_link_overlays(
 
         if visible.start < visible.end {
             for buffer_line in visible.start..visible.end {
-                if buf.fold.is_line_hidden(buffer_line) {
+                if rv.fold.is_line_hidden(buffer_line) {
                     continue;
                 }
-                let line = buf.buffer.line(buffer_line);
+                let line = rv.buffer.line(buffer_line);
                 let line_text = line.to_string();
                 let matches = find_urls(&line_text);
                 if matches.is_empty() {
@@ -414,38 +395,34 @@ pub(crate) fn update_link_overlays(
                     let s_byte = line.slice(..start_char).len_bytes();
                     let e_byte = line.slice(..end_char).len_bytes();
 
-                    let (start_row, start_byte_in_row) = layout_view
+                    let (start_row, start_byte_in_row) = rv
                         .layout
                         .and_then(|l| l.buffer_to_display(buffer_line as u32, s_byte))
                         .unwrap_or_else(|| {
-                            (buf.fold.actual_to_display_line(buffer_line) as u32, s_byte)
+                            (rv.fold.actual_to_display_line(buffer_line) as u32, s_byte)
                         });
-                    let (end_row, end_byte_in_row) = layout_view
+                    let (end_row, end_byte_in_row) = rv
                         .layout
                         .and_then(|l| l.buffer_to_display(buffer_line as u32, e_byte))
                         .unwrap_or_else(|| {
-                            (buf.fold.actual_to_display_line(buffer_line) as u32, e_byte)
+                            (rv.fold.actual_to_display_line(buffer_line) as u32, e_byte)
                         });
-                    let start_x = layout_view
+                    let start_x = rv
                         .layout
                         .and_then(|l| l.x_at_byte(start_row, start_byte_in_row))
-                        .unwrap_or(start_char as f32 * char_width);
-                    // Right edge stops at the source glyphs' trailing
-                    // edge so a virtual span anchored at `end_byte`
-                    // (inlay hint, etc.) doesn't get included in the
-                    // link underline.
+                        .unwrap_or(start_char as f32 * m.char_width);
                     let end_x = if start_row == end_row {
-                        layout_view
+                        rv
                             .layout
                             .and_then(|l| {
                                 l.x_after_source_range(end_row, start_byte_in_row, end_byte_in_row)
                             })
-                            .unwrap_or(end_char as f32 * char_width)
+                            .unwrap_or(end_char as f32 * m.char_width)
                     } else {
-                        layout_view
+                        rv
                             .layout
                             .and_then(|l| l.x_at_byte(end_row, end_byte_in_row))
-                            .unwrap_or(end_char as f32 * char_width)
+                            .unwrap_or(end_char as f32 * m.char_width)
                     };
 
                     let push =
@@ -453,14 +430,14 @@ pub(crate) fn update_link_overlays(
                             if ctrl_held {
                                 out.push(underline_rect(row, range, theme.link));
                             } else {
-                                push_dotted_underline(out, row, range, dim, char_width);
+                                push_dotted_underline(out, row, range, dim, m.char_width);
                             }
                         };
 
                     if start_row == end_row {
                         push(&mut new_rects, start_row, start_x..end_x);
                     } else {
-                        let start_row_end = layout_view
+                        let start_row_end = rv
                             .layout
                             .and_then(|l| {
                                 l.lines
@@ -468,7 +445,7 @@ pub(crate) fn update_link_overlays(
                                     .find(|line| line.display_row == start_row)
                                     .and_then(|line| l.x_at_byte(start_row, line.text.len()))
                             })
-                            .unwrap_or(end_char as f32 * char_width);
+                            .unwrap_or(end_char as f32 * m.char_width);
                         push(&mut new_rects, start_row, start_x..start_row_end);
                         for r in (start_row + 1)..end_row {
                             push(&mut new_rects, r, 0.0..start_row_end);

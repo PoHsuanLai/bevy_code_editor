@@ -33,7 +33,6 @@ use super::anchor::{PopupAnchor, PopupPlacement, PopupRect};
 ///
 /// Returns the resolved [`PopupRect`] when placement succeeded, or
 /// `None` when the popup is hidden this frame.
-#[allow(clippy::too_many_arguments)]
 pub fn apply_chrome(
     commands: &mut Commands,
     entity: Entity,

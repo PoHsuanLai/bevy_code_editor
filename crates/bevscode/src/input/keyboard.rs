@@ -61,7 +61,6 @@ type KeyboardLspQuery<'w, 's> = Query<
 ///
 /// `bevy_input_focus` already routed this event because the editor entity
 /// is in `InputFocus`. We never manually compare to `input_focus.get()`.
-#[allow(clippy::too_many_arguments)]
 pub fn on_focused_keyboard(
     trigger: On<FocusedInput<KeyboardInput>>,
     mut editor_query: Query<
@@ -220,7 +219,6 @@ pub fn on_focused_keyboard(
 /// Insert one typed character with bracket/quote auto-close + LSP triggers.
 ///
 /// Pulled out of the main observer to keep the per-event match arm small.
-#[allow(clippy::too_many_arguments)]
 fn insert_typed_char(
     c: char,
     sel: &mut SelectionState,

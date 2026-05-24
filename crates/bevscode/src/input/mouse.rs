@@ -299,7 +299,6 @@ pub fn on_click_past_eol_unfold(
 /// `bevy_instanced_text_interaction::on_pointer_press` already skips writing
 /// selection when Alt is held, so this observer owns the alt-click semantic
 /// exclusively — no fight with the plain-click path.
-#[allow(clippy::too_many_arguments)]
 pub fn on_alt_click(
     trigger: On<Pointer<Press>>,
     mut editor_query: AltClickQuery,
@@ -358,7 +357,6 @@ pub fn on_alt_click(
 /// Ctrl+click observer: trigger an LSP `goto-definition` at the clicked
 /// character. Editor crate only; under `feature = "lsp"`.
 #[cfg(feature = "lsp")]
-#[allow(clippy::too_many_arguments)]
 pub fn on_ctrl_click_goto_definition(
     trigger: On<Pointer<Press>>,
     editor_query: CtrlClickQuery,

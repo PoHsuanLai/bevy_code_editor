@@ -58,7 +58,6 @@ fn make_test_app() -> App {
     app
 }
 
-#[allow(clippy::too_many_arguments)]
 fn spawn_editor(app: &mut App, text: &str) -> Entity {
     let mut computed = ComputedNode::default();
     computed.size = Vec2::new(800.0, 600.0);

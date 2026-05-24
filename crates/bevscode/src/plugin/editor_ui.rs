@@ -153,8 +153,43 @@ impl Plugin for EditorUiPlugin {
     }
 }
 
-/// Assemble per-producer typed components into the two engine overlay components.
-/// Only runs for editors where at least one source component changed.
+use bevy_instanced_text::RectOverlay;
+
+struct OverlaySources<'a> {
+    sel: &'a [RectOverlay],
+    guides: &'a [RectOverlay],
+    rulers: &'a [RectOverlay],
+    fold_hl: &'a [RectOverlay],
+    cursor_line: &'a [RectOverlay],
+    carets: &'a [RectOverlay],
+    brackets: &'a [RectOverlay],
+    links: &'a [RectOverlay],
+    whitespace: &'a [RectOverlay],
+    glyph_margin: &'a [RectOverlay],
+    line_dec: &'a [RectOverlay],
+}
+
+fn assemble_overlays(
+    src: &OverlaySources<'_>,
+    underlays: &mut TextUnderlays,
+    overlays: &mut TextOverlays,
+) {
+    underlays.0.clear();
+    underlays.0.extend_from_slice(src.guides);
+    underlays.0.extend_from_slice(src.rulers);
+    underlays.0.extend_from_slice(src.fold_hl);
+    underlays.0.extend_from_slice(src.sel);
+    underlays.0.extend_from_slice(src.line_dec);
+
+    overlays.0.clear();
+    overlays.0.extend_from_slice(src.cursor_line);
+    overlays.0.extend_from_slice(src.carets);
+    overlays.0.extend_from_slice(src.brackets);
+    overlays.0.extend_from_slice(src.links);
+    overlays.0.extend_from_slice(src.whitespace);
+    overlays.0.extend_from_slice(src.glyph_margin);
+}
+
 #[cfg(not(feature = "lsp"))]
 #[allow(clippy::type_complexity)]
 fn merge_overlay_components(
@@ -193,43 +228,24 @@ fn merge_overlay_components(
     >,
 ) {
     for (
-        sel,
-        guides,
-        rulers,
-        fold_hl,
-        cursor_line,
-        carets,
-        brackets,
-        links,
-        whitespace,
-        glyph_margin,
-        line_dec,
-        mut underlays,
-        mut overlays,
+        sel, guides, rulers, fold_hl, cursor_line, carets, brackets, links, whitespace,
+        glyph_margin, line_dec, mut underlays, mut overlays,
     ) in &mut query
     {
-        underlays.0.clear();
-        underlays.0.extend_from_slice(&guides.0);
-        underlays.0.extend_from_slice(&rulers.0);
-        underlays.0.extend_from_slice(&fold_hl.0);
-        underlays.0.extend_from_slice(&sel.0);
-        underlays.0.extend_from_slice(&line_dec.0);
-
-        overlays.0.clear();
-        overlays.0.extend_from_slice(&cursor_line.0);
-        overlays.0.extend_from_slice(&carets.0);
-        overlays.0.extend_from_slice(&brackets.0);
-        overlays.0.extend_from_slice(&links.0);
-        overlays.0.extend_from_slice(&whitespace.0);
-        overlays.0.extend_from_slice(&glyph_margin.0);
+        assemble_overlays(
+            &OverlaySources {
+                sel: &sel.0, guides: &guides.0, rulers: &rulers.0, fold_hl: &fold_hl.0,
+                cursor_line: &cursor_line.0, carets: &carets.0, brackets: &brackets.0,
+                links: &links.0, whitespace: &whitespace.0, glyph_margin: &glyph_margin.0,
+                line_dec: &line_dec.0,
+            },
+            &mut underlays, &mut overlays,
+        );
     }
 }
 
 /// LSP-enabled variant: same as the base merger, plus
-/// [`DiagnosticUnderlineRects`] folded into `TextOverlays` *above* glyphs so
-/// the wavy underline isn't masked by descenders. Kept as a single system so
-/// we can never end up with stale-clear / duplicate-append races between
-/// merging passes.
+/// [`DiagnosticUnderlineRects`] folded into `TextOverlays`.
 #[cfg(feature = "lsp")]
 #[allow(clippy::type_complexity)]
 fn merge_overlay_components(
@@ -270,36 +286,19 @@ fn merge_overlay_components(
     >,
 ) {
     for (
-        sel,
-        guides,
-        rulers,
-        fold_hl,
-        cursor_line,
-        carets,
-        brackets,
-        links,
-        whitespace,
-        glyph_margin,
-        line_dec,
-        diag_underlines,
-        mut underlays,
-        mut overlays,
+        sel, guides, rulers, fold_hl, cursor_line, carets, brackets, links, whitespace,
+        glyph_margin, line_dec, diag_underlines, mut underlays, mut overlays,
     ) in &mut query
     {
-        underlays.0.clear();
-        underlays.0.extend_from_slice(&guides.0);
-        underlays.0.extend_from_slice(&rulers.0);
-        underlays.0.extend_from_slice(&fold_hl.0);
-        underlays.0.extend_from_slice(&sel.0);
-        underlays.0.extend_from_slice(&line_dec.0);
-
-        overlays.0.clear();
-        overlays.0.extend_from_slice(&cursor_line.0);
-        overlays.0.extend_from_slice(&carets.0);
-        overlays.0.extend_from_slice(&brackets.0);
-        overlays.0.extend_from_slice(&links.0);
-        overlays.0.extend_from_slice(&whitespace.0);
-        overlays.0.extend_from_slice(&glyph_margin.0);
+        assemble_overlays(
+            &OverlaySources {
+                sel: &sel.0, guides: &guides.0, rulers: &rulers.0, fold_hl: &fold_hl.0,
+                cursor_line: &cursor_line.0, carets: &carets.0, brackets: &brackets.0,
+                links: &links.0, whitespace: &whitespace.0, glyph_margin: &glyph_margin.0,
+                line_dec: &line_dec.0,
+            },
+            &mut underlays, &mut overlays,
+        );
         overlays.0.extend_from_slice(&diag_underlines.0);
     }
 }

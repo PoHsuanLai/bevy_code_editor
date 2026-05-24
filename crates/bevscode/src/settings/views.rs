@@ -45,6 +45,50 @@ pub struct EditorFontView {
     pub line_height: &'static bevy::text::LineHeight,
 }
 
+/// Buffer + layout + font: the read-only triple most overlay producers
+/// need. Replaces the `(EditorBufferView, EditorLayoutView,
+/// EditorFontView)` tuple that was repeated across 6+ systems.
+#[derive(QueryData)]
+pub struct EditorRenderView {
+    pub buffer: &'static TextBuffer<RopeBuffer>,
+    pub fold: &'static FoldState,
+    pub computed: &'static ComputedNode,
+    pub scroll: &'static ScrollPosition,
+    pub mono: &'static MonoCellWidth,
+    pub layout: Option<&'static DisplayLayout>,
+    pub font: &'static TextFont,
+    pub line_height: &'static bevy::text::LineHeight,
+}
+
+/// Pre-computed viewport metrics derived from an [`EditorRenderViewItem`].
+pub struct ViewportMetrics {
+    pub inv_scale: f32,
+    pub char_width: f32,
+    pub line_height: f32,
+    pub viewport_height: f32,
+    pub viewport_width: f32,
+    pub text_area_top: f32,
+    pub text_area_left: f32,
+}
+
+impl EditorRenderViewItem<'_, '_> {
+    pub fn metrics(&self) -> ViewportMetrics {
+        let inv = self.computed.inverse_scale_factor();
+        ViewportMetrics {
+            inv_scale: inv,
+            char_width: self.mono.px,
+            line_height: bevy_instanced_text::resolve_line_height(
+                *self.line_height,
+                self.font.font_size,
+            ),
+            viewport_height: self.computed.size().y * inv,
+            viewport_width: self.computed.size().x * inv,
+            text_area_top: self.computed.content_inset().min_inset.y * inv,
+            text_area_left: self.computed.content_inset().min_inset.x * inv,
+        }
+    }
+}
+
 /// Scroll-target shape — animator + content metrics + scroll config +
 /// mutable cursor + optional [`TextBounds`] (for wrap-aware horizontal
 /// gating). Mutability lets the auto-scroll system both *seed* the

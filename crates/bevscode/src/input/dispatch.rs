@@ -352,7 +352,6 @@ type DispatchLspQuery<'w, 's> = Query<
 >;
 
 /// `EditorAction` → typed event dispatcher.
-#[allow(clippy::too_many_arguments)]
 pub fn dispatch_action_events(
     input_focus: Res<InputFocus>,
     mut action_query: Query<

@@ -8,13 +8,65 @@ use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::{visible_buffer_range, HiddenLines, MonoCellWidth, TextBounds};
 use bevy_instanced_text_editor::RopeBuffer;
 
+/// Iterate `(buffer_line, display_row)` pairs over the visible window,
+/// skipping folded lines.
+fn visible_display_rows(
+    fold: &FoldState,
+    total_lines: usize,
+    line_height: f32,
+    scroll_y: f32,
+    viewport_height: f32,
+) -> Vec<(usize, usize)> {
+    let visible_start_row = (scroll_y / line_height).floor().max(0.0) as usize;
+    let visible_lines = ((viewport_height / line_height).ceil() as usize) + 2;
+    let visible_end_row = visible_start_row + visible_lines;
+    let has_folding = !fold.regions.is_empty();
+
+    let start_buffer_line = if has_folding {
+        let mut display_row = 0;
+        let mut buffer_line = 0;
+        while buffer_line < total_lines && display_row < visible_start_row {
+            if !fold.is_line_hidden(buffer_line) {
+                display_row += 1;
+            }
+            buffer_line += 1;
+        }
+        buffer_line
+    } else {
+        visible_start_row.min(total_lines)
+    };
+
+    let mut current_display_row: usize = if has_folding {
+        let mut display_row = 0;
+        for bl in 0..start_buffer_line {
+            if !fold.is_line_hidden(bl) {
+                display_row += 1;
+            }
+        }
+        display_row
+    } else {
+        start_buffer_line
+    };
+
+    let mut out = Vec::new();
+    for buffer_line in start_buffer_line..total_lines {
+        if fold.is_line_hidden(buffer_line) {
+            continue;
+        }
+        if current_display_row > visible_end_row {
+            break;
+        }
+        out.push((buffer_line, current_display_row));
+        current_display_row += 1;
+    }
+    out
+}
+
 type AutoScrollQuery<'w, 's> = Query<
     'w,
     's,
     (
-        EditorBufferView,
-        EditorLayoutView,
-        EditorFontView,
+        EditorRenderView,
         ScrollTargetView,
     ),
     With<CodeEditor>,
@@ -34,14 +86,11 @@ type AutoScrollQuery<'w, 's> = Query<
 /// seconds.
 ///
 /// Change-detection gated: idle frames do nothing.
-#[allow(clippy::type_complexity)]
 pub(crate) fn update_selection_highlight(
     mut editor_query: Query<
         (
             Entity,
-            EditorBufferView,
-            EditorLayoutView,
-            EditorFontView,
+            EditorRenderView,
             &SelectionState,
             &mut SelectionRects,
             Option<&HiddenLines>,
@@ -74,9 +123,7 @@ pub(crate) fn update_selection_highlight(
 
     for (
         editor_entity,
-        buf,
-        layout_view,
-        font_view,
+        rv,
         sel,
         mut sel_rects,
         hidden,
@@ -90,26 +137,19 @@ pub(crate) fn update_selection_highlight(
         }
         sel_rects.0.clear();
 
-        let char_width = layout_view.mono.px;
-        let line_height = bevy_instanced_text::resolve_line_height(
-            *font_view.line_height,
-            font_view.font.font_size,
-        );
+        let m = rv.metrics();
 
         // Visible buffer-line window. Selections are clipped to this band so
         // a multi-thousand-line selection doesn't allocate per-line rects for
         // off-viewport rows.
-        let inv = layout_view.computed.inverse_scale_factor();
-        let viewport_height = layout_view.computed.size().y * inv;
-        let text_area_top = layout_view.computed.content_inset().min_inset.y * inv;
         let wrap_cfg = wrap.copied().unwrap_or_default();
         let visible = visible_buffer_range(
-            &**buf.buffer,
-            layout_view.scroll.y,
-            viewport_height,
-            text_area_top,
-            line_height,
-            char_width,
+            &**rv.buffer,
+            rv.scroll.y,
+            m.viewport_height,
+            m.text_area_top,
+            m.line_height,
+            m.char_width,
             wrap_cfg,
             hidden,
         );
@@ -128,8 +168,8 @@ pub(crate) fn update_selection_highlight(
             .collect();
 
         for (start, end) in selections {
-            let sel_start_line = buf.buffer.char_to_line(start);
-            let sel_end_line = buf.buffer.char_to_line(end);
+            let sel_start_line = rv.buffer.char_to_line(start);
+            let sel_end_line = rv.buffer.char_to_line(end);
 
             // Iterate only the part of the selection that overlaps the
             // visible window. Off-viewport portions still exist in
@@ -141,12 +181,12 @@ pub(crate) fn update_selection_highlight(
             }
 
             for line_idx in iter_start..=iter_end {
-                if buf.fold.is_line_hidden(line_idx) {
+                if rv.fold.is_line_hidden(line_idx) {
                     continue;
                 }
 
-                let line_start_char = buf.buffer.line_to_char(line_idx);
-                let line = buf.buffer.line(line_idx);
+                let line_start_char = rv.buffer.line_to_char(line_idx);
+                let line = rv.buffer.line(line_idx);
                 let line_chars = line.len_chars();
 
                 let sel_start_col = if line_idx == sel_start_line {
@@ -175,11 +215,11 @@ pub(crate) fn update_selection_highlight(
                         is_last_buffer_line: line_idx == sel_end_line,
                     },
                     &RowMap {
-                        layout: layout_view.layout,
-                        fold_state: buf.fold,
+                        layout: rv.layout,
+                        fold_state: rv.fold,
                         line_idx,
                     },
-                    char_width,
+                    m.char_width,
                     theme.selection_background,
                     selection_cfg.rounded_selection,
                     &mut sel_rects.0,
@@ -348,9 +388,7 @@ fn selection_rect(
 pub(crate) fn update_indent_guides(
     mut editor_query: Query<
         (
-            EditorBufferView,
-            EditorLayoutView,
-            EditorFontView,
+            EditorRenderView,
             &EditorTheme,
             &mut IndentGuideRects,
             &Guides,
@@ -359,9 +397,7 @@ pub(crate) fn update_indent_guides(
         With<CodeEditor>,
     >,
 ) {
-    for (text, layout_view, font_view, theme, mut guide_rects, guides, indentation) in
-        editor_query.iter_mut()
-    {
+    for (rv, theme, mut guide_rects, guides, indentation) in editor_query.iter_mut() {
         if !guides.indentation {
             if !guide_rects.0.is_empty() {
                 guide_rects.0.clear();
@@ -369,58 +405,14 @@ pub(crate) fn update_indent_guides(
             continue;
         }
 
-        let inv = layout_view.computed.inverse_scale_factor();
+        let m = rv.metrics();
         let indent_size = indentation.tab_size as usize;
-        let line_height = bevy_instanced_text::resolve_line_height(
-            *font_view.line_height,
-            font_view.font.font_size,
-        );
-        let char_width = layout_view.mono.px;
-        let viewport_height = layout_view.computed.size().y * inv;
-
-        let visible_start_row = (layout_view.scroll.y / line_height).floor().max(0.0) as usize;
-        let visible_lines = ((viewport_height / line_height).ceil() as usize) + 2;
-        let visible_end_row = visible_start_row + visible_lines;
-
-        let total_lines = text.buffer.len_lines();
-        let has_folding = !text.fold.regions.is_empty();
-
-        let start_buffer_line = if has_folding {
-            let mut display_row = 0;
-            let mut buffer_line = 0;
-            while buffer_line < total_lines && display_row < visible_start_row {
-                if !text.fold.is_line_hidden(buffer_line) {
-                    display_row += 1;
-                }
-                buffer_line += 1;
-            }
-            buffer_line
-        } else {
-            visible_start_row.min(total_lines)
-        };
-
-        let mut current_display_row: usize = if has_folding {
-            let mut display_row = 0;
-            for bl in 0..start_buffer_line {
-                if !text.fold.is_line_hidden(bl) {
-                    display_row += 1;
-                }
-            }
-            display_row
-        } else {
-            start_buffer_line
-        };
 
         let mut new_rects: Vec<RectOverlay> = Vec::new();
-        for buffer_line in start_buffer_line..total_lines {
-            if text.fold.is_line_hidden(buffer_line) {
-                continue;
-            }
-            if current_display_row > visible_end_row {
-                break;
-            }
-
-            let line = text.buffer.line(buffer_line);
+        for (buffer_line, display_row) in
+            visible_display_rows(rv.fold, rv.buffer.len_lines(), m.line_height, rv.scroll.y, m.viewport_height)
+        {
+            let line = rv.buffer.line(buffer_line);
             let mut leading_spaces = 0;
             for c in line.chars() {
                 match c {
@@ -432,9 +424,9 @@ pub(crate) fn update_indent_guides(
             let indent_levels = leading_spaces / indent_size;
 
             for level in 0..indent_levels {
-                let x = (level * indent_size) as f32 * char_width;
+                let x = (level * indent_size) as f32 * m.char_width;
                 new_rects.push(RectOverlay {
-                    display_row: current_display_row as u32,
+                    display_row: display_row as u32,
                     x_range: x..(x + 1.0),
                     vertical: RowVertical::FullLeaded,
                     color: theme.indent_guide,
@@ -442,8 +434,6 @@ pub(crate) fn update_indent_guides(
                     corners: bevy_instanced_text::CornerRadii::ZERO,
                 });
             }
-
-            current_display_row += 1;
         }
 
         if guide_rects.0 != new_rects {
@@ -453,16 +443,10 @@ pub(crate) fn update_indent_guides(
 }
 
 /// Push a 1-px vertical `RectOverlay` per ruler column per visible row.
-///
-/// Mirrors `update_indent_guides`'s display-row walk so ruler columns align
-/// with the same row geometry the renderer paints. Skips the write when
-/// no rulers are configured and no rects are currently pushed.
 pub(crate) fn update_rulers(
     mut editor_query: Query<
         (
-            EditorBufferView,
-            EditorLayoutView,
-            EditorFontView,
+            EditorRenderView,
             &EditorTheme,
             &mut RulerRects,
             &Rulers,
@@ -470,7 +454,7 @@ pub(crate) fn update_rulers(
         With<CodeEditor>,
     >,
 ) {
-    for (text, layout_view, font_view, theme, mut ruler_rects, rulers) in editor_query.iter_mut() {
+    for (rv, theme, mut ruler_rects, rulers) in editor_query.iter_mut() {
         if rulers.0.is_empty() {
             if !ruler_rects.0.is_empty() {
                 ruler_rects.0.clear();
@@ -478,60 +462,16 @@ pub(crate) fn update_rulers(
             continue;
         }
 
-        let inv = layout_view.computed.inverse_scale_factor();
-        let line_height = bevy_instanced_text::resolve_line_height(
-            *font_view.line_height,
-            font_view.font.font_size,
-        );
-        let char_width = layout_view.mono.px;
-        let viewport_height = layout_view.computed.size().y * inv;
-
-        let visible_start_row = (layout_view.scroll.y / line_height).floor().max(0.0) as usize;
-        let visible_lines = ((viewport_height / line_height).ceil() as usize) + 2;
-        let visible_end_row = visible_start_row + visible_lines;
-
-        let total_lines = text.buffer.len_lines();
-        let has_folding = !text.fold.regions.is_empty();
-
-        let start_buffer_line = if has_folding {
-            let mut display_row = 0;
-            let mut buffer_line = 0;
-            while buffer_line < total_lines && display_row < visible_start_row {
-                if !text.fold.is_line_hidden(buffer_line) {
-                    display_row += 1;
-                }
-                buffer_line += 1;
-            }
-            buffer_line
-        } else {
-            visible_start_row.min(total_lines)
-        };
-
-        let mut current_display_row: usize = if has_folding {
-            let mut display_row = 0;
-            for bl in 0..start_buffer_line {
-                if !text.fold.is_line_hidden(bl) {
-                    display_row += 1;
-                }
-            }
-            display_row
-        } else {
-            start_buffer_line
-        };
+        let m = rv.metrics();
 
         let mut new_rects: Vec<RectOverlay> = Vec::new();
-        for buffer_line in start_buffer_line..total_lines {
-            if text.fold.is_line_hidden(buffer_line) {
-                continue;
-            }
-            if current_display_row > visible_end_row {
-                break;
-            }
-
+        for (_buffer_line, display_row) in
+            visible_display_rows(rv.fold, rv.buffer.len_lines(), m.line_height, rv.scroll.y, m.viewport_height)
+        {
             for ruler in &rulers.0 {
-                let x = ruler.column as f32 * char_width;
+                let x = ruler.column as f32 * m.char_width;
                 new_rects.push(RectOverlay {
-                    display_row: current_display_row as u32,
+                    display_row: display_row as u32,
                     x_range: x..(x + 1.0),
                     vertical: RowVertical::FullLeaded,
                     color: ruler.color.unwrap_or(theme.indent_guide),
@@ -539,8 +479,6 @@ pub(crate) fn update_rulers(
                     corners: bevy_instanced_text::CornerRadii::ZERO,
                 });
             }
-
-            current_display_row += 1;
         }
 
         if ruler_rects.0 != new_rects {
@@ -557,8 +495,7 @@ pub(crate) fn update_rulers(
 pub(crate) fn update_fold_highlights(
     mut editor_query: Query<
         (
-            EditorBufferView,
-            EditorLayoutView,
+            EditorRenderView,
             &EditorTheme,
             &mut FoldHighlightRects,
             &Folding,
@@ -566,7 +503,7 @@ pub(crate) fn update_fold_highlights(
         With<CodeEditor>,
     >,
 ) {
-    for (text, layout_view, theme, mut fold_rects, folding) in editor_query.iter_mut() {
+    for (rv, theme, mut fold_rects, folding) in editor_query.iter_mut() {
         if !folding.highlight {
             if !fold_rects.0.is_empty() {
                 fold_rects.0.clear();
@@ -574,7 +511,7 @@ pub(crate) fn update_fold_highlights(
             continue;
         }
 
-        let folded_regions: Vec<usize> = text
+        let folded_regions: Vec<usize> = rv
             .fold
             .regions
             .iter()
@@ -589,15 +526,14 @@ pub(crate) fn update_fold_highlights(
             continue;
         }
 
-        let inv = layout_view.computed.inverse_scale_factor();
-        let viewport_width = layout_view.computed.size().x * inv;
+        let m = rv.metrics();
 
         let mut new_rects: Vec<RectOverlay> = Vec::with_capacity(folded_regions.len());
         for start_line in folded_regions {
-            let display_row = text.fold.actual_to_display_line(start_line) as u32;
+            let display_row = rv.fold.actual_to_display_line(start_line) as u32;
             new_rects.push(RectOverlay {
                 display_row,
-                x_range: 0.0..viewport_width,
+                x_range: 0.0..m.viewport_width,
                 vertical: RowVertical::Full,
                 color: theme.fold_marker,
                 z: -1,
@@ -626,13 +562,10 @@ pub(crate) fn update_fold_highlights(
 /// Tab columns are computed by walking the line and snapping to the next
 /// `indentation.tab_size` boundary so the marker bar spans the actual
 /// tab-stop width, not a fixed char cell.
-#[allow(clippy::type_complexity)]
 pub(crate) fn update_whitespace_markers(
     mut editor_query: Query<
         (
-            EditorBufferView,
-            EditorLayoutView,
-            EditorFontView,
+            EditorRenderView,
             Option<&HiddenLines>,
             Option<&TextBounds>,
             &EditorTheme,
@@ -644,7 +577,7 @@ pub(crate) fn update_whitespace_markers(
         With<CodeEditor>,
     >,
 ) {
-    for (buf, layout_view, font_view, hidden, bounds, theme, render, sel, indentation, mut rects) in
+    for (rv, hidden, bounds, theme, render, sel, indentation, mut rects) in
         editor_query.iter_mut()
     {
         if matches!(render.render_whitespace, RenderWhitespace::None) {
@@ -654,22 +587,15 @@ pub(crate) fn update_whitespace_markers(
             continue;
         }
 
-        let char_width = layout_view.mono.px;
-        let line_height = bevy_instanced_text::resolve_line_height(
-            *font_view.line_height,
-            font_view.font.font_size,
-        );
-        let inv = layout_view.computed.inverse_scale_factor();
-        let viewport_height = layout_view.computed.size().y * inv;
-        let text_area_top = layout_view.computed.content_inset().min_inset.y * inv;
+        let m = rv.metrics();
         let wrap_cfg = bounds.copied().unwrap_or_default();
         let visible = visible_buffer_range(
-            &**buf.buffer,
-            layout_view.scroll.y,
-            viewport_height,
-            text_area_top,
-            line_height,
-            char_width,
+            &**rv.buffer,
+            rv.scroll.y,
+            m.viewport_height,
+            m.text_area_top,
+            m.line_height,
+            m.char_width,
             wrap_cfg,
             hidden,
         );
@@ -696,11 +622,11 @@ pub(crate) fn update_whitespace_markers(
 
         if visible.start < visible.end {
             for buffer_line in visible.start..visible.end {
-                if buf.fold.is_line_hidden(buffer_line) {
+                if rv.fold.is_line_hidden(buffer_line) {
                     continue;
                 }
-                let line = buf.buffer.line(buffer_line);
-                let line_start_char = buf.buffer.line_to_char(buffer_line);
+                let line = rv.buffer.line(buffer_line);
+                let line_start_char = rv.buffer.line_to_char(buffer_line);
                 let line_chars = line.len_chars();
                 if line_chars == 0 {
                     continue;
@@ -710,7 +636,7 @@ pub(crate) fn update_whitespace_markers(
                 let trim_end_col = line_trim_end_col(&chars);
                 let leading_end_col = line_leading_ws_end_col(&chars);
 
-                let display_row = buf.fold.actual_to_display_line(buffer_line) as u32;
+                let display_row = rv.fold.actual_to_display_line(buffer_line) as u32;
 
                 let mut visual_col = 0usize;
                 for (col, ch) in chars.iter().enumerate() {
@@ -739,10 +665,10 @@ pub(crate) fn update_whitespace_markers(
                         }
                     };
                     if show {
-                        let x_start = visual_col as f32 * char_width;
+                        let x_start = visual_col as f32 * m.char_width;
                         if is_space {
-                            let dot_half = (char_width * 0.07).max(0.4);
-                            let center = x_start + char_width * 0.5;
+                            let dot_half = (m.char_width * 0.07).max(0.4);
+                            let center = x_start + m.char_width * 0.5;
                             new_rects.push(RectOverlay {
                                 display_row,
                                 x_range: (center - dot_half)..(center + dot_half),
@@ -754,8 +680,8 @@ pub(crate) fn update_whitespace_markers(
                                 corners: bevy_instanced_text::CornerRadii::ZERO,
                             });
                         } else {
-                            let x_end = (visual_col + tab_advance) as f32 * char_width;
-                            let pad = char_width * 0.25;
+                            let x_end = (visual_col + tab_advance) as f32 * m.char_width;
+                            let pad = m.char_width * 0.25;
                             new_rects.push(RectOverlay {
                                 display_row,
                                 x_range: (x_start + pad)..(x_end - pad).max(x_start + pad + 1.0),
@@ -831,37 +757,26 @@ pub(crate) fn should_auto_scroll(
 }
 
 pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
-    for (buf, layout, fonts, mut scroll_target) in editor_query.iter_mut() {
-        let cursor_pos = scroll_target.cursor.cursor_pos.min(buf.buffer.len_chars());
+    for (rv, mut scroll_target) in editor_query.iter_mut() {
+        let cursor_pos = scroll_target.cursor.cursor_pos.min(rv.buffer.len_chars());
         scroll_target.cursor.last_cursor_pos = cursor_pos;
-        let line_height =
-            bevy_instanced_text::resolve_line_height(*fonts.line_height, fonts.font.font_size);
-        let inv = layout.computed.inverse_scale_factor();
-        let viewport_height = layout.computed.size().y * inv;
-        if viewport_height < 1.0 || line_height < 1.0 {
+        let m = rv.metrics();
+        if m.viewport_height < 1.0 || m.line_height < 1.0 {
             continue;
         }
-        let line_index = buf.buffer.char_to_line(cursor_pos);
-        let viewport_width = layout.computed.size().x * inv;
-        let text_area_top = layout.computed.content_inset().min_inset.y * inv;
-        let text_area_left = layout.computed.content_inset().min_inset.x * inv;
+        let line_index = rv.buffer.char_to_line(cursor_pos);
 
-        // Animator-target-relative cursor pos: where the cursor *will be*
-        // after the current animation lands. Stacks repeated cursor moves
-        // monotonically instead of fighting the animator.
-        // When the animator has no in-flight target (just woke up), seed from
-        // the current ScrollPosition so we don't snap.
         let mut target =
-            if scroll_target.animator.target == Vec2::ZERO && layout.scroll.0 != Vec2::ZERO {
-                layout.scroll.0
+            if scroll_target.animator.target == Vec2::ZERO && rv.scroll.0 != Vec2::ZERO {
+                rv.scroll.0
             } else {
                 scroll_target.animator.target
             };
-        let cursor_y = text_area_top - target.y + line_index as f32 * line_height;
+        let cursor_y = m.text_area_top - target.y + line_index as f32 * m.line_height;
 
-        let margin_vertical = line_height * 2.0;
+        let margin_vertical = m.line_height * 2.0;
         let visible_top = margin_vertical;
-        let visible_bottom = viewport_height - margin_vertical;
+        let visible_bottom = m.viewport_height - margin_vertical;
 
         let mut vertical_changed = true;
         if cursor_y < visible_top {
@@ -873,39 +788,35 @@ pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
         }
 
         if vertical_changed {
-            let line_count = buf.buffer.len_lines();
-            let content_height = line_count as f32 * line_height;
-            let max_scroll = (content_height - viewport_height + text_area_top).max(0.0);
+            let line_count = rv.buffer.len_lines();
+            let content_height = line_count as f32 * m.line_height;
+            let max_scroll = (content_height - m.viewport_height + m.text_area_top).max(0.0);
             target.y = target.y.clamp(0.0, max_scroll);
         }
 
-        // === HORIZONTAL AUTO-SCROLL ===
-        // Skip entirely when soft-wrap is on: content cannot extend past the
-        // viewport, so there's nothing to chase horizontally.
         let wrap_on = scroll_target.bounds.is_some_and(|b| b.width.is_some());
         if wrap_on {
             target.x = 0.0;
         } else {
-            let line_start = buf.buffer.line_to_char(line_index);
+            let line_start = rv.buffer.line_to_char(line_index);
             let col_index = cursor_pos - line_start;
-            let char_width = layout.mono.px;
-            let cursor_x = col_index as f32 * char_width;
+            let cursor_x = col_index as f32 * m.char_width;
 
             let margin_horizontal = scroll_target
                 .scroll_cfg
                 .reveal_horizontal_right_padding
-                .max(char_width);
+                .max(m.char_width);
             let visible_left = target.x;
-            let visible_right = target.x + viewport_width - text_area_left - margin_horizontal;
+            let visible_right = target.x + m.viewport_width - m.text_area_left - margin_horizontal;
 
             if cursor_x < visible_left {
                 target.x = cursor_x.max(0.0);
             } else if cursor_x > visible_right {
-                target.x = cursor_x - (viewport_width - text_area_left - margin_horizontal);
+                target.x = cursor_x - (m.viewport_width - m.text_area_left - margin_horizontal);
             }
 
             let max_horizontal_scroll =
-                (scroll_target.metrics.max_content_width - viewport_width).max(0.0);
+                (scroll_target.metrics.max_content_width - m.viewport_width).max(0.0);
             target.x = target.x.clamp(0.0, max_horizontal_scroll);
         }
 
