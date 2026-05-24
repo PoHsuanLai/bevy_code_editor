@@ -94,18 +94,57 @@ fn rebuild_markdown(
     for (entity, md, fonts, colors, spacing, scales) in &targets {
         // The host can despawn the markdown root between when this
         // system observed `Changed<Markdown>` and when its commands
-        // apply (popup teardown is a common case). Silenced queues
-        // skip the rebuild if the entity is gone instead of panicking.
-        let Ok(mut entity) = commands.get_entity(entity) else {
+        // apply (popup teardown is a common case). Both halves of the
+        // rebuild — despawn-old-children and spawn-new-children — must
+        // skip if the entity is gone at flush time.
+        //
+        // Earlier this only guarded the despawn half with
+        // `queue_silenced`; the `with_children` half queued spawn
+        // commands unconditionally. When the parent was despawned
+        // between this system and command flush, those spawns
+        // succeeded but their `ChildOf(parent)` pointed at a dead
+        // entity. Bevy stripped the relationship one frame later,
+        // leaving parentless `Node`s floating at viewport (0,0)
+        // full-width with no one to despawn them.
+        //
+        // Fix: do the whole rebuild inside one `queue_silenced`
+        // closure so the despawn + respawn are atomic w.r.t. parent
+        // existence. If the entity is gone at flush time, the entire
+        // closure is skipped — no orphan children get spawned.
+        if commands.get_entity(entity).is_err() {
             continue;
-        };
-        entity.queue_silenced(|mut e: bevy::ecs::world::EntityWorldMut| {
-            e.despawn_related::<bevy::prelude::Children>();
-        });
-        let highlighter = highlighter.as_deref();
-        entity.with_children(|parent| {
-            spawn::spawn_markdown(parent, &md.source, fonts, colors, spacing, scales, highlighter);
-        });
+        }
+        let highlighter = highlighter.as_ref().map(|h| MarkdownHighlighter(h.0.clone()));
+        let md_source = md.source.clone();
+        let fonts = fonts.clone();
+        let colors = colors.clone();
+        let spacing = spacing.clone();
+        let scales = scales.clone();
+        commands
+            .entity(entity)
+            .queue_silenced(move |mut e: bevy::ecs::world::EntityWorldMut| {
+                e.despawn_related::<bevy::prelude::Children>();
+                let parent_id = e.id();
+                // `spawn_markdown` is typed against the command-mode
+                // `ChildSpawnerCommands`, so step out to `Commands` via
+                // `world_scope` to get one. Flushing afterwards keeps the
+                // despawn-then-spawn atomic within the closure.
+                e.world_scope(|world| {
+                    let mut cmds = world.commands();
+                    cmds.entity(parent_id).with_children(|p| {
+                        spawn::spawn_markdown(
+                            p,
+                            &md_source,
+                            &fonts,
+                            &colors,
+                            &spacing,
+                            &scales,
+                            highlighter.as_ref(),
+                        );
+                    });
+                    world.flush();
+                });
+            });
     }
 }
 

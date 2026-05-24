@@ -25,7 +25,9 @@ use super::state::{
     LspCodeActionsPopup, LspCompletionPopup, LspDocumentHighlights, LspHoverPopup, LspInlayHints,
     LspRenamePopup, LspSignatureHelpPopup,
 };
-use bevy_lsp::CodeActionOrCommand;
+use super::systems::DiagnosticMarker;
+use bevy_lsp::{CodeActionOrCommand, ServerCapabilities};
+use lsp_types::DiagnosticSeverity;
 
 /// Hard cap on the hover popup's outer height. Markdown content longer
 /// than this is reachable via vertical scroll inside the popup chrome
@@ -143,7 +145,13 @@ pub fn sync_completion_popup(
     }
 }
 
-/// Sync hover state to marker entity
+/// Sync hover state to marker entity.
+///
+/// Renders the popup from two sources, merged: any [`DiagnosticMarker`]
+/// whose range covers the trigger position is prepended (severity-tagged)
+/// to the LSP `textDocument/hover` content. This makes hovering a squiggle
+/// surface the error/warning message even when the server has no hover
+/// content for that token (matches VSCode behavior).
 pub fn sync_hover_popup(
     mut commands: Commands,
     query: Query<
@@ -153,16 +161,19 @@ pub fn sync_hover_popup(
             &TextBuffer<RopeBuffer>,
             &TextFont,
             &MonoCellWidth,
+            &ServerCapabilities,
+            Option<&bevy_lsp::LspDocument>,
         ),
         With<CodeEditor>,
     >,
     existing: Query<Entity, With<HoverPopupData>>,
+    diagnostics: Query<&DiagnosticMarker>,
 ) {
-    let Ok((editor, hover_state, buffer, font, mono)) = query.single() else {
+    let Ok((editor, hover_state, buffer, font, mono, caps, doc)) = query.single() else {
         return;
     };
 
-    if !hover_state.visible || hover_state.content.is_empty() {
+    if !hover_state.visible {
         for entity in existing.iter() {
             commands
                 .entity(entity)
@@ -172,12 +183,32 @@ pub fn sync_hover_popup(
     }
 
     let (line, character) = buffer_position(buffer, hover_state.trigger_char_index);
+    let trigger_lsp_pos = bevy_lsp::rope_char_to_lsp_position(
+        buffer.rope(),
+        hover_state.trigger_char_index.min(buffer.len_chars()),
+        caps.position_encoding(),
+    );
+
+    let diagnostic_md = collect_diagnostics_md(&diagnostics, doc, trigger_lsp_pos);
+
+    let content = match (diagnostic_md.is_empty(), hover_state.content.is_empty()) {
+        (true, true) => {
+            for entity in existing.iter() {
+                commands
+                    .entity(entity)
+                    .queue_silenced(bevy::ecs::system::entity_command::despawn());
+            }
+            return;
+        }
+        (true, false) => hover_state.content.clone(),
+        (false, true) => diagnostic_md,
+        (false, false) => format!("{diagnostic_md}\n\n---\n\n{}", hover_state.content),
+    };
 
     let font_size = font.font_size * 0.9;
     let padding = 10.0;
 
-    let max_line_chars = hover_state
-        .content
+    let max_line_chars = content
         .lines()
         .map(|l| l.chars().count())
         .max()
@@ -187,7 +218,7 @@ pub fn sync_hover_popup(
     let calculated_width = (max_line_chars as f32 * hover_char_width) + padding * 2.0;
     let box_width = calculated_width.clamp(100.0, 600.0);
 
-    let line_count = hover_state.content.lines().count().max(1);
+    let line_count = content.lines().count().max(1);
     // Plain-text-equivalent height — markdown adds block gaps, code-
     // block padding, etc., so this underestimates. The renderer caps
     // and scrolls instead of trying to measure markdown ahead of time.
@@ -198,7 +229,7 @@ pub fn sync_hover_popup(
         editor,
         line,
         character,
-        content: hover_state.content.clone(),
+        content,
         width: box_width,
         height: box_height,
     };
@@ -213,6 +244,73 @@ pub fn sync_hover_popup(
         commands
             .entity(entity)
             .queue_silenced(bevy::ecs::system::entity_command::despawn());
+    }
+}
+
+/// Build the markdown block for any diagnostics whose range contains
+/// `position`. Empty when no diagnostic covers the position.
+///
+/// Scope is restricted to diagnostics whose URI matches the current
+/// document so multi-editor setups don't bleed messages across files.
+fn collect_diagnostics_md(
+    diagnostics: &Query<&DiagnosticMarker>,
+    doc: Option<&bevy_lsp::LspDocument>,
+    position: lsp_types::Position,
+) -> String {
+    let mut hits: Vec<&DiagnosticMarker> = diagnostics
+        .iter()
+        .filter(|d| doc.is_none_or(|doc| doc.uri == d.uri))
+        .filter(|d| range_contains(d.range, position))
+        .collect();
+    if hits.is_empty() {
+        return String::new();
+    }
+    // Most-severe first (Error < Warning < Information < Hint by LSP's
+    // numeric ordering — `DiagnosticSeverity` implements `Ord` on the
+    // wrapped i32).
+    hits.sort_by_key(|d| d.severity);
+
+    hits.iter()
+        .map(|d| {
+            let label = severity_label(d.severity);
+            // Trim trailing newlines from the server-supplied message
+            // so the joined block has consistent spacing.
+            format!("**{label}:** {}", d.message.trim_end())
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// Does `range` cover position `p` for the purposes of diagnostic
+/// hover-hit-testing?
+///
+/// Mirrors the widening in
+/// [`crate::plugin::diagnostic_underlines::update_diagnostic_underlines`]
+/// for zero-width ranges (start == end, e.g. rust-analyzer's
+/// `expected SEMICOLON` at col 15..15): without widening, the user
+/// would have to land the pointer *exactly* on the empty cell. Treat
+/// zero-width ranges as covering the entire line the diagnostic is on
+/// so hovering anywhere on the line surfaces the message.
+///
+/// LSP ranges are half-open (end-exclusive). The standard branch
+/// rejects `p == end`.
+fn range_contains(range: lsp_types::Range, p: lsp_types::Position) -> bool {
+    if range.start == range.end {
+        return p.line == range.start.line;
+    }
+    let after_start =
+        (p.line, p.character) >= (range.start.line, range.start.character);
+    let before_end = (p.line, p.character) < (range.end.line, range.end.character);
+    after_start && before_end
+}
+
+fn severity_label(severity: DiagnosticSeverity) -> &'static str {
+    match severity {
+        DiagnosticSeverity::ERROR => "Error",
+        DiagnosticSeverity::WARNING => "Warning",
+        DiagnosticSeverity::INFORMATION => "Info",
+        DiagnosticSeverity::HINT => "Hint",
+        _ => "Diagnostic",
     }
 }
 

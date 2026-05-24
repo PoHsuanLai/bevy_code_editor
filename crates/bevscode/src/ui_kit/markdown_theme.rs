@@ -37,11 +37,11 @@ pub fn markdown_theme_from_chrome(
         bold_italic: None,
     };
 
-    // Code blocks mirror tempera's `<kbd>` chip styling (see kbd.rs):
-    // muted background + 1px border, popover-foreground text. The chip
-    // pattern is the only "code-shaped" surface tempera ships, so
-    // matching it keeps hover code blocks visually consistent with the
-    // rest of the chrome.
+    // Fenced code blocks in hover popups render with no background or
+    // border — tree-sitter highlighting from `MarkdownHighlighter` is
+    // the only thing that visually distinguishes them from body prose.
+    // Matches the editor's own buffer rendering, where syntax color
+    // alone carries "this is code."
     //
     // `link` uses `accent_foreground` rather than `primary` because
     // tempera dark themes ship `primary = white`, which is invisibly
@@ -49,8 +49,8 @@ pub fn markdown_theme_from_chrome(
     let colors = MarkdownColors {
         text: chrome.palette.popover_foreground,
         link: chrome.palette.accent_foreground,
-        code_bg: chrome.palette.muted,
-        code_border: chrome.palette.border,
+        code_bg: Color::NONE,
+        code_border: Color::NONE,
         // `inline_code_bg` is the foreground *color* for inline code
         // spans here (the engine has no per-span background in 0.18),
         // so it must be a readable text color. Popover foreground keeps
@@ -69,13 +69,12 @@ pub fn markdown_theme_from_chrome(
         line_height_mul: 1.4,
         block_gap: chrome.spacing.xs,
         list_indent: chrome.spacing.md,
-        // Match tempera kbd's chip padding (~6,4) so the code block
-        // reads as a sibling of inline chips elsewhere in the UI.
-        code_padding: UiRect::axes(Val::Px(chrome.spacing.xs + 2.0), Val::Px(chrome.spacing.xs)),
-        // Crisp corners — popups already round at the outer chrome
-        // (`spacing.corner_radius_small`), so the inner code block
-        // looks sharper and more terminal-like with the micro radius.
-        code_corner_radius: chrome.spacing.corner_radius_micro,
+        // No background ⇒ no padding. The block-margin above/below
+        // (`block_gap`) is still applied by `spawn_code_block` so the
+        // code sits as its own paragraph rather than running into the
+        // surrounding prose.
+        code_padding: UiRect::ZERO,
+        code_corner_radius: 0.0,
         blockquote_border_width: 2.0,
     };
 

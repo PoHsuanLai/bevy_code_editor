@@ -375,12 +375,16 @@ pub fn on_lsp_hover(
         // by then the move observer may have armed several more
         // requests at nearby positions; a strict id-equality check
         // would drop every one of them.
-        if ev.content.is_empty() || !hover_lc.accept_response(ev.id) {
+        if !hover_lc.accept_response(ev.id) {
             continue;
         }
         hover_state.content = ev.content.clone();
         hover_state.kind = ev.kind.clone();
         hover_state.range = ev.range;
+        // Mark visible even when content is empty: sync_hover_popup may
+        // still produce a popup if a diagnostic covers the trigger
+        // position (VSCode shows diagnostics over squiggles even when
+        // the server has no hover content for that position).
         hover_state.visible = true;
         // Publish the range as the hot zone so the move observer
         // doesn't re-arm or dismiss while the pointer wanders within
@@ -784,6 +788,17 @@ pub fn request_inlay_hints(
         && !computed.is_changed()
     {
         return;
+    }
+
+    // The buffer changing invalidates the cache by line number: the line
+    // that *was* `let mut app = App::new()` (with an `app:` parameter hint)
+    // might now be `let zzz = 1`, but the cached `cached_range` still
+    // covers the same line indices, so without this the stale hints would
+    // stick to the new content until the user scrolled. Clearing here
+    // also drops the visible labels immediately while the new request is
+    // in flight, instead of leaving wrong text on-screen for a round trip.
+    if buffer.is_changed() {
+        hint_state.invalidate();
     }
 
     let Some(lsp_document) = lsp_document else {
