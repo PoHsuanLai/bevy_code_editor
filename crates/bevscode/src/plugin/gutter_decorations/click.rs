@@ -47,16 +47,14 @@ pub fn on_glyph_margin_press(
     let Ok((computed, gutter, layout)) = editors.get(entity) else {
         return;
     };
-    if gutter.glyph_margin_width <= 0.0 {
+    if gutter.glyph.is_empty() {
         return;
     }
     let Some(local_pos) = crate::input::mouse::hit_to_local_px(&trigger.event().hit, computed)
     else {
         return;
     };
-    if local_pos.x < gutter.glyph_margin_x
-        || local_pos.x >= gutter.glyph_margin_x + gutter.glyph_margin_width
-    {
+    if local_pos.x < gutter.glyph.left || local_pos.x >= gutter.glyph.right() {
         return;
     }
     let Some(buffer_line) = super::common::buffer_line_at_y(layout, local_pos.y) else {

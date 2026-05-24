@@ -215,24 +215,17 @@ pub(crate) fn sync_gutter_text_view(
             g_node.padding.top = zero;
         }
 
-        // Monaco layout: bands are flush, no inter-band gap. Pad
-        // past the glyph margin on the left so the line-number
-        // digits start at the right edge of the glyph margin; pad
-        // past the line-decorations strip on the right so the
-        // right-aligned digits stop short of the git-change bar.
-        // The fold chevron overlays the line-numbers band (it
-        // doesn't get its own column), so no chevron reservation
-        // here.
-        let target_left = Val::Px(ui.gutter_padding_left + gutter.glyph_margin_width);
+        // Monaco layout: bands are flush, no inter-band gap. The
+        // line-numbers TextView fills the container; left padding
+        // skips the (optional) glyph margin and the gutter's left
+        // pad, right padding skips the decorations band and the
+        // gutter's right pad — leaving the digits right-justified
+        // inside the numbers band exactly.
+        let target_left = Val::Px(gutter.numbers.left);
         if g_node.padding.left != target_left {
             g_node.padding.left = target_left;
         }
-        // Monaco layout: line-numbers band sits between glyph-margin
-        // and line-decorations with no inter-band gap. The TextView
-        // node fills the container, so we pad past the line-decorations
-        // strip on the right so right-justified digits stop short of
-        // the chevron / git bar.
-        let target_right = Val::Px(gutter.line_decorations_width + ui.gutter_padding_right);
+        let target_right = Val::Px(gutter.gutter_width - gutter.numbers.right());
         if g_node.padding.right != target_right {
             g_node.padding.right = target_right;
         }

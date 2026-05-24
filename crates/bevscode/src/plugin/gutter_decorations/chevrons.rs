@@ -124,15 +124,11 @@ pub(crate) fn sync_fold_chevron_icons(
         hovered,
     ) in editors.iter()
     {
-        if gutter.chevron_width <= 0.0 {
+        if gutter.chevron.is_empty() {
             continue;
         }
         let desired = desired_chevrons(fold, folding.show_controls, hovered.0);
 
-        // The chevron column sits *right* of the digits; anchor icons
-        // to the column's left edge with a small leftward overflow so
-        // they sit hard against the digits instead of in dead-centre.
-        let column_left_x = gutter.chevron_x;
         let color = theme.line_numbers;
         let pool = by_editor.entry(editor_entity).or_default();
 
@@ -152,12 +148,11 @@ pub(crate) fn sync_fold_chevron_icons(
                 continue;
             };
 
-            let icon_size = (gutter.chevron_width.min(geom.line_height_px) * tokens.chevron_scale)
+            let icon_size = (gutter.chevron.width.min(geom.line_height_px) * tokens.chevron_scale)
                 .round()
                 .max(8.0);
-            let nudge_left = (geom.line_height_px * 0.2).round();
             let optical_lift = (geom.line_height_px * 0.05).round();
-            let icon_left = (column_left_x - nudge_left).round();
+            let icon_left = gutter.chevron.place_square(icon_size).round();
             // Bias the icon slightly above geometric centre so it
             // tracks the digits' optical centre (which sits above
             // the row's mid-line because of the descender).

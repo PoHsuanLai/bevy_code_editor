@@ -41,29 +41,61 @@ pub enum LineNumbers {
     Interval,
 }
 
-/// Resolved gutter geometry, populated every frame by `sync_gutter_width`.
-/// Read by line-number rendering and fold gutter hit-testing.
-/// Do not set manually — it is derived from `EditorUi` + `TextFont`.
+/// Resolved gutter geometry. Single per-editor source of truth for
+/// column widths and offsets. Populated by `resolve_gutter_layout`;
+/// every other gutter system reads it and never recomputes offsets.
 ///
-/// Column layout (left to right):
-/// `[ line-decorations | line-numbers | glyph-margin | fold-chevrons | text ]`
+/// Column model (Monaco parity, left → right):
+/// `[ pad_l | glyph | numbers | decorations(chevron|bar) | pad_r | code_margin ]`
 ///
-/// `*_x` fields are the left edge of each sub-band relative to the gutter
-/// left edge. `*_width` is each band's width. Hosts/observers walk these
-/// to position overlays (negative `x_range` in the overlay coordinate
-/// space puts them in the gutter) or to hit-test clicks per band.
-#[derive(Component, Clone, Copy, Debug, Default, Reflect)]
-#[reflect(Component, Default, Debug)]
+/// Invariants:
+/// - `gutter_width == sum(band widths) + ui.gutter_padding_left + ui.gutter_padding_right`
+/// - For adjacent bands B1, B2: `B1.right() == B2.left`.
+/// - `editor_padding_left == gutter_width + ui.code_margin_left` —
+///   `Node::padding.left` on the editor is derived from this, so the
+///   gutter container width and editor's left padding cannot drift.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Reflect)]
+#[reflect(Component, Default, Debug, PartialEq)]
 pub struct GutterConfig {
     pub gutter_width: f32,
-    pub line_decorations_x: f32,
-    pub line_decorations_width: f32,
-    pub line_numbers_x: f32,
-    pub line_numbers_width: f32,
-    pub glyph_margin_x: f32,
-    pub glyph_margin_width: f32,
-    pub chevron_x: f32,
-    pub chevron_width: f32,
+    pub editor_padding_left: f32,
+    pub line_height_px: f32,
+
+    pub glyph: GutterBand,
+    pub numbers: GutterBand,
+    /// Outer band that contains both the fold chevron (left half) and
+    /// the line-decoration bar (right edge).
+    pub decorations: GutterBand,
+    pub chevron: GutterBand,
+    pub bar: GutterBand,
+}
+
+/// One column in the gutter — its left edge (in `GutterContainer`-local
+/// pixels) and its width. `width == 0.0` means the band is disabled.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Reflect)]
+#[reflect(Debug, Default, PartialEq)]
+pub struct GutterBand {
+    pub left: f32,
+    pub width: f32,
+}
+
+impl GutterBand {
+    pub fn right(&self) -> f32 {
+        self.left + self.width
+    }
+
+    pub fn center(&self) -> f32 {
+        self.left + self.width * 0.5
+    }
+
+    /// Top-left x of a square icon `size` px wide, centered in this band.
+    pub fn place_square(&self, size: f32) -> f32 {
+        self.left + (self.width - size) * 0.5
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.width <= 0.0
+    }
 }
 
 impl Default for EditorUi {

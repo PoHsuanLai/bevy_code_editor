@@ -77,15 +77,21 @@ impl Plugin for EditorUiPlugin {
         app.add_systems(Update, sync_cursor_icon);
         app.add_systems(Update, sync_automatic_layout);
 
-        // Update separator position when ComputedNode changes (driven by Bevy UI layout).
-        app.add_systems(Update, update_separator_on_resize.run_if(viewport_changed));
+        // Update separator position when the viewport resizes OR when
+        // the resolved gutter width changes (digit-count grew, glyph
+        // margin toggled, fold controls toggled, …).
+        app.add_systems(
+            Update,
+            update_separator_on_resize.run_if(viewport_or_gutter_changed),
+        );
 
         app.add_systems(
             PostUpdate,
             (
-                sync_gutter_width,
-                sync_gutter_container.after(sync_gutter_width),
-                sync_gutter_text_font.after(sync_gutter_width),
+                resolve_gutter_layout,
+                apply_editor_padding.after(resolve_gutter_layout),
+                sync_gutter_container.after(resolve_gutter_layout),
+                sync_gutter_text_font.after(resolve_gutter_layout),
                 sync_gutter_text_view.after(sync_gutter_text_font),
             )
                 .before(bevy_instanced_text::LayoutProduceSet),
@@ -329,16 +335,6 @@ fn sync_node_from_window(
     }
 }
 
-/// Sync gutter geometry into `Node::padding` and `GutterConfig.gutter_width`
-/// from `EditorUi` + `TextFont`.
-///
-/// `padding.left`  = gutter_width + code_margin_left  (→ ComputedNode::content_inset)
-/// `padding.top`   = margin_top                        (→ ComputedNode::content_inset)
-/// `gutter_width` on `GutterConfig` is kept for gpu_line_numbers positioning,
-/// which needs the gutter sub-region width separately from total padding.
-///
-/// Runs every frame (not change-filtered) so async `char_width` updates
-/// from `update_font_metrics` are picked up immediately.
 /// Mirror `Indentation` (Monaco-shaped surface in bevscode) into
 /// `IndentConfig` (the widget-layer Component the Tab / typing handlers
 /// read). Fires on insert *and* on replace of `Indentation`, so the
@@ -575,116 +571,130 @@ fn sync_cursor_icon(
     }
 }
 
-fn sync_gutter_width(
+/// Resolve every gutter column's width and left-edge for each editor
+/// in one top-down pass, then publish the result as a `GutterConfig`.
+///
+/// Monaco parity (`src/vs/editor/common/config/editorOptions.ts`,
+/// `EditorLayoutInfoComputer.computeLayout`):
+///   `[ pad_l | glyph | numbers | decorations(chevron|bar) | pad_r ]`
+///
+/// The left chain is built strictly left-to-right — a width change in
+/// any upstream band cascades to every downstream `left` in the same
+/// frame, with no per-decoration recomputation downstream.
+///
+/// Runs every frame (not `Changed`-filtered) so async `char_width`
+/// updates from `update_font_metrics` land immediately.
+fn resolve_gutter_layout(
     mut editors: Query<
         (
-            &mut Node,
             &mut GutterConfig,
             &MonoCellWidth,
             &TextFont,
             &bevy::text::LineHeight,
             &EditorUi,
-            &crate::settings::Padding,
             &crate::settings::Folding,
             &bevy_instanced_text::TextBuffer<bevy_instanced_text_editor::RopeBuffer>,
         ),
         With<CodeEditor>,
     >,
 ) {
-    for (mut node, mut gutter_config, mono, font, line_height, ui, padding, folding, buffer) in
-        editors.iter_mut()
-    {
+    for (mut cfg, mono, font, line_height, ui, folding, buffer) in editors.iter_mut() {
         let show_numbers = !matches!(ui.line_numbers, crate::settings::LineNumbers::Off);
-        // Monaco: line-numbers band sizes to `max(digitCount, minChars)`.
-        // Without this, a small file with `minChars=5` leaves three
-        // unused char slots to the left of every two-digit number,
-        // looking like asymmetric padding.
-        let line_count = buffer.len_lines().max(1) as u32;
-        let digit_count = digit_count_for(line_count);
-        let min_chars = digit_count.max(ui.line_numbers_min_chars).max(1) as f32;
-        let line_height_px = bevy_instanced_text::resolve_line_height(*line_height, font.font_size);
-        // Monaco layout (src/vs/editor/common/config/editorOptions.ts,
-        // `EditorLayoutInfoComputer.computeLayout`):
-        //   [ glyph-margin | line-numbers | line-decorations | text ]
-        // - glyph-margin = lineHeight × decoration-lane-count (1 by default)
-        // - line-numbers = max(digitCount, minChars) × maxDigitWidth
-        // - line-decorations = ui.line_decorations_width (default 10);
-        //   +16 when folding is enabled (chevron lives inside this band)
-        // - chevron sits at the LEFT edge of line-decorations (the +16 slot)
-        // - git-change bar sits at the RIGHT edge of line-decorations
-        // No inter-band gaps.
         let folding_enabled = matches!(
             folding.show_controls,
             crate::settings::ShowFoldingControls::Always
                 | crate::settings::ShowFoldingControls::Mouseover
         );
-        // Match the glyph-margin's "line-height × 1 lane" sizing so the
-        // chevron column scales with the font instead of staying pinned
-        // at 16 px.
-        let chevron_width = if folding_enabled {
-            line_height_px.max(16.0)
-        } else {
-            0.0
-        };
-        let line_decorations_width = ui.line_decorations_width.max(0.0) + chevron_width;
-        let glyph_margin_width = if ui.glyph_margin {
-            // Monaco sizes the glyph margin to the line height. The
-            // host-facing `ui.glyph_margin_width` acts as a floor —
-            // small text shouldn't squash the band below an icon's
-            // minimum readable size.
+        let line_count = buffer.len_lines().max(1) as u32;
+        let digit_count = digit_count_for(line_count);
+        let min_chars = digit_count.max(ui.line_numbers_min_chars).max(1) as f32;
+        let line_height_px = bevy_instanced_text::resolve_line_height(*line_height, font.font_size);
+
+        // 1) Widths — each band independent, then a chevron-bearing
+        //    decorations band combining the chevron sub-column and the
+        //    user-configured bar width.
+        let glyph_w = if ui.glyph_margin {
+            // Monaco sizes the glyph margin to line-height; `ui.glyph_margin_width`
+            // is a floor so small text never squashes icons below readability.
             line_height_px.max(ui.glyph_margin_width)
         } else {
             0.0
         };
-        let line_numbers_width = if show_numbers {
-            mono.px * min_chars
+        let numbers_w = if show_numbers { mono.px * min_chars } else { 0.0 };
+        // Chevron column scales with line-height (Monaco does the same)
+        // with a 16 px floor for tiny font sizes.
+        let chevron_w = if folding_enabled {
+            line_height_px.max(16.0)
         } else {
             0.0
         };
-        let total_columns_width = glyph_margin_width + line_numbers_width + line_decorations_width;
-        let any_band = total_columns_width > 0.0;
-        let gutter_width = if any_band {
-            ui.gutter_padding_left + ui.gutter_padding_right + total_columns_width
+        let bar_w = ui.line_decorations_width.max(0.0);
+        let decorations_w = chevron_w + bar_w;
+        let bands_w = glyph_w + numbers_w + decorations_w;
+        let gutter_width = if bands_w > 0.0 {
+            ui.gutter_padding_left + ui.gutter_padding_right + bands_w
         } else {
             0.0
         };
 
-        let glyph_margin_x = ui.gutter_padding_left;
-        let line_numbers_x = glyph_margin_x + glyph_margin_width;
-        let line_decorations_x = line_numbers_x + line_numbers_width;
-        // Chevron occupies the LEFT 16 px of the line-decorations band;
-        // bar occupies the RIGHT 2 px. CSS-style sub-positioning.
-        let chevron_x = line_decorations_x;
+        // 2) Left chain — single pass, every band starts where the
+        //    previous ended.
+        let mut x = ui.gutter_padding_left;
+        let glyph = GutterBand { left: x, width: glyph_w };
+        x += glyph_w;
+        let numbers = GutterBand { left: x, width: numbers_w };
+        x += numbers_w;
+        let decorations = GutterBand { left: x, width: decorations_w };
+        let chevron = GutterBand { left: x, width: chevron_w };
+        x += chevron_w;
+        let bar = GutterBand { left: x, width: bar_w };
 
-        let padding_left = Val::Px(gutter_width + ui.code_margin_left);
-        let padding_top = Val::Px(padding.top);
-        let padding_bottom = Val::Px(padding.bottom);
-        if node.padding.left != padding_left
-            || node.padding.top != padding_top
-            || node.padding.bottom != padding_bottom
-        {
-            node.padding.left = padding_left;
-            node.padding.top = padding_top;
-            node.padding.bottom = padding_bottom;
-        }
         let next = GutterConfig {
             gutter_width,
-            line_decorations_x,
-            line_decorations_width,
-            line_numbers_x,
-            line_numbers_width,
-            glyph_margin_x,
-            glyph_margin_width,
-            chevron_x,
-            chevron_width,
+            editor_padding_left: gutter_width + ui.code_margin_left,
+            line_height_px,
+            glyph,
+            numbers,
+            decorations,
+            chevron,
+            bar,
         };
-        if (gutter_config.gutter_width - next.gutter_width).abs() > 0.01
-            || (gutter_config.line_decorations_width - next.line_decorations_width).abs() > 0.01
-            || (gutter_config.glyph_margin_width - next.glyph_margin_width).abs() > 0.01
-            || (gutter_config.chevron_width - next.chevron_width).abs() > 0.01
-            || (gutter_config.line_numbers_width - next.line_numbers_width).abs() > 0.01
-        {
-            *gutter_config = next;
+        // PartialEq is exact, but every input is rounded or clamped
+        // before arriving here (font-size px, mono.px which is itself
+        // measured + dirty-thresholded). Avoids the change-detection
+        // flicker of the old per-field epsilon comparison.
+        if *cfg != next {
+            *cfg = next;
+        }
+    }
+}
+
+/// Mirror `GutterConfig::editor_padding_left` onto the editor's
+/// `Node::padding`, along with the host's vertical padding. Splitting
+/// this out of `resolve_gutter_layout` is what stops `Node.padding.left`
+/// and `GutterContainer.width` from drifting — both now derive from the
+/// same `GutterConfig`.
+fn apply_editor_padding(
+    mut editors: Query<
+        (&mut Node, &GutterConfig, &crate::settings::Padding),
+        (
+            With<CodeEditor>,
+            Or<(Changed<GutterConfig>, Changed<crate::settings::Padding>)>,
+        ),
+    >,
+) {
+    for (mut node, cfg, padding) in editors.iter_mut() {
+        let l = Val::Px(cfg.editor_padding_left);
+        let t = Val::Px(padding.top);
+        let b = Val::Px(padding.bottom);
+        if node.padding.left != l {
+            node.padding.left = l;
+        }
+        if node.padding.top != t {
+            node.padding.top = t;
+        }
+        if node.padding.bottom != b {
+            node.padding.bottom = b;
         }
     }
 }
@@ -733,7 +743,15 @@ fn setup_editor_ui(
     }
 }
 
-fn viewport_changed(query: Query<(), (With<CodeEditor>, Changed<ComputedNode>)>) -> bool {
+fn viewport_or_gutter_changed(
+    query: Query<
+        (),
+        (
+            With<CodeEditor>,
+            Or<(Changed<ComputedNode>, Changed<GutterConfig>)>,
+        ),
+    >,
+) -> bool {
     !query.is_empty()
 }
 

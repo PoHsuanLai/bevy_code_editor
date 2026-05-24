@@ -105,7 +105,7 @@ pub(crate) fn sync_gutter_icons(
     for (editor_entity, markers, decorations, gutter, ui, font, line_height, padding, layout) in
         editors.iter()
     {
-        if !ui.glyph_margin || gutter.glyph_margin_width <= 0.0 {
+        if !ui.glyph_margin || gutter.glyph.is_empty() {
             continue;
         }
 
@@ -121,11 +121,6 @@ pub(crate) fn sync_gutter_icons(
 
         let pool = by_editor.entry(editor_entity).or_default();
 
-        // The glyph-margin column is *left* of the digits; anchor icons
-        // to the column's right edge with a small overflow so they sit
-        // hard against the digits instead of in dead-centre.
-        let column_right_x = gutter.glyph_margin_x + gutter.glyph_margin_width;
-
         // Pool slot N corresponds to `desired[N]` permanently across
         // frames. Hidden lines (collapsed inside a fold) get their slot
         // hidden in place rather than skipped-and-compacted, so the
@@ -140,13 +135,12 @@ pub(crate) fn sync_gutter_icons(
             let handle = handle.clone();
 
             if let Some(geom) = geom {
-                let icon_size = (gutter.glyph_margin_width.min(geom.line_height_px)
+                let icon_size = (gutter.glyph.width.min(geom.line_height_px)
                     * tokens.glyph_icon_scale)
                     .round()
                     .max(8.0);
-                let nudge_right = (geom.line_height_px * 0.2).round();
                 let optical_lift = (geom.line_height_px * 0.05).round();
-                let icon_left = (column_right_x - icon_size + nudge_right).round();
+                let icon_left = gutter.glyph.place_square(icon_size).round();
                 // Bias the icon slightly above geometric centre so it
                 // tracks the digits' optical centre (which sits above
                 // the row's mid-line because of the descender).

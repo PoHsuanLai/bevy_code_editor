@@ -105,14 +105,15 @@ pub(crate) fn sync_gutter_decoration_bars(
     );
 
     for (editor_entity, decorations, gutter, font, line_height, padding, layout) in editors.iter() {
-        if gutter.line_decorations_width <= 0.0 {
+        if gutter.bar.is_empty() {
             continue;
         }
 
-        let bar_width: f32 = tokens.bar_width.min(gutter.line_decorations_width);
-        // Bar sits 6 px right of the line-decorations band's left
-        // edge — small breathing room from the digits.
-        let bar_left = (gutter.line_decorations_x + 6.0).round().max(0.0);
+        let bar_width: f32 = tokens.bar_width.min(gutter.bar.width);
+        // Bar centered inside its sub-column at the right edge of the
+        // decorations band. Centering keeps the bar in place when the
+        // chevron sub-column toggles on/off (folding controls visible).
+        let bar_left = gutter.bar.place_square(bar_width).round().max(0.0);
         let bar_radius = tokens.bar_radius.max(0.5);
 
         let active: Vec<&LineDecoration> = decorations

@@ -201,9 +201,9 @@ pub fn on_fold_gutter_press(
             | crate::settings::ShowFoldingControls::Mouseover
     );
     let strip_start = if chevron_active {
-        gutter.chevron_x
+        gutter.chevron.left
     } else {
-        gutter.glyph_margin_x
+        gutter.glyph.left
     };
     let strip_end = gutter.gutter_width + 5.0;
     if local_pos.x < strip_start || local_pos.x >= strip_end {
