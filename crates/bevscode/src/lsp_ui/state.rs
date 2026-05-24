@@ -872,8 +872,8 @@ impl PopupLifecycleData {
         let Some(range) = self.hot_zone else {
             return false;
         };
-        let after_start = (position.line, position.character)
-            >= (range.start.line, range.start.character);
+        let after_start =
+            (position.line, position.character) >= (range.start.line, range.start.character);
         let before_end =
             (position.line, position.character) <= (range.end.line, range.end.character);
         after_start && before_end
@@ -951,10 +951,7 @@ mod tests {
         let mut lc = PopupLifecycleData::default();
         let id_before = lc.new_request();
         lc.popup_entity = Some(Entity::from_raw_u32(42).unwrap());
-        lc.hot_zone = Some(Range::new(
-            Position::new(0, 0),
-            Position::new(0, 5),
-        ));
+        lc.hot_zone = Some(Range::new(Position::new(0, 0), Position::new(0, 5)));
         lc.arm_dismiss(200);
         lc.pointer_in_popup = true;
 
@@ -977,11 +974,10 @@ mod tests {
 
     #[test]
     fn hot_zone_contains_inclusive_at_boundaries() {
-        let mut lc = PopupLifecycleData::default();
-        lc.hot_zone = Some(Range::new(
-            Position::new(2, 4),
-            Position::new(2, 10),
-        ));
+        let lc = PopupLifecycleData {
+            hot_zone: Some(Range::new(Position::new(2, 4), Position::new(2, 10))),
+            ..Default::default()
+        };
         assert!(lc.hot_zone_contains(Position::new(2, 4)));
         assert!(lc.hot_zone_contains(Position::new(2, 7)));
         assert!(lc.hot_zone_contains(Position::new(2, 10)));

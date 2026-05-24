@@ -206,9 +206,7 @@ fn install_default_initialize(handlers: &HandlerMap, capabilities: ServerCapabil
 }
 
 fn install_default_shutdown(handlers: &HandlerMap) {
-    let h: HandlerFn = Box::new(|_params: JsonValue| {
-        Box::pin(async move { Ok(JsonValue::Null) })
-    });
+    let h: HandlerFn = Box::new(|_params: JsonValue| Box::pin(async move { Ok(JsonValue::Null) }));
     handlers.lock().unwrap().insert(Shutdown::METHOD, h);
 }
 
@@ -285,8 +283,10 @@ mod tests {
     fn initialize_handshake_roundtrips_capabilities() {
         ensure_pool();
 
-        let mut caps = ServerCapabilities::default();
-        caps.hover_provider = Some(lsp_types::HoverProviderCapability::Simple(true));
+        let caps = ServerCapabilities {
+            hover_provider: Some(lsp_types::HoverProviderCapability::Simple(true)),
+            ..Default::default()
+        };
 
         let (transport, _fake) = FakeLanguageServer::new(caps.clone());
 

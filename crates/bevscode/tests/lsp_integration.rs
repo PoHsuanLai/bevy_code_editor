@@ -126,8 +126,10 @@ impl LspTestContext {
 /// `LspClient`. If this fails, the whole harness is broken.
 #[test]
 fn initialize_handshake_completes() {
-    let mut caps = ServerCapabilities::default();
-    caps.hover_provider = Some(lsp_types::HoverProviderCapability::Simple(true));
+    let caps = ServerCapabilities {
+        hover_provider: Some(lsp_types::HoverProviderCapability::Simple(true)),
+        ..Default::default()
+    };
     let mut ctx = LspTestContext::new(caps);
     ctx.initialize();
 
@@ -185,11 +187,12 @@ fn server_publishdiagnostics_emits_message() {
     ctx.initialize();
 
     let diag_uri = ctx.uri.clone();
-    ctx.fake.notify::<PublishDiagnostics>(PublishDiagnosticsParams {
-        uri: diag_uri.clone(),
-        diagnostics: vec![],
-        version: Some(7),
-    });
+    ctx.fake
+        .notify::<PublishDiagnostics>(PublishDiagnosticsParams {
+            uri: diag_uri.clone(),
+            diagnostics: vec![],
+            version: Some(7),
+        });
 
     let saw_diag = ctx.run_until(Duration::from_secs(5), |app, _| {
         let messages = app
@@ -198,7 +201,10 @@ fn server_publishdiagnostics_emits_message() {
         let mut reader = messages.get_cursor();
         reader.read(messages).any(|m| m.uri == diag_uri)
     });
-    assert!(saw_diag, "LspDiagnosticsUpdated for {diag_uri} never emitted");
+    assert!(
+        saw_diag,
+        "LspDiagnosticsUpdated for {diag_uri} never emitted"
+    );
 }
 
 /// Pre-init queue: a notification sent BEFORE `initialize` completes should
@@ -252,17 +258,20 @@ fn completion_roundtrip_emits_response() {
     use lsp_types::request::Completion;
     use lsp_types::{CompletionItem, CompletionResponse, Position};
 
-    let mut caps = ServerCapabilities::default();
-    caps.completion_provider = Some(lsp_types::CompletionOptions::default());
+    let caps = ServerCapabilities {
+        completion_provider: Some(lsp_types::CompletionOptions::default()),
+        ..Default::default()
+    };
     let mut ctx = LspTestContext::new(caps);
     ctx.initialize();
 
-    ctx.fake.set_request_handler::<Completion, _, _>(|_params| async move {
-        Ok(Some(CompletionResponse::Array(vec![CompletionItem {
-            label: "println!".into(),
-            ..Default::default()
-        }])))
-    });
+    ctx.fake
+        .set_request_handler::<Completion, _, _>(|_params| async move {
+            Ok(Some(CompletionResponse::Array(vec![CompletionItem {
+                label: "println!".into(),
+                ..Default::default()
+            }])))
+        });
 
     let uri = ctx.uri.clone();
     ctx.app.world_mut().write_message(LspRequest {
