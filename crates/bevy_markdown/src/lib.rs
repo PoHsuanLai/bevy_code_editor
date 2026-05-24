@@ -92,8 +92,16 @@ fn rebuild_markdown(
     highlighter: Option<Res<MarkdownHighlighter>>,
 ) {
     for (entity, md, fonts, colors, spacing, scales) in &targets {
-        let mut entity = commands.entity(entity);
-        entity.despawn_children();
+        // The host can despawn the markdown root between when this
+        // system observed `Changed<Markdown>` and when its commands
+        // apply (popup teardown is a common case). Silenced queues
+        // skip the rebuild if the entity is gone instead of panicking.
+        let Ok(mut entity) = commands.get_entity(entity) else {
+            continue;
+        };
+        entity.queue_silenced(|mut e: bevy::ecs::world::EntityWorldMut| {
+            e.despawn_related::<bevy::prelude::Children>();
+        });
         let highlighter = highlighter.as_deref();
         entity.with_children(|parent| {
             spawn::spawn_markdown(parent, &md.source, fonts, colors, spacing, scales, highlighter);
