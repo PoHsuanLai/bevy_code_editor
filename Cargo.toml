@@ -5,6 +5,7 @@ members = [
     "crates/bevy_lsp",
     "crates/bevsterm",
     "crates/bevy_instanced_text_editor",
+    "crates/bevy_markdown",
     "crates/bevy_tree_sitter",
     "examples",
     "examples/wasm_lsp",
