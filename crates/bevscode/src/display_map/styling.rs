@@ -31,6 +31,7 @@ pub(crate) fn segs_to_runs(segs: &[LineSegment]) -> Vec<FormattedSpan> {
             FormattedSpan {
                 text: s.text.clone(),
                 format,
+                is_virtual: false,
             }
         })
         .collect()

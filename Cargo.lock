@@ -826,7 +826,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempera",
- "ttf-parser",
 ]
 
 [[package]]

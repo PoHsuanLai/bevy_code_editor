@@ -45,10 +45,6 @@ bevy_tree_sitter = { path = "../bevy_tree_sitter", version = "0.1.1", features =
 bevy_lsp = { path = "../bevy_lsp", version = "0.1.1", features = ["test-support"] }
 lsp-types = { workspace = true }
 serde_json = { workspace = true }
-# Used by inlay hint placement tests to read true font ascent/descent
-# from `DEFAULT_FONT_DATA` and compute the expected baseline-from-
-# Node-top independently of the helper under test.
-ttf-parser = "0.25"
 
 [features]
 default = ["clipboard"]

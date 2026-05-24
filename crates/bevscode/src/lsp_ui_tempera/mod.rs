@@ -102,7 +102,6 @@ impl Plugin for LspUiTemperaPlugin {
                 code_actions::update_code_actions_popup
                     .after(crate::lsp_ui::sync::sync_code_actions_popup),
                 rename::update_rename_input.after(crate::lsp_ui::sync::sync_rename_input),
-                inline_decorations::render_inlay_hints,
                 // Document highlights push `RectOverlay`s into the
                 // engine's `TextOverlays`; the engine consumes them in
                 // `TextViewRenderSet`. Same ordering requirement as

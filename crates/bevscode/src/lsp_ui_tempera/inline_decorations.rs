@@ -1,38 +1,42 @@
-//! Inline LSP decorations: inlay hints (UI text) and document
-//! highlights (engine overlay rects).
+//! Inline LSP decorations: document highlights (engine overlay rects).
 //!
 //! Document highlights go through the engine's [`RectOverlay`] path so
 //! they share the editor's draw call and stay pixel-aligned with the
-//! glyph grid. Inlay hint labels are spawned as `bevy_ui` [`Text`] nodes
-//! parented under the editor entity, positioned absolutely from
-//! [`RowMetrics`] — same pattern the LSP popups use, and the only path
-//! that respects the editor's screen position + clipping. Using `Text2d`
-//! here would render the labels in world space (independent of the
-//! editor's UI rect) and they would drift, scroll opposite to the
-//! editor, and escape clipping.
+//! glyph grid.
+//!
+//! Inlay hints used to render here as `bevy_ui` text overlays. They now
+//! go through the engine's shape pipeline as virtual [`FormattedSpan`]s
+//! spliced into [`LineStyles`] (see
+//! [`crate::lsp_ui::sync::splice_inlays_into_line_styles`]) — that path
+//! shapes them inline with source glyphs so following source text shifts
+//! right by the hint's width, eliminating the overlap the overlay path
+//! had. The [`InlineDecorationsTheme`] colors / scale factor live on
+//! here because the splicer reads them as a `Resource`.
+//!
+//! [`FormattedSpan`]: bevy_instanced_text::FormattedSpan
+//! [`LineStyles`]: bevy_instanced_text::LineStyles
 
 use bevy::prelude::*;
 use bevy_instanced_text::{
-    resolve_line_height, CornerRadii, DisplayLayout, MonoCellWidth, RectOverlay, RowMetricsParam,
-    RowVertical, TextOverlays,
+    CornerRadii, DisplayLayout, MonoCellWidth, RectOverlay, RowVertical, TextOverlays,
 };
 
-use crate::lsp_ui::components::{
-    DocumentHighlightData, InlayHintData, InlayHintKind, LspUiVisual,
-};
+use crate::lsp_ui::components::DocumentHighlightData;
 use crate::types::CodeEditor;
 
 /// Per-editor styling for inline LSP decorations. Hosts override by
 /// `app.insert_resource(InlineDecorationsTheme { .. })`.
 #[derive(Resource, Clone, Debug)]
 pub struct InlineDecorationsTheme {
+    /// Foreground color for type-annotation inlay hints.
     pub inlay_type: Color,
+    /// Foreground color for parameter-name inlay hints.
     pub inlay_parameter: Color,
+    /// Foreground color for any other inlay-hint kind.
     pub inlay_other: Color,
-    /// Multiplier applied to the editor's font size for inlay hint
-    /// glyphs.
+    /// Multiplier on the editor's font size for inlay hint glyphs (passed
+    /// through to `TextFormat.font_scale` on the virtual span).
     pub inlay_font_scale: f32,
-    pub inlay_z: f32,
     pub highlight_read: Color,
     pub highlight_write: Color,
 }
@@ -44,90 +48,9 @@ impl Default for InlineDecorationsTheme {
             inlay_parameter: Color::srgba(0.7, 0.6, 0.9, 0.7),
             inlay_other: Color::srgba(0.6, 0.6, 0.6, 0.7),
             inlay_font_scale: 0.85,
-            inlay_z: 50.0,
             highlight_read: Color::srgba(0.5, 0.6, 0.8, 0.25),
             highlight_write: Color::srgba(0.8, 0.5, 0.3, 0.3),
         }
-    }
-}
-
-/// Marker on the spawned UI node for each inlay hint. `sync_inlay_hints`
-/// drains and re-spawns these every time `LspInlayHints` changes.
-#[derive(Component)]
-pub struct InlayHintGlyph;
-
-/// Render every [`InlayHintData`] as a `bevy_ui` text node parented under
-/// the editor entity. Re-runs each frame because scroll / resize must
-/// reposition the node even when the hint data itself is unchanged.
-///
-/// Hints whose row is outside the editor's vertical viewport get
-/// `Display::None` instead of being clamped — without this they would
-/// pile up at the editor's top edge (`bevy_ui` clamps negative `top`
-/// to 0).
-pub fn render_inlay_hints(
-    mut commands: Commands,
-    hints: Query<(Entity, &InlayHintData)>,
-    editors: Query<(Entity, &TextFont, &ComputedNode), With<CodeEditor>>,
-    metrics: RowMetricsParam,
-    theme: Res<InlineDecorationsTheme>,
-) {
-    let Ok((editor_entity, font, computed)) = editors.single() else {
-        return;
-    };
-    let m = metrics.get_or_panic(editor_entity);
-    let inv = computed.inverse_scale_factor();
-    let logical_h = computed.size().y * inv;
-    let row_height = m.row_height();
-
-    // Inlay font + its resolved line-height. Bevy's default `LineHeight`
-    // on a freshly-spawned `Text` is `RelativeToFont(1.2)`, which is the
-    // pipeline default we mirror here so `ui_text_top_at_row_baseline`
-    // can compute the child's baseline offset.
-    let inlay_font_size = font.font_size * theme.inlay_font_scale;
-    let inlay_line_height = resolve_line_height(
-        bevy::text::LineHeight::RelativeToFont(1.2),
-        inlay_font_size,
-    );
-
-    for (entity, hint) in hints.iter() {
-        let color = match hint.kind {
-            InlayHintKind::Type => theme.inlay_type,
-            InlayHintKind::Parameter => theme.inlay_parameter,
-            InlayHintKind::Other => theme.inlay_other,
-        };
-
-        let cell_top_left =
-            m.cell_top_left_at_x(hint.line, hint.character as f32 * m.cell_width());
-        let row_top = cell_top_left.y;
-        let off_screen = row_top + row_height <= 0.0 || row_top >= logical_h;
-
-        let top = m.ui_text_top_at_row_baseline(hint.line, inlay_font_size, inlay_line_height);
-
-        let Ok(mut cmd) = commands.get_entity(entity) else {
-            continue;
-        };
-        cmd.queue_silenced(bevy::ecs::system::entity_command::insert(
-            (
-                Text::new(hint.label.clone()),
-                TextFont {
-                    font: font.font.clone(),
-                    font_size: inlay_font_size,
-                    ..default()
-                },
-                TextColor(color),
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(cell_top_left.x),
-                    top: Val::Px(top),
-                    display: if off_screen { Display::None } else { Display::Flex },
-                    ..default()
-                },
-                ChildOf(editor_entity),
-                InlayHintGlyph,
-                LspUiVisual,
-            ),
-            bevy::ecs::bundle::InsertMode::Replace,
-        ));
     }
 }
 

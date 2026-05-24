@@ -31,7 +31,8 @@ use crate::lsp_ui::event_listeners::{
 use crate::lsp_ui::state::LspCompletionPopup;
 use crate::lsp_ui::sync::{
     sync_code_actions_popup, sync_completion_popup, sync_document_highlights, sync_hover_popup,
-    sync_inlay_hints, sync_rename_input, sync_signature_help_popup,
+    splice_inlays_into_line_styles, sync_inlay_hints, sync_rename_input,
+    sync_signature_help_popup,
 };
 use crate::lsp_ui::systems::{
     cleanup_lsp_timeouts, clear_stale_diagnostics_on_edit, on_lsp_code_actions, on_lsp_completion,
@@ -161,6 +162,17 @@ impl Plugin for LspPlugin {
                 sync_inlay_hints,
                 sync_document_highlights,
             ),
+        );
+
+        // Splice inlay hints into the editor's LineStyles so the engine
+        // shapes them inline with source glyphs. Runs in the same set as
+        // produce_line_styles, ordered after so it sees this frame's
+        // fresh LineStyles write.
+        app.add_systems(
+            Update,
+            splice_inlays_into_line_styles
+                .after(crate::display_map::plugin::produce_line_styles)
+                .in_set(crate::display_map::plugin::LayoutSyncSet),
         );
 
         // Event listener systems (listen to editor events, fire LSP requests).

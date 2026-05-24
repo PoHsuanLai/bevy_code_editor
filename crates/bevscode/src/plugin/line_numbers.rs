@@ -362,6 +362,7 @@ pub(crate) fn sync_gutter_text_view(
                         vec![FormattedSpan {
                             text: payload,
                             format: TextFormat::fg(0..byte_len, active_color),
+                            is_virtual: false,
                         }],
                     );
                 }
