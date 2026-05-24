@@ -89,6 +89,14 @@ use bevy::prelude::*;
         crate::lsp_ui::state::LspDebounceTimers,
         crate::lsp_ui::state::LspDidChangeBatcher,
         crate::lsp_ui::state::TabstopSession,
+        // Dismiss-side lifecycle Components shared by every popup
+        // (request_id, popup chrome ref, pointer-in-popup tracker,
+        // dismiss-grace timer, hot zone). One per popup kind.
+        crate::lsp_ui::state::HoverLifecycle,
+        crate::lsp_ui::state::CompletionLifecycle,
+        crate::lsp_ui::state::SignatureLifecycle,
+        crate::lsp_ui::state::CodeActionsLifecycle,
+        crate::lsp_ui::state::RenameLifecycle,
     )
 )]
 #[require(

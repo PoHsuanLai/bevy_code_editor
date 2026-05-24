@@ -8,7 +8,7 @@
 
 use crate::input::actions;
 use crate::input::keybindings::EditorAction;
-use crate::lsp_ui::state::{LspCompletionPopup, UnifiedCompletionItem};
+use crate::lsp_ui::state::{CompletionLifecycle, LspCompletionPopup, UnifiedCompletionItem};
 use crate::settings::{AcceptSuggestionOnEnter, LspConfig, Suggest, TabCompletion};
 use crate::text_view::TextBuffer;
 use crate::types::{CodeEditor, CursorState};
@@ -37,6 +37,7 @@ pub fn completion_popup_intercept(
     action: EditorAction,
     focused: Entity,
     completion_state: &mut Mut<'_, LspCompletionPopup>,
+    completion_lc: &mut Mut<'_, CompletionLifecycle>,
     lsp_client: &bevy_lsp::LspClient,
     lsp_document: Option<&mut bevy_lsp::LspDocument>,
     editor_q: &mut Query<
@@ -90,6 +91,7 @@ pub fn completion_popup_intercept(
             apply_selected(
                 focused,
                 completion_state,
+                completion_lc,
                 &filtered,
                 editor_q,
                 replace_writer,
@@ -112,6 +114,7 @@ pub fn completion_popup_intercept(
             apply_selected(
                 focused,
                 completion_state,
+                completion_lc,
                 &filtered,
                 editor_q,
                 replace_writer,
@@ -121,6 +124,7 @@ pub fn completion_popup_intercept(
         }
         EditorAction::ClearSelection => {
             completion_state.dismiss();
+            completion_lc.dismiss();
             true
         }
         _ => false,
@@ -130,6 +134,7 @@ pub fn completion_popup_intercept(
 fn apply_selected(
     focused: Entity,
     completion_state: &mut Mut<'_, LspCompletionPopup>,
+    completion_lc: &mut Mut<'_, CompletionLifecycle>,
     filtered: &[UnifiedCompletionItem],
     editor_q: &mut Query<
         (
@@ -149,7 +154,13 @@ fn apply_selected(
         let filter = completion_state.filter.clone();
         completion_state.remember_acceptance(&label, &filter);
     }
-    actions::apply_completion(focused, cursor.cursor_pos, completion_state, replace_writer);
+    actions::apply_completion(
+        focused,
+        cursor.cursor_pos,
+        completion_state,
+        completion_lc,
+        replace_writer,
+    );
 }
 
 fn is_snippet(item: &UnifiedCompletionItem) -> bool {

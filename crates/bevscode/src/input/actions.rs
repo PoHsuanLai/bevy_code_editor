@@ -76,6 +76,7 @@ pub fn apply_completion(
     entity: Entity,
     cursor_pos: usize,
     completion_state: &mut LspCompletionPopup,
+    completion_lc: &mut crate::lsp_ui::state::CompletionLifecycle,
     writer: &mut MessageWriter<bevy_instanced_text_editor::ReplaceRangeRequested>,
 ) {
     let filtered = completion_state.filtered_items();
@@ -94,6 +95,7 @@ pub fn apply_completion(
         }
     }
     completion_state.dismiss();
+    completion_lc.dismiss();
 }
 
 /// Find the start of the current word (for auto-triggering completion).
@@ -145,6 +147,7 @@ pub fn request_completion(
     cursor: &CursorState,
     rope: &Rope,
     completion_state: &mut LspCompletionPopup,
+    completion_lc: &mut crate::lsp_ui::state::CompletionLifecycle,
     lsp_document: Option<&LspDocument>,
     lsp_w: &mut MessageWriter<LspRequest>,
 ) {
@@ -183,13 +186,13 @@ pub fn request_completion(
             && new_query.starts_with(&completion_state.initial_query);
 
         if !can_refilter_locally {
-            completion_state.request_id = completion_state.request_id.wrapping_add(1);
+            let id = completion_lc.new_request();
             lsp_w.write(LspRequest {
                 entity,
                 msg: LspMessage::Completion {
                     uri: doc.uri.clone(),
                     position: lsp_position,
-                    id: completion_state.request_id,
+                    id,
                 },
             });
             if completion_state.initial_query.is_empty() {

@@ -112,6 +112,21 @@ impl Plugin for LspUiTemperaPlugin {
             )
                 .in_set(LspUiViewSet),
         );
+
+        // Dismiss-grace ticks: one per popup kind. Run before the
+        // render-update systems above so a grace-fired dismiss is
+        // visible the same frame.
+        app.add_systems(
+            Update,
+            (
+                crate::lsp_ui::systems::tick_popup_dismiss_hover,
+                crate::lsp_ui::systems::tick_popup_dismiss_completion,
+                crate::lsp_ui::systems::tick_popup_dismiss_signature,
+                crate::lsp_ui::systems::tick_popup_dismiss_code_actions,
+                crate::lsp_ui::systems::tick_popup_dismiss_rename,
+            )
+                .before(LspUiViewSet),
+        );
     }
 }
 

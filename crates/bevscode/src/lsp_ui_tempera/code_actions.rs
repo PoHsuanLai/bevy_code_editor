@@ -8,21 +8,29 @@
 use bevy::prelude::*;
 
 use crate::lsp_ui::components::{CodeActionItemData, CodeActionsPopupData};
+use crate::lsp_ui::state::{CodeActionsLifecycle, PopupObserversAttached};
 use crate::ui_kit::PopupChrome;
 
 use super::anchor::{PopupAnchor, PopupPlacement};
-use super::chrome::{apply_chrome, clear_children};
+use super::chrome::{apply_chrome, attach_code_actions_observers, clear_children};
 
 pub fn update_code_actions_popup(
     mut commands: Commands,
     mut popups: Query<
-        (Entity, &CodeActionsPopupData, &mut Node, Option<&Children>),
+        (
+            Entity,
+            &CodeActionsPopupData,
+            &mut Node,
+            Option<&Children>,
+            Has<PopupObserversAttached>,
+        ),
         Changed<CodeActionsPopupData>,
     >,
+    mut lifecycles: Query<&mut CodeActionsLifecycle>,
     anchor: PopupAnchor,
     chrome: PopupChrome,
 ) {
-    for (entity, data, mut node, children) in popups.iter_mut() {
+    for (entity, data, mut node, children, observers_attached) in popups.iter_mut() {
         let placed = apply_chrome(
             &mut commands,
             entity,
@@ -38,6 +46,15 @@ pub fn update_code_actions_popup(
         clear_children(&mut commands, children);
         if placed.is_none() {
             continue;
+        }
+
+        if let Ok(mut lc) = lifecycles.get_mut(data.editor) {
+            if lc.popup_entity != Some(entity) {
+                lc.popup_entity = Some(entity);
+            }
+        }
+        if !observers_attached {
+            attach_code_actions_observers(&mut commands, entity, data.editor);
         }
 
         let row_count = data.actions.len().clamp(1, 10);

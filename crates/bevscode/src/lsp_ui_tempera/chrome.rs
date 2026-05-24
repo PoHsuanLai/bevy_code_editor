@@ -7,7 +7,14 @@
 //! and [`MenuTokens`] resources via [`PopupChrome`], so changing the
 //! palette in the app re-tints every popup the same frame.
 
+use bevy::picking::events::{Out, Over};
 use bevy::prelude::*;
+
+use crate::lsp_ui::state::{
+    CodeActionsLifecycle, CodeActionsPopupBackref, CompletionLifecycle, CompletionPopupBackref,
+    HoverLifecycle, HoverPopupBackref, PopupObserversAttached, RenameLifecycle,
+    RenamePopupBackref, SignatureLifecycle, SignaturePopupBackref,
+};
 
 use crate::ui_kit::PopupChrome;
 
@@ -76,3 +83,69 @@ pub fn clear_children(commands: &mut Commands, children: Option<&Children>) {
         commands.entity(child).despawn();
     }
 }
+
+/// Attach the per-kind `Pointer<Over>` / `Pointer<Out>` observers to
+/// the popup chrome entity. Each kind has its own attacher because the
+/// backref Component and Lifecycle Component types differ — Bevy
+/// observers must name concrete `Query` types, so a generic helper
+/// would need erased type witnesses we don't want to maintain.
+///
+/// Idempotent via [`PopupObserversAttached`] — the first call inserts
+/// the marker and the renderer skips re-attaching on later frames.
+///
+/// `Over` cancels any pending dismiss-grace timer in addition to
+/// flipping `pointer_in_popup`, which is what keeps the popup visible
+/// when the cursor crosses from the editor onto the chrome.
+macro_rules! popup_pointer_attacher {
+    ($fn_name:ident, $backref:ty, $lifecycle:ty) => {
+        pub fn $fn_name(commands: &mut Commands, popup: Entity, editor: Entity) {
+            commands
+                .entity(popup)
+                .insert(PopupObserversAttached)
+                .insert(<$backref>::from_editor(editor))
+                .observe(
+                    |trigger: On<Pointer<Over>>,
+                     backrefs: Query<&$backref>,
+                     mut lifecycles: Query<&mut $lifecycle>| {
+                        let Ok(backref) = backrefs.get(trigger.entity) else {
+                            return;
+                        };
+                        if let Ok(mut lc) = lifecycles.get_mut(backref.editor) {
+                            lc.pointer_in_popup = true;
+                            lc.dismiss_after = None;
+                        }
+                    },
+                )
+                .observe(
+                    |trigger: On<Pointer<Out>>,
+                     backrefs: Query<&$backref>,
+                     mut lifecycles: Query<&mut $lifecycle>| {
+                        let Ok(backref) = backrefs.get(trigger.entity) else {
+                            return;
+                        };
+                        if let Ok(mut lc) = lifecycles.get_mut(backref.editor) {
+                            lc.pointer_in_popup = false;
+                        }
+                    },
+                );
+        }
+    };
+}
+
+popup_pointer_attacher!(attach_hover_observers, HoverPopupBackref, HoverLifecycle);
+popup_pointer_attacher!(
+    attach_completion_observers,
+    CompletionPopupBackref,
+    CompletionLifecycle
+);
+popup_pointer_attacher!(
+    attach_signature_observers,
+    SignaturePopupBackref,
+    SignatureLifecycle
+);
+popup_pointer_attacher!(
+    attach_code_actions_observers,
+    CodeActionsPopupBackref,
+    CodeActionsLifecycle
+);
+popup_pointer_attacher!(attach_rename_observers, RenamePopupBackref, RenameLifecycle);

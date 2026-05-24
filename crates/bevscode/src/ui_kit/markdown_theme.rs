@@ -79,7 +79,13 @@ pub fn markdown_theme_from_chrome(
         blockquote_border_width: 2.0,
     };
 
-    let scales = MarkdownScales::default();
+    // Tighter heading scales than the [`MarkdownScales::default`]
+    // (`[2.0, 1.5, 1.25, 1.0, 0.9, 0.85]`). At `base = 14px` a 2.0×
+    // h1 is 28px — too dominant for a 320px-capped hover chrome,
+    // especially since rust-analyzer hovers usually open with a
+    // single h2/h3 header followed by code. These steps stay close
+    // to body size while still ranking h1..h6 distinguishably.
+    let scales = MarkdownScales([1.15, 1.1, 1.05, 1.0, 0.95, 0.9]);
 
     (fonts, colors, spacing, scales)
 }

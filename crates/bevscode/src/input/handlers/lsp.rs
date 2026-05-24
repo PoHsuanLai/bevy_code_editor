@@ -20,6 +20,7 @@ pub fn handle_request_completion(
         (
             Option<&bevy_lsp::LspDocument>,
             &mut crate::lsp_ui::state::LspCompletionPopup,
+            &mut crate::lsp_ui::state::CompletionLifecycle,
         ),
         With<CodeEditor>,
     >,
@@ -34,7 +35,7 @@ pub fn handle_request_completion(
     let Ok((cursor, buffer)) = editor_q.get(entity) else {
         return;
     };
-    let Ok((lsp_document, mut completion_state)) = lsp_q.get_mut(entity) else {
+    let Ok((lsp_document, mut completion_state, mut completion_lc)) = lsp_q.get_mut(entity) else {
         return;
     };
     request_completion(
@@ -42,6 +43,7 @@ pub fn handle_request_completion(
         cursor,
         buffer.rope(),
         &mut completion_state,
+        &mut completion_lc,
         lsp_document,
         &mut lsp_w,
     );

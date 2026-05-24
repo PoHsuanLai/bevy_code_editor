@@ -305,7 +305,10 @@ pub fn on_alt_click(
     mut editor_query: AltClickQuery,
     keyboard: Res<ButtonInput<KeyCode>>,
     #[cfg(feature = "lsp")] mut lsp_query: Query<
-        &mut crate::lsp_ui::state::LspHoverPopup,
+        (
+            &mut crate::lsp_ui::state::LspHoverPopup,
+            &mut crate::lsp_ui::state::HoverLifecycle,
+        ),
         With<CodeEditor>,
     >,
 ) {
@@ -345,8 +348,9 @@ pub fn on_alt_click(
 
     #[cfg(feature = "lsp")]
     {
-        if let Ok(mut hover_state) = lsp_query.get_mut(entity) {
+        if let Ok((mut hover_state, mut hover_lc)) = lsp_query.get_mut(entity) {
             reset_hover_state(&mut hover_state);
+            hover_lc.dismiss();
         }
     }
 }
@@ -434,7 +438,13 @@ pub fn on_ctrl_click_goto_definition(
 pub fn on_pointer_move_for_hover(
     trigger: On<Pointer<Move>>,
     editor_query: HoverMoveQuery,
-    mut hover_query: Query<&mut crate::lsp_ui::state::LspHoverPopup, With<CodeEditor>>,
+    mut hover_query: Query<
+        (
+            &mut crate::lsp_ui::state::LspHoverPopup,
+            &mut crate::lsp_ui::state::HoverLifecycle,
+        ),
+        With<CodeEditor>,
+    >,
 ) {
     let entity = trigger.event().entity;
     let Ok((buffer, scroll, computed, fold_state, font, lh, mono, layout, hover_settings)) =
@@ -445,12 +455,34 @@ pub fn on_pointer_move_for_hover(
     if !hover_settings.hover.enabled {
         return;
     }
-    let Ok(mut hover_state) = hover_query.get_mut(entity) else {
+    let Ok((mut hover_state, mut hover_lc)) = hover_query.get_mut(entity) else {
         return;
     };
+
+    // Pointer<Move> on a popup child auto-propagates up to the editor
+    // (popups are reparented under the editor for camera/render-layer
+    // inheritance). If the pointer is currently inside the popup
+    // chrome, the editor's hit-test would compute a nonsense char
+    // position from pixels *behind* the popup, then re-arm a request
+    // and clear `visible` — which causes `sync_hover_popup` to
+    // despawn the popup mid-interaction. Skip the trigger pipeline
+    // when the popup owns the pointer; the popup's own observers run
+    // the lifecycle bookkeeping.
+    if hover_lc.pointer_in_popup {
+        return;
+    }
+
     let Some(local_pos) = hit_to_local_px(&trigger.event().hit, computed) else {
         return;
     };
+
+    // Re-entering the editor (or moving inside it) always cancels a
+    // pending dismiss. The popup's own `Pointer<Over>` observer cancels
+    // it when the cursor reaches the popup chrome; this branch covers
+    // the reverse — moving back into the text.
+    if hover_lc.dismiss_after.is_some() {
+        hover_lc.dismiss_after = None;
+    }
 
     // Bail out before the rope/layout hit-test if the pointer has barely moved
     // in screen space since the last trigger — saves the per-event work on
@@ -478,6 +510,21 @@ pub fn on_pointer_move_for_hover(
         },
     );
 
+    // Sticky hover: while a popup is up and the cursor is still inside
+    // the LSP range the response describes, do nothing. Re-arming the
+    // timer or clearing `visible` would make the popup churn while the
+    // user moves between two characters of the same identifier.
+    if hover_lc.popup_entity.is_some() {
+        let lsp_position = bevy_lsp::rope_char_to_lsp_position(
+            buffer.rope(),
+            char_pos.min(buffer.len_chars()),
+            bevy_lsp::PositionEncoding::Utf16,
+        );
+        if hover_lc.hot_zone_contains(lsp_position) {
+            return;
+        }
+    }
+
     if hover_state.trigger_char_index != char_pos {
         hover_state.trigger_char_index = char_pos;
         hover_state.timer = Some(Timer::new(
@@ -485,21 +532,31 @@ pub fn on_pointer_move_for_hover(
             TimerMode::Once,
         ));
         hover_state.visible = false;
-        hover_state.request_sent = false;
     }
 }
 
-/// LSP hover-out observer: resets hover state when the pointer leaves the
-/// editor entity, so the popup doesn't pop after the cursor has moved away.
+/// LSP hover-out observer: arms the dismiss-grace timer when the pointer
+/// leaves the editor entity. The popup is allowed to "catch" the pointer
+/// during the grace window via its own `Pointer<Over>` observer, which
+/// flips `pointer_in_popup` and the grace tick skips dismissal.
+///
+/// Previously this called `reset()` immediately, which made the popup
+/// disappear the moment the cursor stepped onto its own chrome.
 #[cfg(feature = "lsp")]
 pub fn on_pointer_out_for_hover(
     trigger: On<bevy::picking::events::Pointer<bevy::picking::events::Out>>,
-    mut hover_query: Query<&mut crate::lsp_ui::state::LspHoverPopup, With<CodeEditor>>,
+    mut hover_query: Query<&mut crate::lsp_ui::state::HoverLifecycle, With<CodeEditor>>,
+    hover_settings_q: Query<&crate::settings::LspConfig, With<CodeEditor>>,
 ) {
     let entity = trigger.event().entity;
-    if let Ok(mut hover_state) = hover_query.get_mut(entity) {
-        reset_hover_state(&mut hover_state);
-    }
+    let Ok(mut hover_lc) = hover_query.get_mut(entity) else {
+        return;
+    };
+    let ms = hover_settings_q
+        .get(entity)
+        .map(|cfg| cfg.hover.hiding_delay_ms)
+        .unwrap_or(300);
+    hover_lc.arm_dismiss(ms);
 }
 
 /// Tick the per-editor LSP hover delay timer. When the timer elapses on an
@@ -516,12 +573,15 @@ pub fn tick_lsp_hover_timer(
             &mut bevy_lsp::LspClient,
             Option<&bevy_lsp::LspDocument>,
             &mut crate::lsp_ui::state::LspHoverPopup,
+            &mut crate::lsp_ui::state::HoverLifecycle,
         ),
         With<CodeEditor>,
     >,
     time: Res<Time>,
 ) {
-    for (entity, mut lsp_client, lsp_document, mut hover_state) in state_query.iter_mut() {
+    for (entity, mut lsp_client, lsp_document, mut hover_state, mut hover_lc) in
+        state_query.iter_mut()
+    {
         let Ok(buffer) = editor_query.get(entity) else {
             continue;
         };
@@ -529,9 +589,11 @@ pub fn tick_lsp_hover_timer(
             continue;
         };
         timer.tick(time.delta());
-        if !timer.just_finished() || hover_state.request_sent {
+        if !timer.just_finished() {
             continue;
         }
+        // One-shot: clear so the next trigger re-arms.
+        hover_state.timer = None;
         let Some(doc) = lsp_document else { continue };
 
         // Clamp to last char of line (exclude newline).
@@ -546,13 +608,12 @@ pub fn tick_lsp_hover_timer(
             bevy_lsp::PositionEncoding::Utf16,
         );
 
+        let id = hover_lc.new_request();
         lsp_client.send(LspMessage::Hover {
             uri: doc.uri.clone(),
             position: lsp_position,
-            id: 0,
+            id,
         });
-        hover_state.request_sent = true;
-        hover_state.pending_char_index = Some(current_char_pos);
     }
 }
 

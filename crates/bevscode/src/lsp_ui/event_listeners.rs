@@ -11,9 +11,9 @@
 
 use super::snippet;
 use super::state::{
-    LspCompletionPopup, LspDebounceTimers, LspDidChangeBatcher, LspRenamePopup,
-    LspSignatureHelpPopup, PendingLspRequest, SessionTabstop, TabstopSession,
-    UnifiedCompletionItem,
+    CompletionLifecycle, HoverLifecycle, LspCompletionPopup, LspDebounceTimers,
+    LspDidChangeBatcher, LspRenamePopup, LspSignatureHelpPopup, PendingLspRequest, RenameLifecycle,
+    SessionTabstop, SignatureLifecycle, TabstopSession, UnifiedCompletionItem,
 };
 use crate::settings::LspConfig;
 use crate::text_view::TextBuffer;
@@ -64,6 +64,7 @@ type RenameRequestQuery<'w, 's> = Query<
         Option<&'static LspDocument>,
         &'static bevy_lsp::ServerCapabilities,
         &'static mut LspRenamePopup,
+        &'static mut RenameLifecycle,
     ),
     With<CodeEditor>,
 >;
@@ -77,6 +78,7 @@ type SignatureHelpRequestQuery<'w, 's> = Query<
         Option<&'static LspDocument>,
         &'static bevy_lsp::ServerCapabilities,
         &'static mut LspSignatureHelpPopup,
+        &'static mut SignatureLifecycle,
         Option<&'static crate::settings::Suggest>,
     ),
     With<CodeEditor>,
@@ -91,6 +93,7 @@ type ApplyCompletionQuery<'w, 's> = Query<
         &'static mut CursorState,
         &'static mut TextBuffer<RopeBuffer>,
         &'static mut LspCompletionPopup,
+        &'static mut CompletionLifecycle,
         &'static mut TabstopSession,
     ),
     With<CodeEditor>,
@@ -214,7 +217,9 @@ pub fn listen_rename_requests(
     mut query: RenameRequestQuery,
     mut lsp_w: MessageWriter<LspRequest>,
 ) {
-    let Ok((entity, buffer, lsp_document, caps, mut rename_state)) = query.single_mut() else {
+    let Ok((entity, buffer, lsp_document, caps, mut rename_state, mut rename_lc)) =
+        query.single_mut()
+    else {
         return;
     };
     let Some(lsp_document) = lsp_document else {
@@ -224,12 +229,13 @@ pub fn listen_rename_requests(
     for event in events.read() {
         let position = rope_char_to_lsp_position(buffer.rope(), event.cursor_char, enc);
         rename_state.start_prepare(position);
+        let id = rename_lc.new_request();
         lsp_w.write(LspRequest {
             entity,
             msg: LspMessage::PrepareRename {
                 uri: lsp_document.uri.clone(),
                 position,
-                id: 0,
+                id,
             },
         });
     }
@@ -240,7 +246,8 @@ pub fn listen_signature_help_requests(
     mut query: SignatureHelpRequestQuery,
     mut lsp_w: MessageWriter<LspRequest>,
 ) {
-    let Ok((entity, buffer, lsp_document, caps, mut sig_help_state, suggest)) = query.single_mut()
+    let Ok((entity, buffer, lsp_document, caps, mut sig_help_state, mut sig_help_lc, suggest)) =
+        query.single_mut()
     else {
         return;
     };
@@ -254,12 +261,14 @@ pub fn listen_signature_help_requests(
     let enc = caps.position_encoding();
     for event in events.read() {
         sig_help_state.dismiss();
+        sig_help_lc.dismiss();
+        let id = sig_help_lc.new_request();
         lsp_w.write(LspRequest {
             entity,
             msg: LspMessage::SignatureHelp {
                 uri: lsp_document.uri.clone(),
                 position: rope_char_to_lsp_position(buffer.rope(), event.cursor_char, enc),
-                id: sig_help_state.request_id,
+                id,
             },
         });
     }
@@ -267,14 +276,15 @@ pub fn listen_signature_help_requests(
 
 pub fn listen_dismiss_completion(
     mut events: MessageReader<CompletionDismissed>,
-    mut query: Query<&mut LspCompletionPopup, With<CodeEditor>>,
+    mut query: Query<(&mut LspCompletionPopup, &mut CompletionLifecycle), With<CodeEditor>>,
 ) {
-    let Ok(mut completion_state) = query.single_mut() else {
+    let Ok((mut completion_state, mut completion_lc)) = query.single_mut() else {
         return;
     };
     for _ in events.read() {
         completion_state.items.clear();
         completion_state.dismiss();
+        completion_lc.dismiss();
     }
 }
 
@@ -347,11 +357,12 @@ pub fn dismiss_completion_on_cursor_move(
             Ref<CursorState>,
             &TextBuffer<RopeBuffer>,
             &mut LspCompletionPopup,
+            &mut CompletionLifecycle,
         ),
         With<CodeEditor>,
     >,
 ) {
-    let Ok((cursor, buffer, mut completion_state)) = query.single_mut() else {
+    let Ok((cursor, buffer, mut completion_state, mut completion_lc)) = query.single_mut() else {
         return;
     };
     if !completion_state.visible || !cursor.is_changed() {
@@ -364,6 +375,7 @@ pub fn dismiss_completion_on_cursor_move(
     let prev_is_word = pos > 0 && is_word(buffer.char(pos - 1));
     if !in_anchor_range || !prev_is_word {
         completion_state.dismiss();
+        completion_lc.dismiss();
     }
 }
 
@@ -374,10 +386,18 @@ pub fn dismiss_completion_on_cursor_move(
 /// arming in `LspCodeActionsPopup`.
 pub fn tick_lsp_debounce_timers(
     time: Res<Time>,
-    mut query: Query<(Entity, &mut LspDebounceTimers, &mut LspCompletionPopup), With<CodeEditor>>,
+    mut query: Query<
+        (
+            Entity,
+            &mut LspDebounceTimers,
+            &mut CompletionLifecycle,
+            &mut HoverLifecycle,
+        ),
+        With<CodeEditor>,
+    >,
     mut lsp_w: MessageWriter<LspRequest>,
 ) {
-    let Ok((entity, mut debounce, mut completion_state)) = query.single_mut() else {
+    let Ok((entity, mut debounce, mut completion_lc, mut hover_lc)) = query.single_mut() else {
         return;
     };
 
@@ -385,13 +405,13 @@ pub fn tick_lsp_debounce_timers(
         debounce.completion_timer.tick(time.delta());
         if debounce.completion_timer.just_finished() {
             if let Some(req) = debounce.pending_completion.take() {
-                completion_state.request_id = completion_state.request_id.wrapping_add(1);
+                let id = completion_lc.new_request();
                 lsp_w.write(LspRequest {
                     entity,
                     msg: LspMessage::Completion {
                         uri: req.uri,
                         position: req.position,
-                        id: completion_state.request_id,
+                        id,
                     },
                 });
             }
@@ -402,12 +422,13 @@ pub fn tick_lsp_debounce_timers(
         debounce.hover_timer.tick(time.delta());
         if debounce.hover_timer.just_finished() {
             if let Some(req) = debounce.pending_hover.take() {
+                let id = hover_lc.new_request();
                 lsp_w.write(LspRequest {
                     entity,
                     msg: LspMessage::Hover {
                         uri: req.uri,
                         position: req.position,
-                        id: 0,
+                        id,
                     },
                 });
             }
@@ -533,8 +554,15 @@ pub fn listen_apply_completion(
     mut events: MessageReader<CompletionApplied>,
     mut query: ApplyCompletionQuery,
 ) {
-    let Ok((mut sel, mut hist, mut cursor_state, mut buffer, mut completion_state, mut session)) =
-        query.single_mut()
+    let Ok((
+        mut sel,
+        mut hist,
+        mut cursor_state,
+        mut buffer,
+        mut completion_state,
+        mut completion_lc,
+        mut session,
+    )) = query.single_mut()
     else {
         return;
     };
@@ -635,5 +663,6 @@ pub fn listen_apply_completion(
             sel.apply_primary_cursor(&cursor_state);
         }
         completion_state.dismiss();
+        completion_lc.dismiss();
     }
 }

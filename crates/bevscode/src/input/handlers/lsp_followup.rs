@@ -37,6 +37,7 @@ pub fn lsp_followup(
             &bevy_lsp::LspClient,
             Option<&mut bevy_lsp::LspDocument>,
             &mut crate::lsp_ui::state::LspCompletionPopup,
+            &mut crate::lsp_ui::state::CompletionLifecycle,
         ),
         With<CodeEditor>,
     >,
@@ -53,7 +54,9 @@ pub fn lsp_followup(
     let Ok((cursor, buffer)) = editor_q.get(entity) else {
         return;
     };
-    let Ok((lsp_client, lsp_document, mut completion_state)) = lsp_q.get_mut(entity) else {
+    let Ok((lsp_client, lsp_document, mut completion_state, mut completion_lc)) =
+        lsp_q.get_mut(entity)
+    else {
         return;
     };
 
@@ -70,8 +73,10 @@ pub fn lsp_followup(
         } else if cursor.cursor_pos == completion_state.start_char_index {
             // Empty prefix: hide (Zed behavior).
             completion_state.dismiss();
+            completion_lc.dismiss();
         } else {
             completion_state.dismiss();
+            completion_lc.dismiss();
         }
     }
 

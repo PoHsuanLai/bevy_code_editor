@@ -17,21 +17,29 @@
 use bevy::prelude::*;
 
 use crate::lsp_ui::components::RenameInputData;
+use crate::lsp_ui::state::{PopupObserversAttached, RenameLifecycle};
 use crate::ui_kit::PopupChrome;
 
 use super::anchor::{PopupAnchor, PopupPlacement};
-use super::chrome::{apply_chrome, clear_children};
+use super::chrome::{apply_chrome, attach_rename_observers, clear_children};
 
 pub fn update_rename_input(
     mut commands: Commands,
     mut popups: Query<
-        (Entity, &RenameInputData, &mut Node, Option<&Children>),
+        (
+            Entity,
+            &RenameInputData,
+            &mut Node,
+            Option<&Children>,
+            Has<PopupObserversAttached>,
+        ),
         Changed<RenameInputData>,
     >,
+    mut lifecycles: Query<&mut RenameLifecycle>,
     anchor: PopupAnchor,
     chrome: PopupChrome,
 ) {
-    for (entity, data, mut node, children) in popups.iter_mut() {
+    for (entity, data, mut node, children, observers_attached) in popups.iter_mut() {
         let placed = apply_chrome(
             &mut commands,
             entity,
@@ -47,6 +55,15 @@ pub fn update_rename_input(
         clear_children(&mut commands, children);
         if placed.is_none() {
             continue;
+        }
+
+        if let Ok(mut lc) = lifecycles.get_mut(data.editor) {
+            if lc.popup_entity != Some(entity) {
+                lc.popup_entity = Some(entity);
+            }
+        }
+        if !observers_attached {
+            attach_rename_observers(&mut commands, entity, data.editor);
         }
 
         let fg = chrome.palette.popover_foreground;

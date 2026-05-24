@@ -15,8 +15,9 @@ use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::MonoCellWidth;
 
 use super::state::{
-    LspCodeActionsPopup, LspCompletionPopup, LspDidChangeBatcher, LspDocumentHighlights,
-    LspHoverPopup, LspInlayHints, LspRenamePopup, LspSignatureHelpPopup,
+    CodeActionsLifecycle, CompletionLifecycle, HoverLifecycle, LspCodeActionsPopup,
+    LspCompletionPopup, LspDidChangeBatcher, LspDocumentHighlights, LspHoverPopup, LspInlayHints,
+    LspRenamePopup, LspSignatureHelpPopup, RenameLifecycle, SignatureLifecycle,
 };
 use bevy_lsp::{
     CodeActionOrCommand, LspClient, LspCodeActionsResponse, LspCompletionResponse,
@@ -37,6 +38,11 @@ type LspServerCrashedQuery<'w, 's> = Query<
         &'static mut LspCodeActionsPopup,
         &'static mut LspDocumentHighlights,
         &'static mut LspRenamePopup,
+        &'static mut CompletionLifecycle,
+        &'static mut HoverLifecycle,
+        &'static mut SignatureLifecycle,
+        &'static mut CodeActionsLifecycle,
+        &'static mut RenameLifecycle,
     ),
     With<CodeEditor>,
 >;
@@ -277,13 +283,16 @@ pub fn on_lsp_completion(
             &CursorState,
             &TextBuffer<RopeBuffer>,
             &mut LspCompletionPopup,
+            &mut CompletionLifecycle,
             Option<&crate::settings::Suggest>,
         ),
         With<CodeEditor>,
     >,
 ) {
     for ev in events.read() {
-        let Ok((cursor_state, buffer, mut completion_state, suggest)) = q.get_mut(ev.entity) else {
+        let Ok((cursor_state, buffer, mut completion_state, mut completion_lc, suggest)) =
+            q.get_mut(ev.entity)
+        else {
             continue;
         };
         trace!(
@@ -292,7 +301,7 @@ pub fn on_lsp_completion(
             ev.items.len(),
             ev.is_incomplete
         );
-        if ev.id != completion_state.request_id {
+        if !completion_lc.accept_response(ev.id) {
             continue;
         }
         let cursor_in_prefix = {
@@ -354,26 +363,29 @@ pub fn on_lsp_resolved_completion(
 
 pub fn on_lsp_hover(
     mut events: MessageReader<LspHoverResponse>,
-    mut q: Query<&mut LspHoverPopup, With<CodeEditor>>,
+    mut q: Query<(&mut LspHoverPopup, &mut HoverLifecycle), With<CodeEditor>>,
 ) {
     for ev in events.read() {
-        let Ok(mut hover_state) = q.get_mut(ev.entity) else {
+        let Ok((mut hover_state, mut hover_lc)) = q.get_mut(ev.entity) else {
             continue;
         };
-        #[cfg(debug_assertions)]
-        debug!("[LSP] Hover: {} chars ({:?})", ev.content.len(), ev.kind);
-
-        if !ev.content.is_empty() {
-            if let Some(pending_pos) = hover_state.pending_char_index {
-                if pending_pos == hover_state.trigger_char_index {
-                    hover_state.content = ev.content.clone();
-                    hover_state.kind = ev.kind.clone();
-                    hover_state.range = ev.range;
-                    hover_state.visible = true;
-                }
-            }
+        // Accept any in-flight response that hasn't been superseded
+        // by a more recent reply we've already displayed. rust-analyzer
+        // hover round-trips can take seconds on a cold workspace, and
+        // by then the move observer may have armed several more
+        // requests at nearby positions; a strict id-equality check
+        // would drop every one of them.
+        if ev.content.is_empty() || !hover_lc.accept_response(ev.id) {
+            continue;
         }
-        hover_state.pending_char_index = None;
+        hover_state.content = ev.content.clone();
+        hover_state.kind = ev.kind.clone();
+        hover_state.range = ev.range;
+        hover_state.visible = true;
+        // Publish the range as the hot zone so the move observer
+        // doesn't re-arm or dismiss while the pointer wanders within
+        // the identifier the popup describes.
+        hover_lc.hot_zone = ev.range;
     }
 }
 
@@ -466,10 +478,10 @@ pub fn on_lsp_format(
 
 pub fn on_lsp_signature_help(
     mut events: MessageReader<LspSignatureHelpResponse>,
-    mut q: Query<&mut LspSignatureHelpPopup, With<CodeEditor>>,
+    mut q: Query<(&mut LspSignatureHelpPopup, &mut SignatureLifecycle), With<CodeEditor>>,
 ) {
     for ev in events.read() {
-        let Ok(mut sig_state) = q.get_mut(ev.entity) else {
+        let Ok((mut sig_state, mut sig_lc)) = q.get_mut(ev.entity) else {
             continue;
         };
         #[cfg(debug_assertions)]
@@ -478,7 +490,7 @@ pub fn on_lsp_signature_help(
             ev.id,
             ev.signatures.len()
         );
-        if ev.id != sig_state.request_id {
+        if !sig_lc.accept_response(ev.id) {
             continue;
         }
         sig_state.signatures = ev.signatures.clone();
@@ -490,10 +502,10 @@ pub fn on_lsp_signature_help(
 
 pub fn on_lsp_code_actions(
     mut events: MessageReader<LspCodeActionsResponse>,
-    mut q: Query<&mut LspCodeActionsPopup, With<CodeEditor>>,
+    mut q: Query<(&mut LspCodeActionsPopup, &mut CodeActionsLifecycle), With<CodeEditor>>,
 ) {
     for ev in events.read() {
-        let Ok(mut action_state) = q.get_mut(ev.entity) else {
+        let Ok((mut action_state, mut action_lc)) = q.get_mut(ev.entity) else {
             continue;
         };
         #[cfg(debug_assertions)]
@@ -502,7 +514,7 @@ pub fn on_lsp_code_actions(
             ev.id,
             ev.actions.len()
         );
-        if ev.id != action_state.request_id {
+        if !action_lc.accept_response(ev.id) {
             continue;
         }
         action_state.actions = ev.actions.clone();
@@ -615,17 +627,27 @@ pub fn on_lsp_server_crashed(
             mut action_state,
             mut highlight_state,
             mut rename_state,
+            mut completion_lc,
+            mut hover_lc,
+            mut sig_lc,
+            mut action_lc,
+            mut rename_lc,
         )) = q.get_mut(ev.entity)
         else {
             continue;
         };
         warn!("[LSP] server reported crashed / channel closed");
         completion_state.dismiss();
+        completion_lc.dismiss();
         hover_state.reset();
+        hover_lc.dismiss();
         sig_state.dismiss();
+        sig_lc.dismiss();
         action_state.dismiss();
+        action_lc.dismiss();
         highlight_state.reset();
         rename_state.reset();
+        rename_lc.dismiss();
     }
 }
 
@@ -811,30 +833,130 @@ pub fn cleanup_lsp_timeouts(query: Query<&LspClient, With<CodeEditor>>) {
     }
 }
 
-/// Helper to send signature help request. Bumps `sig_state.request_id`
-/// so the response handler can drop stale results.
+/// Returns `true` when the lifecycle's `dismiss_after` timer expired
+/// this frame *and* the pointer is not inside the popup chrome — the
+/// caller should then run its feature-specific dismiss. The lifecycle
+/// `dismiss()` is called here so the timer can't fire twice.
+fn tick_dismiss_grace(
+    lc: &mut super::state::PopupLifecycleData,
+    dt: std::time::Duration,
+) -> bool {
+    let Some(timer) = lc.dismiss_after.as_mut() else {
+        return false;
+    };
+    timer.tick(dt);
+    if !timer.just_finished() {
+        return false;
+    }
+    if lc.pointer_in_popup {
+        // Pointer arrived after we armed the grace — leave the popup
+        // up, drop the timer; the next out-event will re-arm.
+        lc.dismiss_after = None;
+        return false;
+    }
+    lc.dismiss();
+    true
+}
+
+pub fn tick_popup_dismiss_hover(
+    time: Res<Time>,
+    mut q: Query<(&mut super::state::HoverLifecycle, &mut LspHoverPopup), With<CodeEditor>>,
+) {
+    for (mut lc, mut state) in q.iter_mut() {
+        if tick_dismiss_grace(&mut lc, time.delta()) {
+            state.reset();
+        }
+    }
+}
+
+pub fn tick_popup_dismiss_completion(
+    time: Res<Time>,
+    mut q: Query<
+        (
+            &mut super::state::CompletionLifecycle,
+            &mut LspCompletionPopup,
+        ),
+        With<CodeEditor>,
+    >,
+) {
+    for (mut lc, mut state) in q.iter_mut() {
+        if tick_dismiss_grace(&mut lc, time.delta()) {
+            state.dismiss();
+        }
+    }
+}
+
+pub fn tick_popup_dismiss_signature(
+    time: Res<Time>,
+    mut q: Query<
+        (
+            &mut super::state::SignatureLifecycle,
+            &mut LspSignatureHelpPopup,
+        ),
+        With<CodeEditor>,
+    >,
+) {
+    for (mut lc, mut state) in q.iter_mut() {
+        if tick_dismiss_grace(&mut lc, time.delta()) {
+            state.dismiss();
+        }
+    }
+}
+
+pub fn tick_popup_dismiss_code_actions(
+    time: Res<Time>,
+    mut q: Query<
+        (
+            &mut super::state::CodeActionsLifecycle,
+            &mut LspCodeActionsPopup,
+        ),
+        With<CodeEditor>,
+    >,
+) {
+    for (mut lc, mut state) in q.iter_mut() {
+        if tick_dismiss_grace(&mut lc, time.delta()) {
+            state.dismiss();
+        }
+    }
+}
+
+pub fn tick_popup_dismiss_rename(
+    time: Res<Time>,
+    mut q: Query<(&mut super::state::RenameLifecycle, &mut LspRenamePopup), With<CodeEditor>>,
+) {
+    for (mut lc, mut state) in q.iter_mut() {
+        if tick_dismiss_grace(&mut lc, time.delta()) {
+            state.reset();
+        }
+    }
+}
+
+/// Helper to send signature help request. The id-bump lives on
+/// [`SignatureLifecycle`] so the response handler can drop stale results.
 pub fn request_signature_help(
     entity: Entity,
     capabilities: &ServerCapabilities,
     uri: &Url,
     position: Position,
-    sig_state: &mut LspSignatureHelpPopup,
+    sig_lc: &mut SignatureLifecycle,
     lsp_w: &mut MessageWriter<LspRequest>,
 ) {
     if capabilities.supports_signature_help() {
-        sig_state.request_id = sig_state.request_id.wrapping_add(1);
+        let id = sig_lc.new_request();
         lsp_w.write(LspRequest {
             entity,
             msg: LspMessage::SignatureHelp {
                 uri: uri.clone(),
                 position,
-                id: sig_state.request_id,
+                id,
             },
         });
     }
 }
 
-/// Send `textDocument/codeAction` and bump `action_state.request_id`.
+/// Send `textDocument/codeAction`. The id-bump lives on
+/// [`CodeActionsLifecycle`] so the response handler can drop stale
+/// results.
 ///
 /// Helper, not a system — no producer wires this up yet. A future
 /// "lightbulb / quick-fix" trigger system (cursor-on-diagnostic or
@@ -846,18 +968,18 @@ pub fn request_code_actions(
     uri: &Url,
     range: Range,
     diagnostics: Vec<Diagnostic>,
-    action_state: &mut LspCodeActionsPopup,
+    action_lc: &mut CodeActionsLifecycle,
     lsp_w: &mut MessageWriter<LspRequest>,
 ) {
     if capabilities.supports_code_actions() {
-        action_state.request_id = action_state.request_id.wrapping_add(1);
+        let id = action_lc.new_request();
         lsp_w.write(LspRequest {
             entity,
             msg: LspMessage::CodeAction {
                 uri: uri.clone(),
                 range,
                 diagnostics,
-                id: action_state.request_id,
+                id,
             },
         });
     }

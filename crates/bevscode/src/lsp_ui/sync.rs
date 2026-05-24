@@ -27,6 +27,11 @@ use super::state::{
 };
 use bevy_lsp::CodeActionOrCommand;
 
+/// Hard cap on the hover popup's outer height. Markdown content longer
+/// than this is reachable via vertical scroll inside the popup chrome
+/// — see [`crate::lsp_ui_tempera::hover::update_hover_popup`].
+const MAX_HOVER_HEIGHT: f32 = 320.0;
+
 /// Resolve a char index into `(line, character)`.
 fn buffer_position(buffer: &TextBuffer<RopeBuffer>, char_index: usize) -> (u32, u32) {
     let char_index = char_index.min(buffer.len_chars());
@@ -183,7 +188,11 @@ pub fn sync_hover_popup(
     let box_width = calculated_width.clamp(100.0, 600.0);
 
     let line_count = hover_state.content.lines().count().max(1);
-    let box_height = (line_count as f32 * font_size * 1.2) + padding * 2.0;
+    // Plain-text-equivalent height — markdown adds block gaps, code-
+    // block padding, etc., so this underestimates. The renderer caps
+    // and scrolls instead of trying to measure markdown ahead of time.
+    let raw_height = (line_count as f32 * font_size * 1.2) + padding * 2.0;
+    let box_height = raw_height.min(MAX_HOVER_HEIGHT);
 
     let popup_data = HoverPopupData {
         editor,

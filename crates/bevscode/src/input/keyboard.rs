@@ -49,6 +49,8 @@ type KeyboardLspQuery<'w, 's> = Query<
         &'static bevy_lsp::ServerCapabilities,
         &'static mut crate::lsp_ui::state::LspCompletionPopup,
         &'static mut crate::lsp_ui::state::LspRenamePopup,
+        &'static mut crate::lsp_ui::state::CompletionLifecycle,
+        &'static mut crate::lsp_ui::state::RenameLifecycle,
         Option<&'static bevy_tree_sitter::SyntaxTree>,
         &'static LspConfig,
     ),
@@ -96,6 +98,8 @@ pub fn on_focused_keyboard(
         capabilities,
         mut completion_state,
         mut rename_state,
+        mut completion_lc,
+        mut rename_lc,
         syntax_tree,
         lsp,
     )) = lsp_query.get_mut(entity)
@@ -139,8 +143,12 @@ pub fn on_focused_keyboard(
                     }
                 }
                 rename_state.reset();
+                rename_lc.dismiss();
             }
-            Key::Escape => rename_state.reset(),
+            Key::Escape => {
+                rename_state.reset();
+                rename_lc.dismiss();
+            }
             _ => {}
         }
         return;
@@ -178,6 +186,8 @@ pub fn on_focused_keyboard(
                     #[cfg(feature = "lsp")]
                     &mut completion_state,
                     #[cfg(feature = "lsp")]
+                    &mut completion_lc,
+                    #[cfg(feature = "lsp")]
                     lsp_document.as_deref_mut(),
                     #[cfg(feature = "lsp")]
                     syntax_tree,
@@ -200,6 +210,7 @@ pub fn on_focused_keyboard(
             {
                 let _ = &lsp_document;
                 completion_state.dismiss();
+                completion_lc.dismiss();
             }
         }
         _ => {}
@@ -222,6 +233,7 @@ fn insert_typed_char(
     #[cfg(feature = "lsp")] entity: Entity,
     #[cfg(feature = "lsp")] capabilities: &bevy_lsp::ServerCapabilities,
     #[cfg(feature = "lsp")] completion_state: &mut crate::lsp_ui::state::LspCompletionPopup,
+    #[cfg(feature = "lsp")] completion_lc: &mut crate::lsp_ui::state::CompletionLifecycle,
     #[cfg(feature = "lsp")] lsp_document: Option<&mut bevy_lsp::LspDocument>,
     #[cfg(feature = "lsp")] syntax_tree: Option<&bevy_tree_sitter::SyntaxTree>,
     #[cfg(feature = "lsp")] lsp_w: &mut MessageWriter<bevy_lsp::LspRequest>,
@@ -385,11 +397,13 @@ fn insert_typed_char(
 
             if is_trigger && in_completion_context {
                 completion_state.dismiss();
+                completion_lc.dismiss();
                 request_completion(
                     entity,
                     cursor,
                     buffer.rope(),
                     completion_state,
+                    completion_lc,
                     lsp_document.as_deref(),
                     lsp_w,
                 );
@@ -406,6 +420,7 @@ fn insert_typed_char(
                             cursor,
                             buffer.rope(),
                             completion_state,
+                            completion_lc,
                             lsp_document.as_deref(),
                             lsp_w,
                         );
@@ -413,6 +428,7 @@ fn insert_typed_char(
                 }
             } else if completion_state.visible {
                 completion_state.dismiss();
+                completion_lc.dismiss();
             }
         }
     }

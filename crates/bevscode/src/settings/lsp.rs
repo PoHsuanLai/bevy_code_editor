@@ -104,6 +104,12 @@ pub struct HoverConfig {
     /// Delay before showing hover (milliseconds)
     pub delay_ms: u64,
 
+    /// Dismiss-grace window after the pointer leaves the editor or the
+    /// hover hot zone. The popup stays visible for this long so the
+    /// user can move the cursor onto the popup chrome (e.g. to scroll
+    /// long docs) without the popup vanishing under them.
+    pub hiding_delay_ms: u32,
+
     /// Hover window max width (pixels)
     pub max_width: f32,
 
@@ -143,6 +149,7 @@ impl Default for HoverConfig {
         Self {
             enabled: true,
             delay_ms: 300,
+            hiding_delay_ms: 300,
             max_width: 500.0,
             background_color: Color::srgba(0.15, 0.15, 0.15, 0.95),
             text_color: Color::srgb(0.85, 0.85, 0.85),

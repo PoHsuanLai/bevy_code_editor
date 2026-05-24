@@ -7,21 +7,29 @@
 use bevy::prelude::*;
 
 use crate::lsp_ui::components::SignatureHelpPopupData;
+use crate::lsp_ui::state::{PopupObserversAttached, SignatureLifecycle};
 use crate::ui_kit::PopupChrome;
 
 use super::anchor::{PopupAnchor, PopupPlacement};
-use super::chrome::{apply_chrome, clear_children};
+use super::chrome::{apply_chrome, attach_signature_observers, clear_children};
 
 pub fn update_signature_help_popup(
     mut commands: Commands,
     mut popups: Query<
-        (Entity, &SignatureHelpPopupData, &mut Node, Option<&Children>),
+        (
+            Entity,
+            &SignatureHelpPopupData,
+            &mut Node,
+            Option<&Children>,
+            Has<PopupObserversAttached>,
+        ),
         Changed<SignatureHelpPopupData>,
     >,
+    mut lifecycles: Query<&mut SignatureLifecycle>,
     anchor: PopupAnchor,
     chrome: PopupChrome,
 ) {
-    for (entity, data, mut node, children) in popups.iter_mut() {
+    for (entity, data, mut node, children, observers_attached) in popups.iter_mut() {
         let placed = apply_chrome(
             &mut commands,
             entity,
@@ -37,6 +45,15 @@ pub fn update_signature_help_popup(
         clear_children(&mut commands, children);
         if placed.is_none() {
             continue;
+        }
+
+        if let Ok(mut lc) = lifecycles.get_mut(data.editor) {
+            if lc.popup_entity != Some(entity) {
+                lc.popup_entity = Some(entity);
+            }
+        }
+        if !observers_attached {
+            attach_signature_observers(&mut commands, entity, data.editor);
         }
 
         let fg = chrome.palette.popover_foreground;

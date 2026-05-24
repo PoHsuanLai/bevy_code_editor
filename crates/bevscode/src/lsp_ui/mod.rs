@@ -43,9 +43,12 @@ pub mod prelude {
 
     // Per-editor LSP UI state Components.
     pub use super::state::{
-        LspCodeActionsPopup, LspCompletionPopup, LspDebounceTimers, LspDidChangeBatcher,
-        LspDocumentHighlights, LspHoverPopup, LspInlayHints, LspRenamePopup, LspSignatureHelpPopup,
-        PendingLspRequest, UnifiedCompletionItem, WordCompletionItem,
+        CodeActionsLifecycle, CodeActionsPopupBackref, CompletionLifecycle,
+        CompletionPopupBackref, HoverLifecycle, HoverPopupBackref, LspCodeActionsPopup,
+        LspCompletionPopup, LspDebounceTimers, LspDidChangeBatcher, LspDocumentHighlights,
+        LspHoverPopup, LspInlayHints, LspRenamePopup, LspSignatureHelpPopup, PendingLspRequest,
+        PopupLifecycleData, PopupObserversAttached, RenameLifecycle, RenamePopupBackref,
+        SignatureLifecycle, SignaturePopupBackref, UnifiedCompletionItem, WordCompletionItem,
         COMPLETION_MAX_VISIBLE_DEFAULT,
     };
 
@@ -78,9 +81,12 @@ pub use bevy_lsp::{
     ServerCapabilities,
 };
 pub use state::{
-    LspCodeActionsPopup, LspCompletionPopup, LspDebounceTimers, LspDidChangeBatcher,
-    LspDocumentHighlights, LspHoverPopup, LspInlayHints, LspRenamePopup, LspSignatureHelpPopup,
-    PendingLspRequest, UnifiedCompletionItem, WordCompletionItem, COMPLETION_MAX_VISIBLE_DEFAULT,
+    CodeActionsLifecycle, CodeActionsPopupBackref, CompletionLifecycle, CompletionPopupBackref,
+    HoverLifecycle, HoverPopupBackref, LspCodeActionsPopup, LspCompletionPopup, LspDebounceTimers,
+    LspDidChangeBatcher, LspDocumentHighlights, LspHoverPopup, LspInlayHints, LspRenamePopup,
+    LspSignatureHelpPopup, PendingLspRequest, PopupLifecycleData, PopupObserversAttached,
+    RenameLifecycle, RenamePopupBackref, SignatureLifecycle, SignaturePopupBackref,
+    UnifiedCompletionItem, WordCompletionItem, COMPLETION_MAX_VISIBLE_DEFAULT,
 };
 pub use systems::{
     sync_lsp_document, DiagnosticMarker, LocationType, MultipleLocationsEvent, NavigateToFileEvent,
