@@ -10,10 +10,11 @@
 //! capabilities` we'll thread that through here instead.
 
 use super::snippet;
+use super::completion::{LspCompletionPopup, UnifiedCompletionItem};
 use super::state::{
-    CompletionLifecycle, HoverLifecycle, LspCompletionPopup, LspDebounceTimers,
-    LspDidChangeBatcher, LspRenamePopup, LspSignatureHelpPopup, PendingLspRequest, RenameLifecycle,
-    SessionTabstop, SignatureLifecycle, TabstopSession, UnifiedCompletionItem,
+    CompletionLifecycle, HoverLifecycle, LspDebounceTimers, LspDidChangeBatcher, LspRenamePopup,
+    LspSignatureHelpPopup, PendingLspRequest, RenameLifecycle, SessionTabstop,
+    SignatureLifecycle, TabstopSession,
 };
 use crate::settings::LspConfig;
 use crate::text_view::TextBuffer;

@@ -79,7 +79,7 @@ use bevy::prelude::*;
         // requires a URI which the host must supply.
         bevy_lsp::LspClient,
         bevy_lsp::ServerCapabilities,
-        crate::lsp_ui::state::LspCompletionPopup,
+        crate::lsp_ui::completion::LspCompletionPopup,
         crate::lsp_ui::state::LspHoverPopup,
         crate::lsp_ui::state::LspSignatureHelpPopup,
         crate::lsp_ui::state::LspCodeActionsPopup,
@@ -92,11 +92,11 @@ use bevy::prelude::*;
         // Dismiss-side lifecycle Components shared by every popup
         // (request_id, popup chrome ref, pointer-in-popup tracker,
         // dismiss-grace timer, hot zone). One per popup kind.
-        crate::lsp_ui::state::HoverLifecycle,
-        crate::lsp_ui::state::CompletionLifecycle,
-        crate::lsp_ui::state::SignatureLifecycle,
-        crate::lsp_ui::state::CodeActionsLifecycle,
-        crate::lsp_ui::state::RenameLifecycle,
+        crate::lsp_ui::lifecycle::HoverLifecycle,
+        crate::lsp_ui::lifecycle::CompletionLifecycle,
+        crate::lsp_ui::lifecycle::SignatureLifecycle,
+        crate::lsp_ui::lifecycle::CodeActionsLifecycle,
+        crate::lsp_ui::lifecycle::RenameLifecycle,
     )
 )]
 #[require(

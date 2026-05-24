@@ -9,7 +9,7 @@ use bevy_instanced_text_editor::RopeBuffer;
 use ropey::Rope;
 
 #[cfg(feature = "lsp")]
-use crate::lsp_ui::state::LspCompletionPopup;
+use crate::lsp_ui::completion::LspCompletionPopup;
 #[cfg(feature = "lsp")]
 use bevy::log::trace;
 #[cfg(feature = "lsp")]

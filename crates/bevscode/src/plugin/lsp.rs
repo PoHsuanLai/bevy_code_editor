@@ -28,11 +28,11 @@ use crate::lsp_ui::event_listeners::{
     listen_dismiss_completion, listen_hover_requests, listen_rename_requests,
     listen_signature_help_requests, listen_text_edit_events, tick_lsp_debounce_timers,
 };
-use crate::lsp_ui::state::LspCompletionPopup;
+use crate::lsp_ui::completion::LspCompletionPopup;
+use crate::lsp_ui::inlay_splice::splice_inlays_into_line_styles;
 use crate::lsp_ui::sync::{
-    splice_inlays_into_line_styles, sync_code_actions_popup, sync_completion_popup,
-    sync_document_highlights, sync_hover_popup, sync_inlay_hints, sync_rename_input,
-    sync_signature_help_popup,
+    sync_code_actions_popup, sync_completion_popup, sync_document_highlights, sync_hover_popup,
+    sync_inlay_hints, sync_rename_input, sync_signature_help_popup,
 };
 use crate::lsp_ui::systems::{
     cleanup_lsp_timeouts, clear_stale_diagnostics_on_edit, on_lsp_code_actions, on_lsp_completion,

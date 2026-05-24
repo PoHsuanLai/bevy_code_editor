@@ -7,7 +7,7 @@
 //! Inlay hints used to render here as `bevy_ui` text overlays. They now
 //! go through the engine's shape pipeline as virtual [`FormattedSpan`]s
 //! spliced into [`LineStyles`] (see
-//! [`crate::lsp_ui::sync::splice_inlays_into_line_styles`]) — that path
+//! [`crate::lsp_ui::inlay_splice::splice_inlays_into_line_styles`]) — that path
 //! shapes them inline with source glyphs so following source text shifts
 //! right by the hint's width, eliminating the overlap the overlay path
 //! had. The [`InlineDecorationsTheme`] colors / scale factor live on

@@ -53,6 +53,7 @@
 
 pub mod capabilities;
 pub mod client;
+mod dispatch;
 pub mod document;
 pub mod messages;
 pub mod plugin;

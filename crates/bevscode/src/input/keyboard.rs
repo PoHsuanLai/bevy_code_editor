@@ -47,7 +47,7 @@ type KeyboardLspQuery<'w, 's> = Query<
     (
         Option<&'static mut bevy_lsp::LspDocument>,
         &'static bevy_lsp::ServerCapabilities,
-        &'static mut crate::lsp_ui::state::LspCompletionPopup,
+        &'static mut crate::lsp_ui::completion::LspCompletionPopup,
         &'static mut crate::lsp_ui::state::LspRenamePopup,
         &'static mut crate::lsp_ui::state::CompletionLifecycle,
         &'static mut crate::lsp_ui::state::RenameLifecycle,
@@ -226,7 +226,7 @@ struct InsertCharLspCtx<'a, 'w> {
     lsp: &'a LspConfig,
     entity: Entity,
     capabilities: &'a bevy_lsp::ServerCapabilities,
-    completion_state: &'a mut crate::lsp_ui::state::LspCompletionPopup,
+    completion_state: &'a mut crate::lsp_ui::completion::LspCompletionPopup,
     completion_lc: &'a mut crate::lsp_ui::state::CompletionLifecycle,
     lsp_document: Option<&'a mut bevy_lsp::LspDocument>,
     syntax_tree: Option<&'a bevy_tree_sitter::SyntaxTree>,

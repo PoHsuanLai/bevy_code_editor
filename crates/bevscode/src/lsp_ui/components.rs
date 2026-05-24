@@ -13,7 +13,7 @@
 
 use bevy::prelude::*;
 
-use super::state::UnifiedCompletionItem;
+use super::completion::UnifiedCompletionItem;
 use crate::lsp_ui_tempera::LspPopupRoot;
 
 /// Completion popup data. Hosts query this and render however they prefer.

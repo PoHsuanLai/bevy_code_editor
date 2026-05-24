@@ -8,7 +8,8 @@
 
 use crate::input::actions;
 use crate::input::keybindings::EditorAction;
-use crate::lsp_ui::state::{CompletionLifecycle, LspCompletionPopup, UnifiedCompletionItem};
+use crate::lsp_ui::completion::{LspCompletionPopup, UnifiedCompletionItem};
+use crate::lsp_ui::state::CompletionLifecycle;
 use crate::settings::{AcceptSuggestionOnEnter, LspConfig, Suggest, TabCompletion};
 use crate::text_view::TextBuffer;
 use crate::types::{CodeEditor, CursorState};

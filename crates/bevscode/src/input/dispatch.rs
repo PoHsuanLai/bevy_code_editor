@@ -342,7 +342,7 @@ type DispatchLspQuery<'w, 's> = Query<
     (
         &'static bevy_lsp::LspClient,
         Option<&'static mut bevy_lsp::LspDocument>,
-        &'static mut crate::lsp_ui::state::LspCompletionPopup,
+        &'static mut crate::lsp_ui::completion::LspCompletionPopup,
         &'static mut crate::lsp_ui::state::CompletionLifecycle,
         &'static crate::lsp_ui::state::LspRenamePopup,
         &'static crate::settings::LspConfig,

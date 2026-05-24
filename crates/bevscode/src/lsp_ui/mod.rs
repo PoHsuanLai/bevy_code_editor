@@ -24,9 +24,12 @@
 //! Hosts that want completion / hover / etc. data must add this crate's
 //! `plugin::LspPlugin`; the editor cascade handles the rest.
 
+pub mod completion;
 pub mod components;
 pub mod event_listeners;
+pub mod inlay_splice;
 pub mod interceptors;
+pub mod lifecycle;
 pub mod snippet;
 pub mod state;
 pub mod sync;
@@ -41,15 +44,23 @@ pub mod prelude {
         ServerCapabilities, DEFAULT_REQUEST_TIMEOUT_SECS,
     };
 
+    // Per-editor completion popup state Components.
+    pub use super::completion::{
+        LspCompletionPopup, UnifiedCompletionItem, WordCompletionItem,
+        COMPLETION_MAX_VISIBLE_DEFAULT,
+    };
+
+    // Per-editor popup lifecycle Components.
+    pub use super::lifecycle::{
+        CodeActionsLifecycle, CodeActionsPopupBackref, CompletionLifecycle, CompletionPopupBackref,
+        HoverLifecycle, HoverPopupBackref, PopupLifecycleData, PopupObserversAttached,
+        RenameLifecycle, RenamePopupBackref, SignatureLifecycle, SignaturePopupBackref,
+    };
+
     // Per-editor LSP UI state Components.
     pub use super::state::{
-        CodeActionsLifecycle, CodeActionsPopupBackref, CompletionLifecycle, CompletionPopupBackref,
-        HoverLifecycle, HoverPopupBackref, LspCodeActionsPopup, LspCompletionPopup,
-        LspDebounceTimers, LspDidChangeBatcher, LspDocumentHighlights, LspHoverPopup,
-        LspInlayHints, LspRenamePopup, LspSignatureHelpPopup, PendingLspRequest,
-        PopupLifecycleData, PopupObserversAttached, RenameLifecycle, RenamePopupBackref,
-        SignatureLifecycle, SignaturePopupBackref, UnifiedCompletionItem, WordCompletionItem,
-        COMPLETION_MAX_VISIBLE_DEFAULT,
+        LspCodeActionsPopup, LspDebounceTimers, LspDidChangeBatcher, LspDocumentHighlights,
+        LspHoverPopup, LspInlayHints, LspRenamePopup, LspSignatureHelpPopup, PendingLspRequest,
     };
 
     // Editor-coupled UI render-data Components.
@@ -80,13 +91,17 @@ pub use bevy_lsp::{
     CodeActionOrCommand, LspClient, LspDocument, LspMessage, LspRequest, LspResponse, RequestType,
     ServerCapabilities,
 };
-pub use state::{
+pub use completion::{
+    LspCompletionPopup, UnifiedCompletionItem, WordCompletionItem, COMPLETION_MAX_VISIBLE_DEFAULT,
+};
+pub use lifecycle::{
     CodeActionsLifecycle, CodeActionsPopupBackref, CompletionLifecycle, CompletionPopupBackref,
-    HoverLifecycle, HoverPopupBackref, LspCodeActionsPopup, LspCompletionPopup, LspDebounceTimers,
-    LspDidChangeBatcher, LspDocumentHighlights, LspHoverPopup, LspInlayHints, LspRenamePopup,
-    LspSignatureHelpPopup, PendingLspRequest, PopupLifecycleData, PopupObserversAttached,
+    HoverLifecycle, HoverPopupBackref, PopupLifecycleData, PopupObserversAttached,
     RenameLifecycle, RenamePopupBackref, SignatureLifecycle, SignaturePopupBackref,
-    UnifiedCompletionItem, WordCompletionItem, COMPLETION_MAX_VISIBLE_DEFAULT,
+};
+pub use state::{
+    LspCodeActionsPopup, LspDebounceTimers, LspDidChangeBatcher, LspDocumentHighlights,
+    LspHoverPopup, LspInlayHints, LspRenamePopup, LspSignatureHelpPopup, PendingLspRequest,
 };
 pub use systems::{
     sync_lsp_document, DiagnosticMarker, LocationType, MultipleLocationsEvent, NavigateToFileEvent,

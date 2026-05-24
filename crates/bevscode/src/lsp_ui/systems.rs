@@ -14,10 +14,11 @@ use crate::types::{CodeEditor, CursorState};
 use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::MonoCellWidth;
 
+use super::completion::LspCompletionPopup;
 use super::state::{
     CodeActionsLifecycle, CompletionLifecycle, HoverLifecycle, LspCodeActionsPopup,
-    LspCompletionPopup, LspDidChangeBatcher, LspDocumentHighlights, LspHoverPopup, LspInlayHints,
-    LspRenamePopup, LspSignatureHelpPopup, RenameLifecycle, SignatureLifecycle,
+    LspDidChangeBatcher, LspDocumentHighlights, LspHoverPopup, LspInlayHints, LspRenamePopup,
+    LspSignatureHelpPopup, RenameLifecycle, SignatureLifecycle,
 };
 use bevy_lsp::{
     CodeActionOrCommand, LspClient, LspCodeActionsResponse, LspCompletionResponse,

@@ -36,7 +36,7 @@ pub fn lsp_followup(
         (
             &bevy_lsp::LspClient,
             Option<&mut bevy_lsp::LspDocument>,
-            &mut crate::lsp_ui::state::LspCompletionPopup,
+            &mut crate::lsp_ui::completion::LspCompletionPopup,
             &mut crate::lsp_ui::state::CompletionLifecycle,
         ),
         With<CodeEditor>,

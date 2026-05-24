@@ -19,7 +19,7 @@ pub fn handle_request_completion(
     mut lsp_q: Query<
         (
             Option<&bevy_lsp::LspDocument>,
-            &mut crate::lsp_ui::state::LspCompletionPopup,
+            &mut crate::lsp_ui::completion::LspCompletionPopup,
             &mut crate::lsp_ui::state::CompletionLifecycle,
         ),
         With<CodeEditor>,
