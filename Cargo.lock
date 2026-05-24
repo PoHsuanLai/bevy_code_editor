@@ -6614,6 +6614,7 @@ dependencies = [
 [[package]]
 name = "tempera"
 version = "0.1.0"
+source = "git+https://github.com/PoHsuanLai/tempera.git?rev=b1d186f#b1d186fc7597bdb788da5682482bd67fb2134c09"
 dependencies = [
  "bevy",
  "bevy_ui_text_input",
