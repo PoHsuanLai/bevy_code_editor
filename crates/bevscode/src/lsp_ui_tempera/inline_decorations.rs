@@ -13,8 +13,8 @@
 
 use bevy::prelude::*;
 use bevy_instanced_text::{
-    CornerRadii, DisplayLayout, MonoCellWidth, RectOverlay, RowMetricsParam, RowVertical,
-    TextOverlays,
+    resolve_line_height, CornerRadii, DisplayLayout, MonoCellWidth, RectOverlay, RowMetricsParam,
+    RowVertical, TextOverlays,
 };
 
 use crate::lsp_ui::components::{
@@ -77,7 +77,17 @@ pub fn render_inlay_hints(
     let m = metrics.get_or_panic(editor_entity);
     let inv = computed.inverse_scale_factor();
     let logical_h = computed.size().y * inv;
-    let line_height = m.row_height();
+    let row_height = m.row_height();
+
+    // Inlay font + its resolved line-height. Bevy's default `LineHeight`
+    // on a freshly-spawned `Text` is `RelativeToFont(1.2)`, which is the
+    // pipeline default we mirror here so `ui_text_top_at_row_baseline`
+    // can compute the child's baseline offset.
+    let inlay_font_size = font.font_size * theme.inlay_font_scale;
+    let inlay_line_height = resolve_line_height(
+        bevy::text::LineHeight::RelativeToFont(1.2),
+        inlay_font_size,
+    );
 
     for (entity, hint) in hints.iter() {
         let color = match hint.kind {
@@ -86,15 +96,12 @@ pub fn render_inlay_hints(
             InlayHintKind::Other => theme.inlay_other,
         };
 
-        let row_top = m
-            .cell_top_left_at_x(hint.line, hint.character as f32 * m.cell_width())
-            .y;
-        let row_bot = row_top + line_height;
-        let off_screen = row_bot <= 0.0 || row_top >= logical_h;
+        let cell_top_left =
+            m.cell_top_left_at_x(hint.line, hint.character as f32 * m.cell_width());
+        let row_top = cell_top_left.y;
+        let off_screen = row_top + row_height <= 0.0 || row_top >= logical_h;
 
-        let cell_left = m
-            .cell_top_left_at_x(hint.line, hint.character as f32 * m.cell_width())
-            .x;
+        let top = m.ui_text_top_at_row_baseline(hint.line, inlay_font_size, inlay_line_height);
 
         let Ok(mut cmd) = commands.get_entity(entity) else {
             continue;
@@ -104,14 +111,14 @@ pub fn render_inlay_hints(
                 Text::new(hint.label.clone()),
                 TextFont {
                     font: font.font.clone(),
-                    font_size: font.font_size * theme.inlay_font_scale,
+                    font_size: inlay_font_size,
                     ..default()
                 },
                 TextColor(color),
                 Node {
                     position_type: PositionType::Absolute,
-                    left: Val::Px(cell_left),
-                    top: Val::Px(row_top),
+                    left: Val::Px(cell_top_left.x),
+                    top: Val::Px(top),
                     display: if off_screen { Display::None } else { Display::Flex },
                     ..default()
                 },
