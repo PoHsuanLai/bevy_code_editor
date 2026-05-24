@@ -194,6 +194,8 @@ pub mod prelude {
     pub use crate::settings::{EditorTheme, GutterConfig};
 
     // Monaco-parity settings Components, reachable as `crate::prelude::*`.
+    #[cfg(feature = "lsp")]
+    pub use crate::lsp_ui_tempera::{LspPopupRoot, LspUiTemperaPlugin, LspUiViewSet};
     pub use crate::settings::{
         AutoEdit, BracketConfig, CursorLine, EditorUi, Find, Folding, Guides, Indentation, Minimap,
         Misc, Padding, Performance, RenderSettings, Rulers, ScrollConfig, SelectionConfig,
@@ -201,8 +203,6 @@ pub mod prelude {
     };
     #[cfg(feature = "lsp")]
     pub use crate::settings::{DiagnosticColors, LspConfig, Suggest};
-    #[cfg(feature = "lsp")]
-    pub use crate::lsp_ui_tempera::{LspPopupRoot, LspUiTemperaPlugin, LspUiViewSet};
 
     // Tempera tokens — hosts that want to match the editor's chrome in
     // their own UI grab these from tempera's prelude directly, but we

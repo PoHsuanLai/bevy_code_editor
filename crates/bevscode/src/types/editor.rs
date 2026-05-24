@@ -127,10 +127,7 @@ use bevy::prelude::*;
     // edit handlers (which gate on `InputFocus.get()`).
     bevy::input_focus::tab_navigation::TabIndex
 )]
-#[cfg_attr(
-    feature = "lsp",
-    require(crate::plugin::DiagnosticUnderlineRects)
-)]
+#[cfg_attr(feature = "lsp", require(crate::plugin::DiagnosticUnderlineRects))]
 pub struct CodeEditor;
 
 /// Buffer line currently under the pointer, used by gutter chevrons under

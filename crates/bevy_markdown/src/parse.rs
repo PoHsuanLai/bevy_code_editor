@@ -13,10 +13,19 @@ use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Parser, Tag, TagEnd};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Block {
-    Heading { level: u8, inlines: Vec<Inline> },
+    Heading {
+        level: u8,
+        inlines: Vec<Inline>,
+    },
     Paragraph(Vec<Inline>),
-    CodeBlock { lang: Option<String>, text: String },
-    List { ordered: bool, items: Vec<Vec<Block>> },
+    CodeBlock {
+        lang: Option<String>,
+        text: String,
+    },
+    List {
+        ordered: bool,
+        items: Vec<Vec<Block>>,
+    },
     Blockquote(Vec<Block>),
     Rule,
 }
@@ -62,9 +71,16 @@ struct Walker {
 }
 
 enum BlockFrame {
-    List { ordered: bool, items: Vec<Vec<Block>> },
-    Item { children: Vec<Block> },
-    Blockquote { children: Vec<Block> },
+    List {
+        ordered: bool,
+        items: Vec<Vec<Block>>,
+    },
+    Item {
+        children: Vec<Block>,
+    },
+    Blockquote {
+        children: Vec<Block>,
+    },
 }
 
 enum InlineFrame {
@@ -103,32 +119,49 @@ impl Walker {
             Event::Html(_) | Event::InlineHtml(_) => {}
             Event::FootnoteReference(_) => {}
             Event::TaskListMarker(_) => {}
-            Event::InlineMath(s) | Event::DisplayMath(s) => self.push_inline(Inline::Code(s.into_string())),
+            Event::InlineMath(s) | Event::DisplayMath(s) => {
+                self.push_inline(Inline::Code(s.into_string()))
+            }
         }
     }
 
     fn start(&mut self, tag: Tag<'_>) {
         match tag {
             Tag::Paragraph => self.inline_stack.push(InlineFrame::Paragraph(Vec::new())),
-            Tag::Heading { level, .. } => self
-                .inline_stack
-                .push(InlineFrame::Heading { level: heading_to_u8(level), inlines: Vec::new() }),
-            Tag::BlockQuote(_) => self.block_stack.push(BlockFrame::Blockquote { children: Vec::new() }),
+            Tag::Heading { level, .. } => self.inline_stack.push(InlineFrame::Heading {
+                level: heading_to_u8(level),
+                inlines: Vec::new(),
+            }),
+            Tag::BlockQuote(_) => self.block_stack.push(BlockFrame::Blockquote {
+                children: Vec::new(),
+            }),
             Tag::CodeBlock(kind) => {
                 let lang = match kind {
                     CodeBlockKind::Fenced(s) => {
                         let s = s.into_string();
-                        if s.is_empty() { None } else { Some(s) }
+                        if s.is_empty() {
+                            None
+                        } else {
+                            Some(s)
+                        }
                     }
                     CodeBlockKind::Indented => None,
                 };
-                self.code_buf = Some(CodeBuf { lang, text: String::new() });
+                self.code_buf = Some(CodeBuf {
+                    lang,
+                    text: String::new(),
+                });
             }
             Tag::List(start) => {
                 let ordered = start.is_some();
-                self.block_stack.push(BlockFrame::List { ordered, items: Vec::new() });
+                self.block_stack.push(BlockFrame::List {
+                    ordered,
+                    items: Vec::new(),
+                });
             }
-            Tag::Item => self.block_stack.push(BlockFrame::Item { children: Vec::new() }),
+            Tag::Item => self.block_stack.push(BlockFrame::Item {
+                children: Vec::new(),
+            }),
             Tag::Emphasis => self.style.italic = true,
             Tag::Strong => self.style.bold = true,
             Tag::Strikethrough => self.style.strike = true,
@@ -213,8 +246,9 @@ impl Walker {
 
     fn push_block(&mut self, block: Block) {
         match self.block_stack.last_mut() {
-            Some(BlockFrame::Item { children })
-            | Some(BlockFrame::Blockquote { children }) => children.push(block),
+            Some(BlockFrame::Item { children }) | Some(BlockFrame::Blockquote { children }) => {
+                children.push(block)
+            }
             Some(BlockFrame::List { .. }) => {
                 // A bare block directly inside a list (not in an item) —
                 // shouldn't happen with well-formed CommonMark; drop it.
@@ -244,19 +278,39 @@ mod tests {
     use super::*;
 
     fn plain(s: &str) -> Inline {
-        Inline::Text { text: s.into(), style: InlineStyle::default() }
+        Inline::Text {
+            text: s.into(),
+            style: InlineStyle::default(),
+        }
     }
 
     fn styled(s: &str, style: InlineStyle) -> Inline {
-        Inline::Text { text: s.into(), style }
+        Inline::Text {
+            text: s.into(),
+            style,
+        }
     }
 
     #[test]
     fn parses_bold_italic_code() {
         let blocks = parse("**bold** *em* `code`");
-        let Block::Paragraph(inlines) = &blocks[0] else { panic!() };
-        assert!(inlines.contains(&styled("bold", InlineStyle { bold: true, ..default_style() })));
-        assert!(inlines.contains(&styled("em", InlineStyle { italic: true, ..default_style() })));
+        let Block::Paragraph(inlines) = &blocks[0] else {
+            panic!()
+        };
+        assert!(inlines.contains(&styled(
+            "bold",
+            InlineStyle {
+                bold: true,
+                ..default_style()
+            }
+        )));
+        assert!(inlines.contains(&styled(
+            "em",
+            InlineStyle {
+                italic: true,
+                ..default_style()
+            }
+        )));
         assert!(inlines.contains(&Inline::Code("code".into())));
         // The spaces between runs may be merged with adjacent text or
         // emitted as standalone " " runs — what matters is the styled
@@ -266,7 +320,9 @@ mod tests {
     #[test]
     fn parses_combined_bold_italic() {
         let blocks = parse("***both***");
-        let Block::Paragraph(inlines) = &blocks[0] else { panic!() };
+        let Block::Paragraph(inlines) = &blocks[0] else {
+            panic!()
+        };
         assert!(inlines
             .iter()
             .any(|i| matches!(i, Inline::Text { text, style } if text == "both" && style.bold && style.italic)));
@@ -275,7 +331,9 @@ mod tests {
     #[test]
     fn parses_strikethrough() {
         let blocks = parse("~~gone~~");
-        let Block::Paragraph(inlines) = &blocks[0] else { panic!() };
+        let Block::Paragraph(inlines) = &blocks[0] else {
+            panic!()
+        };
         // pulldown-cmark needs the `strikethrough` feature for ~~~ — if
         // it's not enabled, this just emits plain "~~gone~~". Either
         // way, the input doesn't panic; we accept whatever the parser
@@ -302,7 +360,10 @@ mod tests {
         let blocks = parse(src);
         assert_eq!(blocks.len(), 2);
         match &blocks[0] {
-            Block::List { ordered: false, items } => {
+            Block::List {
+                ordered: false,
+                items,
+            } => {
                 assert_eq!(items.len(), 1);
                 // outer item: a paragraph + a nested list
                 assert!(matches!(items[0].iter().last(), Some(Block::List { .. })));
@@ -318,7 +379,9 @@ mod tests {
     #[test]
     fn parses_hard_and_soft_break() {
         let blocks = parse("a  \nb\nc");
-        let Block::Paragraph(inlines) = &blocks[0] else { panic!() };
+        let Block::Paragraph(inlines) = &blocks[0] else {
+            panic!()
+        };
         assert!(inlines.contains(&Inline::HardBreak));
         assert!(inlines.contains(&Inline::SoftBreak));
     }
@@ -326,7 +389,9 @@ mod tests {
     #[test]
     fn parses_link() {
         let blocks = parse("[bevy](https://bevyengine.org)");
-        let Block::Paragraph(inlines) = &blocks[0] else { panic!() };
+        let Block::Paragraph(inlines) = &blocks[0] else {
+            panic!()
+        };
         match &inlines[0] {
             Inline::Link { href, children } => {
                 assert_eq!(href, "https://bevyengine.org");

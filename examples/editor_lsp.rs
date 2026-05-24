@@ -131,7 +131,10 @@ fn setup_editor(
     // docs, and signature help so rust-analyzer sends fenced code +
     // formatted prose instead of stripped plain text. `bevy_markdown`
     // renders the markdown in the popup chrome.
-    let markdown_then_plain = vec![lsp_types::MarkupKind::Markdown, lsp_types::MarkupKind::PlainText];
+    let markdown_then_plain = vec![
+        lsp_types::MarkupKind::Markdown,
+        lsp_types::MarkupKind::PlainText,
+    ];
     let capabilities = lsp_types::ClientCapabilities {
         text_document: Some(lsp_types::TextDocumentClientCapabilities {
             hover: Some(lsp_types::HoverClientCapabilities {

@@ -67,7 +67,9 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
     )));
     commands.spawn(Camera2d);
     commands.spawn((
-        Markdown { source: SAMPLE.into() },
+        Markdown {
+            source: SAMPLE.into(),
+        },
         MarkdownFonts {
             body: assets.load("fonts/Inter-Regular.ttf"),
             mono: assets.load("fonts/FiraMono-Regular.ttf"),
@@ -114,9 +116,9 @@ fn main() {
                 ..default()
             }),
     )
-        .add_plugins(BevyMarkdownPlugin)
-        .add_systems(Startup, setup)
-        .add_systems(Update, (tick_frames, capture_then_exit));
+    .add_plugins(BevyMarkdownPlugin)
+    .add_systems(Startup, setup)
+    .add_systems(Update, (tick_frames, capture_then_exit));
     app.run();
 }
 

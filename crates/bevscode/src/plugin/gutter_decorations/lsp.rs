@@ -99,10 +99,7 @@ mod tests {
     fn diag(line: u32, severity: DiagnosticSeverity, message: &str) -> Diagnostic {
         Diagnostic {
             range: LspRange {
-                start: Position {
-                    line,
-                    character: 0,
-                },
+                start: Position { line, character: 0 },
                 end: Position { line, character: 5 },
             },
             severity: Some(severity),

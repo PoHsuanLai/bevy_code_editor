@@ -31,7 +31,12 @@ pub fn spawn_markdown(
     scales: &MarkdownScales,
     highlighter: Option<&MarkdownHighlighter>,
 ) {
-    let theme = ThemeRef { fonts, colors, spacing, scales };
+    let theme = ThemeRef {
+        fonts,
+        colors,
+        spacing,
+        scales,
+    };
     let fallback;
     let hl: &dyn CodeHighlighter = match highlighter {
         Some(h) => &*h.0,
@@ -55,7 +60,9 @@ fn spawn_block(
     match block {
         Block::Heading { level, inlines } => spawn_heading(parent, *level, inlines, theme),
         Block::Paragraph(inlines) => spawn_paragraph(parent, inlines, theme),
-        Block::CodeBlock { lang, text } => spawn_code_block(parent, lang.as_deref(), text, theme, hl),
+        Block::CodeBlock { lang, text } => {
+            spawn_code_block(parent, lang.as_deref(), text, theme, hl)
+        }
         Block::List { ordered, items } => spawn_list(parent, *ordered, items, theme, hl),
         Block::Blockquote(children) => spawn_blockquote(parent, children, theme, hl),
         Block::Rule => spawn_rule(parent, theme),

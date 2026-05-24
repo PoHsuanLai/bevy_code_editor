@@ -10,9 +10,9 @@ use crate::types::{
 };
 
 use super::gutter_decorations::{
-    drive_chevron_rotation, setup_icon_atlas, sync_fold_chevron_icons,
-    sync_gutter_decoration_bars, sync_gutter_icons, update_glyph_margin_overlays,
-    update_line_decoration_overlays, GlyphMarginRects, LineDecorationRects,
+    drive_chevron_rotation, setup_icon_atlas, sync_fold_chevron_icons, sync_gutter_decoration_bars,
+    sync_gutter_icons, update_glyph_margin_overlays, update_line_decoration_overlays,
+    GlyphMarginRects, LineDecorationRects,
 };
 use super::links::{update_link_overlays, LinkRects};
 use super::{
@@ -132,8 +132,7 @@ impl Plugin for EditorUiPlugin {
         #[cfg(feature = "lsp")]
         app.add_systems(
             PostUpdate,
-            super::diagnostic_underlines::update_diagnostic_underlines
-                .in_set(super::RenderingSet),
+            super::diagnostic_underlines::update_diagnostic_underlines.in_set(super::RenderingSet),
         );
 
         // State update stays in Update; overlay producer reads DisplayLayout so it runs in PostUpdate.
@@ -620,7 +619,11 @@ fn resolve_gutter_layout(
         } else {
             0.0
         };
-        let numbers_w = if show_numbers { mono.px * min_chars } else { 0.0 };
+        let numbers_w = if show_numbers {
+            mono.px * min_chars
+        } else {
+            0.0
+        };
         // Chevron column scales with line-height (Monaco does the same)
         // with a 16 px floor for tiny font sizes.
         let chevron_w = if folding_enabled {
@@ -640,14 +643,29 @@ fn resolve_gutter_layout(
         // 2) Left chain — single pass, every band starts where the
         //    previous ended.
         let mut x = ui.gutter_padding_left;
-        let glyph = GutterBand { left: x, width: glyph_w };
+        let glyph = GutterBand {
+            left: x,
+            width: glyph_w,
+        };
         x += glyph_w;
-        let numbers = GutterBand { left: x, width: numbers_w };
+        let numbers = GutterBand {
+            left: x,
+            width: numbers_w,
+        };
         x += numbers_w;
-        let decorations = GutterBand { left: x, width: decorations_w };
-        let chevron = GutterBand { left: x, width: chevron_w };
+        let decorations = GutterBand {
+            left: x,
+            width: decorations_w,
+        };
+        let chevron = GutterBand {
+            left: x,
+            width: chevron_w,
+        };
         x += chevron_w;
-        let bar = GutterBand { left: x, width: bar_w };
+        let bar = GutterBand {
+            left: x,
+            width: bar_w,
+        };
 
         let next = GutterConfig {
             gutter_width,

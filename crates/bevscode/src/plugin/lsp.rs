@@ -30,8 +30,8 @@ use crate::lsp_ui::event_listeners::{
 };
 use crate::lsp_ui::state::LspCompletionPopup;
 use crate::lsp_ui::sync::{
-    sync_code_actions_popup, sync_completion_popup, sync_document_highlights, sync_hover_popup,
-    splice_inlays_into_line_styles, sync_inlay_hints, sync_rename_input,
+    splice_inlays_into_line_styles, sync_code_actions_popup, sync_completion_popup,
+    sync_document_highlights, sync_hover_popup, sync_inlay_hints, sync_rename_input,
     sync_signature_help_popup,
 };
 use crate::lsp_ui::systems::{

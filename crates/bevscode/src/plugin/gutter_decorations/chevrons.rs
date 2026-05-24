@@ -156,9 +156,8 @@ pub(crate) fn sync_fold_chevron_icons(
             // Bias the icon slightly above geometric centre so it
             // tracks the digits' optical centre (which sits above
             // the row's mid-line because of the descender).
-            let icon_top = (geom.top_px + (geom.line_height_px - icon_size) * 0.5
-                - optical_lift)
-                .round();
+            let icon_top =
+                (geom.top_px + (geom.line_height_px - icon_size) * 0.5 - optical_lift).round();
 
             if let Some(&entity) = pool.get(idx) {
                 if let Ok((_, _ch, mut node, mut svg_color, mut rot, mut vis)) =

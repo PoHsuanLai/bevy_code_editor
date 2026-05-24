@@ -17,13 +17,15 @@ use bevy::ui::ComputedNode;
 use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{
     visible_buffer_range, CornerRadii, DisplayLayout, MonoCellWidth, RectOverlay, RowVertical,
-    TextBuffer, TextBounds,
+    TextBounds, TextBuffer,
 };
 use bevy_instanced_text_editor::RopeBuffer;
 use lsp_types::DiagnosticSeverity;
 
 use crate::lsp_ui::systems::DiagnosticMarker;
-use crate::settings::{DiagnosticColors, EditorUi, Padding, RenderSettings, RenderValidationDecorations};
+use crate::settings::{
+    DiagnosticColors, EditorUi, Padding, RenderSettings, RenderValidationDecorations,
+};
 use crate::types::{CodeEditor, FoldState};
 use crate::ui_kit::DiagnosticTokens;
 
@@ -101,8 +103,7 @@ pub(crate) fn update_diagnostic_underlines(
         }
 
         let char_width = mono.px;
-        let line_height_px =
-            bevy_instanced_text::resolve_line_height(*line_height, font.font_size);
+        let line_height_px = bevy_instanced_text::resolve_line_height(*line_height, font.font_size);
         let inv = computed.inverse_scale_factor();
         let viewport_height = computed.size().y * inv;
         let text_area_top = computed.content_inset().min_inset.y * inv;
@@ -148,10 +149,7 @@ pub(crate) fn update_diagnostic_underlines(
             // line's non-whitespace content so the user actually sees the
             // marker. Matches VSCode's behavior for zero-width diagnostics.
             let (start_char, end_char) = if raw_end <= raw_start {
-                let first_non_ws = line
-                    .chars()
-                    .position(|c| !c.is_whitespace())
-                    .unwrap_or(0);
+                let first_non_ws = line.chars().position(|c| !c.is_whitespace()).unwrap_or(0);
                 (first_non_ws.min(line_chars), line_chars + 1)
             } else {
                 (raw_start.min(line_chars), raw_end.min(line_chars + 1))
@@ -185,7 +183,14 @@ pub(crate) fn update_diagnostic_underlines(
             let color = color_for(d.severity, colors);
 
             if start_row == end_row {
-                push_squiggle(&mut new_rects, start_row, start_x..end_x, color, inv, &tokens);
+                push_squiggle(
+                    &mut new_rects,
+                    start_row,
+                    start_x..end_x,
+                    color,
+                    inv,
+                    &tokens,
+                );
             } else {
                 let start_row_end = layout
                     .lines
@@ -202,14 +207,7 @@ pub(crate) fn update_diagnostic_underlines(
                     &tokens,
                 );
                 for r in (start_row + 1)..end_row {
-                    push_squiggle(
-                        &mut new_rects,
-                        r,
-                        0.0..start_row_end,
-                        color,
-                        inv,
-                        &tokens,
-                    );
+                    push_squiggle(&mut new_rects, r, 0.0..start_row_end, color, inv, &tokens);
                 }
                 push_squiggle(&mut new_rects, end_row, 0.0..end_x, color, inv, &tokens);
             }

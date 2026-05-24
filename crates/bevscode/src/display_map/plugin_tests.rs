@@ -1294,8 +1294,7 @@ fn newline_before_folded_region_does_not_hide_a_visible_line() {
     let now_hidden_content: Vec<String> = got.iter().map(|&i| line_at(i)).collect();
 
     assert_eq!(
-        now_hidden_content,
-        originally_hidden_content,
+        now_hidden_content, originally_hidden_content,
         "After inserting `\\n` at row 0, the fold still hides buffer rows {got:?} \
          which now contain {now_hidden_content:?}. The same *content* \
          ({originally_hidden_content:?}) should stay hidden — i.e. fold range \
@@ -1512,14 +1511,20 @@ fn insert_newline_above_fn_main_full_pipeline() {
 
     let source = std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent().unwrap().parent().unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
             .join("examples/editor_lsp.rs"),
     )
     .expect("read editor_lsp.rs");
     let lines: Vec<&str> = source.lines().collect();
     assert_eq!(lines.get(17).copied(), Some(""), "row 17 should be blank");
     assert!(
-        lines.get(18).map(|s| s.starts_with("fn main")).unwrap_or(false),
+        lines
+            .get(18)
+            .map(|s| s.starts_with("fn main"))
+            .unwrap_or(false),
         "row 18 should start with `fn main`",
     );
 
@@ -1570,9 +1575,18 @@ fn insert_newline_above_fn_main_full_pipeline() {
                 start_byte: row_17_byte,
                 old_end_byte: row_17_byte,
                 new_end_byte: row_17_byte + 1,
-                start_position: EditPoint { row: 17, column_byte: 0 },
-                old_end_position: EditPoint { row: 17, column_byte: 0 },
-                new_end_position: EditPoint { row: 18, column_byte: 0 },
+                start_position: EditPoint {
+                    row: 17,
+                    column_byte: 0,
+                },
+                old_end_position: EditPoint {
+                    row: 17,
+                    column_byte: 0,
+                },
+                new_end_position: EditPoint {
+                    row: 18,
+                    column_byte: 0,
+                },
             },
             content_version: 2,
             pre_edit_rope: None,
@@ -1595,7 +1609,10 @@ fn insert_newline_above_fn_main_full_pipeline() {
             .collect()
     };
     assert!(
-        post_rope_lines.get(19).map(|s| s.starts_with("fn main")).unwrap_or(false),
+        post_rope_lines
+            .get(19)
+            .map(|s| s.starts_with("fn main"))
+            .unwrap_or(false),
         "post-edit rope row 19 must start with `fn main`, got {:?}",
         post_rope_lines.get(19),
     );
@@ -1640,4 +1657,3 @@ fn insert_newline_above_fn_main_full_pipeline() {
         "DisplayLayout.lines[buffer_row=19].text = {layout_text_19:?}. Lines: {layout_dump:?}",
     );
 }
-

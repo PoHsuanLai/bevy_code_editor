@@ -234,11 +234,8 @@ pub(crate) fn update_bracket_highlight(mut editor_query: BracketHighlightQuery) 
                 layout
                     .and_then(|l| {
                         let s = l.x_at_byte(start_row, start_byte_in_row)?;
-                        let e = l.x_after_source_range(
-                            start_row,
-                            start_byte_in_row,
-                            end_byte_in_row,
-                        )?;
+                        let e =
+                            l.x_after_source_range(start_row, start_byte_in_row, end_byte_in_row)?;
                         Some((e - s).max(0.0))
                     })
                     .unwrap_or(char_width)

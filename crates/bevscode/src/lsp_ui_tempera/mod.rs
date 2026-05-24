@@ -55,9 +55,7 @@ impl Plugin for LspUiTemperaPlugin {
         // Tempera's theme resources are the source of truth for every
         // popup color / metric. Pull in `BevscodePalettePlugin` so the
         // resources exist and `EditorTheme` stays in sync.
-        if !app
-            .is_plugin_added::<crate::ui_kit::BevscodePalettePlugin>()
-        {
+        if !app.is_plugin_added::<crate::ui_kit::BevscodePalettePlugin>() {
             app.add_plugins(crate::ui_kit::BevscodePalettePlugin);
         }
 
@@ -159,11 +157,7 @@ impl PopupOwner for crate::lsp_ui::components::RenameInputData {
     }
 }
 
-fn reparent_on_add<P: PopupOwner>(
-    trigger: On<Add, P>,
-    mut commands: Commands,
-    popups: Query<&P>,
-) {
+fn reparent_on_add<P: PopupOwner>(trigger: On<Add, P>, mut commands: Commands, popups: Query<&P>) {
     let entity = trigger.entity;
     let Ok(data) = popups.get(entity) else {
         return;

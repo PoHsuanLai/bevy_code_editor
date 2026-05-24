@@ -290,7 +290,11 @@ fn shape_phys_line(
             Some((prev, buf)) if style_run_matches(prev, &run_proto) => buf.push(ch),
             _ => {
                 if let Some((format, buf)) = current.take() {
-                    runs.push(FormattedSpan { text: buf, format, is_virtual: false });
+                    runs.push(FormattedSpan {
+                        text: buf,
+                        format,
+                        is_virtual: false,
+                    });
                 }
                 let mut buf = String::new();
                 buf.push(ch);
@@ -302,7 +306,11 @@ fn shape_phys_line(
         line_text.push(' ');
     }
     if let Some((format, buf)) = current.take() {
-        runs.push(FormattedSpan { text: buf, format, is_virtual: false });
+        runs.push(FormattedSpan {
+            text: buf,
+            format,
+            is_virtual: false,
+        });
     }
     (line_text, runs)
 }

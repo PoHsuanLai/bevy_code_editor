@@ -5,13 +5,13 @@ use bevy::prelude::*;
 pub mod brackets;
 pub mod copy_highlight;
 pub mod cursor;
+#[cfg(feature = "lsp")]
+pub mod diagnostic_underlines;
 pub mod editor_ui;
 pub mod folding;
 pub mod gutter_decorations;
 pub mod line_numbers;
 pub mod links;
-#[cfg(feature = "lsp")]
-pub mod diagnostic_underlines;
 #[cfg(feature = "lsp")]
 pub mod lsp;
 pub mod scroll_animator;
@@ -26,6 +26,8 @@ pub use self::lsp::LspPlugin;
 
 pub use self::brackets::BracketPlugin;
 pub use self::cursor::CursorPlugin;
+#[cfg(feature = "lsp")]
+pub use self::diagnostic_underlines::DiagnosticUnderlineRects;
 pub use self::editor_ui::{AutoResizeViewport, EditorUiPlugin};
 pub use self::folding::FoldingPlugin;
 pub use self::gutter_decorations::{
@@ -33,8 +35,6 @@ pub use self::gutter_decorations::{
     GutterDecorations, GutterIcon, IconAtlas, LineDecoration, LineDecorationRects,
 };
 pub use self::links::{HoveredLink, LinkRange, LinkRanges, LinkRects};
-#[cfg(feature = "lsp")]
-pub use self::diagnostic_underlines::DiagnosticUnderlineRects;
 pub use self::scroll_animator::{ScrollAnimator, ScrollAnimatorPlugin};
 
 // Re-export syntax highlighting resources publicly for external use

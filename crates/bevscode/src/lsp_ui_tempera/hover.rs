@@ -149,7 +149,9 @@ pub fn update_hover_popup(
             let (fonts, colors, spacing, scales) = markdown_theme_from_chrome(&chrome);
             commands.entity(entity).with_children(|p| {
                 p.spawn((
-                    Markdown { source: data.content.clone() },
+                    Markdown {
+                        source: data.content.clone(),
+                    },
                     fonts,
                     colors,
                     spacing,

@@ -43,10 +43,10 @@ pub mod prelude {
 
     // Per-editor LSP UI state Components.
     pub use super::state::{
-        CodeActionsLifecycle, CodeActionsPopupBackref, CompletionLifecycle,
-        CompletionPopupBackref, HoverLifecycle, HoverPopupBackref, LspCodeActionsPopup,
-        LspCompletionPopup, LspDebounceTimers, LspDidChangeBatcher, LspDocumentHighlights,
-        LspHoverPopup, LspInlayHints, LspRenamePopup, LspSignatureHelpPopup, PendingLspRequest,
+        CodeActionsLifecycle, CodeActionsPopupBackref, CompletionLifecycle, CompletionPopupBackref,
+        HoverLifecycle, HoverPopupBackref, LspCodeActionsPopup, LspCompletionPopup,
+        LspDebounceTimers, LspDidChangeBatcher, LspDocumentHighlights, LspHoverPopup,
+        LspInlayHints, LspRenamePopup, LspSignatureHelpPopup, PendingLspRequest,
         PopupLifecycleData, PopupObserversAttached, RenameLifecycle, RenamePopupBackref,
         SignatureLifecycle, SignaturePopupBackref, UnifiedCompletionItem, WordCompletionItem,
         COMPLETION_MAX_VISIBLE_DEFAULT,

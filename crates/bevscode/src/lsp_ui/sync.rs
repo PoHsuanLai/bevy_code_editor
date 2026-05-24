@@ -298,8 +298,7 @@ fn range_contains(range: lsp_types::Range, p: lsp_types::Position) -> bool {
     if range.start == range.end {
         return p.line == range.start.line;
     }
-    let after_start =
-        (p.line, p.character) >= (range.start.line, range.start.character);
+    let after_start = (p.line, p.character) >= (range.start.line, range.start.character);
     let before_end = (p.line, p.character) < (range.end.line, range.end.character);
     after_start && before_end
 }
@@ -783,7 +782,10 @@ pub fn splice_inlays_into_line_styles(
             };
             let rope_byte = bevy_lsp::lsp_position_to_rope_byte(rope, pos, enc);
             let byte_in_line = rope_byte.saturating_sub(line_byte_start);
-            by_line.entry(hint.line).or_default().push((byte_in_line, hint));
+            by_line
+                .entry(hint.line)
+                .or_default()
+                .push((byte_in_line, hint));
         }
         for v in by_line.values_mut() {
             v.sort_by_key(|(b, _)| *b);

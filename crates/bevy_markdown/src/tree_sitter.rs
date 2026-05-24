@@ -148,10 +148,7 @@ impl CodeHighlighter for TreeSitterHighlighter {
         };
 
         let rope = Rope::from_str(code);
-        let Some(ranges) = cached
-            .provider
-            .highlight_range(&tree, &rope, 0..code.len())
-        else {
+        let Some(ranges) = cached.provider.highlight_range(&tree, &rope, 0..code.len()) else {
             return Vec::new();
         };
 

@@ -187,7 +187,10 @@ impl LspClient {
             let _aux = handle.auxiliary_tasks;
 
             let outcome = mainloop.run_buffered(reader, writer).await;
-            info!("[LSP] MainLoop::run_buffered returned outcome={:?}", outcome.as_ref().map(|_| ()).map_err(|e| e.to_string()));
+            info!(
+                "[LSP] MainLoop::run_buffered returned outcome={:?}",
+                outcome.as_ref().map(|_| ()).map_err(|e| e.to_string())
+            );
             handle.exited.await;
             info!("[LSP] transport handle exited");
 

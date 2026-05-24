@@ -187,7 +187,15 @@ pub(crate) fn produce_line_styles(
     // Per-entity pending edit: (dirty_range, accumulated_deltas).
     // `None` dirty_range = full rebuild; non-empty deltas tell us which row
     // shifts to apply to `by_line` keys before re-highlighting.
-    mut dirty_lines: Local<HashMap<Entity, (Option<(u32, u32)>, Vec<bevy_instanced_text_editor::EditDelta>)>>,
+    mut dirty_lines: Local<
+        HashMap<
+            Entity,
+            (
+                Option<(u32, u32)>,
+                Vec<bevy_instanced_text_editor::EditDelta>,
+            ),
+        >,
+    >,
 ) {
     let _span = bevy::prelude::info_span!("produce_line_styles").entered();
     for event in edit_events.read() {
@@ -454,7 +462,10 @@ pub(crate) fn produce_line_styles(
 /// deleted are dropped; keys whose lines moved are re-keyed. Routes every
 /// row through [`bevy_instanced_text_editor::shift_line`] so the line-shift
 /// semantics stay in one place.
-pub(crate) fn shift_by_line<V>(map: &mut HashMap<u32, V>, delta: &bevy_instanced_text_editor::EditDelta) {
+pub(crate) fn shift_by_line<V>(
+    map: &mut HashMap<u32, V>,
+    delta: &bevy_instanced_text_editor::EditDelta,
+) {
     use bevy_instanced_text_editor::{shift_line, LineShift};
     // Stage moves to avoid clobbering an entry that's about to move itself.
     let mut to_remove: Vec<u32> = Vec::new();

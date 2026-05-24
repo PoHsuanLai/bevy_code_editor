@@ -91,11 +91,7 @@ pub fn update_signature_help_popup(
                     if !pre.is_empty() {
                         row.spawn((Text::new(pre), chrome.body_font(), TextColor(muted)));
                     }
-                    row.spawn((
-                        Text::new(active),
-                        chrome.body_font_bold(),
-                        TextColor(fg),
-                    ));
+                    row.spawn((Text::new(active), chrome.body_font_bold(), TextColor(fg)));
                     if !post.is_empty() {
                         row.spawn((Text::new(post), chrome.body_font(), TextColor(muted)));
                     }

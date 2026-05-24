@@ -12,8 +12,8 @@ use bevy::prelude::*;
 
 use crate::lsp_ui::state::{
     CodeActionsLifecycle, CodeActionsPopupBackref, CompletionLifecycle, CompletionPopupBackref,
-    HoverLifecycle, HoverPopupBackref, PopupObserversAttached, RenameLifecycle,
-    RenamePopupBackref, SignatureLifecycle, SignaturePopupBackref,
+    HoverLifecycle, HoverPopupBackref, PopupObserversAttached, RenameLifecycle, RenamePopupBackref,
+    SignatureLifecycle, SignaturePopupBackref,
 };
 
 use crate::ui_kit::PopupChrome;

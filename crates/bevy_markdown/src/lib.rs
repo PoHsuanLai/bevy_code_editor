@@ -114,7 +114,9 @@ fn rebuild_markdown(
         if commands.get_entity(entity).is_err() {
             continue;
         }
-        let highlighter = highlighter.as_ref().map(|h| MarkdownHighlighter(h.0.clone()));
+        let highlighter = highlighter
+            .as_ref()
+            .map(|h| MarkdownHighlighter(h.0.clone()));
         let md_source = md.source.clone();
         let fonts = fonts.clone();
         let colors = colors.clone();

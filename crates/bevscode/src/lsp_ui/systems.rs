@@ -852,10 +852,7 @@ pub fn cleanup_lsp_timeouts(query: Query<&LspClient, With<CodeEditor>>) {
 /// this frame *and* the pointer is not inside the popup chrome — the
 /// caller should then run its feature-specific dismiss. The lifecycle
 /// `dismiss()` is called here so the timer can't fire twice.
-fn tick_dismiss_grace(
-    lc: &mut super::state::PopupLifecycleData,
-    dt: std::time::Duration,
-) -> bool {
+fn tick_dismiss_grace(lc: &mut super::state::PopupLifecycleData, dt: std::time::Duration) -> bool {
     let Some(timer) = lc.dismiss_after.as_mut() else {
         return false;
     };

@@ -22,7 +22,12 @@ use super::PopupChrome;
 /// `commands.spawn((Markdown { source }, fonts, colors, spacing, scales))`.
 pub fn markdown_theme_from_chrome(
     chrome: &PopupChrome<'_>,
-) -> (MarkdownFonts, MarkdownColors, MarkdownSpacing, MarkdownScales) {
+) -> (
+    MarkdownFonts,
+    MarkdownColors,
+    MarkdownSpacing,
+    MarkdownScales,
+) {
     let regular = chrome.font.regular.clone().unwrap_or_default();
     let bold = chrome.font.bold.clone().or(Some(regular.clone()));
 

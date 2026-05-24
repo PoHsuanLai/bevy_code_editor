@@ -438,11 +438,7 @@ pub(crate) fn update_link_overlays(
                         layout_view
                             .layout
                             .and_then(|l| {
-                                l.x_after_source_range(
-                                    end_row,
-                                    start_byte_in_row,
-                                    end_byte_in_row,
-                                )
+                                l.x_after_source_range(end_row, start_byte_in_row, end_byte_in_row)
                             })
                             .unwrap_or(end_char as f32 * char_width)
                     } else {
