@@ -78,6 +78,16 @@ impl PopupAnchor<'_, '_> {
         let inv = computed.inverse_scale_factor();
         let logical = computed.size() * inv;
 
+        // Hide the popup when its anchor row is outside the vertical
+        // viewport. Without this, scrolling the anchor line off-screen
+        // would clamp the popup's `top` to 0 and pin it to the editor's
+        // top edge — visually a stray panel hovering at the upper-right.
+        let row_top = anchor.top_left.y;
+        let row_bot = row_top + anchor.line_height;
+        if row_bot <= 0.0 || row_top >= logical.y {
+            return None;
+        }
+
         // Overlap the popup with the cursor row by half a line so moving
         // the mouse from text into the popup doesn't cross a dead band
         // that fires `Pointer<Out>` on the editor. Same trick the egui

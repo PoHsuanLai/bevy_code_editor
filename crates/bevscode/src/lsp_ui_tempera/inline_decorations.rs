@@ -1,16 +1,17 @@
-//! Inline LSP decorations: inlay hints (sprite text) and document
+//! Inline LSP decorations: inlay hints (UI text) and document
 //! highlights (engine overlay rects).
 //!
-//! These don't go through `bevy_ui`. Routing them through the engine's
-//! `Text2d` / `RectOverlay` paths means they share the same draw call
-//! and instance buffer as the editor's glyphs, so they stay pixel-
-//! aligned under any clip-projection convention. Sprites parented under
-//! the editor's UI `Node` would land on slightly different pixels and
-//! drift by ~half a row, which is why the engine exposes the overlay
-//! path for selection / cursor decorations in the first place.
+//! Document highlights go through the engine's [`RectOverlay`] path so
+//! they share the editor's draw call and stay pixel-aligned with the
+//! glyph grid. Inlay hint labels are spawned as `bevy_ui` [`Text`] nodes
+//! parented under the editor entity, positioned absolutely from
+//! [`RowMetrics`] — same pattern the LSP popups use, and the only path
+//! that respects the editor's screen position + clipping. Using `Text2d`
+//! here would render the labels in world space (independent of the
+//! editor's UI rect) and they would drift, scroll opposite to the
+//! editor, and escape clipping.
 
 use bevy::prelude::*;
-use bevy::sprite::Anchor;
 use bevy_instanced_text::{
     CornerRadii, DisplayLayout, MonoCellWidth, RectOverlay, RowMetricsParam, RowVertical,
     TextOverlays,
@@ -50,26 +51,33 @@ impl Default for InlineDecorationsTheme {
     }
 }
 
-/// Marker on the spawned `Text2d` for each inlay hint. Despawn is
-/// handled by `sync_inlay_hints` (it drains and re-spawns the marker
-/// entities each frame data changes).
+/// Marker on the spawned UI node for each inlay hint. `sync_inlay_hints`
+/// drains and re-spawns these every time `LspInlayHints` changes.
 #[derive(Component)]
 pub struct InlayHintGlyph;
 
-/// Spawn / reposition a `Text2d` for each [`InlayHintData`]. Re-runs
-/// every frame because scroll / resize must move the glyph even when
-/// the hint data itself is unchanged (no `Added` filter).
+/// Render every [`InlayHintData`] as a `bevy_ui` text node parented under
+/// the editor entity. Re-runs each frame because scroll / resize must
+/// reposition the node even when the hint data itself is unchanged.
+///
+/// Hints whose row is outside the editor's vertical viewport get
+/// `Display::None` instead of being clamped — without this they would
+/// pile up at the editor's top edge (`bevy_ui` clamps negative `top`
+/// to 0).
 pub fn render_inlay_hints(
     mut commands: Commands,
     hints: Query<(Entity, &InlayHintData)>,
-    editors: Query<(Entity, &TextFont), With<CodeEditor>>,
+    editors: Query<(Entity, &TextFont, &ComputedNode), With<CodeEditor>>,
     metrics: RowMetricsParam,
     theme: Res<InlineDecorationsTheme>,
 ) {
-    let Ok((editor_entity, font)) = editors.single() else {
+    let Ok((editor_entity, font, computed)) = editors.single() else {
         return;
     };
     let m = metrics.get_or_panic(editor_entity);
+    let inv = computed.inverse_scale_factor();
+    let logical_h = computed.size().y * inv;
+    let line_height = m.row_height();
 
     for (entity, hint) in hints.iter() {
         let color = match hint.kind {
@@ -78,30 +86,36 @@ pub fn render_inlay_hints(
             InlayHintKind::Other => theme.inlay_other,
         };
 
-        let band = m.row_glyph_band(hint.line);
+        let row_top = m
+            .cell_top_left_at_x(hint.line, hint.character as f32 * m.cell_width())
+            .y;
+        let row_bot = row_top + line_height;
+        let off_screen = row_bot <= 0.0 || row_top >= logical_h;
+
         let cell_left = m
             .cell_top_left_at_x(hint.line, hint.character as f32 * m.cell_width())
             .x;
-        let pos = Vec3::new(
-            cell_left,
-            (band.min.y + band.max.y) * 0.5,
-            theme.inlay_z,
-        );
 
         let Ok(mut cmd) = commands.get_entity(entity) else {
             continue;
         };
         cmd.queue_silenced(bevy::ecs::system::entity_command::insert(
             (
-                Text2d::new(&hint.label),
+                Text::new(hint.label.clone()),
                 TextFont {
                     font: font.font.clone(),
                     font_size: font.font_size * theme.inlay_font_scale,
                     ..default()
                 },
                 TextColor(color),
-                Transform::from_translation(pos),
-                Anchor::CENTER_LEFT,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(cell_left),
+                    top: Val::Px(row_top),
+                    display: if off_screen { Display::None } else { Display::Flex },
+                    ..default()
+                },
+                ChildOf(editor_entity),
                 InlayHintGlyph,
                 LspUiVisual,
             ),
