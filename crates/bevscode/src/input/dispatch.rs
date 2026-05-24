@@ -351,15 +351,36 @@ type DispatchLspQuery<'w, 's> = Query<
     With<CodeEditor>,
 >;
 
-/// `EditorAction` → typed event dispatcher.
-pub fn dispatch_action_events(
-    input_focus: Res<InputFocus>,
-    mut action_query: Query<
-        (&ActionState<EditorAction>, &mut KeyRepeatState),
+/// Non-cfg'd queries the dispatcher reads/writes. Bundled into a
+/// `SystemParam` so the system signature stays under clippy's threshold
+/// even with cfg'd LSP params.
+#[derive(SystemParam)]
+pub(crate) struct DispatchParams<'w, 's> {
+    input_focus: Res<'w, InputFocus>,
+    action_query: Query<
+        'w,
+        's,
+        (&'static ActionState<EditorAction>, &'static mut KeyRepeatState),
         With<EditorInputManager>,
     >,
-    cursor_settings_q: Query<&CursorSettings, With<CodeEditor>>,
-    mut misc_q: Query<&mut crate::settings::Misc, With<CodeEditor>>,
+    cursor_settings_q: Query<'w, 's, &'static CursorSettings, With<CodeEditor>>,
+    misc_q: Query<'w, 's, &'static mut crate::settings::Misc, With<CodeEditor>>,
+    auto_indent_q: Query<
+        'w,
+        's,
+        (
+            &'static AutoEdit,
+            &'static Indentation,
+            &'static SelectionState,
+        ),
+        With<CodeEditor>,
+    >,
+    writers: ActionEventWriters<'w>,
+}
+
+/// `EditorAction` → typed event dispatcher.
+pub(crate) fn dispatch_action_events(
+    mut params: DispatchParams,
     #[cfg(feature = "lsp")] mut pending: ResMut<PendingActionFollowup>,
     #[cfg(feature = "lsp")] mut editor_q: Query<
         (
@@ -378,13 +399,11 @@ pub fn dispatch_action_events(
         With<CodeEditor>,
     >,
     #[cfg(feature = "lsp")] mut lsp_q: DispatchLspQuery,
-    auto_indent_q: Query<(&AutoEdit, &Indentation, &SelectionState), With<CodeEditor>>,
-    mut writers: ActionEventWriters,
 ) {
-    let Some(focused) = input_focus.get() else {
+    let Some(focused) = params.input_focus.get() else {
         return;
     };
-    let Ok((action_state, mut key_repeat_state)) = action_query.single_mut() else {
+    let Ok((action_state, mut key_repeat_state)) = params.action_query.single_mut() else {
         warn!("No EditorInputManager entity found with ActionState");
         return;
     };
@@ -422,7 +441,7 @@ pub fn dispatch_action_events(
                 // `CursorSettings`; fall back to default if the focused entity
                 // isn't a CodeEditor (e.g. a terminal pane is focused).
                 let default = CursorSettings::default();
-                let cursor_settings = cursor_settings_q.get(focused).unwrap_or(&default);
+                let cursor_settings = params.cursor_settings_q.get(focused).unwrap_or(&default);
                 if let Some(action) = key_repeat_state.tick(now, &cursor_settings.key_repeat) {
                     action_to_execute = Some(action);
                 }
@@ -439,7 +458,7 @@ pub fn dispatch_action_events(
     // Read-only: drop content-mutating actions before they reach handlers.
     // Navigation, selection, copy, search, and fold actions still flow.
     if action.is_mutating() {
-        if let Ok(misc) = misc_q.get(focused) {
+        if let Ok(misc) = params.misc_q.get(focused) {
             if misc.read_only {
                 return;
             }
@@ -447,14 +466,14 @@ pub fn dispatch_action_events(
     }
 
     if matches!(action, EditorAction::InsertTab) {
-        if let Ok(misc) = misc_q.get(focused) {
+        if let Ok(misc) = params.misc_q.get(focused) {
             if misc.tab_focus_mode {
                 return;
             }
         }
     }
     if matches!(action, EditorAction::ClearSelection) {
-        if let Ok(mut misc) = misc_q.get_mut(focused) {
+        if let Ok(mut misc) = params.misc_q.get_mut(focused) {
             if misc.tab_focus_mode {
                 misc.tab_focus_mode = false;
             }
@@ -485,7 +504,7 @@ pub fn dispatch_action_events(
             &mut editor_q,
             lsp_settings,
             suggest,
-            &mut writers.replace_range,
+            &mut params.writers.replace_range,
         ) {
             return;
         }
@@ -503,12 +522,12 @@ pub fn dispatch_action_events(
         EditorAction::Save => {
             if let Ok((_cursor, buffer, _)) = editor_q.get(focused) {
                 let content: String = buffer.chars().collect();
-                writers.save.write(SaveRequested { content });
+                params.writers.save.write(SaveRequested { content });
             }
             return;
         }
         EditorAction::Open => {
-            writers.open.write(OpenRequested);
+            params.writers.open.write(OpenRequested);
             return;
         }
         _ => {}
@@ -523,16 +542,18 @@ pub fn dispatch_action_events(
 
     if matches!(action, EditorAction::InsertNewline) {
         if let Ok((cursor, buffer, _)) = editor_q.get(focused) {
-            if let Ok((auto_edit, indentation, selection)) = auto_indent_q.get(focused) {
+            if let Ok((auto_edit, indentation, selection)) = params.auto_indent_q.get(focused) {
                 if emit_newline_with_indent(
-                    focused,
-                    cursor.cursor_pos,
-                    buffer.rope(),
-                    buffer.len_chars(),
-                    auto_edit,
-                    indentation,
-                    selection,
-                    &mut writers.replace_range,
+                    &NewlineIndentCtx {
+                        entity: focused,
+                        cursor_pos: cursor.cursor_pos,
+                        rope: buffer.rope(),
+                        buffer_len_chars: buffer.len_chars(),
+                        auto_edit,
+                        indentation,
+                        selection,
+                    },
+                    &mut params.writers.replace_range,
                 ) {
                     return;
                 }
@@ -540,37 +561,36 @@ pub fn dispatch_action_events(
         }
     }
 
-    writers.emit(action);
+    params.writers.emit(action);
 }
 
-/// Returns `true` when the auto-indent path consumed the `InsertNewline`
-/// action via [`bevy_instanced_text_editor::ReplaceRangeRequested`]. Returns
-/// `false` when [`AutoIndent::None`] is set — caller then falls back to
-/// the legacy [`InsertNewlineRequested`] path.
-#[allow(clippy::too_many_arguments)]
-fn emit_newline_with_indent(
+struct NewlineIndentCtx<'a> {
     entity: Entity,
     cursor_pos: usize,
-    rope: &ropey::Rope,
+    rope: &'a ropey::Rope,
     buffer_len_chars: usize,
-    auto_edit: &AutoEdit,
-    indentation: &Indentation,
-    selection: &SelectionState,
+    auto_edit: &'a AutoEdit,
+    indentation: &'a Indentation,
+    selection: &'a SelectionState,
+}
+
+fn emit_newline_with_indent(
+    ctx: &NewlineIndentCtx<'_>,
     replace_range: &mut MessageWriter<bevy_instanced_text_editor::ReplaceRangeRequested>,
 ) -> bool {
-    if matches!(auto_edit.auto_indent, AutoIndent::None) {
+    if matches!(ctx.auto_edit.auto_indent, AutoIndent::None) {
         return false;
     }
-    let primary = selection.selections.primary();
+    let primary = ctx.selection.selections.primary();
     let (start, end) = if primary.has_selection() {
         primary.range()
     } else {
-        (cursor_pos, cursor_pos)
+        (ctx.cursor_pos, ctx.cursor_pos)
     };
-    let anchor = start.min(buffer_len_chars);
-    let indent = compute_newline_indent(rope, anchor, auto_edit.auto_indent, indentation);
+    let anchor = start.min(ctx.buffer_len_chars);
+    let indent = compute_newline_indent(ctx.rope, anchor, ctx.auto_edit.auto_indent, ctx.indentation);
     replace_range.write(bevy_instanced_text_editor::ReplaceRangeRequested {
-        entity,
+        entity: ctx.entity,
         start,
         end,
         text: format!("\n{indent}"),

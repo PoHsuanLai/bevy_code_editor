@@ -9,10 +9,7 @@
 //! they cannot spill into the code area.
 
 use bevy::prelude::*;
-use bevy::text::LineHeight;
-use bevy_instanced_text::{DisplayLayout, RectOverlay};
-
-use crate::settings::{GutterConfig, Padding};
+use bevy_instanced_text::RectOverlay;
 use crate::types::{CodeEditor, GutterContainer};
 use crate::ui_kit::GutterTokens;
 
@@ -73,7 +70,6 @@ pub(crate) fn update_line_decoration_overlays(
     }
 }
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn sync_gutter_decoration_bars(
     mut commands: Commands,
     tokens: Option<Res<GutterTokens>>,
@@ -81,11 +77,7 @@ pub(crate) fn sync_gutter_decoration_bars(
         (
             Entity,
             &GutterDecorations,
-            &GutterConfig,
-            &TextFont,
-            &LineHeight,
-            &Padding,
-            &DisplayLayout,
+            crate::settings::GutterLayoutView,
         ),
         With<CodeEditor>,
     >,
@@ -104,16 +96,16 @@ pub(crate) fn sync_gutter_decoration_bars(
         |bar: &GutterDecorationBar| bar.editor,
     );
 
-    for (editor_entity, decorations, gutter, font, line_height, padding, layout) in editors.iter() {
-        if gutter.bar.is_empty() {
+    for (editor_entity, decorations, gl) in editors.iter() {
+        if gl.gutter.bar.is_empty() {
             continue;
         }
 
-        let bar_width: f32 = tokens.bar_width.min(gutter.bar.width);
+        let bar_width: f32 = tokens.bar_width.min(gl.gutter.bar.width);
         // Bar centered inside its sub-column at the right edge of the
         // decorations band. Centering keeps the bar in place when the
         // chevron sub-column toggles on/off (folding controls visible).
-        let bar_left = gutter.bar.place_square(bar_width).round().max(0.0);
+        let bar_left = gl.gutter.bar.place_square(bar_width).round().max(0.0);
         let bar_radius = tokens.bar_radius.max(0.5);
 
         let active: Vec<&LineDecoration> = decorations
@@ -131,7 +123,7 @@ pub(crate) fn sync_gutter_decoration_bars(
         // with `markers.rs` / `chevrons.rs` — keeps decoration
         // identity tied to the host's input ordering.)
         for (idx, dec) in active.iter().enumerate() {
-            let geom = RowGeometry::compute(dec.line, font, line_height, padding, layout);
+            let geom = RowGeometry::compute(dec.line, gl.font, gl.line_height, gl.padding, gl.layout);
             let line = dec.line;
             let color = dec.color;
 

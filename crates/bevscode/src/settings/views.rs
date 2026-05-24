@@ -89,6 +89,17 @@ impl EditorRenderViewItem<'_, '_> {
     }
 }
 
+/// Gutter-side layout: font + line-height + padding + display layout.
+/// Used by gutter decoration sync systems (chevrons, markers, bars).
+#[derive(QueryData)]
+pub struct GutterLayoutView {
+    pub font: &'static TextFont,
+    pub line_height: &'static bevy::text::LineHeight,
+    pub padding: &'static crate::settings::Padding,
+    pub layout: &'static DisplayLayout,
+    pub gutter: &'static crate::settings::GutterConfig,
+}
+
 /// Scroll-target shape — animator + content metrics + scroll config +
 /// mutable cursor + optional [`TextBounds`] (for wrap-aware horizontal
 /// gating). Mutability lets the auto-scroll system both *seed* the

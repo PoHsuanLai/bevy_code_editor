@@ -10,7 +10,6 @@ use crate::types::CodeEditor;
 use super::bars::{DecorationKind, GutterDecorations, LineDecoration};
 use super::markers::{GlyphKind, GlyphMarker, GlyphMarkers};
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn sync_lsp_glyph_markers(
     diagnostics: Query<&crate::lsp_ui::systems::DiagnosticMarker>,
     mut editors: Query<

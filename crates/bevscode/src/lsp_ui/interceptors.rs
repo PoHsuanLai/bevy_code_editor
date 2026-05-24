@@ -32,6 +32,7 @@ use lsp_types::CompletionItemKind;
 ///
 /// Returns `true` when the action was consumed; the caller (dispatcher)
 /// short-circuits without emitting any `*Requested` event.
+#[allow(clippy::too_many_arguments)]
 pub fn completion_popup_intercept(
     action: EditorAction,
     focused: Entity,

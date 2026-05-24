@@ -7,11 +7,9 @@
 //! to bar). They render here as `diff_removed` icons.
 
 use bevy::prelude::*;
-use bevy::text::LineHeight;
-use bevy_instanced_text::DisplayLayout;
 use bevy_resvg::prelude::*;
 
-use crate::settings::{EditorUi, GutterConfig, Padding};
+use crate::settings::EditorUi;
 use crate::types::{CodeEditor, GutterContainer};
 use crate::ui_kit::GutterTokens;
 
@@ -63,7 +61,6 @@ pub struct GutterIcon {
     pub line: usize,
 }
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn sync_gutter_icons(
     mut commands: Commands,
     atlas: Option<Res<IconAtlas>>,
@@ -73,12 +70,8 @@ pub(crate) fn sync_gutter_icons(
             Entity,
             &GlyphMarkers,
             &GutterDecorations,
-            &GutterConfig,
             &EditorUi,
-            &TextFont,
-            &LineHeight,
-            &Padding,
-            &DisplayLayout,
+            crate::settings::GutterLayoutView,
         ),
         With<CodeEditor>,
     >,
@@ -102,10 +95,8 @@ pub(crate) fn sync_gutter_icons(
         |gi: &GutterIcon| gi.editor,
     );
 
-    for (editor_entity, markers, decorations, gutter, ui, font, line_height, padding, layout) in
-        editors.iter()
-    {
-        if !ui.glyph_margin || gutter.glyph.is_empty() {
+    for (editor_entity, markers, decorations, ui, gl) in editors.iter() {
+        if !ui.glyph_margin || gl.gutter.glyph.is_empty() {
             continue;
         }
 
@@ -129,18 +120,18 @@ pub(crate) fn sync_gutter_icons(
         // `bevy_resvg`'s "only attach ImageNode on Added" quirk
         // entirely.
         for (idx, (line, handle, color)) in desired.iter().enumerate() {
-            let geom = RowGeometry::compute(*line, font, line_height, padding, layout);
+            let geom = RowGeometry::compute(*line, gl.font, gl.line_height, gl.padding, gl.layout);
             let line = *line;
             let color = *color;
             let handle = handle.clone();
 
             if let Some(geom) = geom {
-                let icon_size = (gutter.glyph.width.min(geom.line_height_px)
+                let icon_size = (gl.gutter.glyph.width.min(geom.line_height_px)
                     * tokens.glyph_icon_scale)
                     .round()
                     .max(8.0);
                 let optical_lift = (geom.line_height_px * 0.05).round();
-                let icon_left = gutter.glyph.place_square(icon_size).round();
+                let icon_left = gl.gutter.glyph.place_square(icon_size).round();
                 // Bias the icon slightly above geometric centre so it
                 // tracks the digits' optical centre (which sits above
                 // the row's mid-line because of the descender).

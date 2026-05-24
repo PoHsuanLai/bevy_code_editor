@@ -12,21 +12,16 @@
 //! stays the same logical size across 1×/2× displays.
 
 use bevy::prelude::*;
-use bevy::text::LineHeight;
-use bevy::ui::ComputedNode;
-use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{
-    visible_buffer_range, CornerRadii, DisplayLayout, MonoCellWidth, RectOverlay, RowVertical,
-    TextBounds, TextBuffer,
+    visible_buffer_range, CornerRadii, RectOverlay, RowVertical, TextBounds,
 };
-use bevy_instanced_text_editor::RopeBuffer;
 use lsp_types::DiagnosticSeverity;
 
 use crate::lsp_ui::systems::DiagnosticMarker;
 use crate::settings::{
-    DiagnosticColors, EditorUi, Padding, RenderSettings, RenderValidationDecorations,
+    DiagnosticColors, EditorRenderView, RenderSettings, RenderValidationDecorations,
 };
-use crate::types::{CodeEditor, FoldState};
+use crate::types::CodeEditor;
 use crate::ui_kit::DiagnosticTokens;
 
 /// Wavy underline overlays per visible diagnostic — written by
@@ -46,24 +41,14 @@ const SQUIGGLE_AMPLITUDE_PX: f32 = 1.25;
 /// Pills per full sinusoidal period (down → up → down).
 const SQUIGGLE_TEETH_PER_PERIOD: usize = 6;
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn update_diagnostic_underlines(
     diagnostics: Query<&DiagnosticMarker>,
     tokens: Option<Res<DiagnosticTokens>>,
     mut editors: Query<
         (
-            &TextBuffer<RopeBuffer>,
-            &FoldState,
-            &ComputedNode,
-            &ScrollPosition,
-            &TextFont,
-            &LineHeight,
-            &Padding,
-            &MonoCellWidth,
-            &DisplayLayout,
+            EditorRenderView,
             Option<&TextBounds>,
             &DiagnosticColors,
-            &EditorUi,
             &RenderSettings,
             &crate::settings::Misc,
             &mut DiagnosticUnderlineRects,
@@ -72,24 +57,7 @@ pub(crate) fn update_diagnostic_underlines(
     >,
 ) {
     let tokens = tokens.map(|t| t.clone()).unwrap_or_default();
-    for (
-        buffer,
-        fold,
-        computed,
-        scroll,
-        font,
-        line_height,
-        _padding,
-        mono,
-        layout,
-        bounds,
-        colors,
-        _ui,
-        render,
-        misc,
-        mut out_rects,
-    ) in editors.iter_mut()
-    {
+    for (rv, bounds, colors, render, misc, mut out_rects) in editors.iter_mut() {
         let render_decorations = match render.render_validation_decorations {
             RenderValidationDecorations::Off => false,
             RenderValidationDecorations::On => true,
@@ -102,19 +70,19 @@ pub(crate) fn update_diagnostic_underlines(
             continue;
         }
 
-        let char_width = mono.px;
-        let line_height_px = bevy_instanced_text::resolve_line_height(*line_height, font.font_size);
-        let inv = computed.inverse_scale_factor();
-        let viewport_height = computed.size().y * inv;
-        let text_area_top = computed.content_inset().min_inset.y * inv;
+        let Some(layout) = rv.layout else {
+            continue;
+        };
+
+        let m = rv.metrics();
         let wrap_cfg = bounds.copied().unwrap_or_default();
         let visible = visible_buffer_range(
-            &**buffer,
-            scroll.y,
-            viewport_height,
-            text_area_top,
-            line_height_px,
-            char_width,
+            &**rv.buffer,
+            rv.scroll.y,
+            m.viewport_height,
+            m.text_area_top,
+            m.line_height,
+            m.char_width,
             wrap_cfg,
             None,
         );
@@ -126,10 +94,10 @@ pub(crate) fn update_diagnostic_underlines(
             if buffer_line < visible.start || buffer_line >= visible.end {
                 continue;
             }
-            if fold.is_line_hidden(buffer_line) {
+            if rv.fold.is_line_hidden(buffer_line) {
                 continue;
             }
-            let rope = buffer.rope();
+            let rope = rv.buffer.rope();
             if buffer_line >= rope.len_lines() {
                 continue;
             }
@@ -160,24 +128,24 @@ pub(crate) fn update_diagnostic_underlines(
 
             let (start_row, start_byte_in_row) = layout
                 .buffer_to_display(buffer_line as u32, s_byte)
-                .unwrap_or((fold.actual_to_display_line(buffer_line) as u32, s_byte));
+                .unwrap_or((rv.fold.actual_to_display_line(buffer_line) as u32, s_byte));
             let (end_row, end_byte_in_row) = layout
                 .buffer_to_display(buffer_line as u32, e_byte)
-                .unwrap_or((fold.actual_to_display_line(buffer_line) as u32, e_byte));
+                .unwrap_or((rv.fold.actual_to_display_line(buffer_line) as u32, e_byte));
             let start_x = layout
                 .x_at_byte(start_row, start_byte_in_row)
-                .unwrap_or(start_char as f32 * char_width);
+                .unwrap_or(start_char as f32 * m.char_width);
             // Single-row squiggles end at the source glyph's trailing
             // edge — `x_at_byte(end)` would jump past an inlay anchored
             // at `end` and paint the squiggle under the inlay too.
             let end_x = if start_row == end_row {
                 layout
                     .x_after_source_range(end_row, start_byte_in_row, end_byte_in_row)
-                    .unwrap_or(end_char as f32 * char_width)
+                    .unwrap_or(end_char as f32 * m.char_width)
             } else {
                 layout
                     .x_at_byte(end_row, end_byte_in_row)
-                    .unwrap_or(end_char as f32 * char_width)
+                    .unwrap_or(end_char as f32 * m.char_width)
             };
 
             let color = color_for(d.severity, colors);
@@ -188,7 +156,7 @@ pub(crate) fn update_diagnostic_underlines(
                     start_row,
                     start_x..end_x,
                     color,
-                    inv,
+                    m.inv_scale,
                     &tokens,
                 );
             } else {
@@ -197,19 +165,19 @@ pub(crate) fn update_diagnostic_underlines(
                     .iter()
                     .find(|l| l.display_row == start_row)
                     .and_then(|l| layout.x_at_byte(start_row, l.text.len()))
-                    .unwrap_or(end_char as f32 * char_width);
+                    .unwrap_or(end_char as f32 * m.char_width);
                 push_squiggle(
                     &mut new_rects,
                     start_row,
                     start_x..start_row_end,
                     color,
-                    inv,
+                    m.inv_scale,
                     &tokens,
                 );
                 for r in (start_row + 1)..end_row {
-                    push_squiggle(&mut new_rects, r, 0.0..start_row_end, color, inv, &tokens);
+                    push_squiggle(&mut new_rects, r, 0.0..start_row_end, color, m.inv_scale, &tokens);
                 }
-                push_squiggle(&mut new_rects, end_row, 0.0..end_x, color, inv, &tokens);
+                push_squiggle(&mut new_rects, end_row, 0.0..end_x, color, m.inv_scale, &tokens);
             }
         }
 

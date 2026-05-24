@@ -11,12 +11,10 @@ use std::f32::consts::FRAC_PI_2;
 
 use bevy::math::curve::{Curve, EaseFunction, EasingCurve};
 use bevy::prelude::*;
-use bevy::text::LineHeight;
 use bevy::ui::UiTransform;
-use bevy_instanced_text::DisplayLayout;
 use bevy_resvg::prelude::*;
 
-use crate::settings::{EditorTheme, GutterConfig, Padding};
+use crate::settings::EditorTheme;
 use crate::types::{CodeEditor, FoldState, GutterContainer, HoveredGutterLine};
 use crate::ui_kit::GutterTokens;
 
@@ -71,7 +69,6 @@ fn desired_chevrons(
     }
 }
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn sync_fold_chevron_icons(
     mut commands: Commands,
     atlas: Option<Res<IconAtlas>>,
@@ -79,12 +76,8 @@ pub(crate) fn sync_fold_chevron_icons(
     editors: Query<
         (
             Entity,
-            &GutterConfig,
             &FoldState,
-            &TextFont,
-            &LineHeight,
-            &Padding,
-            &DisplayLayout,
+            crate::settings::GutterLayoutView,
             &crate::settings::Folding,
             &EditorTheme,
             &HoveredGutterLine,
@@ -111,20 +104,8 @@ pub(crate) fn sync_fold_chevron_icons(
         |ch: &GutterFoldChevron| ch.editor,
     );
 
-    for (
-        editor_entity,
-        gutter,
-        fold,
-        font,
-        line_height,
-        padding,
-        layout,
-        folding,
-        theme,
-        hovered,
-    ) in editors.iter()
-    {
-        if gutter.chevron.is_empty() {
+    for (editor_entity, fold, gl, folding, theme, hovered) in editors.iter() {
+        if gl.gutter.chevron.is_empty() {
             continue;
         }
         let desired = desired_chevrons(fold, folding.show_controls, hovered.0);
@@ -133,7 +114,7 @@ pub(crate) fn sync_fold_chevron_icons(
         let pool = by_editor.entry(editor_entity).or_default();
 
         for (idx, (line, folded)) in desired.iter().enumerate() {
-            let geom = RowGeometry::compute(*line, font, line_height, padding, layout);
+            let geom = RowGeometry::compute(*line, gl.font, gl.line_height, gl.padding, gl.layout);
             let line = *line;
             let target_angle = if *folded { -FRAC_PI_2 } else { 0.0 };
 
@@ -148,11 +129,11 @@ pub(crate) fn sync_fold_chevron_icons(
                 continue;
             };
 
-            let icon_size = (gutter.chevron.width.min(geom.line_height_px) * tokens.chevron_scale)
+            let icon_size = (gl.gutter.chevron.width.min(geom.line_height_px) * tokens.chevron_scale)
                 .round()
                 .max(8.0);
             let optical_lift = (geom.line_height_px * 0.05).round();
-            let icon_left = gutter.chevron.place_square(icon_size).round();
+            let icon_left = gl.gutter.chevron.place_square(icon_size).round();
             // Bias the icon slightly above geometric centre so it
             // tracks the digits' optical centre (which sits above
             // the row's mid-line because of the descender).

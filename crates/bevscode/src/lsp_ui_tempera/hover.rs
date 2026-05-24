@@ -18,7 +18,7 @@ use crate::plugin::ScrollAnimator;
 use crate::ui_kit::{markdown_theme_from_chrome, PopupChrome};
 
 use super::anchor::{PopupAnchor, PopupPlacement};
-use super::chrome::{apply_chrome, attach_hover_observers};
+use super::chrome::{apply_chrome, attach_hover_observers, PopupTarget};
 
 pub fn update_hover_popup(
     mut commands: Commands,
@@ -44,11 +44,13 @@ pub fn update_hover_popup(
             &mut node,
             &anchor,
             &chrome,
-            data.editor,
-            data.line,
-            data.character,
-            Vec2::new(data.width, data.height),
-            PopupPlacement::PreferBelow,
+            &PopupTarget {
+                editor: data.editor,
+                line: data.line,
+                character: data.character,
+                size: Vec2::new(data.width, data.height),
+                placement: PopupPlacement::PreferBelow,
+            },
         );
         if placed.is_none() {
             continue;

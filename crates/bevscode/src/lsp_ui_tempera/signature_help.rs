@@ -11,7 +11,7 @@ use crate::lsp_ui::state::{PopupObserversAttached, SignatureLifecycle};
 use crate::ui_kit::PopupChrome;
 
 use super::anchor::{PopupAnchor, PopupPlacement};
-use super::chrome::{apply_chrome, attach_signature_observers, clear_children};
+use super::chrome::{apply_chrome, attach_signature_observers, clear_children, PopupTarget};
 
 pub fn update_signature_help_popup(
     mut commands: Commands,
@@ -36,11 +36,13 @@ pub fn update_signature_help_popup(
             &mut node,
             &anchor,
             &chrome,
-            data.editor,
-            data.line,
-            data.character,
-            Vec2::new(data.width, data.height),
-            PopupPlacement::PreferAbove,
+            &PopupTarget {
+                editor: data.editor,
+                line: data.line,
+                character: data.character,
+                size: Vec2::new(data.width, data.height),
+                placement: PopupPlacement::PreferAbove,
+            },
         );
         clear_children(&mut commands, children);
         if placed.is_none() {

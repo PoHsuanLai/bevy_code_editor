@@ -170,12 +170,14 @@ pub fn on_focused_keyboard(
                 }
                 insert_typed_char(
                     c,
-                    &mut sel,
-                    &mut hist,
-                    &mut cursor,
-                    &mut buffer,
-                    auto_edit,
-                    indentation,
+                    &mut InsertCharCtx {
+                        sel: &mut sel,
+                        hist: &mut hist,
+                        cursor: &mut cursor,
+                        buffer: &mut buffer,
+                        auto_edit,
+                        indentation,
+                    },
                     #[cfg(feature = "lsp")]
                     lsp,
                     #[cfg(feature = "lsp")]
@@ -216,17 +218,19 @@ pub fn on_focused_keyboard(
     }
 }
 
-/// Insert one typed character with bracket/quote auto-close + LSP triggers.
-///
-/// Pulled out of the main observer to keep the per-event match arm small.
+struct InsertCharCtx<'a> {
+    sel: &'a mut SelectionState,
+    hist: &'a mut EditHistoryState,
+    cursor: &'a mut CursorState,
+    buffer: &'a mut crate::text_view::TextBuffer<RopeBuffer>,
+    auto_edit: &'a crate::settings::AutoEdit,
+    indentation: &'a crate::settings::Indentation,
+}
+
+#[allow(clippy::too_many_arguments)]
 fn insert_typed_char(
     c: char,
-    sel: &mut SelectionState,
-    hist: &mut EditHistoryState,
-    cursor: &mut CursorState,
-    buffer: &mut crate::text_view::TextBuffer<RopeBuffer>,
-    auto_edit: &crate::settings::AutoEdit,
-    indentation: &crate::settings::Indentation,
+    ctx: &mut InsertCharCtx<'_>,
     #[cfg(feature = "lsp")] lsp: &LspConfig,
     #[cfg(feature = "lsp")] entity: Entity,
     #[cfg(feature = "lsp")] capabilities: &bevy_lsp::ServerCapabilities,
@@ -237,6 +241,7 @@ fn insert_typed_char(
     #[cfg(feature = "lsp")] lsp_w: &mut MessageWriter<bevy_lsp::LspRequest>,
     #[cfg(feature = "lsp")] suggest: Option<&crate::settings::Suggest>,
 ) {
+    let InsertCharCtx { sel, hist, cursor, buffer, auto_edit, indentation } = ctx;
     let quotes_mode = auto_edit.auto_closing_quotes;
     let brackets_mode = auto_edit.auto_closing_brackets;
     let overtype_mode = auto_edit.auto_closing_overtype;

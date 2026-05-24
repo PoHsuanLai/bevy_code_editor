@@ -138,17 +138,11 @@ pub(crate) fn produce_hidden_lines(mut editors: ProduceHiddenLinesQuery) {
 /// unchanged lines keep their cached runs. On any other change (scroll,
 /// viewport resize, theme swap, new parse tree, hidden-lines update) the
 /// full visible window is rebuilt from scratch.
-#[allow(clippy::type_complexity)]
 pub(crate) fn produce_line_styles(
     mut editors: Query<
         (
             Entity,
-            &TextBuffer<RopeBuffer>,
-            &ScrollPosition,
-            &ComputedNode,
-            &TextFont,
-            &bevy::text::LineHeight,
-            &MonoCellWidth,
+            crate::settings::EditorRenderView,
             Option<&TextBounds>,
             Option<&HiddenLines>,
             &mut EditorSyntaxState,
@@ -255,12 +249,7 @@ pub(crate) fn produce_line_styles(
 
     for (
         entity,
-        buffer,
-        scroll,
-        computed,
-        font,
-        lh,
-        mono,
+        rv,
         wrap,
         hidden,
         mut syntax,
@@ -278,18 +267,15 @@ pub(crate) fn produce_line_styles(
             continue;
         }
 
-        let inv = computed.inverse_scale_factor();
-        let viewport_height = computed.size().y * inv;
-        let text_area_top = computed.content_inset().min_inset.y * inv;
+        let m = rv.metrics();
         let wrap = wrap.copied().unwrap_or_default();
-        let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
         let visible = visible_buffer_range(
-            &**buffer,
-            scroll.y,
-            viewport_height,
-            text_area_top,
-            line_height,
-            mono.px,
+            &**rv.buffer,
+            rv.scroll.y,
+            m.viewport_height,
+            m.text_area_top,
+            m.line_height,
+            m.char_width,
             wrap,
             hidden,
         );
@@ -300,7 +286,7 @@ pub(crate) fn produce_line_styles(
             continue;
         }
 
-        let total_lines = buffer.len_lines();
+        let total_lines = rv.buffer.len_lines();
 
         // Extend the highlight window past the engine's render window so
         // `by_line` stays warm across small scroll deltas — same idea as
@@ -377,7 +363,7 @@ pub(crate) fn produce_line_styles(
                     continue;
                 }
             }
-            let line_text: String = buffer.line(buffer_line).to_string();
+            let line_text: String = rv.buffer.line(buffer_line).to_string();
             let capped = if render.stop_rendering_line_after > 0 {
                 let cap = render.stop_rendering_line_after as usize;
                 if line_text.chars().count() > cap {
@@ -415,7 +401,7 @@ pub(crate) fn produce_line_styles(
         if !batch.is_empty() {
             let line_inputs: Vec<(usize, &str)> = batch
                 .iter()
-                .map(|(li, line_text)| (buffer.line_to_byte(*li), line_text.as_str()))
+                .map(|(li, line_text)| (rv.buffer.line_to_byte(*li), line_text.as_str()))
                 .collect();
 
             let _hl_span = bevy::prelude::info_span!("highlight_line").entered();
@@ -423,7 +409,7 @@ pub(crate) fn produce_line_styles(
                 syntax.highlight_lines(
                     &line_inputs,
                     st,
-                    buffer.rope(),
+                    rv.buffer.rope(),
                     syntax_theme,
                     theme.foreground,
                 )

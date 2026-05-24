@@ -18,7 +18,6 @@ use crate::plugin::syntax_highlighting::EditorSyntaxState;
 use crate::settings::{EditorTheme, SelectionConfig, SyntaxColors};
 use crate::types::{CodeEditor, LineSegment};
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn handle_copy_with_highlighting(
     mut events: MessageReader<CopyRequested>,
     input_focus: Res<InputFocus>,

@@ -33,28 +33,32 @@ use super::anchor::{PopupAnchor, PopupPlacement, PopupRect};
 ///
 /// Returns the resolved [`PopupRect`] when placement succeeded, or
 /// `None` when the popup is hidden this frame.
+pub struct PopupTarget {
+    pub editor: Entity,
+    pub line: u32,
+    pub character: u32,
+    pub size: Vec2,
+    pub placement: PopupPlacement,
+}
+
 pub fn apply_chrome(
     commands: &mut Commands,
     entity: Entity,
     node: &mut Node,
     anchor: &PopupAnchor,
     chrome: &PopupChrome,
-    editor: Entity,
-    line: u32,
-    character: u32,
-    size: Vec2,
-    placement: PopupPlacement,
+    target: &PopupTarget,
 ) -> Option<PopupRect> {
     node.position_type = PositionType::Absolute;
-    node.width = Val::Px(size.x);
-    node.height = Val::Px(size.y);
+    node.width = Val::Px(target.size.x);
+    node.height = Val::Px(target.size.y);
     node.flex_direction = FlexDirection::Column;
     node.overflow = Overflow::clip();
     node.padding = UiRect::all(Val::Px(chrome.spacing.xs));
     node.border = UiRect::all(Val::Px(chrome.menu.border_width));
     node.border_radius = BorderRadius::all(Val::Px(chrome.spacing.corner_radius_small));
 
-    let rect = anchor.place(editor, line, character, size, placement);
+    let rect = anchor.place(target.editor, target.line, target.character, target.size, target.placement);
     match rect {
         Some(r) => {
             node.left = r.left;

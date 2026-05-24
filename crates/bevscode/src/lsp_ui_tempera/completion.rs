@@ -14,7 +14,7 @@ use crate::lsp_ui::state::{CompletionLifecycle, PopupObserversAttached};
 use crate::ui_kit::PopupChrome;
 
 use super::anchor::{PopupAnchor, PopupPlacement};
-use super::chrome::{apply_chrome, attach_completion_observers, clear_children};
+use super::chrome::{apply_chrome, attach_completion_observers, clear_children, PopupTarget};
 
 pub fn update_completion_popup(
     mut commands: Commands,
@@ -39,11 +39,13 @@ pub fn update_completion_popup(
             &mut node,
             &anchor,
             &chrome,
-            data.editor,
-            data.line,
-            data.character,
-            Vec2::new(data.width, data.height),
-            PopupPlacement::PreferBelow,
+            &PopupTarget {
+                editor: data.editor,
+                line: data.line,
+                character: data.character,
+                size: Vec2::new(data.width, data.height),
+                placement: PopupPlacement::PreferBelow,
+            },
         );
         clear_children(&mut commands, children);
         if placed.is_none() {
