@@ -260,9 +260,21 @@ fn push_selection_for_buffer_range(
         .layout
         .and_then(|l| l.x_at_byte(start_row, start_byte_in_row))
         .unwrap_or(span.sel_start_col as f32 * char_width);
+    // Right edge uses `x_after_source_range` (when start and end are on
+    // the same row): if a virtual span — an inlay hint, autosuggest ghost
+    // text — is anchored at `end_byte`, `x_at_byte(end_byte)` would jump
+    // past it and the selection would visually engulf the virtual
+    // decoration. Same-row branch only; multi-row selections fall back to
+    // the row-end helper below.
     let end_x_resolved = rows
         .layout
-        .and_then(|l| l.x_at_byte(end_row, end_byte_in_row))
+        .and_then(|l| {
+            if start_row == end_row {
+                l.x_after_source_range(end_row, start_byte_in_row, end_byte_in_row)
+            } else {
+                l.x_at_byte(end_row, end_byte_in_row)
+            }
+        })
         .unwrap_or(span.sel_end_col as f32 * char_width);
     // Width fallback for unshaped rows: use the selection extent in chars.
     let end_chars_fallback = span.sel_end_col as f32 * char_width;

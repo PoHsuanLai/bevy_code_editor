@@ -430,10 +430,27 @@ pub(crate) fn update_link_overlays(
                         .layout
                         .and_then(|l| l.x_at_byte(start_row, start_byte_in_row))
                         .unwrap_or(start_char as f32 * char_width);
-                    let end_x = layout_view
-                        .layout
-                        .and_then(|l| l.x_at_byte(end_row, end_byte_in_row))
-                        .unwrap_or(end_char as f32 * char_width);
+                    // Right edge stops at the source glyphs' trailing
+                    // edge so a virtual span anchored at `end_byte`
+                    // (inlay hint, etc.) doesn't get included in the
+                    // link underline.
+                    let end_x = if start_row == end_row {
+                        layout_view
+                            .layout
+                            .and_then(|l| {
+                                l.x_after_source_range(
+                                    end_row,
+                                    start_byte_in_row,
+                                    end_byte_in_row,
+                                )
+                            })
+                            .unwrap_or(end_char as f32 * char_width)
+                    } else {
+                        layout_view
+                            .layout
+                            .and_then(|l| l.x_at_byte(end_row, end_byte_in_row))
+                            .unwrap_or(end_char as f32 * char_width)
+                    };
 
                     let push =
                         |out: &mut Vec<RectOverlay>, row: u32, range: std::ops::Range<f32>| {

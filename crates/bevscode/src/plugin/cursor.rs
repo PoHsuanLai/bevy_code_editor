@@ -313,9 +313,12 @@ pub(crate) fn update_cursor_line_highlight(
                         .layout
                         .and_then(|l| l.x_at_byte(start_row, start_byte))
                         .unwrap_or(word_start as f32 * char_width);
+                    // Right edge stops at the source glyphs' trailing
+                    // edge so an inlay anchored at `end_byte` isn't
+                    // engulfed by the word-highlight rectangle.
                     let xr = layout_view
                         .layout
-                        .and_then(|l| l.x_at_byte(end_row, end_byte))
+                        .and_then(|l| l.x_after_source_range(end_row, start_byte, end_byte))
                         .unwrap_or(word_end as f32 * char_width);
                     new_rects.push(RectOverlay {
                         display_row: start_row,

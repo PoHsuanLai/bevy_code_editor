@@ -169,9 +169,18 @@ pub(crate) fn update_diagnostic_underlines(
             let start_x = layout
                 .x_at_byte(start_row, start_byte_in_row)
                 .unwrap_or(start_char as f32 * char_width);
-            let end_x = layout
-                .x_at_byte(end_row, end_byte_in_row)
-                .unwrap_or(end_char as f32 * char_width);
+            // Single-row squiggles end at the source glyph's trailing
+            // edge — `x_at_byte(end)` would jump past an inlay anchored
+            // at `end` and paint the squiggle under the inlay too.
+            let end_x = if start_row == end_row {
+                layout
+                    .x_after_source_range(end_row, start_byte_in_row, end_byte_in_row)
+                    .unwrap_or(end_char as f32 * char_width)
+            } else {
+                layout
+                    .x_at_byte(end_row, end_byte_in_row)
+                    .unwrap_or(end_char as f32 * char_width)
+            };
 
             let color = color_for(d.severity, colors);
 

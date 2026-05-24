@@ -102,12 +102,14 @@ pub fn render_document_highlights(
                             * mono.px
                 })
         } else {
+            // Stop at the source glyphs' trailing edge: a document
+            // highlight on a token immediately followed by an inlay hint
+            // (parameter / type) would otherwise include the inlay in
+            // its rectangle.
             let end_byte = highlight.end_character as usize;
+            let end_byte_in_row = end_byte.saturating_sub(start_byte) + start_byte_in_row;
             layout
-                .x_at_byte(
-                    display_row,
-                    end_byte.saturating_sub(start_byte) + start_byte_in_row,
-                )
+                .x_after_source_range(display_row, start_byte_in_row, end_byte_in_row)
                 .unwrap_or(
                     start_x
                         + (highlight.end_character - highlight.start_character) as f32 * mono.px,

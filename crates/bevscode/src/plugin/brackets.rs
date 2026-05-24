@@ -224,11 +224,21 @@ pub(crate) fn update_bracket_highlight(mut editor_query: BracketHighlightQuery) 
             let glyph_x = layout
                 .and_then(|l| l.x_at_byte(start_row, start_byte_in_row))
                 .unwrap_or(col_idx as f32 * char_width);
+            // Use `x_after_source_range` for the right edge: when the
+            // bracket is the last source byte before an inlay hint (e.g.
+            // `(` with a parameter hint anchored right after it), the
+            // naive `x_at_byte(end_byte_in_row)` jumps past the virtual
+            // span and the highlight box engulfs the inlay. The dedicated
+            // helper stops at the source glyph's trailing edge.
             let glyph_width = if start_row == end_row {
                 layout
                     .and_then(|l| {
                         let s = l.x_at_byte(start_row, start_byte_in_row)?;
-                        let e = l.x_at_byte(end_row, end_byte_in_row)?;
+                        let e = l.x_after_source_range(
+                            start_row,
+                            start_byte_in_row,
+                            end_byte_in_row,
+                        )?;
                         Some((e - s).max(0.0))
                     })
                     .unwrap_or(char_width)
