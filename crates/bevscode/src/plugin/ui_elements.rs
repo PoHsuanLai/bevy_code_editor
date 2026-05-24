@@ -8,8 +8,6 @@ use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::{visible_buffer_range, HiddenLines, MonoCellWidth, TextBounds};
 use bevy_instanced_text_editor::RopeBuffer;
 
-use crate::plugin::scroll_animator::ScrollAnimator;
-
 type AutoScrollQuery<'w, 's> = Query<
     'w,
     's,

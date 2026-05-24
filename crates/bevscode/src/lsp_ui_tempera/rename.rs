@@ -5,18 +5,22 @@
 //! [`crate::lsp_ui::interceptors`], which updates [`LspRenamePopup`]
 //! and the sync layer re-emits a fresh [`RenameInputData`].
 //!
-//! Embedding a real [`bevy_instanced_text_editor::TextEditor`] is a
-//! follow-up — the existing input interception path already gives us
-//! correct editing semantics on the rename buffer.
+//! This is a tempera-styled visual on top of bevscode's existing input
+//! capture path, not a `tempera::text_input` widget — that widget owns
+//! its own keystroke pipeline, which would conflict with bevscode's
+//! `FocusedInput` observer. The visuals (chrome, font, caret) match
+//! tempera's input styling so the rename popup still looks identical to
+//! tempera text inputs in the user's other apps.
 //!
 //! [`LspRenamePopup`]: crate::lsp_ui::state::LspRenamePopup
 
 use bevy::prelude::*;
 
 use crate::lsp_ui::components::RenameInputData;
+use crate::ui_kit::PopupChrome;
 
 use super::anchor::{PopupAnchor, PopupPlacement};
-use super::frame::{apply_frame, clear_children};
+use super::chrome::{apply_chrome, clear_children};
 
 pub fn update_rename_input(
     mut commands: Commands,
@@ -25,15 +29,15 @@ pub fn update_rename_input(
         Changed<RenameInputData>,
     >,
     anchor: PopupAnchor,
+    chrome: PopupChrome,
 ) {
     for (entity, data, mut node, children) in popups.iter_mut() {
-        let theme = anchor.theme(data.editor);
-        let placed = apply_frame(
+        let placed = apply_chrome(
             &mut commands,
             entity,
             &mut node,
             &anchor,
-            theme,
+            &chrome,
             data.editor,
             data.line,
             data.character,
@@ -45,12 +49,9 @@ pub fn update_rename_input(
             continue;
         }
 
-        let fg = theme
-            .map(|t| t.foreground)
-            .unwrap_or(Color::srgb(0.827, 0.827, 0.827));
-        let caret = theme
-            .map(|t| t.cursor)
-            .unwrap_or(Color::srgb(0.933, 0.933, 0.933));
+        let fg = chrome.palette.popover_foreground;
+        let caret = chrome.palette.ring;
+        let caret_h = chrome.typography.base;
 
         commands.entity(entity).with_children(|p| {
             p.spawn(Node {
@@ -62,32 +63,18 @@ pub fn update_rename_input(
             .with_children(|row| {
                 let (pre, post) = split_at_char(&data.text, data.cursor_position);
                 if !pre.is_empty() {
-                    row.spawn((
-                        Text::new(pre),
-                        TextFont {
-                            font_size: 14.0,
-                            ..default()
-                        },
-                        TextColor(fg),
-                    ));
+                    row.spawn((Text::new(pre), chrome.body_font(), TextColor(fg)));
                 }
                 row.spawn((
                     Node {
                         width: Val::Px(1.0),
-                        height: Val::Px(16.0),
+                        height: Val::Px(caret_h),
                         ..default()
                     },
                     BackgroundColor(caret),
                 ));
                 if !post.is_empty() {
-                    row.spawn((
-                        Text::new(post),
-                        TextFont {
-                            font_size: 14.0,
-                            ..default()
-                        },
-                        TextColor(fg),
-                    ));
+                    row.spawn((Text::new(post), chrome.body_font(), TextColor(fg)));
                 }
             });
         });

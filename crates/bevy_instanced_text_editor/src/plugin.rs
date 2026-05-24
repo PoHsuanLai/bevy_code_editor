@@ -19,6 +19,17 @@ type ChangedCursorQuery<'w, 's> =
 type ChangedSelectionQuery<'w, 's> =
     Query<'w, 's, (Entity, &'static SelectionState), (With<TextEditor>, Changed<SelectionState>)>;
 
+/// Set containing the request-handler systems that mutate the rope (insert
+/// newline / tab, delete, replace, set text, undo, redo, clipboard).
+///
+/// Scheduled `.before(EditEmitSet)` so each edit's [`OnEdit`] trigger /
+/// `TextEdited` event reaches downstream consumers in the same frame as the
+/// rope mutation — otherwise systems that key off the edit (line-index
+/// caches, syntax invalidation, LSP did-change) would lag one frame behind
+/// the visible rope state.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EditApplySet;
+
 /// Contains `emit_edit_triggers`. Schedule downstream systems `.after(EditEmitSet)`.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EditEmitSet;
@@ -79,7 +90,7 @@ impl Plugin for InstancedTextEditPlugin {
 
         register_handler_systems(app);
 
-        app.configure_sets(Update, EditEmitSet);
+        app.configure_sets(Update, (EditApplySet, EditEmitSet).chain());
         app.add_systems(
             Update,
             (
@@ -287,6 +298,7 @@ fn register_handler_systems(app: &mut App) {
             widget::clipboard::handle_copy,
             widget::clipboard::handle_cut,
             widget::clipboard::handle_paste,
-        ),
+        )
+            .in_set(EditApplySet),
     );
 }

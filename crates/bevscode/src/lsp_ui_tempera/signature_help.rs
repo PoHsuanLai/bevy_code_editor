@@ -1,14 +1,16 @@
 //! Signature help renderer.
 //!
 //! Renders the active overload's label with the active-parameter range
-//! emphasized, plus a `1/N` pager when multiple overloads exist.
+//! emphasized (bold + foreground color), plus a `1/N` pager when multiple
+//! overloads exist.
 
 use bevy::prelude::*;
 
 use crate::lsp_ui::components::SignatureHelpPopupData;
+use crate::ui_kit::PopupChrome;
 
 use super::anchor::{PopupAnchor, PopupPlacement};
-use super::frame::{apply_frame, clear_children};
+use super::chrome::{apply_chrome, clear_children};
 
 pub fn update_signature_help_popup(
     mut commands: Commands,
@@ -17,15 +19,15 @@ pub fn update_signature_help_popup(
         Changed<SignatureHelpPopupData>,
     >,
     anchor: PopupAnchor,
+    chrome: PopupChrome,
 ) {
     for (entity, data, mut node, children) in popups.iter_mut() {
-        let theme = anchor.theme(data.editor);
-        let placed = apply_frame(
+        let placed = apply_chrome(
             &mut commands,
             entity,
             &mut node,
             &anchor,
-            theme,
+            &chrome,
             data.editor,
             data.line,
             data.character,
@@ -37,17 +39,8 @@ pub fn update_signature_help_popup(
             continue;
         }
 
-        let fg = theme
-            .map(|t| t.foreground)
-            .unwrap_or(Color::srgb(0.827, 0.827, 0.827));
-        let muted = theme
-            .map(|t| t.line_numbers)
-            .unwrap_or(Color::srgb(0.545, 0.545, 0.545));
-        let accent = theme
-            .map(|t| t.cursor)
-            .unwrap_or(Color::srgb(0.933, 0.933, 0.933));
-
-        let font_size = 13.0;
+        let fg = chrome.palette.popover_foreground;
+        let muted = chrome.palette.muted_foreground;
         let label = &data.label;
         let active_range = data.parameter_ranges.get(data.active_parameter).copied();
 
@@ -59,17 +52,15 @@ pub fn update_signature_help_popup(
                         data.current_index + 1,
                         data.total_signatures
                     )),
-                    TextFont {
-                        font_size: font_size * 0.85,
-                        ..default()
-                    },
+                    chrome.small_font(),
                     TextColor(muted),
                 ));
             }
 
             // Split the label into [pre][active][post] so the active
-            // parameter can render in the accent color. Falls back to a
-            // single span when no active range applies.
+            // parameter renders bold in the popover foreground while the
+            // rest stays muted. Falls back to a single span when no
+            // active range applies.
             p.spawn(Node {
                 flex_direction: FlexDirection::Row,
                 column_gap: Val::Px(0.0),
@@ -81,43 +72,19 @@ pub fn update_signature_help_popup(
                     let active = &label[s..e];
                     let post = &label[e..];
                     if !pre.is_empty() {
-                        row.spawn((
-                            Text::new(pre),
-                            TextFont {
-                                font_size,
-                                ..default()
-                            },
-                            TextColor(fg),
-                        ));
+                        row.spawn((Text::new(pre), chrome.body_font(), TextColor(muted)));
                     }
                     row.spawn((
                         Text::new(active),
-                        TextFont {
-                            font_size,
-                            ..default()
-                        },
-                        TextColor(accent),
+                        chrome.body_font_bold(),
+                        TextColor(fg),
                     ));
                     if !post.is_empty() {
-                        row.spawn((
-                            Text::new(post),
-                            TextFont {
-                                font_size,
-                                ..default()
-                            },
-                            TextColor(fg),
-                        ));
+                        row.spawn((Text::new(post), chrome.body_font(), TextColor(muted)));
                     }
                 }
                 _ => {
-                    row.spawn((
-                        Text::new(label),
-                        TextFont {
-                            font_size,
-                            ..default()
-                        },
-                        TextColor(fg),
-                    ));
+                    row.spawn((Text::new(label), chrome.body_font(), TextColor(fg)));
                 }
             });
         });

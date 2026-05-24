@@ -1174,3 +1174,470 @@ fn gpu_readback_renders_colored_pixels() {
         img.height(),
     );
 }
+
+/// Repro for "newline disappears next line, backspace brings it back".
+///
+/// With a folded region in place, inserting a `\n` before the fold should not
+/// hide the wrong buffer line. `FoldState.regions[*].{start_line,end_line}`
+/// are absolute buffer-line indices, so an insertion that shifts every
+/// subsequent line down by one must shift the fold range too — otherwise the
+/// old indices point at line content the user *can see*, and one visible line
+/// vanishes from the layout until backspace shifts everything back into place.
+///
+/// Today the fold range is only refreshed by the async tree-sitter pass on
+/// reparse completion. Between the edit and that completion, the stale range
+/// hides the wrong line. This test simulates that window by holding a folded
+/// region across an edit.
+#[test]
+fn newline_before_folded_region_does_not_hide_a_visible_line() {
+    use crate::display_map::plugin::produce_hidden_lines;
+    use crate::types::{FoldKind, FoldRegion};
+    use bevy_instanced_text::HiddenLines;
+
+    // 10 buffer lines, fold hiding lines 5..=7 (placeholder = 4).
+    let source = (0..10)
+        .map(|i| format!("line{i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let mut app = make_test_app();
+    install_atlas_and_font(&mut app);
+    let entity = spawn_test_editor(&mut app, &source);
+
+    // Seed a folded region. `produce_hidden_lines` listens on
+    // `Changed<FoldState>`, so the first poll after this seed populates
+    // HiddenLines with {5, 6, 7}.
+    {
+        let mut fold = app.world_mut().get_mut::<FoldState>(entity).unwrap();
+        fold.regions.push(FoldRegion {
+            start_line: 4,
+            end_line: 7,
+            is_folded: true,
+            kind: FoldKind::Block,
+            indent_level: 0,
+        });
+    }
+    app.world_mut()
+        .run_system_once(produce_hidden_lines)
+        .unwrap();
+    {
+        let hidden = app.world().get::<HiddenLines>(entity).unwrap();
+        let mut got: Vec<usize> = hidden.0.iter().copied().collect();
+        got.sort();
+        assert_eq!(
+            got,
+            vec![5, 6, 7],
+            "pre-edit: rows 5..=7 should be hidden by the fold"
+        );
+    }
+
+    // EDIT: insert `\n` at the very start of the buffer. Every line shifts
+    // down by one. After the edit, the *original* line5 (`line5`) now lives
+    // at buffer row 6. The fold should now hide rows 6..=8.
+    let new_source = format!("\n{source}");
+    {
+        let mut buf = app
+            .world_mut()
+            .get_mut::<TextBuffer<RopeBuffer>>(entity)
+            .unwrap();
+        buf.0 = RopeBuffer(ropey::Rope::from_str(&new_source));
+    }
+    // Emit the TextEdited event the production edit path would emit. This is
+    // what downstream consumers (LSP, syntax, fold-detection) react to.
+    app.world_mut()
+        .resource_mut::<Messages<TextEdited>>()
+        .write(TextEdited {
+            delta: EditDelta {
+                start_byte: 0,
+                old_end_byte: 0,
+                new_end_byte: 1,
+                start_position: EditPoint {
+                    row: 0,
+                    column_byte: 0,
+                },
+                old_end_position: EditPoint {
+                    row: 0,
+                    column_byte: 0,
+                },
+                new_end_position: EditPoint {
+                    row: 1,
+                    column_byte: 0,
+                },
+            },
+            content_version: 2,
+            pre_edit_rope: None,
+        });
+
+    // Tick so any system that wants to react to the TextEdited event runs.
+    app.update();
+    app.world_mut()
+        .run_system_once(crate::plugin::folding::shift_fold_regions_on_edit)
+        .unwrap();
+    app.world_mut()
+        .run_system_once(produce_hidden_lines)
+        .unwrap();
+
+    let buffer = app.world().get::<TextBuffer<RopeBuffer>>(entity).unwrap();
+    let line_at = |i: usize| -> String {
+        bevy_instanced_text::TextContent::line(&**buffer, i)
+            .trim_end_matches('\n')
+            .to_string()
+    };
+    let hidden = app.world().get::<HiddenLines>(entity).unwrap();
+    let mut got: Vec<usize> = hidden.0.iter().copied().collect();
+    got.sort();
+
+    // What we *want*: the fold's content (originally lines 5,6,7) now lives at
+    // buffer rows 6,7,8, so HiddenLines should be {6, 7, 8}.
+    let originally_hidden_content: Vec<String> =
+        vec!["line5".into(), "line6".into(), "line7".into()];
+    let now_hidden_content: Vec<String> = got.iter().map(|&i| line_at(i)).collect();
+
+    assert_eq!(
+        now_hidden_content,
+        originally_hidden_content,
+        "After inserting `\\n` at row 0, the fold still hides buffer rows {got:?} \
+         which now contain {now_hidden_content:?}. The same *content* \
+         ({originally_hidden_content:?}) should stay hidden — i.e. fold range \
+         should have shifted from 4..=7 to 5..=8 with the rest of the buffer.",
+    );
+}
+
+/// End-to-end variant of `newline_before_folded_region_does_not_hide_a_visible_line`:
+/// instead of poking the `shift_fold_regions_on_edit` system directly, this
+/// goes through `app.update()` so the actual `FoldingPlugin` schedule order
+/// is exercised. If this test passes while the manual version passes too,
+/// the wiring is correct; if it fails, the system isn't running in the
+/// expected schedule slot.
+#[test]
+fn newline_before_folded_region_full_schedule() {
+    use crate::plugin::folding::shift_fold_regions_on_edit;
+    use crate::types::{FoldKind, FoldRegion};
+    use bevy_instanced_text::HiddenLines;
+
+    let source = (0..10)
+        .map(|i| format!("line{i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let mut app = make_test_app();
+    // Register only the shift system, not the full FoldingPlugin — the async
+    // fold-detect task would wipe our seeded fold (plain-text buffer has no
+    // foldable regions) and obscure what we're testing.
+    app.add_systems(
+        Update,
+        shift_fold_regions_on_edit.in_set(crate::plugin::ApplyStateSet),
+    );
+    install_atlas_and_font(&mut app);
+    let entity = spawn_test_editor(&mut app, &source);
+
+    {
+        let mut fold = app.world_mut().get_mut::<FoldState>(entity).unwrap();
+        fold.regions.push(FoldRegion {
+            start_line: 4,
+            end_line: 7,
+            is_folded: true,
+            kind: FoldKind::Block,
+            indent_level: 0,
+        });
+    }
+    // Tick once so `produce_hidden_lines` (in LayoutSyncSet) reacts to the
+    // FoldState change and populates HiddenLines.
+    app.update();
+    {
+        let hidden = app.world().get::<HiddenLines>(entity).unwrap();
+        let mut got: Vec<usize> = hidden.0.iter().copied().collect();
+        got.sort();
+        assert_eq!(got, vec![5, 6, 7], "post-seed: rows 5..=7 hidden");
+    }
+
+    // Now: edit and TextEdited together, then a single tick. The shift
+    // system + produce_hidden_lines must both have run before we observe.
+    let new_source = format!("\n{source}");
+    {
+        let mut buf = app
+            .world_mut()
+            .get_mut::<TextBuffer<RopeBuffer>>(entity)
+            .unwrap();
+        buf.0 = RopeBuffer(ropey::Rope::from_str(&new_source));
+    }
+    app.world_mut()
+        .resource_mut::<Messages<TextEdited>>()
+        .write(TextEdited {
+            delta: EditDelta {
+                start_byte: 0,
+                old_end_byte: 0,
+                new_end_byte: 1,
+                start_position: EditPoint {
+                    row: 0,
+                    column_byte: 0,
+                },
+                old_end_position: EditPoint {
+                    row: 0,
+                    column_byte: 0,
+                },
+                new_end_position: EditPoint {
+                    row: 1,
+                    column_byte: 0,
+                },
+            },
+            content_version: 2,
+            pre_edit_rope: None,
+        });
+    app.update();
+
+    let buffer = app.world().get::<TextBuffer<RopeBuffer>>(entity).unwrap();
+    let line_at = |i: usize| -> String {
+        bevy_instanced_text::TextContent::line(&**buffer, i)
+            .trim_end_matches('\n')
+            .to_string()
+    };
+    let hidden = app.world().get::<HiddenLines>(entity).unwrap();
+    let mut got: Vec<usize> = hidden.0.iter().copied().collect();
+    got.sort();
+    let now_hidden_content: Vec<String> = got.iter().map(|&i| line_at(i)).collect();
+    assert_eq!(
+        now_hidden_content,
+        vec!["line5", "line6", "line7"],
+        "End-to-end: after one app.update() the same fold content must stay hidden. \
+         Got rows {got:?} = {now_hidden_content:?}.",
+    );
+}
+
+/// Symmetric case: backspace-joining a row shifts every subsequent line up
+/// by one. A folded region's start/end must follow.
+#[test]
+fn backspace_before_folded_region_keeps_same_content_hidden() {
+    use crate::display_map::plugin::produce_hidden_lines;
+    use crate::types::{FoldKind, FoldRegion};
+    use bevy_instanced_text::HiddenLines;
+
+    // 11 buffer lines (one leading blank), fold hiding rows 6..=8 (placeholder = 5).
+    // After deleting the leading `\n`, the same content should land at rows 5..=7.
+    let source = std::iter::once(String::new())
+        .chain((0..10).map(|i| format!("line{i}")))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let mut app = make_test_app();
+    install_atlas_and_font(&mut app);
+    let entity = spawn_test_editor(&mut app, &source);
+
+    {
+        let mut fold = app.world_mut().get_mut::<FoldState>(entity).unwrap();
+        fold.regions.push(FoldRegion {
+            start_line: 5,
+            end_line: 8,
+            is_folded: true,
+            kind: FoldKind::Block,
+            indent_level: 0,
+        });
+    }
+    app.world_mut()
+        .run_system_once(produce_hidden_lines)
+        .unwrap();
+
+    // EDIT: delete the leading `\n`. Pivot row = 1, shift = -1.
+    let new_source = source.strip_prefix('\n').unwrap().to_string();
+    {
+        let mut buf = app
+            .world_mut()
+            .get_mut::<TextBuffer<RopeBuffer>>(entity)
+            .unwrap();
+        buf.0 = RopeBuffer(ropey::Rope::from_str(&new_source));
+    }
+    app.world_mut()
+        .resource_mut::<Messages<TextEdited>>()
+        .write(TextEdited {
+            delta: EditDelta {
+                start_byte: 0,
+                old_end_byte: 1,
+                new_end_byte: 0,
+                start_position: EditPoint {
+                    row: 0,
+                    column_byte: 0,
+                },
+                old_end_position: EditPoint {
+                    row: 1,
+                    column_byte: 0,
+                },
+                new_end_position: EditPoint {
+                    row: 0,
+                    column_byte: 0,
+                },
+            },
+            content_version: 2,
+            pre_edit_rope: None,
+        });
+
+    app.update();
+    app.world_mut()
+        .run_system_once(crate::plugin::folding::shift_fold_regions_on_edit)
+        .unwrap();
+    app.world_mut()
+        .run_system_once(produce_hidden_lines)
+        .unwrap();
+
+    let buffer = app.world().get::<TextBuffer<RopeBuffer>>(entity).unwrap();
+    let line_at = |i: usize| -> String {
+        bevy_instanced_text::TextContent::line(&**buffer, i)
+            .trim_end_matches('\n')
+            .to_string()
+    };
+    let hidden = app.world().get::<HiddenLines>(entity).unwrap();
+    let mut got: Vec<usize> = hidden.0.iter().copied().collect();
+    got.sort();
+    let now_hidden_content: Vec<String> = got.iter().map(|&i| line_at(i)).collect();
+    let originally_hidden_content: Vec<String> =
+        vec!["line5".into(), "line6".into(), "line7".into()];
+    assert_eq!(
+        now_hidden_content, originally_hidden_content,
+        "After deleting `\\n` at row 0, fold should still hide the same content. \
+         Got rows {got:?} = {now_hidden_content:?}.",
+    );
+}
+
+/// Reproduces the user-reported "next line disappears" bug — full file
+/// + `FoldingPlugin` registered so the async fold-detect pipeline runs.
+///
+/// Loads the entire `examples/editor_lsp.rs` source, awaits initial parse
+/// AND initial fold detection, then inserts `\n` at the **start of the
+/// blank row above `fn main`** (row 17). Asserts every layer (rope,
+/// LineStyles cache, DisplayLayout, HiddenLines) holds the displaced
+/// `fn main` row in the right place.
+#[test]
+fn insert_newline_above_fn_main_full_pipeline() {
+    use crate::plugin::folding::FoldingPlugin;
+    use bevy_instanced_text::HiddenLines;
+
+    let source = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent().unwrap().parent().unwrap()
+            .join("examples/editor_lsp.rs"),
+    )
+    .expect("read editor_lsp.rs");
+    let lines: Vec<&str> = source.lines().collect();
+    assert_eq!(lines.get(17).copied(), Some(""), "row 17 should be blank");
+    assert!(
+        lines.get(18).map(|s| s.starts_with("fn main")).unwrap_or(false),
+        "row 18 should start with `fn main`",
+    );
+
+    let mut app = make_test_app();
+    app.add_plugins(FoldingPlugin);
+    install_atlas_and_font(&mut app);
+    let entity = spawn_test_editor(&mut app, &source);
+
+    // Wait for initial parse and at least one fold-detection cycle.
+    let _ = await_initial_parse(&mut app, entity);
+    let _ = run_until(&mut app, entity, Duration::from_secs(5), |w, e| {
+        let fold = w.get::<FoldState>(e).unwrap();
+        !fold.regions.is_empty()
+    });
+
+    // Drive layout pass once so DisplayLayout reflects pre-edit state too.
+    drive_layout_and_render_once(&mut app);
+    let pre_fold = app.world().get::<FoldState>(entity).unwrap().clone();
+    let pre_fn_main_fold = pre_fold
+        .regions
+        .iter()
+        .find(|r| r.start_line == 18)
+        .cloned();
+    assert!(
+        pre_fn_main_fold.is_some(),
+        "expected a fold region starting at row 18 (`fn main`). \
+         Got regions: {:?}",
+        pre_fold.regions,
+    );
+
+    // EDIT: insert `\n` at start of row 17.
+    let row_17_byte = {
+        let buf = app.world().get::<TextBuffer<RopeBuffer>>(entity).unwrap();
+        buf.rope().line_to_byte(17)
+    };
+    {
+        let mut buf = app
+            .world_mut()
+            .get_mut::<TextBuffer<RopeBuffer>>(entity)
+            .unwrap();
+        let row_17_char = buf.rope().byte_to_char(row_17_byte);
+        buf.0 .0.insert(row_17_char, "\n");
+    }
+    app.world_mut()
+        .resource_mut::<Messages<TextEdited>>()
+        .write(TextEdited {
+            delta: EditDelta {
+                start_byte: row_17_byte,
+                old_end_byte: row_17_byte,
+                new_end_byte: row_17_byte + 1,
+                start_position: EditPoint { row: 17, column_byte: 0 },
+                old_end_position: EditPoint { row: 17, column_byte: 0 },
+                new_end_position: EditPoint { row: 18, column_byte: 0 },
+            },
+            content_version: 2,
+            pre_edit_rope: None,
+        });
+
+    // One tick: shift_fold_regions_on_edit + produce_line_styles consume the event.
+    app.update();
+    // Drive layout against new state.
+    drive_layout_and_render_once(&mut app);
+
+    // Assert: rope is correct.
+    let post_rope_lines: Vec<String> = {
+        let buf = app.world().get::<TextBuffer<RopeBuffer>>(entity).unwrap();
+        (0..buf.len_lines())
+            .map(|i| {
+                bevy_instanced_text::TextContent::line(&**buf, i)
+                    .trim_end_matches('\n')
+                    .to_string()
+            })
+            .collect()
+    };
+    assert!(
+        post_rope_lines.get(19).map(|s| s.starts_with("fn main")).unwrap_or(false),
+        "post-edit rope row 19 must start with `fn main`, got {:?}",
+        post_rope_lines.get(19),
+    );
+
+    // Assert: fold region shifted to start at row 19.
+    let post_fold = app.world().get::<FoldState>(entity).unwrap().clone();
+    let post_fn_main_fold = post_fold
+        .regions
+        .iter()
+        .find(|r| r.start_line == 19)
+        .cloned();
+    assert!(
+        post_fn_main_fold.is_some(),
+        "fold region for `fn main` did not shift from start_line=18 to start_line=19. \
+         Post-edit regions: {:?}",
+        post_fold.regions,
+    );
+
+    // Assert: HiddenLines doesn't hide row 19 (the fold is NOT folded).
+    let hidden = app.world().get::<HiddenLines>(entity).unwrap();
+    assert!(
+        hidden.is_visible(19),
+        "HiddenLines hides row 19 (`fn main`) after the edit. Hidden: {:?}",
+        hidden.0.iter().copied().collect::<Vec<_>>(),
+    );
+
+    // Assert: DisplayLayout has a line for buffer_row=19 with `fn main` text.
+    let layout = app.world().get::<DisplayLayout>(entity).unwrap();
+    let row_19_line = layout.lines.iter().find(|l| l.buffer_row == 19);
+    let layout_dump: Vec<(u32, u32, String)> = layout
+        .lines
+        .iter()
+        .map(|l| (l.display_row, l.buffer_row, l.text.clone()))
+        .collect();
+    assert!(
+        row_19_line.is_some(),
+        "DisplayLayout has no ShapedLine with buffer_row=19. Lines: {layout_dump:?}",
+    );
+    let layout_text_19 = &row_19_line.unwrap().text;
+    assert!(
+        layout_text_19.starts_with("fn main"),
+        "DisplayLayout.lines[buffer_row=19].text = {layout_text_19:?}. Lines: {layout_dump:?}",
+    );
+}
+

@@ -14,7 +14,7 @@
 use bevy::prelude::*;
 
 use super::state::UnifiedCompletionItem;
-use crate::lsp_ui_view::LspPopupRoot;
+use crate::lsp_ui_tempera::LspPopupRoot;
 
 /// Completion popup data. Hosts query this and render however they prefer.
 ///
@@ -23,9 +23,10 @@ use crate::lsp_ui_view::LspPopupRoot;
 /// scroll / viewport / font changes don't need to invalidate the data.
 ///
 /// `#[require]`s [`Node`] + [`LspPopupRoot`], so the built-in
-/// [`LspUiViewPlugin`](crate::lsp_ui_view::LspUiViewPlugin) renders this
-/// without the host wiring up extra components. The popup entity is
-/// reparented under `editor` by the `on_add: LspPopupRoot` observer.
+/// [`LspUiTemperaPlugin`](crate::lsp_ui_tempera::LspUiTemperaPlugin)
+/// renders this without the host wiring up extra components. The popup
+/// entity is reparented under `editor` by the `on_add: LspPopupRoot`
+/// observer.
 #[derive(Component, Clone, Debug)]
 #[require(Node, LspPopupRoot)]
 pub struct CompletionPopupData {

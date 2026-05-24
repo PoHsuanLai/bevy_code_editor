@@ -1,21 +1,20 @@
 //! Completion popup renderer.
 //!
 //! Reads [`CompletionPopupData`] and (re)builds a vertical list of
-//! `Node` items under the popup entity. Position is resolved every
-//! frame via [`PopupAnchor`] so the popup tracks the cursor row as the
-//! user types or scrolls.
+//! `Node` items under the popup entity. Each row mirrors tempera's
+//! context-menu item layout (label left, optional detail right,
+//! `MenuTokens.item_height` tall, `item_padding_x` horizontal padding)
+//! so completion lists look identical to the dropdowns elsewhere in
+//! the user's tempera apps.
 
 use bevy::prelude::*;
 
 use crate::lsp_ui::components::{CompletionItemData, CompletionPopupData};
+use crate::ui_kit::PopupChrome;
 
 use super::anchor::{PopupAnchor, PopupPlacement};
-use super::frame::{apply_frame, clear_children};
+use super::chrome::{apply_chrome, clear_children};
 
-/// Update the popup `Node`'s position + children on every change to
-/// [`CompletionPopupData`]. Despawn is handled upstream by
-/// [`crate::lsp_ui::sync::sync_completion_popup`], which despawns the
-/// entire popup entity when the completion popup hides.
 pub fn update_completion_popup(
     mut commands: Commands,
     mut popups: Query<
@@ -23,15 +22,15 @@ pub fn update_completion_popup(
         Changed<CompletionPopupData>,
     >,
     anchor: PopupAnchor,
+    chrome: PopupChrome,
 ) {
     for (entity, data, mut node, children) in popups.iter_mut() {
-        let theme = anchor.theme(data.editor);
-        let placed = apply_frame(
+        let placed = apply_chrome(
             &mut commands,
             entity,
             &mut node,
             &anchor,
-            theme,
+            &chrome,
             data.editor,
             data.line,
             data.character,
@@ -44,15 +43,6 @@ pub fn update_completion_popup(
         }
 
         let item_height = data.height / data.max_visible.max(1) as f32;
-        let fg = theme
-            .map(|t| t.foreground)
-            .unwrap_or(Color::srgb(0.827, 0.827, 0.827));
-        let muted = theme
-            .map(|t| t.line_numbers)
-            .unwrap_or(Color::srgb(0.545, 0.545, 0.545));
-        let selected_bg = theme
-            .map(|t| t.selection_background)
-            .unwrap_or(Color::srgba(0.231, 0.373, 0.604, 0.4));
 
         commands.entity(entity).with_children(|p| {
             let start = data.scroll_offset;
@@ -60,7 +50,7 @@ pub fn update_completion_popup(
             for (i, item) in data.items[start..end].iter().enumerate() {
                 let absolute = start + i;
                 let selected = absolute == data.selected_index;
-                spawn_item(p, item, selected, item_height, fg, muted, selected_bg);
+                spawn_item(p, item, selected, item_height, &chrome);
             }
         });
     }
@@ -71,11 +61,20 @@ fn spawn_item(
     item: &CompletionItemData,
     selected: bool,
     height: f32,
-    fg: Color,
-    muted: Color,
-    selected_bg: Color,
+    chrome: &PopupChrome,
 ) {
-    let font_size = 14.0;
+    let bg = if selected {
+        chrome.palette.accent
+    } else {
+        Color::NONE
+    };
+    let fg = if selected {
+        chrome.palette.accent_foreground
+    } else {
+        chrome.palette.popover_foreground
+    };
+    let muted = chrome.palette.muted_foreground;
+
     parent
         .spawn((
             Node {
@@ -83,30 +82,20 @@ fn spawn_item(
                 height: Val::Px(height),
                 flex_direction: FlexDirection::Row,
                 align_items: AlignItems::Center,
-                padding: UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
-                column_gap: Val::Px(6.0),
+                padding: UiRect::axes(
+                    Val::Px(chrome.menu.item_padding_x),
+                    Val::Px(chrome.spacing.xxs),
+                ),
+                column_gap: Val::Px(chrome.spacing.sm),
+                border_radius: BorderRadius::all(Val::Px(chrome.spacing.corner_radius_tiny)),
                 ..default()
             },
-            BackgroundColor(if selected { selected_bg } else { Color::NONE }),
+            BackgroundColor(bg),
         ))
         .with_children(|row| {
-            row.spawn((
-                Text::new(&item.label),
-                TextFont {
-                    font_size,
-                    ..default()
-                },
-                TextColor(fg),
-            ));
+            row.spawn((Text::new(&item.label), chrome.body_font(), TextColor(fg)));
             if let Some(detail) = &item.detail {
-                row.spawn((
-                    Text::new(detail),
-                    TextFont {
-                        font_size,
-                        ..default()
-                    },
-                    TextColor(muted),
-                ));
+                row.spawn((Text::new(detail), chrome.body_font(), TextColor(muted)));
             }
         });
 }

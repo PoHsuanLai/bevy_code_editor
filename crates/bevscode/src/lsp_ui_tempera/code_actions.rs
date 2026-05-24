@@ -1,16 +1,17 @@
 //! Code-actions popup renderer.
 //!
-//! Mirrors the completion popup structure: a vertical list with one row
-//! per action, the selected row highlighted. Icons come from the
-//! sync layer's pre-resolved Unicode glyphs for now; switching to
-//! [`IconAtlas`](crate::plugin::gutter_decorations) is a follow-up.
+//! Mirrors the completion popup row layout: a vertical list with one
+//! row per action, the selected row highlighted with the tempera accent
+//! background. Icons are pre-resolved Unicode glyphs from the sync
+//! layer for now.
 
 use bevy::prelude::*;
 
 use crate::lsp_ui::components::{CodeActionItemData, CodeActionsPopupData};
+use crate::ui_kit::PopupChrome;
 
 use super::anchor::{PopupAnchor, PopupPlacement};
-use super::frame::{apply_frame, clear_children};
+use super::chrome::{apply_chrome, clear_children};
 
 pub fn update_code_actions_popup(
     mut commands: Commands,
@@ -19,15 +20,15 @@ pub fn update_code_actions_popup(
         Changed<CodeActionsPopupData>,
     >,
     anchor: PopupAnchor,
+    chrome: PopupChrome,
 ) {
     for (entity, data, mut node, children) in popups.iter_mut() {
-        let theme = anchor.theme(data.editor);
-        let placed = apply_frame(
+        let placed = apply_chrome(
             &mut commands,
             entity,
             &mut node,
             &anchor,
-            theme,
+            &chrome,
             data.editor,
             data.line,
             data.character,
@@ -39,20 +40,13 @@ pub fn update_code_actions_popup(
             continue;
         }
 
-        let fg = theme
-            .map(|t| t.foreground)
-            .unwrap_or(Color::srgb(0.827, 0.827, 0.827));
-        let selected_bg = theme
-            .map(|t| t.selection_background)
-            .unwrap_or(Color::srgba(0.231, 0.373, 0.604, 0.4));
-
         let row_count = data.actions.len().clamp(1, 10);
         let row_height = data.height / row_count as f32;
 
         commands.entity(entity).with_children(|p| {
             for (i, action) in data.actions.iter().enumerate() {
                 let selected = i == data.selected_index;
-                spawn_action_row(p, action, selected, row_height, fg, selected_bg);
+                spawn_action_row(p, action, selected, row_height, &chrome);
             }
         });
     }
@@ -63,9 +57,19 @@ fn spawn_action_row(
     action: &CodeActionItemData,
     selected: bool,
     height: f32,
-    fg: Color,
-    selected_bg: Color,
+    chrome: &PopupChrome,
 ) {
+    let bg = if selected {
+        chrome.palette.accent
+    } else {
+        Color::NONE
+    };
+    let fg = if selected {
+        chrome.palette.accent_foreground
+    } else {
+        chrome.palette.popover_foreground
+    };
+
     parent
         .spawn((
             Node {
@@ -73,28 +77,18 @@ fn spawn_action_row(
                 height: Val::Px(height),
                 flex_direction: FlexDirection::Row,
                 align_items: AlignItems::Center,
-                padding: UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
-                column_gap: Val::Px(6.0),
+                padding: UiRect::axes(
+                    Val::Px(chrome.menu.item_padding_x),
+                    Val::Px(chrome.spacing.xxs),
+                ),
+                column_gap: Val::Px(chrome.spacing.sm),
+                border_radius: BorderRadius::all(Val::Px(chrome.spacing.corner_radius_tiny)),
                 ..default()
             },
-            BackgroundColor(if selected { selected_bg } else { Color::NONE }),
+            BackgroundColor(bg),
         ))
         .with_children(|row| {
-            row.spawn((
-                Text::new(&action.icon),
-                TextFont {
-                    font_size: 14.0,
-                    ..default()
-                },
-                TextColor(fg),
-            ));
-            row.spawn((
-                Text::new(&action.title),
-                TextFont {
-                    font_size: 14.0,
-                    ..default()
-                },
-                TextColor(fg),
-            ));
+            row.spawn((Text::new(&action.icon), chrome.body_font(), TextColor(fg)));
+            row.spawn((Text::new(&action.title), chrome.body_font(), TextColor(fg)));
         });
 }

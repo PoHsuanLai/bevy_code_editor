@@ -137,11 +137,12 @@ pub mod settings;
 pub mod syntax;
 pub mod text_view;
 pub mod types;
+pub mod ui_kit;
 
 #[cfg(feature = "lsp")]
 pub mod lsp_ui;
 #[cfg(feature = "lsp")]
-pub mod lsp_ui_view;
+pub mod lsp_ui_tempera;
 
 pub mod prelude {
     //! Convenient re-exports for common editor usage.
@@ -201,5 +202,14 @@ pub mod prelude {
     #[cfg(feature = "lsp")]
     pub use crate::settings::{DiagnosticColors, LspConfig, Suggest};
     #[cfg(feature = "lsp")]
-    pub use crate::lsp_ui_view::{LspPopupRoot, LspUiViewPlugin, LspUiViewSet};
+    pub use crate::lsp_ui_tempera::{LspPopupRoot, LspUiTemperaPlugin, LspUiViewSet};
+
+    // Tempera tokens — hosts that want to match the editor's chrome in
+    // their own UI grab these from tempera's prelude directly, but we
+    // re-export the most common entry points so a host that only
+    // imports `bevscode::prelude::*` can still flip the palette.
+    pub use crate::ui_kit::BevscodePalettePlugin;
+    pub use tempera::theme::{
+        ColorPalette, FontHandle, MenuTokens, Spacing, ThemePlugin, Typography,
+    };
 }

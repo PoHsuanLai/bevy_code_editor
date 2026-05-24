@@ -184,25 +184,22 @@ pub(crate) fn produce_line_styles(
         (With<CodeEditor>, Changed<bevy_tree_sitter::SyntaxTree>),
     >,
     mut edit_events: MessageReader<TextEdited>,
-    // Per-entity pending edit: (dirty_range, line_shift, shift_pivot).
-    // `None` dirty_range = full rebuild; line_shift != 0 means keys in by_line
-    // at or after shift_pivot must be relocated before re-highlighting.
-    mut dirty_lines: Local<HashMap<Entity, (Option<(u32, u32)>, i32, u32)>>,
+    // Per-entity pending edit: (dirty_range, accumulated_deltas).
+    // `None` dirty_range = full rebuild; non-empty deltas tell us which row
+    // shifts to apply to `by_line` keys before re-highlighting.
+    mut dirty_lines: Local<HashMap<Entity, (Option<(u32, u32)>, Vec<bevy_instanced_text_editor::EditDelta>)>>,
 ) {
     let _span = bevy::prelude::info_span!("produce_line_styles").entered();
     for event in edit_events.read() {
         let start_row = event.delta.start_position.row;
-        let old_end_row = event.delta.old_end_position.row;
         let new_end_row = event.delta.new_end_position.row;
-        let line_delta = new_end_row as i32 - old_end_row as i32;
         // Dirty range covers the lines that changed content. For line-count
         // edits (Enter / backspace-over-newline) that's start_row..=new_end_row.
         let dirty_range = Some((start_row, new_end_row));
-        let incoming = (dirty_range, line_delta, start_row);
         for entity in content_changed.iter() {
             match dirty_lines.entry(entity) {
                 std::collections::hash_map::Entry::Vacant(v) => {
-                    v.insert(incoming);
+                    v.insert((dirty_range, vec![event.delta]));
                 }
                 std::collections::hash_map::Entry::Occupied(mut o) => {
                     let entry = o.get_mut();
@@ -210,10 +207,9 @@ pub(crate) fn produce_line_styles(
                         (Some((lo, hi)), Some((new_lo, new_hi))) => {
                             *lo = (*lo).min(new_lo);
                             *hi = (*hi).max(new_hi);
-                            entry.1 += line_delta;
-                            entry.2 = entry.2.min(start_row);
+                            entry.1.push(event.delta);
                         }
-                        _ => *entry = (None, 0, 0),
+                        _ => *entry = (None, Vec::new()),
                     }
                 }
             }
@@ -222,9 +218,9 @@ pub(crate) fn produce_line_styles(
 
     // When an async parse completes, union SyntaxTree::dirty_rows into our
     // dirty_lines map. `None` dirty_rows = full rebuild (first parse / huge edit).
-    // Syntax completions don't shift line indices, so line_delta stays 0.
+    // Syntax completions don't shift line indices, so no deltas to add.
     for (entity, syntax_tree) in syntax_tree_changed.iter() {
-        let incoming = (syntax_tree.dirty_rows, 0i32, 0u32);
+        let incoming = (syntax_tree.dirty_rows, Vec::new());
         let entry = dirty_lines.entry(entity).or_insert(incoming);
         match (entry.0.as_mut(), syntax_tree.dirty_rows) {
             (Some((lo, hi)), Some((new_lo, new_hi))) => {
@@ -311,10 +307,10 @@ pub(crate) fn produce_line_styles(
         // Determine which lines to (re)highlight this frame.
         // `None` = full rebuild. Content edits without a matching edit event
         // (e.g. set_text) also get a full rebuild.
-        let (dirty_range, line_shift, shift_pivot) = if needs_full {
-            (None, 0i32, 0u32)
+        let (dirty_range, pending_deltas) = if needs_full {
+            (None, Vec::new())
         } else {
-            dirty_lines.get(&entity).copied().unwrap_or_default()
+            dirty_lines.get(&entity).cloned().unwrap_or_default()
         };
 
         let highlight_lines: Box<dyn Iterator<Item = usize>> = match dirty_range {
@@ -331,13 +327,19 @@ pub(crate) fn produce_line_styles(
 
         // On a full rebuild start fresh; on incremental reuse the existing map.
         let is_incremental = dirty_range.is_some();
+        let mut shifted_keys = false;
         let mut by_line: HashMap<u32, Vec<FormattedSpan>> = if !is_incremental {
             HashMap::new()
         } else {
-            // Clone the existing Arc'd map so we can patch it, then apply any
-            // line-index shift caused by insertions/deletions of newlines.
+            // Clone the existing Arc'd map so we can patch it, then apply each
+            // pending edit's row delta in order so keys track the post-edit rope.
             let mut map = (*line_styles.by_line).clone();
-            shift_by_line(&mut map, shift_pivot, line_shift);
+            for delta in &pending_deltas {
+                if delta.old_end_position.row != delta.new_end_position.row {
+                    shifted_keys = true;
+                }
+                shift_by_line(&mut map, delta);
+            }
             map
         };
 
@@ -433,11 +435,14 @@ pub(crate) fn produce_line_styles(
             }
         }
 
-        // Only write LineStyles when content actually changed. An unconditional
-        // write creates a fresh Arc every frame, changing the Arc address and
-        // triggering layout_miss_styles on every idle frame.
+        // Only write LineStyles when something actually changed — an
+        // unconditional write hands out a fresh Arc every frame and trips
+        // `layout_miss_styles` on idle frames. `shifted_keys` is the catch
+        // for line-count edits whose touched rows re-highlight to no-ops:
+        // the shifted map is the only post-edit state we have, and without
+        // persisting it the renderer reads stale runs at stale keys.
         let covered_changed = syntax.covered != new_covered;
-        if map_changed || covered_changed || !is_incremental {
+        if map_changed || covered_changed || shifted_keys || !is_incremental {
             *line_styles = LineStyles::new(by_line);
             syntax.covered = new_covered;
         }
@@ -445,57 +450,34 @@ pub(crate) fn produce_line_styles(
     }
 }
 
-/// Relocate `by_line` keys after a multi-line edit at `pivot` that shifted
-/// trailing rows by `line_shift`.
-///
-/// `pivot` is the buffer row where the edit started (the row that survives
-/// after a merge, or the original row before an insertion-of-newlines).
-///
-/// - **`line_shift > 0`** (lines added — e.g. Enter splits one row into two):
-///   keys `> pivot` move up by `line_shift`. The pivot row's runs are left
-///   in place — they're stale, but the dirty range covers them and they'll
-///   be overwritten by the rehighlight pass.
-/// - **`line_shift < 0`** (lines removed — e.g. backspace joins two rows):
-///   the `|line_shift|` rows immediately after `pivot` vanish from the buffer.
-///   Their cached runs are discarded; keys past the deleted zone shift down
-///   by `|line_shift|`. The pivot row stays put with stale runs that the
-///   rehighlight pass will overwrite.
-pub(crate) fn shift_by_line<V>(map: &mut HashMap<u32, V>, pivot: u32, line_shift: i32) {
-    if line_shift == 0 {
-        return;
+/// Relocate `by_line` keys across an [`EditDelta`]. Keys whose lines were
+/// deleted are dropped; keys whose lines moved are re-keyed. Routes every
+/// row through [`bevy_instanced_text_editor::shift_line`] so the line-shift
+/// semantics stay in one place.
+pub(crate) fn shift_by_line<V>(map: &mut HashMap<u32, V>, delta: &bevy_instanced_text_editor::EditDelta) {
+    use bevy_instanced_text_editor::{shift_line, LineShift};
+    // Stage moves to avoid clobbering an entry that's about to move itself.
+    let mut to_remove: Vec<u32> = Vec::new();
+    let mut to_insert: Vec<(u32, V)> = Vec::new();
+    let keys: Vec<u32> = map.keys().copied().collect();
+    for key in keys {
+        match shift_line(key, delta) {
+            LineShift::Unchanged => {}
+            LineShift::Deleted => {
+                to_remove.push(key);
+            }
+            LineShift::Moved(new_key) => {
+                if let Some(val) = map.remove(&key) {
+                    to_insert.push((new_key, val));
+                }
+            }
+        }
     }
-    match line_shift.cmp(&0) {
-        std::cmp::Ordering::Greater => {
-            // Shift up: process descending so an entry never lands on a
-            // still-occupied higher key it hasn't moved yet.
-            let mut keys: Vec<u32> = map.keys().copied().filter(|&k| k > pivot).collect();
-            keys.sort_unstable_by(|a, b| b.cmp(a));
-            for old_key in keys {
-                if let Some(val) = map.remove(&old_key) {
-                    let new_key = (old_key as i32 + line_shift) as u32;
-                    map.insert(new_key, val);
-                }
-            }
-        }
-        std::cmp::Ordering::Less => {
-            // Shift down: the rows in `(pivot, pivot + |shift|]` vanished;
-            // their cached runs are gone with them. Keys past that range
-            // move down by `|shift|`; process ascending so each insertion
-            // targets an already-vacated key.
-            let abs = (-line_shift) as u32;
-            let removed_lo = pivot + 1;
-            let removed_hi = pivot + 1 + abs; // exclusive
-            map.retain(|&k, _| k < removed_lo || k >= removed_hi);
-            let mut keys: Vec<u32> = map.keys().copied().filter(|&k| k >= removed_hi).collect();
-            keys.sort_unstable();
-            for old_key in keys {
-                if let Some(val) = map.remove(&old_key) {
-                    let new_key = (old_key as i32 + line_shift) as u32;
-                    map.insert(new_key, val);
-                }
-            }
-        }
-        std::cmp::Ordering::Equal => unreachable!(),
+    for k in to_remove {
+        map.remove(&k);
+    }
+    for (k, v) in to_insert {
+        map.insert(k, v);
     }
 }
 
@@ -550,10 +532,31 @@ pub(crate) fn sync_layout_wrap(
 #[cfg(test)]
 mod shift_tests {
     use super::shift_by_line;
+    use bevy_instanced_text_editor::{EditDelta, EditPoint};
     use std::collections::HashMap;
 
     fn map_from(pairs: &[(u32, &'static str)]) -> HashMap<u32, &'static str> {
         pairs.iter().copied().collect()
+    }
+
+    fn delta(start_row: u32, old_end_row: u32, new_end_row: u32) -> EditDelta {
+        EditDelta {
+            start_byte: 0,
+            old_end_byte: 0,
+            new_end_byte: 0,
+            start_position: EditPoint {
+                row: start_row,
+                column_byte: 0,
+            },
+            old_end_position: EditPoint {
+                row: old_end_row,
+                column_byte: 0,
+            },
+            new_end_position: EditPoint {
+                row: new_end_row,
+                column_byte: 0,
+            },
+        }
     }
 
     /// Backspace at the start of row 2 joins rows 1 and 2. Row 2 vanishes;
@@ -561,15 +564,12 @@ mod shift_tests {
     #[test]
     fn delete_newline_at_start_of_row_2_does_not_clobber_row_0() {
         let mut map = map_from(&[(0, "line0"), (1, "line1"), (2, "line2")]);
-        shift_by_line(&mut map, /*pivot=*/ 1, /*line_shift=*/ -1);
+        shift_by_line(&mut map, &delta(1, 2, 1));
         assert_eq!(
             map.get(&0).copied(),
             Some("line0"),
             "row 0 must be preserved"
         );
-        // Row 1's cached runs are stale (content changed) — the test asserts
-        // only that row 0 was not corrupted; the rehighlight pass repopulates
-        // row 1 from the new buffer content.
         assert!(!map.contains_key(&2), "row 2 must be dropped after merge");
     }
 
@@ -577,12 +577,9 @@ mod shift_tests {
     #[test]
     fn delete_newline_far_from_start_only_shifts_trailing_rows() {
         let mut map = map_from(&[(0, "a"), (1, "b"), (2, "c"), (3, "d"), (4, "e")]);
-        shift_by_line(&mut map, /*pivot=*/ 2, /*line_shift=*/ -1);
+        shift_by_line(&mut map, &delta(2, 3, 2));
         assert_eq!(map.get(&0).copied(), Some("a"));
         assert_eq!(map.get(&1).copied(), Some("b"));
-        // map[2] is stale-but-present; map[3] (was "d") slides to 3 - 1 = 2…
-        // no wait: pivot=2, removed range = (2, 3] exclusive = row 3. Keys >= 4
-        // shift down by 1. So row 3 vanishes; row 4 ("e") → row 3.
         assert!(!map.contains_key(&4));
         assert_eq!(map.get(&3).copied(), Some("e"));
     }
@@ -592,9 +589,8 @@ mod shift_tests {
     #[test]
     fn multi_line_delete_drops_correct_rows() {
         let mut map = map_from(&[(0, "a"), (1, "b"), (2, "c"), (3, "d"), (4, "e")]);
-        shift_by_line(&mut map, /*pivot=*/ 1, /*line_shift=*/ -2);
+        shift_by_line(&mut map, &delta(1, 3, 1));
         assert_eq!(map.get(&0).copied(), Some("a"));
-        // Rows 2 and 3 vanished; row 4 ("e") → row 2.
         assert!(!map.contains_key(&3));
         assert!(!map.contains_key(&4));
         assert_eq!(map.get(&2).copied(), Some("e"));
@@ -604,21 +600,18 @@ mod shift_tests {
     #[test]
     fn insert_newline_shifts_trailing_rows_up() {
         let mut map = map_from(&[(0, "first"), (1, "second"), (2, "third")]);
-        shift_by_line(&mut map, /*pivot=*/ 0, /*line_shift=*/ 1);
-        // Row 0's cached runs stay (stale, will be overwritten by rehighlight).
+        shift_by_line(&mut map, &delta(0, 0, 1));
         assert_eq!(map.get(&0).copied(), Some("first"));
-        // Row 1 ("second") → row 2; row 2 ("third") → row 3.
         assert_eq!(map.get(&2).copied(), Some("second"));
         assert_eq!(map.get(&3).copied(), Some("third"));
-        assert!(!map.contains_key(&1) || map.get(&1).copied() == Some("first"));
     }
 
-    /// Zero shift is a no-op.
+    /// Same-row edit (typing a character) is a no-op for line keys.
     #[test]
-    fn zero_shift_is_noop() {
+    fn same_row_edit_is_noop() {
         let original = map_from(&[(0, "a"), (1, "b"), (2, "c")]);
         let mut map = original.clone();
-        shift_by_line(&mut map, 1, 0);
+        shift_by_line(&mut map, &delta(1, 1, 1));
         assert_eq!(map, original);
     }
 }

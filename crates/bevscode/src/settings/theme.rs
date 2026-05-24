@@ -52,15 +52,23 @@ pub struct EditorTheme {
 
 impl Default for EditorTheme {
     fn default() -> Self {
+        // Surfaces / text / separator / placeholder come from tempera's
+        // shadcn-zinc dark palette so a freshly-spawned editor matches
+        // the rest of the user's tempera-based UI before
+        // `BevscodePalettePlugin`'s sync system has had a chance to run.
+        // Editor-specific fields (cursor, selection, line numbers,
+        // bracket pairs, fold, whitespace, link) have no shadcn
+        // equivalent and keep their tuned values.
+        let palette = tempera::theme::ColorPalette::dark();
         Self {
-            background: Color::srgb(0.122, 0.122, 0.122),
-            foreground: Color::srgb(0.800, 0.800, 0.800),
+            background: palette.background,
+            foreground: palette.foreground,
             cursor: Color::srgb(0.682, 0.686, 0.678),
             selection_background: Color::srgba(0.149, 0.310, 0.471, 1.0),
             line_highlight: Some(Color::srgba(0.157, 0.157, 0.157, 0.6)),
             line_numbers: Color::srgb(0.431, 0.471, 0.506),
             line_numbers_active: Color::srgb(0.800, 0.800, 0.800),
-            separator: Color::srgb(0.165, 0.176, 0.184),
+            separator: palette.border,
             indent_guide: Color::srgba(0.251, 0.251, 0.251, 1.0),
             bracket_match: Color::srgba(0.0, 1.0, 0.5, 0.3),
             bracket_pair_colors: vec![
@@ -71,7 +79,7 @@ impl Default for EditorTheme {
                 Color::srgb(0.40, 0.83, 0.40),
                 Color::srgb(0.93, 0.36, 0.39),
             ],
-            placeholder_color: Color::srgba(0.5, 0.5, 0.5, 0.6),
+            placeholder_color: palette.muted_foreground,
             fold_marker: Color::srgba(0.231, 0.373, 0.604, 0.18),
             whitespace: Color::srgba(0.5, 0.5, 0.5, 0.18),
             link: Color::srgba(0.29, 0.56, 0.89, 0.6),

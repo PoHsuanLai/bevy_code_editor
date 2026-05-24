@@ -15,7 +15,7 @@
 use crate::text_view::TextBuffer;
 use crate::types::*;
 use bevy::prelude::*;
-use bevy_instanced_text_editor::RopeBuffer;
+use bevy_instanced_text_editor::{shift_line, LineShift, RopeBuffer};
 
 use bevy::tasks::{block_on, futures_lite, AsyncComputeTaskPool, Task};
 
@@ -28,6 +28,11 @@ pub(crate) struct FoldDetectTask {
     /// `SyntaxTree::tree_version` at kick-off; written into
     /// `FoldState::content_version` on completion to single-flight.
     tree_version: usize,
+    /// Rope `content_version` at kick-off. Region line indices were computed
+    /// against the rope at this version; if the rope has since been edited
+    /// the task is stale and must be discarded — `shift_fold_regions_on_edit`
+    /// has already corrected the prior region indices.
+    rope_version: u64,
     /// The editor entity whose `FoldState` this task targets.
     target: Entity,
 }
@@ -51,6 +56,7 @@ type FoldDetectQuery<'w, 's> = Query<
         &'static FoldState,
         &'static TextBuffer<RopeBuffer>,
         &'static bevy_tree_sitter::SyntaxTree,
+        &'static bevy_tree_sitter::ParseSourceComp,
         &'static crate::settings::Folding,
     ),
     (With<CodeEditor>, Changed<bevy_tree_sitter::SyntaxTree>),
@@ -63,7 +69,7 @@ pub(crate) fn spawn_fold_detect_tasks(
 ) {
     let busy: std::collections::HashSet<Entity> = in_flight.iter().map(|t| t.target).collect();
 
-    for (entity, fold_state, buffer, syntax_tree, folding) in editor_query.iter() {
+    for (entity, fold_state, buffer, syntax_tree, parse_source, folding) in editor_query.iter() {
         if !folding.enabled {
             continue;
         }
@@ -83,6 +89,7 @@ pub(crate) fn spawn_fold_detect_tasks(
         // worker.
         let tree_clone = tree.clone();
         let rope_clone = buffer.rope().clone();
+        let rope_version = parse_source.0.content_version();
         let task = AsyncComputeTaskPool::get().spawn(async move {
             let mut regions: Vec<FoldRegion> = Vec::new();
             let root = tree_clone.root_node();
@@ -94,6 +101,7 @@ pub(crate) fn spawn_fold_detect_tasks(
             FoldDetectTask {
                 task,
                 tree_version,
+                rope_version,
                 target: entity,
             },
             ChildOf(entity),
@@ -107,14 +115,31 @@ pub(crate) fn spawn_fold_detect_tasks(
 pub(crate) fn apply_fold_detect_tasks(
     mut commands: Commands,
     mut tasks: Query<(Entity, &mut FoldDetectTask)>,
-    mut editors: Query<(&mut FoldState, &crate::settings::Folding), With<CodeEditor>>,
+    mut editors: Query<
+        (
+            &mut FoldState,
+            &crate::settings::Folding,
+            &bevy_tree_sitter::ParseSourceComp,
+        ),
+        With<CodeEditor>,
+    >,
 ) {
     for (task_entity, mut task) in tasks.iter_mut() {
         let Some(regions) = block_on(futures_lite::future::poll_once(&mut task.task)) else {
             continue;
         };
 
-        if let Ok((mut fold_state, folding_cfg)) = editors.get_mut(task.target) {
+        if let Ok((mut fold_state, folding_cfg, parse_source)) = editors.get_mut(task.target) {
+            // Discard tasks whose rope has been edited since the task
+            // captured its snapshot. Region line indices reflect that
+            // snapshot; applying them now would overwrite the post-edit
+            // indices `shift_fold_regions_on_edit` produced with stale ones.
+            // The next tick's `spawn_fold_detect_tasks` will queue a fresh
+            // detect against the current rope.
+            if task.rope_version != parse_source.0.content_version() {
+                commands.entity(task_entity).despawn();
+                continue;
+            }
             if fold_state.content_version != task.tree_version {
                 let first_apply = fold_state.content_version == 0;
                 let limit = folding_cfg.max_regions as usize;
@@ -321,6 +346,90 @@ pub(crate) fn node_to_fold_region(
     })
 }
 
+/// Apply each `TextEdited` event's row delta to `FoldState.regions` so the
+/// regions track buffer-line indices through edits. Without this, an edit
+/// that inserts or removes newlines leaves region indices pointing at lines
+/// that have shifted, and any folded region hides the wrong rows until the
+/// async fold-detect pass lands a fresh region list.
+pub(crate) fn shift_fold_regions_on_edit(
+    mut events: bevy::ecs::message::MessageReader<crate::types::events::TextEdited>,
+    mut editors: Query<&mut FoldState, With<CodeEditor>>,
+) {
+    let deltas: Vec<bevy_instanced_text_editor::EditDelta> =
+        events.read().map(|e| e.delta).collect();
+    if deltas.is_empty() {
+        return;
+    }
+    for mut fold_state in editors.iter_mut() {
+        if fold_state.regions.is_empty() {
+            continue;
+        }
+        let mut touched = false;
+        let mut drop_indices: Vec<usize> = Vec::new();
+        for delta in &deltas {
+            let start_row = delta.start_position.row as usize;
+            for (i, region) in fold_state
+                .bypass_change_detection()
+                .regions
+                .iter_mut()
+                .enumerate()
+            {
+                let start_shift = shift_line(region.start_line as u32, delta);
+                let end_shift = shift_line(region.end_line as u32, delta);
+                match (start_shift, end_shift) {
+                    (LineShift::Unchanged, LineShift::Unchanged) => {}
+                    (LineShift::Deleted, _) | (_, LineShift::Deleted)
+                        if region.end_line == region.start_line =>
+                    {
+                        drop_indices.push(i);
+                        touched = true;
+                    }
+                    (LineShift::Deleted, _) => {
+                        // Start row gone; collapse the region to the edit's
+                        // start row (which is the last surviving line before
+                        // the deletion) and let the end follow.
+                        region.start_line = start_row;
+                        region.end_line = match end_shift {
+                            LineShift::Moved(r) => (r as usize).max(start_row),
+                            LineShift::Deleted => start_row,
+                            LineShift::Unchanged => region.end_line,
+                        };
+                        touched = true;
+                    }
+                    (_, LineShift::Deleted) => {
+                        // End row gone; clamp to the edit's start row.
+                        if let LineShift::Moved(r) = start_shift {
+                            region.start_line = r as usize;
+                        }
+                        region.end_line = start_row.max(region.start_line);
+                        touched = true;
+                    }
+                    (start, end) => {
+                        if let LineShift::Moved(r) = start {
+                            region.start_line = r as usize;
+                            touched = true;
+                        }
+                        if let LineShift::Moved(r) = end {
+                            region.end_line = (r as usize).max(region.start_line);
+                            touched = true;
+                        }
+                    }
+                }
+            }
+            // Drop fully-deleted regions; process descending so indices stay valid.
+            if !drop_indices.is_empty() {
+                drop_indices.sort_unstable_by(|a, b| b.cmp(a));
+                for i in drop_indices.drain(..) {
+                    fold_state.bypass_change_detection().regions.remove(i);
+                }
+            }
+        }
+        if touched {
+            fold_state.set_changed();
+        }
+    }
+}
+
 pub struct FoldingPlugin;
 
 impl Plugin for FoldingPlugin {
@@ -333,7 +442,10 @@ impl Plugin for FoldingPlugin {
         _app.add_systems(
             Update,
             (
-                spawn_fold_detect_tasks.in_set(super::ApplyStateSet),
+                shift_fold_regions_on_edit.in_set(super::ApplyStateSet),
+                spawn_fold_detect_tasks
+                    .after(shift_fold_regions_on_edit)
+                    .in_set(super::ApplyStateSet),
                 apply_fold_detect_tasks
                     .after(spawn_fold_detect_tasks)
                     .in_set(super::ApplyStateSet),

@@ -1,0 +1,85 @@
+//! Adapter: tempera [`PopupChrome`] → `bevy_markdown` theme components.
+//!
+//! `bevy_markdown` expects four small theme components on each `Markdown`
+//! entity. Inside bevscode they're all derived from the live tempera
+//! tokens so popup markdown matches the rest of the chrome (font, body
+//! foreground color, popover background, accent for links). One call
+//! site, kept here so renderers stay one-liners.
+//!
+//! Tempera's [`FontHandle`] carries `regular` + optional `bold` only —
+//! no italic, no monospace face. We reuse `regular` for both body and
+//! mono and let `bevy_text` synthesize italic via skew. Hosts that
+//! want a true mono / italic face can spawn their own `MarkdownFonts`
+//! Component on the popup entity to override one axis.
+
+use bevy::prelude::*;
+use bevy_markdown::{MarkdownColors, MarkdownFonts, MarkdownScales, MarkdownSpacing};
+
+use super::PopupChrome;
+
+/// Build the four `bevy_markdown` theme components from the current
+/// [`PopupChrome`]. Returns them as a tuple ready to spread into a
+/// `commands.spawn((Markdown { source }, fonts, colors, spacing, scales))`.
+pub fn markdown_theme_from_chrome(
+    chrome: &PopupChrome<'_>,
+) -> (MarkdownFonts, MarkdownColors, MarkdownSpacing, MarkdownScales) {
+    let regular = chrome.font.regular.clone().unwrap_or_default();
+    let bold = chrome.font.bold.clone().or(Some(regular.clone()));
+
+    let fonts = MarkdownFonts {
+        body: regular.clone(),
+        // No mono face in tempera; reuse regular. Fenced code blocks
+        // still get the code background + slightly muted color so they
+        // remain visually distinct without a separate face.
+        mono: regular,
+        bold,
+        italic: None,
+        bold_italic: None,
+    };
+
+    // Code blocks mirror tempera's `<kbd>` chip styling (see kbd.rs):
+    // muted background + 1px border, popover-foreground text. The chip
+    // pattern is the only "code-shaped" surface tempera ships, so
+    // matching it keeps hover code blocks visually consistent with the
+    // rest of the chrome.
+    //
+    // `link` uses `accent_foreground` rather than `primary` because
+    // tempera dark themes ship `primary = white`, which is invisibly
+    // bright against the popover background.
+    let colors = MarkdownColors {
+        text: chrome.palette.popover_foreground,
+        link: chrome.palette.accent_foreground,
+        code_bg: chrome.palette.muted,
+        code_border: chrome.palette.border,
+        // `inline_code_bg` is the foreground *color* for inline code
+        // spans here (the engine has no per-span background in 0.18),
+        // so it must be a readable text color. Popover foreground keeps
+        // inline code legible — `bevy_markdown` still picks the mono
+        // face so it remains visually distinct.
+        inline_code_bg: chrome.palette.popover_foreground,
+        blockquote_border: chrome.palette.accent,
+        hr: chrome.palette.border,
+    };
+
+    let spacing = MarkdownSpacing {
+        // Anchor to typography `base` (body) so heading scales produce
+        // real size steps. `sm` would compress every heading to body-
+        // sized text.
+        base_font_size: chrome.typography.base,
+        line_height_mul: 1.4,
+        block_gap: chrome.spacing.xs,
+        list_indent: chrome.spacing.md,
+        // Match tempera kbd's chip padding (~6,4) so the code block
+        // reads as a sibling of inline chips elsewhere in the UI.
+        code_padding: UiRect::axes(Val::Px(chrome.spacing.xs + 2.0), Val::Px(chrome.spacing.xs)),
+        // Crisp corners — popups already round at the outer chrome
+        // (`spacing.corner_radius_small`), so the inner code block
+        // looks sharper and more terminal-like with the micro radius.
+        code_corner_radius: chrome.spacing.corner_radius_micro,
+        blockquote_border_width: 2.0,
+    };
+
+    let scales = MarkdownScales::default();
+
+    (fonts, colors, spacing, scales)
+}

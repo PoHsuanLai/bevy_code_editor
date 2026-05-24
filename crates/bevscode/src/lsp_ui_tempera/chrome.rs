@@ -1,18 +1,25 @@
-//! Shared popup framing: positioning + base [`Node`] style + background +
-//! border. Every popup renderer calls [`apply_frame`] to set the absolute
-//! position and chrome, then fills in its own children.
+//! Shared popup chrome — tempera-token-styled background, border, radius,
+//! padding — plus position resolution via [`PopupAnchor`].
+//!
+//! Every popup renderer in this module calls [`apply_chrome`] to set its
+//! own `Node`'s position and chrome, then fills in its own children. The
+//! palette and metrics come from tempera's [`ColorPalette`], [`Spacing`],
+//! and [`MenuTokens`] resources via [`PopupChrome`], so changing the
+//! palette in the app re-tints every popup the same frame.
 
 use bevy::prelude::*;
 
-use crate::settings::EditorTheme;
+use crate::ui_kit::PopupChrome;
 
 use super::anchor::{PopupAnchor, PopupPlacement, PopupRect};
 
-/// Position + base styling for a popup `Node`.
+/// Position + tempera-styled chrome for a popup `Node`.
 ///
-/// - Sets `position_type = Absolute`, `width`, `height`, `flex_direction =
-///   Column`, `overflow = clip`, and a small interior padding.
-/// - Applies `BackgroundColor` and `BorderColor` from [`EditorTheme`].
+/// - Sets `position_type = Absolute`, the requested size, column layout,
+///   clipping overflow, a 1px border, and tempera's corner radius +
+///   interior padding.
+/// - Applies `BackgroundColor` from `palette.popover` and `BorderColor`
+///   from `palette.border`.
 /// - Hides the popup (`display = None`) when the anchor isn't resolvable
 ///   yet (e.g. layout not produced this frame). The renderer should then
 ///   skip rebuilding children.
@@ -20,12 +27,12 @@ use super::anchor::{PopupAnchor, PopupPlacement, PopupRect};
 /// Returns the resolved [`PopupRect`] when placement succeeded, or
 /// `None` when the popup is hidden this frame.
 #[allow(clippy::too_many_arguments)]
-pub fn apply_frame(
+pub fn apply_chrome(
     commands: &mut Commands,
     entity: Entity,
     node: &mut Node,
     anchor: &PopupAnchor,
-    theme: Option<&EditorTheme>,
+    chrome: &PopupChrome,
     editor: Entity,
     line: u32,
     character: u32,
@@ -37,7 +44,9 @@ pub fn apply_frame(
     node.height = Val::Px(size.y);
     node.flex_direction = FlexDirection::Column;
     node.overflow = Overflow::clip();
-    node.padding = UiRect::all(Val::Px(4.0));
+    node.padding = UiRect::all(Val::Px(chrome.spacing.xs));
+    node.border = UiRect::all(Val::Px(chrome.menu.border_width));
+    node.border_radius = BorderRadius::all(Val::Px(chrome.spacing.corner_radius_small));
 
     let rect = anchor.place(editor, line, character, size, placement);
     match rect {
@@ -51,21 +60,16 @@ pub fn apply_frame(
         }
     }
 
-    let bg = theme
-        .map(|t| t.background)
-        .unwrap_or(Color::srgb(0.117, 0.117, 0.117));
-    let border = theme
-        .map(|t| t.separator)
-        .unwrap_or(Color::srgb(0.2, 0.2, 0.2));
-    commands
-        .entity(entity)
-        .insert((BackgroundColor(bg), BorderColor::all(border)));
+    commands.entity(entity).insert((
+        BackgroundColor(chrome.palette.popover),
+        BorderColor::all(chrome.palette.border),
+    ));
 
     rect
 }
 
-/// Despawn every child of `entity` whose id is listed. Convenience for
-/// the "tear down old children, rebuild list" loop every popup uses.
+/// Despawn every child of `entity`. Convenience for the "tear down old
+/// children, rebuild list" loop every popup uses.
 pub fn clear_children(commands: &mut Commands, children: Option<&Children>) {
     let Some(children) = children else { return };
     for child in children.iter() {

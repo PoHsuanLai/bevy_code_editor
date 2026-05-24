@@ -30,6 +30,7 @@
 pub mod cursor_movement;
 pub mod editing;
 pub mod history;
+pub mod line_index;
 pub mod plugin;
 pub mod text;
 pub mod text_edit;
@@ -40,7 +41,8 @@ pub mod widget;
 pub use cursor_movement::*;
 pub use editing::{point_at_byte, EditOutcome};
 pub use history::{EditHistory, EditKind, EditOperation, EditTransaction};
-pub use plugin::{EditEmitSet, InstancedTextEditPlugin};
+pub use line_index::{shift_line, LineShift};
+pub use plugin::{EditApplySet, EditEmitSet, InstancedTextEditPlugin};
 pub use text::RopeBuffer;
 pub use text_edit::*;
 pub use text_state::{

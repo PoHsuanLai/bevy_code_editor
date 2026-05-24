@@ -127,7 +127,35 @@ fn setup_editor(
     let project_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let root_uri =
         lsp_types::Url::from_directory_path(&project_root).expect("Failed to get project root URI");
-    let capabilities = lsp_types::ClientCapabilities::default();
+    // Advertise Markdown as the preferred format for hover, completion
+    // docs, and signature help so rust-analyzer sends fenced code +
+    // formatted prose instead of stripped plain text. `bevy_markdown`
+    // renders the markdown in the popup chrome.
+    let markdown_then_plain = vec![lsp_types::MarkupKind::Markdown, lsp_types::MarkupKind::PlainText];
+    let capabilities = lsp_types::ClientCapabilities {
+        text_document: Some(lsp_types::TextDocumentClientCapabilities {
+            hover: Some(lsp_types::HoverClientCapabilities {
+                content_format: Some(markdown_then_plain.clone()),
+                ..Default::default()
+            }),
+            completion: Some(lsp_types::CompletionClientCapabilities {
+                completion_item: Some(lsp_types::CompletionItemCapability {
+                    documentation_format: Some(markdown_then_plain.clone()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            signature_help: Some(lsp_types::SignatureHelpClientCapabilities {
+                signature_information: Some(lsp_types::SignatureInformationSettings {
+                    documentation_format: Some(markdown_then_plain.clone()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
 
     lsp_w.write(LspRequest {
         entity: editor_entity,

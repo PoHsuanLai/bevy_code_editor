@@ -1,10 +1,10 @@
-//! Built-in `bevy_ui` renderer for the LSP popup data layer.
+//! Tempera-skinned renderer for the LSP popup data layer.
 //!
 //! [`crate::lsp_ui`] turns LSP state into semantic *PopupData* components
 //! `(line, character, …)`. This module turns those components into a
-//! `Node` tree parented under the editor entity. Hosts that want a
-//! Monaco-style editor get all the popups by adding [`CodeEditorPlugins`],
-//! no extra renderer crate required.
+//! `Node` tree parented under the editor entity, painted with tempera's
+//! shadcn-style tokens so popups match the look of the user's other
+//! tempera-based apps.
 //!
 //! Each popup is one update system reading `Changed<*PopupData>`. Spawn
 //! and despawn ride on the existing `lsp_ui::sync` lifecycle: every
@@ -15,9 +15,9 @@
 //! [`CodeEditorPlugins`]: crate::plugin::CodeEditorPlugins
 
 pub mod anchor;
+pub mod chrome;
 pub mod code_actions;
 pub mod completion;
-pub mod frame;
 pub mod hover;
 pub mod inline_decorations;
 pub mod rename;
@@ -42,16 +42,41 @@ pub struct LspPopupRoot;
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LspUiViewSet;
 
-/// Adds the built-in bevy_ui popup renderer.
+/// Adds the tempera-skinned popup renderer.
 ///
 /// Pulled in by [`CodeEditorPlugins`] under `cfg(feature = "lsp")`.
 ///
 /// [`CodeEditorPlugins`]: crate::plugin::CodeEditorPlugins
 #[derive(Default)]
-pub struct LspUiViewPlugin;
+pub struct LspUiTemperaPlugin;
 
-impl Plugin for LspUiViewPlugin {
+impl Plugin for LspUiTemperaPlugin {
     fn build(&self, app: &mut App) {
+        // Tempera's theme resources are the source of truth for every
+        // popup color / metric. Pull in `BevscodePalettePlugin` so the
+        // resources exist and `EditorTheme` stays in sync.
+        if !app
+            .is_plugin_added::<crate::ui_kit::BevscodePalettePlugin>()
+        {
+            app.add_plugins(crate::ui_kit::BevscodePalettePlugin);
+        }
+
+        // Markdown rendering for hover docs. Idempotent: only add the
+        // plugin if no host has already registered it.
+        if !app.is_plugin_added::<bevy_markdown::BevyMarkdownPlugin>() {
+            app.add_plugins(bevy_markdown::BevyMarkdownPlugin);
+        }
+        // Default tree-sitter highlighter for fenced code blocks in
+        // hover docs. Hosts can replace the resource to swap themes.
+        if !app
+            .world()
+            .contains_resource::<bevy_markdown::MarkdownHighlighter>()
+        {
+            app.insert_resource(bevy_markdown::MarkdownHighlighter(std::sync::Arc::new(
+                bevy_markdown::tree_sitter::TreeSitterHighlighter::with_default_colors(),
+            )));
+        }
+
         // Reparent each popup under its owning editor as soon as the data
         // component lands on the entity. One observer per popup type
         // because `editor: Entity` is on the typed *PopupData, not on

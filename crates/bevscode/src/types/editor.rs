@@ -109,7 +109,15 @@ use bevy::prelude::*;
     crate::plugin::GlyphMarginRects,
     crate::plugin::LineDecorationRects,
     HoveredGutterLine,
-    HoveredInGutter
+    HoveredInGutter,
+    // Mark the editor focusable for `bevy_input_focus`. `TabNavigationPlugin`
+    // (registered by every tempera widget plugin) installs an `acquire_focus`
+    // observer that bubbles up from the click target: it stops at the first
+    // entity with `TabIndex` and clears focus on a bare `Window`. Without
+    // this, a click on the editor would land on the window and clear focus,
+    // so keystrokes would no longer be delivered to `bevy_instanced_text_editor`'s
+    // edit handlers (which gate on `InputFocus.get()`).
+    bevy::input_focus::tab_navigation::TabIndex
 )]
 #[cfg_attr(
     feature = "lsp",

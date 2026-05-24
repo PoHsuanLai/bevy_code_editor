@@ -183,8 +183,9 @@ impl Plugin for CodeEditorPlugin {
             Update,
             (
                 InputSet,
-                bevy_instanced_text_editor::EditEmitSet.after(InputSet),
-                ApplyStateSet.after(bevy_instanced_text_editor::EditEmitSet),
+                bevy_instanced_text_editor::EditApplySet,
+                bevy_instanced_text_editor::EditEmitSet,
+                ApplyStateSet,
             )
                 .chain(),
         );
@@ -309,10 +310,19 @@ impl PluginGroup for CodeEditorPlugins {
             .add(EditorUiPlugin)
             .add(ScrollAnimatorPlugin)
             .add(crate::display_map::DisplayMapPlugin);
+        // Tempera widget kit + bevscode's palette→EditorTheme bridge.
+        // `EditorTemperaPlugin` is a gated wrapper that forwards to
+        // `tempera::TemperaPlugin` only when tempera isn't already
+        // installed — host apps that pull in tempera themselves get
+        // their popups skinned against the same palette without a
+        // double-registration panic.
+        let group = group
+            .add(crate::ui_kit::EditorTemperaPlugin)
+            .add(crate::ui_kit::BevscodePalettePlugin);
         #[cfg(feature = "lsp")]
         let group = group
             .add(LspPlugin)
-            .add(crate::lsp_ui_view::LspUiViewPlugin);
+            .add(crate::lsp_ui_tempera::LspUiTemperaPlugin);
         group
     }
 }
