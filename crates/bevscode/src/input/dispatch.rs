@@ -485,8 +485,8 @@ pub(crate) fn dispatch_action_events(
     // bevy_instanced_text_editor / IDE handlers never see the event.
     #[cfg(feature = "lsp")]
     if let Ok((
-        lsp_client,
-        mut lsp_document,
+        _lsp_client,
+        _lsp_document,
         mut completion_state,
         mut completion_lc,
         _,
@@ -494,16 +494,16 @@ pub(crate) fn dispatch_action_events(
         suggest,
     )) = lsp_q.get_mut(focused)
     {
+        let popup_cfg = crate::lsp_ui::interceptors::CompletionPopupConfig::new(
+            lsp_settings, suggest,
+        );
         if crate::lsp_ui::interceptors::completion_popup_intercept(
             action,
             focused,
             &mut completion_state,
             &mut completion_lc,
-            lsp_client,
-            lsp_document.as_deref_mut(),
             &mut editor_q,
-            lsp_settings,
-            suggest,
+            &popup_cfg,
             &mut params.writers.replace_range,
         ) {
             return;

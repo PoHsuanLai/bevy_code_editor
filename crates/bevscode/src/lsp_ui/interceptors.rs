@@ -30,16 +30,31 @@ use lsp_types::CompletionItemKind;
 ///   to a literal tab).
 /// - `ClearSelection`: dismiss the popup.
 ///
-/// Returns `true` when the action was consumed; the caller (dispatcher)
-/// short-circuits without emitting any `*Requested` event.
-#[allow(clippy::too_many_arguments)]
+pub struct CompletionPopupConfig {
+    pub max_visible: usize,
+    pub accept_on_enter: AcceptSuggestionOnEnter,
+    pub tab_completion: TabCompletion,
+}
+
+impl CompletionPopupConfig {
+    pub fn new(lsp_settings: &LspConfig, suggest: Option<&Suggest>) -> Self {
+        Self {
+            max_visible: lsp_settings.completion.max_items,
+            accept_on_enter: suggest
+                .map(|s| s.accept_on_enter)
+                .unwrap_or(AcceptSuggestionOnEnter::On),
+            tab_completion: suggest
+                .map(|s| s.tab_completion)
+                .unwrap_or(TabCompletion::Off),
+        }
+    }
+}
+
 pub fn completion_popup_intercept(
     action: EditorAction,
     focused: Entity,
     completion_state: &mut Mut<'_, LspCompletionPopup>,
     completion_lc: &mut Mut<'_, CompletionLifecycle>,
-    lsp_client: &bevy_lsp::LspClient,
-    lsp_document: Option<&mut bevy_lsp::LspDocument>,
     editor_q: &mut Query<
         (
             &mut CursorState,
@@ -48,13 +63,12 @@ pub fn completion_popup_intercept(
         ),
         With<CodeEditor>,
     >,
-    lsp_settings: &LspConfig,
-    suggest: Option<&Suggest>,
+    config: &CompletionPopupConfig,
     replace_writer: &mut MessageWriter<bevy_instanced_text_editor::ReplaceRangeRequested>,
 ) -> bool {
     let filtered = completion_state.filtered_items();
     let filtered_count = filtered.len();
-    let max_visible = lsp_settings.completion.max_items;
+    let max_visible = config.max_visible;
     if !completion_state.visible || filtered_count == 0 {
         return false;
     }
@@ -78,12 +92,12 @@ pub fn completion_popup_intercept(
             true
         }
         EditorAction::InsertNewline => {
-            let accept = match suggest.map(|s| s.accept_on_enter) {
-                Some(AcceptSuggestionOnEnter::Off) => false,
-                Some(AcceptSuggestionOnEnter::Smart) => filtered
+            let accept = match config.accept_on_enter {
+                AcceptSuggestionOnEnter::Off => false,
+                AcceptSuggestionOnEnter::Smart => filtered
                     .get(completion_state.selected_index)
                     .is_some_and(is_snippet_or_callable),
-                Some(AcceptSuggestionOnEnter::On) | None => true,
+                AcceptSuggestionOnEnter::On => true,
             };
             if !accept {
                 return false;
@@ -96,17 +110,16 @@ pub fn completion_popup_intercept(
                 editor_q,
                 replace_writer,
             );
-            let _ = (lsp_client, lsp_document);
+
             true
         }
         EditorAction::InsertTab => {
-            let accept = match suggest.map(|s| s.tab_completion) {
-                Some(TabCompletion::Off) => false,
-                Some(TabCompletion::OnlySnippets) => filtered
+            let accept = match config.tab_completion {
+                TabCompletion::Off => false,
+                TabCompletion::OnlySnippets => filtered
                     .get(completion_state.selected_index)
                     .is_some_and(is_snippet),
-                Some(TabCompletion::On) => true,
-                None => false,
+                TabCompletion::On => true,
             };
             if !accept {
                 return false;
@@ -119,7 +132,7 @@ pub fn completion_popup_intercept(
                 editor_q,
                 replace_writer,
             );
-            let _ = (lsp_client, lsp_document);
+
             true
         }
         EditorAction::ClearSelection => {

@@ -179,23 +179,17 @@ pub fn on_focused_keyboard(
                         indentation,
                     },
                     #[cfg(feature = "lsp")]
-                    lsp,
-                    #[cfg(feature = "lsp")]
-                    entity,
-                    #[cfg(feature = "lsp")]
-                    capabilities,
-                    #[cfg(feature = "lsp")]
-                    &mut completion_state,
-                    #[cfg(feature = "lsp")]
-                    &mut completion_lc,
-                    #[cfg(feature = "lsp")]
-                    lsp_document.as_deref_mut(),
-                    #[cfg(feature = "lsp")]
-                    syntax_tree,
-                    #[cfg(feature = "lsp")]
-                    &mut lsp_w,
-                    #[cfg(feature = "lsp")]
-                    suggest,
+                    &mut InsertCharLspCtx {
+                        lsp,
+                        entity,
+                        capabilities,
+                        completion_state: &mut completion_state,
+                        completion_lc: &mut completion_lc,
+                        lsp_document: lsp_document.as_deref_mut(),
+                        syntax_tree,
+                        lsp_w: &mut lsp_w,
+                        suggest,
+                    },
                 );
             }
         }
@@ -227,19 +221,23 @@ struct InsertCharCtx<'a> {
     indentation: &'a crate::settings::Indentation,
 }
 
-#[allow(clippy::too_many_arguments)]
+#[cfg(feature = "lsp")]
+struct InsertCharLspCtx<'a, 'w> {
+    lsp: &'a LspConfig,
+    entity: Entity,
+    capabilities: &'a bevy_lsp::ServerCapabilities,
+    completion_state: &'a mut crate::lsp_ui::state::LspCompletionPopup,
+    completion_lc: &'a mut crate::lsp_ui::state::CompletionLifecycle,
+    lsp_document: Option<&'a mut bevy_lsp::LspDocument>,
+    syntax_tree: Option<&'a bevy_tree_sitter::SyntaxTree>,
+    lsp_w: &'a mut MessageWriter<'w, bevy_lsp::LspRequest>,
+    suggest: Option<&'a crate::settings::Suggest>,
+}
+
 fn insert_typed_char(
     c: char,
     ctx: &mut InsertCharCtx<'_>,
-    #[cfg(feature = "lsp")] lsp: &LspConfig,
-    #[cfg(feature = "lsp")] entity: Entity,
-    #[cfg(feature = "lsp")] capabilities: &bevy_lsp::ServerCapabilities,
-    #[cfg(feature = "lsp")] completion_state: &mut crate::lsp_ui::state::LspCompletionPopup,
-    #[cfg(feature = "lsp")] completion_lc: &mut crate::lsp_ui::state::CompletionLifecycle,
-    #[cfg(feature = "lsp")] lsp_document: Option<&mut bevy_lsp::LspDocument>,
-    #[cfg(feature = "lsp")] syntax_tree: Option<&bevy_tree_sitter::SyntaxTree>,
-    #[cfg(feature = "lsp")] lsp_w: &mut MessageWriter<bevy_lsp::LspRequest>,
-    #[cfg(feature = "lsp")] suggest: Option<&crate::settings::Suggest>,
+    #[cfg(feature = "lsp")] lsp_ctx: &mut InsertCharLspCtx<'_, '_>,
 ) {
     let InsertCharCtx { sel, hist, cursor, buffer, auto_edit, indentation } = ctx;
     let quotes_mode = auto_edit.auto_closing_quotes;
@@ -344,8 +342,11 @@ fn insert_typed_char(
 
     #[cfg(feature = "lsp")]
     {
-        // didChange is emitted via `listen_text_edit_events` from the
-        // OnEdit pipeline — no need to send it here.
+        let InsertCharLspCtx {
+            lsp, entity, capabilities, completion_state, completion_lc,
+            lsp_document, syntax_tree, lsp_w, suggest,
+        } = lsp_ctx;
+        let entity = *entity;
 
         if lsp.completion.enabled {
             let cursor_pos = cursor.cursor_pos;

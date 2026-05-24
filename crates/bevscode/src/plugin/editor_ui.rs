@@ -153,62 +153,48 @@ impl Plugin for EditorUiPlugin {
     }
 }
 
-use bevy_instanced_text::RectOverlay;
+use bevy::ecs::query::QueryData;
 
-struct OverlaySources<'a> {
-    sel: &'a [RectOverlay],
-    guides: &'a [RectOverlay],
-    rulers: &'a [RectOverlay],
-    fold_hl: &'a [RectOverlay],
-    cursor_line: &'a [RectOverlay],
-    carets: &'a [RectOverlay],
-    brackets: &'a [RectOverlay],
-    links: &'a [RectOverlay],
-    whitespace: &'a [RectOverlay],
-    glyph_margin: &'a [RectOverlay],
-    line_dec: &'a [RectOverlay],
+#[derive(QueryData)]
+struct OverlaySourcesView {
+    sel: &'static SelectionRects,
+    guides: &'static IndentGuideRects,
+    rulers: &'static RulerRects,
+    fold_hl: &'static FoldHighlightRects,
+    cursor_line: &'static CursorLineRects,
+    carets: &'static CaretRects,
+    brackets: &'static BracketMatchRects,
+    links: &'static LinkRects,
+    whitespace: &'static WhitespaceRects,
+    glyph_margin: &'static GlyphMarginRects,
+    line_dec: &'static LineDecorationRects,
 }
 
 fn assemble_overlays(
-    src: &OverlaySources<'_>,
+    src: &OverlaySourcesViewItem<'_, '_>,
     underlays: &mut TextUnderlays,
     overlays: &mut TextOverlays,
 ) {
     underlays.0.clear();
-    underlays.0.extend_from_slice(src.guides);
-    underlays.0.extend_from_slice(src.rulers);
-    underlays.0.extend_from_slice(src.fold_hl);
-    underlays.0.extend_from_slice(src.sel);
-    underlays.0.extend_from_slice(src.line_dec);
+    underlays.0.extend_from_slice(&src.guides.0);
+    underlays.0.extend_from_slice(&src.rulers.0);
+    underlays.0.extend_from_slice(&src.fold_hl.0);
+    underlays.0.extend_from_slice(&src.sel.0);
+    underlays.0.extend_from_slice(&src.line_dec.0);
 
     overlays.0.clear();
-    overlays.0.extend_from_slice(src.cursor_line);
-    overlays.0.extend_from_slice(src.carets);
-    overlays.0.extend_from_slice(src.brackets);
-    overlays.0.extend_from_slice(src.links);
-    overlays.0.extend_from_slice(src.whitespace);
-    overlays.0.extend_from_slice(src.glyph_margin);
+    overlays.0.extend_from_slice(&src.cursor_line.0);
+    overlays.0.extend_from_slice(&src.carets.0);
+    overlays.0.extend_from_slice(&src.brackets.0);
+    overlays.0.extend_from_slice(&src.links.0);
+    overlays.0.extend_from_slice(&src.whitespace.0);
+    overlays.0.extend_from_slice(&src.glyph_margin.0);
 }
 
 #[cfg(not(feature = "lsp"))]
-#[allow(clippy::type_complexity)]
 fn merge_overlay_components(
     mut query: Query<
-        (
-            &SelectionRects,
-            &IndentGuideRects,
-            &RulerRects,
-            &FoldHighlightRects,
-            &CursorLineRects,
-            &CaretRects,
-            &BracketMatchRects,
-            &LinkRects,
-            &WhitespaceRects,
-            &GlyphMarginRects,
-            &LineDecorationRects,
-            &mut TextUnderlays,
-            &mut TextOverlays,
-        ),
+        (OverlaySourcesView, &mut TextUnderlays, &mut TextOverlays),
         (
             With<CodeEditor>,
             Or<(
@@ -227,41 +213,18 @@ fn merge_overlay_components(
         ),
     >,
 ) {
-    for (
-        sel, guides, rulers, fold_hl, cursor_line, carets, brackets, links, whitespace,
-        glyph_margin, line_dec, mut underlays, mut overlays,
-    ) in &mut query
-    {
-        assemble_overlays(
-            &OverlaySources {
-                sel: &sel.0, guides: &guides.0, rulers: &rulers.0, fold_hl: &fold_hl.0,
-                cursor_line: &cursor_line.0, carets: &carets.0, brackets: &brackets.0,
-                links: &links.0, whitespace: &whitespace.0, glyph_margin: &glyph_margin.0,
-                line_dec: &line_dec.0,
-            },
-            &mut underlays, &mut overlays,
-        );
+    for (src, mut underlays, mut overlays) in &mut query {
+        assemble_overlays(&src, &mut underlays, &mut overlays);
     }
 }
 
 /// LSP-enabled variant: same as the base merger, plus
 /// [`DiagnosticUnderlineRects`] folded into `TextOverlays`.
 #[cfg(feature = "lsp")]
-#[allow(clippy::type_complexity)]
 fn merge_overlay_components(
     mut query: Query<
         (
-            &SelectionRects,
-            &IndentGuideRects,
-            &RulerRects,
-            &FoldHighlightRects,
-            &CursorLineRects,
-            &CaretRects,
-            &BracketMatchRects,
-            &LinkRects,
-            &WhitespaceRects,
-            &GlyphMarginRects,
-            &LineDecorationRects,
+            OverlaySourcesView,
             &super::diagnostic_underlines::DiagnosticUnderlineRects,
             &mut TextUnderlays,
             &mut TextOverlays,
@@ -285,20 +248,8 @@ fn merge_overlay_components(
         ),
     >,
 ) {
-    for (
-        sel, guides, rulers, fold_hl, cursor_line, carets, brackets, links, whitespace,
-        glyph_margin, line_dec, diag_underlines, mut underlays, mut overlays,
-    ) in &mut query
-    {
-        assemble_overlays(
-            &OverlaySources {
-                sel: &sel.0, guides: &guides.0, rulers: &rulers.0, fold_hl: &fold_hl.0,
-                cursor_line: &cursor_line.0, carets: &carets.0, brackets: &brackets.0,
-                links: &links.0, whitespace: &whitespace.0, glyph_margin: &glyph_margin.0,
-                line_dec: &line_dec.0,
-            },
-            &mut underlays, &mut overlays,
-        );
+    for (src, diag_underlines, mut underlays, mut overlays) in &mut query {
+        assemble_overlays(&src, &mut underlays, &mut overlays);
         overlays.0.extend_from_slice(&diag_underlines.0);
     }
 }

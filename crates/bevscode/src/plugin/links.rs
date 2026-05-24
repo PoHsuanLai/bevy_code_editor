@@ -141,18 +141,17 @@ pub fn find_urls(line: &str) -> Vec<(usize, usize)> {
     out
 }
 
-#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum State {
     Invalid,
     Start,
     H,
     HT,
-    HTT,
-    HTTP,
+    Htt,
+    Http,
     F,
     FI,
-    FIL,
+    Fil,
     BeforeColon,
     AfterColon,
     AlmostThere,
@@ -172,13 +171,13 @@ fn next_state(state: State, ch: char) -> State {
         (State::Start, 'h' | 'H') => State::H,
         (State::Start, 'f' | 'F') => State::F,
         (State::H, 't' | 'T') => State::HT,
-        (State::HT, 't' | 'T') => State::HTT,
-        (State::HTT, 'p' | 'P') => State::HTTP,
-        (State::HTTP, 's' | 'S') => State::BeforeColon,
-        (State::HTTP, ':') => State::AfterColon,
+        (State::HT, 't' | 'T') => State::Htt,
+        (State::Htt, 'p' | 'P') => State::Http,
+        (State::Http, 's' | 'S') => State::BeforeColon,
+        (State::Http, ':') => State::AfterColon,
         (State::F, 'i' | 'I') => State::FI,
-        (State::FI, 'l' | 'L') => State::FIL,
-        (State::FIL, 'e' | 'E') => State::BeforeColon,
+        (State::FI, 'l' | 'L') => State::Fil,
+        (State::Fil, 'e' | 'E') => State::BeforeColon,
         (State::BeforeColon, ':') => State::AfterColon,
         (State::AfterColon, '/') => State::AlmostThere,
         (State::AlmostThere, '/') => State::End,
