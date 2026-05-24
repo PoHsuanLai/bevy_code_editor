@@ -44,27 +44,14 @@ impl Plugin for DisplayMapPlugin {
                 .after(crate::plugin::ApplyStateSet)
                 .before(LayoutProduceSet),
         );
-        // `sync_layout_wrap` also runs in PostUpdate after the Bevy UI
-        // layout pass refreshes `ComputedNode`, so window resizes pick up
-        // the new viewport width in the same frame — otherwise the wrap
-        // budget would lag one frame behind and re-wrap would only happen
-        // after the next user input.
         app.configure_sets(
             PostUpdate,
             LayoutSyncSet
                 .after(bevy::ui::UiSystems::Layout)
                 .before(LayoutProduceSet),
         );
-        // Engine's `LayoutProduceSet` is scheduled by `InstancedTextPlugin`;
-        // we configure it to live inside `RenderingSet` so downstream
-        // observers (cursor / selection) see the freshly-built layout.
         app.configure_sets(Update, LayoutProduceSet.in_set(crate::plugin::RenderingSet));
 
-        // Must run after `init_editor_syntax` (in `SyntaxPlugin`) so the
-        // per-entity `EditorSyntaxState` is queryable when we wire up the
-        // styling Components. Runs in both Startup and Update — paired with
-        // `init_editor_syntax`'s same dual schedule so editors spawned at
-        // runtime get their styling Components attached on the next tick.
         app.add_systems(
             Startup,
             insert_styling_components.after(crate::plugin::syntax_highlighting::init_editor_syntax),
@@ -79,8 +66,6 @@ impl Plugin for DisplayMapPlugin {
             Update,
             (produce_hidden_lines, produce_line_styles, sync_layout_wrap).in_set(LayoutSyncSet),
         );
-        // PostUpdate re-run of just the wrap sync. Hidden-lines / styles
-        // don't depend on viewport size, so they stay in Update.
         app.add_systems(PostUpdate, sync_layout_wrap.in_set(LayoutSyncSet));
     }
 }
@@ -155,9 +140,6 @@ pub(crate) fn produce_line_styles(
         With<CodeEditor>,
     >,
     content_changed: Query<Entity, (With<CodeEditor>, Changed<TextBuffer<RopeBuffer>>)>,
-    // Full viewport rebuild: layout/theme/viewport changes that invalidate
-    // the entire visible window. Does NOT include Changed<SyntaxTree> —
-    // that's handled incrementally via SyntaxTree::dirty_rows below.
     full_rebuild_changed: Query<
         Entity,
         (
@@ -171,16 +153,11 @@ pub(crate) fn produce_line_styles(
             )>,
         ),
     >,
-    // Async parse completions: SyntaxTree changed, but only the rows touched
-    // by the original edit need rehighlighting. dirty_rows carries that range.
     syntax_tree_changed: Query<
         (Entity, &bevy_tree_sitter::SyntaxTree),
         (With<CodeEditor>, Changed<bevy_tree_sitter::SyntaxTree>),
     >,
     mut edit_events: MessageReader<TextEdited>,
-    // Per-entity pending edit: (dirty_range, accumulated_deltas).
-    // `None` dirty_range = full rebuild; non-empty deltas tell us which row
-    // shifts to apply to `by_line` keys before re-highlighting.
     mut dirty_lines: Local<
         HashMap<
             Entity,
@@ -195,8 +172,6 @@ pub(crate) fn produce_line_styles(
     for event in edit_events.read() {
         let start_row = event.delta.start_position.row;
         let new_end_row = event.delta.new_end_position.row;
-        // Dirty range covers the lines that changed content. For line-count
-        // edits (Enter / backspace-over-newline) that's start_row..=new_end_row.
         let dirty_range = Some((start_row, new_end_row));
         for entity in content_changed.iter() {
             match dirty_lines.entry(entity) {
@@ -218,9 +193,6 @@ pub(crate) fn produce_line_styles(
         }
     }
 
-    // When an async parse completes, union SyntaxTree::dirty_rows into our
-    // dirty_lines map. `None` dirty_rows = full rebuild (first parse / huge edit).
-    // Syntax completions don't shift line indices, so no deltas to add.
     for (entity, syntax_tree) in syntax_tree_changed.iter() {
         let incoming = (syntax_tree.dirty_rows, Vec::new());
         let entry = dirty_lines.entry(entity).or_insert(incoming);
@@ -229,7 +201,6 @@ pub(crate) fn produce_line_styles(
                 *lo = (*lo).min(new_lo);
                 *hi = (*hi).max(new_hi);
             }
-            // Either side is None → full rebuild needed.
             _ => entry.0 = None,
         }
     }
@@ -298,9 +269,6 @@ pub(crate) fn produce_line_styles(
                 .saturating_add(HIGHLIGHT_LOOKAHEAD_LINES)
                 .min(total_lines);
 
-        // Determine which lines to (re)highlight this frame.
-        // `None` = full rebuild. Content edits without a matching edit event
-        // (e.g. set_text) also get a full rebuild.
         let (dirty_range, pending_deltas) = if needs_full {
             (None, Vec::new())
         } else {
@@ -308,25 +276,19 @@ pub(crate) fn produce_line_styles(
         };
 
         let highlight_lines: Box<dyn Iterator<Item = usize>> = match dirty_range {
-            // Incremental: only highlight the lines the edit touched, clamped
-            // to the visible window. Unchanged lines keep their cached runs.
             Some((dirty_start, dirty_end)) => {
                 let lo = (dirty_start as usize).max(range.start).min(range.end);
                 let hi = (dirty_end as usize + 1).min(range.end);
                 Box::new(lo..hi)
             }
-            // Full rebuild: highlight the entire visible window.
             None => Box::new(range.start..range.end),
         };
 
-        // On a full rebuild start fresh; on incremental reuse the existing map.
         let is_incremental = dirty_range.is_some();
         let mut shifted_keys = false;
         let mut by_line: HashMap<u32, Vec<FormattedSpan>> = if !is_incremental {
             HashMap::new()
         } else {
-            // Clone the existing Arc'd map so we can patch it, then apply each
-            // pending edit's row delta in order so keys track the post-edit rope.
             let mut map = (*line_styles.by_line).clone();
             for delta in &pending_deltas {
                 if delta.old_end_position.row != delta.new_end_position.row {
@@ -337,8 +299,6 @@ pub(crate) fn produce_line_styles(
             map
         };
 
-        // On a full rebuild the covered range expands to the full window.
-        // On incremental the covered range doesn't shrink (scroll handles that).
         let new_covered = if !is_incremental {
             range.start as u32..range.end as u32
         } else {
@@ -346,10 +306,6 @@ pub(crate) fn produce_line_styles(
             old.start.min(range.start as u32)..old.end.max(range.end as u32)
         };
 
-        // Batch all dirty lines into one highlight_range call — one tree-sitter
-        // query instead of N. Collect (line_index, line_text) for visible,
-        // non-hidden lines; build a single contiguous text block; call once;
-        // distribute results back into by_line.
         let mut batch: Vec<(usize, String)> = Vec::new();
         for buffer_line in highlight_lines {
             if buffer_line >= total_lines {
@@ -357,9 +313,7 @@ pub(crate) fn produce_line_styles(
             }
             if let Some(h) = hidden {
                 if !h.is_visible(buffer_line) {
-                    if by_line.remove(&(buffer_line as u32)).is_some() {
-                        // map_changed handled below
-                    }
+                    by_line.remove(&(buffer_line as u32));
                     continue;
                 }
             }
@@ -389,7 +343,6 @@ pub(crate) fn produce_line_styles(
 
         let mut map_changed = false;
 
-        // Remove hidden lines that were in the dirty range.
         if let Some(h) = hidden {
             for &(li, _) in &batch {
                 if !h.is_visible(li) && by_line.remove(&(li as u32)).is_some() {
@@ -429,12 +382,6 @@ pub(crate) fn produce_line_styles(
             }
         }
 
-        // Only write LineStyles when something actually changed — an
-        // unconditional write hands out a fresh Arc every frame and trips
-        // `layout_miss_styles` on idle frames. `shifted_keys` is the catch
-        // for line-count edits whose touched rows re-highlight to no-ops:
-        // the shifted map is the only post-edit state we have, and without
-        // persisting it the renderer reads stale runs at stale keys.
         let covered_changed = syntax.covered != new_covered;
         if map_changed || covered_changed || shifted_keys || !is_incremental {
             *line_styles = LineStyles::new(by_line);
@@ -453,7 +400,6 @@ pub(crate) fn shift_by_line<V>(
     delta: &bevy_instanced_text_editor::EditDelta,
 ) {
     use bevy_instanced_text_editor::{shift_line, LineShift};
-    // Stage moves to avoid clobbering an entry that's about to move itself.
     let mut to_remove: Vec<u32> = Vec::new();
     let mut to_insert: Vec<(u32, V)> = Vec::new();
     let keys: Vec<u32> = map.keys().copied().collect();

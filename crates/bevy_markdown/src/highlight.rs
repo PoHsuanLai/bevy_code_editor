@@ -1,9 +1,7 @@
 //! Pluggable syntax highlighter for fenced code blocks.
 //!
-//! v1 ships [`NoHighlight`]; a host can drop in a tree-sitter or syntect
-//! adapter by inserting [`MarkdownHighlighter`] as a resource. The
-//! adapter lives outside this crate so we don't drag a parser dependency
-//! into the markdown viewer.
+//! Ships [`NoHighlight`]; hosts can insert a tree-sitter or syntect
+//! adapter via [`MarkdownHighlighter`] as a resource.
 
 use std::ops::Range;
 use std::sync::Arc;

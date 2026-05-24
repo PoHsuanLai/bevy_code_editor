@@ -1,35 +1,15 @@
 //! Helpers for tracking buffer-line indices across edits.
-//!
-//! Caches that key data by buffer-line index (fold ranges, per-line style
-//! maps, gutter decorations) go stale the instant an edit shifts the rope's
-//! line indices. [`shift_line`] is the one primitive every such cache should
-//! route through: feed it a row and an [`EditDelta`] and it reports whether
-//! the row moved, stayed, or sat inside a deleted span. Range-tracking
-//! caches build their own merge / drop logic on top.
-//!
-//! Wire each consumer to read `TextEdited` events (the editor emits them
-//! after every edit) and call [`shift_line`] for each row it owns.
 
 use crate::text_state::EditDelta;
 
 /// What happened to a single buffer line across one edit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LineShift {
-    /// Line is before the edit; index is unchanged.
     Unchanged,
-    /// Line moved to a new buffer row.
     Moved(u32),
-    /// Line was entirely removed by the edit. Caches storing per-line data
-    /// should drop the entry; range-tracking caches should clamp this
-    /// endpoint to the deletion's start row.
     Deleted,
 }
 
-/// Where `row` ends up after `delta` is applied to the rope.
-///
-/// Insertions only ever return `Unchanged` or `Moved`. Deletions can return
-/// `Deleted` for rows fully inside the removed span — pure single-line
-/// edits (same row before and after) leave every row unchanged.
 pub fn shift_line(row: u32, delta: &EditDelta) -> LineShift {
     let start_row = delta.start_position.row;
     let old_end_row = delta.old_end_position.row;

@@ -1,10 +1,4 @@
-//! Installs the Bevy message bus routes for LSP transport traffic.
-//!
-//! Every variant of [`LspResponse`] gets its own [`Message`] type so hosts
-//! subscribe to just the shape they care about. The drain pipeline is split
-//! into two stages so the writer fan-out can stay under Bevy's 16-parameter
-//! system cap and so reader systems can run in parallel against the next
-//! frame's drain.
+//! Bevy plugin that drains LSP transport traffic into per-variant ECS messages.
 
 use bevy_app::{App, AppExit, Last, Plugin, Update};
 use bevy_ecs::prelude::*;
@@ -15,11 +9,6 @@ use crate::client::LspClient;
 use crate::document::LspDocument;
 use crate::messages::{LspRequest, *};
 
-/// Registers all outbound LSP response messages, drives the drain pipeline
-/// each frame, and gracefully shuts down every [`LspClient`] on `AppExit`.
-///
-/// Does **not** install a tokio runtime — the transport runs on Bevy's own
-/// `AsyncComputeTaskPool` (smol-based).
 #[derive(Default)]
 pub struct LspPlugin;
 
@@ -97,9 +86,6 @@ impl Plugin for LspPlugin {
     }
 }
 
-/// All [`MessageWriter`]s needed to fan LSP responses out onto the Bevy
-/// message bus. Grouped as a [`SystemParam`] so the single drain system
-/// can write all 50+ message types without hitting Bevy's 16-parameter cap.
 #[derive(SystemParam)]
 struct LspResponseWriters<'w> {
     initialized: MessageWriter<'w, LspServerInitialized>,
@@ -212,7 +198,6 @@ fn drain_lsp_responses(mut clients: Query<(Entity, &mut LspClient)>, mut w: LspR
             match response {
                 R::Initialized { capabilities } => {
                     client.initialized = true;
-                    // Drain messages that arrived before initialize completed.
                     for msg in std::mem::take(&mut client.pre_init_queue) {
                         client.send(msg);
                     }

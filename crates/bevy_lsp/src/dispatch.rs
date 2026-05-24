@@ -34,7 +34,6 @@ pub(crate) fn dispatch(
     match message {
         M::Initialize { .. } | M::Initialized => {}
 
-        // ─── Cancellation ──────────────────────────────────────────────────
         M::CancelRequest { id } => fire::<CancelNotif>(
             server,
             CancelParams {
@@ -45,7 +44,6 @@ pub(crate) fn dispatch(
             fire::<WorkDoneProgressCancel>(server, WorkDoneProgressCancelParams { token })
         }
 
-        // ─── Document sync ─────────────────────────────────────────────────
         M::DidOpen {
             uri,
             language_id,
@@ -109,7 +107,6 @@ pub(crate) fn dispatch(
             });
         }
 
-        // ─── Workspace sync ────────────────────────────────────────────────
         M::DidChangeConfiguration { settings } => {
             fire::<DidChangeConfiguration>(server, DidChangeConfigurationParams { settings })
         }
@@ -120,7 +117,6 @@ pub(crate) fn dispatch(
             fire::<DidChangeWorkspaceFolders>(server, DidChangeWorkspaceFoldersParams { event })
         }
 
-        // ─── Completion / hover / signature ───────────────────────────────
         M::Completion { uri, position, id } => completion(server, tx, uri, position, id),
         M::ResolveCompletionItem { item, id } => {
             spawn::<ResolveCompletionItem>(server, tx, *item, move |result, tx| {
@@ -136,7 +132,6 @@ pub(crate) fn dispatch(
         M::Hover { uri, position, id } => hover(server, tx, uri, position, id),
         M::SignatureHelp { uri, position, id } => signature_help(server, tx, uri, position, id),
 
-        // ─── Navigation ────────────────────────────────────────────────────
         M::GotoDeclaration { uri, position, id } => {
             let params = GotoDefinitionParams {
                 text_document_position_params: text_pos(uri, position),
@@ -281,7 +276,6 @@ pub(crate) fn dispatch(
             })
         }
 
-        // ─── Folding / selection ───────────────────────────────────────────
         M::FoldingRange { uri, id } => {
             let params = FoldingRangeParams {
                 text_document: TextDocumentIdentifier { uri },
@@ -316,7 +310,6 @@ pub(crate) fn dispatch(
             });
         }
 
-        // ─── Code actions / formatting ─────────────────────────────────────
         M::CodeAction {
             uri,
             range,
@@ -396,7 +389,6 @@ pub(crate) fn dispatch(
         }
         M::ExecuteCommand { command, arguments } => execute_command(server, tx, command, arguments),
 
-        // ─── Inlay hints / decorative ──────────────────────────────────────
         M::InlayHint { uri, range, id } => {
             let params = InlayHintParams {
                 text_document: TextDocumentIdentifier { uri },
@@ -498,7 +490,6 @@ pub(crate) fn dispatch(
             });
         }
 
-        // ─── Rename ────────────────────────────────────────────────────────
         M::PrepareRename { uri, position, id } => prepare_rename(server, tx, uri, position, id),
         M::Rename {
             uri,
@@ -518,7 +509,6 @@ pub(crate) fn dispatch(
             });
         }
 
-        // ─── Call hierarchy ────────────────────────────────────────────────
         M::PrepareCallHierarchy { uri, position, id } => {
             let params = CallHierarchyPrepareParams {
                 text_document_position_params: text_pos(uri, position),
@@ -567,7 +557,6 @@ pub(crate) fn dispatch(
             });
         }
 
-        // ─── Type hierarchy ───────────────────────────────────────────────
         M::PrepareTypeHierarchy { uri, position, id } => {
             let params = TypeHierarchyPrepareParams {
                 text_document_position_params: text_pos(uri, position),
@@ -616,7 +605,6 @@ pub(crate) fn dispatch(
             });
         }
 
-        // ─── Semantic tokens ──────────────────────────────────────────────
         M::SemanticTokensFull { uri, id } => {
             let params = SemanticTokensParams {
                 text_document: TextDocumentIdentifier { uri },
@@ -660,7 +648,6 @@ pub(crate) fn dispatch(
             });
         }
 
-        // ─── Pull diagnostics ─────────────────────────────────────────────
         M::DocumentDiagnostic {
             uri,
             identifier,
@@ -694,7 +681,6 @@ pub(crate) fn dispatch(
             });
         }
 
-        // ─── Server-pull responses ─────────────────────────────────────────
         M::RespondConfiguration { id, items } => fulfill_slot(&slots.configuration, id, items),
         M::RespondApplyEdit { id, response } => fulfill_slot(&slots.apply_edit, id, response),
         M::RespondShowMessageRequest { id, action } => {
@@ -712,7 +698,6 @@ pub(crate) fn dispatch(
             fulfill_slot(&slots.workspace_folders, id, folders)
         }
 
-        // ─── Termination ──────────────────────────────────────────────────
         M::Shutdown { id } => spawn::<ShutdownRequest>(server, tx, (), move |_result, tx| {
             emit(tx, LspResponse::ShutdownAck { id });
         }),

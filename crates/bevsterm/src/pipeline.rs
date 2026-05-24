@@ -17,41 +17,19 @@ use crate::text::{
     TerminalColorPalette, TerminalGridSnapshot, TerminalScrollFollow, TerminalSession,
 };
 
-/// Cached shape of one phys row from a previous rebuild. We carry these forward
-/// across frames so unchanged rows (the common case during cursor blink, or
-/// when only one line of the prompt redraws) don't have to walk cells +
-/// rebuild `FormattedSpan` runs again.
 #[derive(Clone)]
 struct CachedLine {
-    /// Padded line text (cols chars, no trailing newline). Concatenated into
-    /// the rope with `\n` separators on rebuild.
     text: String,
-    /// Style runs covering `text`. Cloned out of the cache when reused.
     runs: Vec<FormattedSpan>,
 }
 
-/// Per-entity rebuild-cache for `sync_grid_snapshot`. Kept in a `Local` because
-/// it's pure derived state — hosts never need to read it.
 #[doc(hidden)]
 #[derive(Default)]
 pub struct RebuildCache {
-    /// Last `Term::current_seqno()` we rebuilt against. We still re-anchor the
-    /// scroll on every frame (viewport resizes change `max_scroll`), but skip
-    /// the (expensive) rope + style rebuild when nothing in the term changed.
     last_seqno: Option<SequenceNo>,
-    /// Last visible-row count we rebuilt against. A resize changes which rows
-    /// are visible without bumping `current_seqno()`, so we force a rebuild
-    /// whenever this changes.
     last_rows: usize,
-    /// Last column count. A horizontal resize re-pads every line; bypass the
-    /// per-row dirty test in that case.
     last_cols: usize,
-    /// Last total scrollback row count. When scrollback shifts (a new line
-    /// scrolls in, or eviction drops the top), our phys-row index becomes
-    /// invalid — bypass the per-row gate and rebuild from scratch.
     last_total_lines: usize,
-    /// Per-phys-row shape cache. Indexed by phys row; len == last_total_lines
-    /// after a successful rebuild. Cleared whenever total_lines/cols change.
     lines: Vec<CachedLine>,
 }
 
@@ -124,11 +102,6 @@ pub(crate) fn sync_grid_snapshot(
             continue;
         }
 
-        // Per-line dirty gate: skip cell→run reshaping for rows whose
-        // `Line::changed_since(prev_seqno)` is false. Only valid when the
-        // overall shape of the buffer (cols + total_lines) hasn't changed
-        // since the last rebuild — otherwise phys-row indices into our cache
-        // no longer mean the same thing.
         let cache_valid = cache_entry.last_seqno.is_some()
             && cache_entry.last_cols == cols
             && cache_entry.last_total_lines == total_lines
@@ -159,8 +132,6 @@ pub(crate) fn sync_grid_snapshot(
             });
         });
 
-        // Replace buffer text if it changed. DerefMut triggers Bevy's
-        // change detection automatically — no manual version bump needed.
         if buffer.0 .0 != text {
             buffer.0 = TextSpan(text);
         }
@@ -196,9 +167,6 @@ pub(crate) fn sync_grid_snapshot(
     }
 }
 
-/// Keep the bottom of the buffer pinned to the bottom of the viewport when the
-/// user is already at (or within one row of) the bottom. Wheeling back to
-/// within one row of the bottom re-engages follow.
 fn anchor_scroll_to_bottom(
     scroll: &mut ScrollPosition,
     computed: &ComputedNode,
@@ -233,9 +201,6 @@ fn anchor_scroll_to_bottom(
     }
 }
 
-/// Walk a single phys row's cells and produce `(padded_text, style_runs)`.
-/// Lifted out of the main loop so the per-line dirty gate can reuse cached
-/// rows without duplicating the cell-walk logic.
 fn shape_phys_line(
     line: &VtLine,
     cols: usize,

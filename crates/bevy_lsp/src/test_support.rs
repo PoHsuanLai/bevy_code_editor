@@ -1,10 +1,5 @@
 //! In-process fake language server for integration tests.
 //!
-//! Pair an [`LspClient`] with a [`FakeLanguageServer`] over a [`FakeTransport`]
-//! to drive the whole `bevy_lsp` stack — JSON-RPC framing, async-lsp routing,
-//! the response bridge, and the ECS drain — without spawning a real LSP
-//! subprocess. Modeled on Zed's `FakeLanguageServer`.
-//!
 //! ```no_run
 //! use bevy_lsp::test_support::FakeLanguageServer;
 //! use bevy_lsp::LspClient;
@@ -21,9 +16,6 @@
 //! let mut client = LspClient::new();
 //! client.start_with(transport);
 //! ```
-//!
-//! [`LspClient`]: crate::LspClient
-//! [`FakeTransport`]: crate::transport::FakeTransport
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -51,17 +43,12 @@ type BoxFut<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 type HandlerFn = Box<dyn Fn(JsonValue) -> BoxFut<Result<JsonValue, ResponseError>> + Send + Sync>;
 type HandlerMap = Arc<Mutex<HashMap<&'static str, HandlerFn>>>;
 
-/// A notification received by the fake server from the client side. Method
-/// matches the LSP wire name (`textDocument/didOpen`, `initialized`, etc.).
 #[derive(Debug, Clone)]
 pub struct ReceivedNotification {
     pub method: String,
     pub params: JsonValue,
 }
 
-/// An in-process language server. Lives on the server side of a [`FakeTransport`]
-/// and lets tests register typed handlers per LSP request method, send
-/// server-initiated notifications, and observe client-initiated notifications.
 pub struct FakeLanguageServer {
     handlers: HandlerMap,
     server_socket: ClientSocket,
@@ -71,9 +58,6 @@ pub struct FakeLanguageServer {
 }
 
 impl FakeLanguageServer {
-    /// Build a connected (transport, server) pair. `capabilities` are returned
-    /// from the default `initialize` handler unless the test overrides it via
-    /// [`Self::set_request_handler::<Initialize>`].
     pub fn new(capabilities: ServerCapabilities) -> (FakeTransport, FakeLanguageServer) {
         let FakeTransportEndpoints {
             transport,
@@ -85,8 +69,6 @@ impl FakeLanguageServer {
         let handlers: HandlerMap = Arc::new(Mutex::new(HashMap::new()));
         let (notif_tx, notif_rx) = async_channel::unbounded();
 
-        // Default `initialize` returns the supplied capabilities. Tests can
-        // override by calling `set_request_handler::<Initialize>` later.
         install_default_initialize(&handlers, capabilities);
         install_default_shutdown(&handlers);
 
@@ -118,10 +100,6 @@ impl FakeLanguageServer {
         )
     }
 
-    /// Install a typed handler for request method `R`. Replaces any previous
-    /// handler for the same method. The handler is called every time the
-    /// client issues an `R` request; deserialization of `R::Params` and
-    /// serialization of `R::Result` happen inside this wrapper.
     pub fn set_request_handler<R, F, Fut>(&self, handler: F)
     where
         R: Request,
@@ -148,44 +126,30 @@ impl FakeLanguageServer {
         self.handlers.lock().unwrap().insert(R::METHOD, boxed);
     }
 
-    /// Remove a previously-installed handler for request method `R`. After
-    /// removal, the client will receive `METHOD_NOT_FOUND` until a new handler
-    /// is installed.
     pub fn remove_request_handler<R: Request>(&self) {
         self.handlers.lock().unwrap().remove(R::METHOD);
     }
 
-    /// Send a server-initiated notification to the client (e.g.
-    /// `textDocument/publishDiagnostics`).
     pub fn notify<N: Notification>(&self, params: N::Params) {
         if let Err(err) = self.server_socket.notify::<N>(params) {
             warn!("[fake-lsp] notify {} failed: {err}", N::METHOD);
         }
     }
 
-    /// Try to pop one notification the client has sent us. Returns `None` if
-    /// the queue is empty.
     pub fn try_recv_notification(&self) -> Option<ReceivedNotification> {
         self.received_notifications.try_recv().ok()
     }
 
-    /// Number of unread client→server notifications. Useful for "did the
-    /// client park" checks.
     pub fn notifications_pending(&self) -> usize {
         self.received_notifications.len()
     }
 
-    /// Trigger the transport's exit signal AND drop the server driver, which
-    /// closes the underlying pipes. The `LspClient` crash watchdog observes
-    /// both — the closed pipes cause `MainLoop::run_buffered` to return, and
-    /// the exit signal resolves the `TransportHandle::exited` future — then
-    /// emits [`crate::LspResponse::Crashed`].
+    /// Triggers the transport exit signal and drops the server driver,
+    /// causing the client to observe [`crate::LspResponse::Crashed`].
     pub fn simulate_exit(&mut self) {
         if let Some(tx) = self.exit_tx.take() {
             let _ = tx.send(());
         }
-        // Dropping the driver Task cancels it, which drops the server-side
-        // reader/writer halves and closes the piper pipes from below.
         self.driver.take();
     }
 }
@@ -218,9 +182,6 @@ fn build_server_router(
 
     router.unhandled_request(move |_, req| {
         let lookup = handlers.lock().unwrap().get(req.method.as_str()).map(|h| {
-            // Re-clone handler future by re-invoking via the boxed closure.
-            // We cannot clone the boxed closure itself; instead we hold the
-            // lock just long enough to call it and produce the future.
             h(req.params.clone())
         });
         async move {
@@ -258,8 +219,6 @@ mod tests {
         AsyncComputeTaskPool::get_or_init(Default::default);
     }
 
-    /// Spin the client's response channel until either `predicate` finds the
-    /// response it wants or `timeout` expires. Returns the matched response.
     fn await_response(
         client: &LspClient,
         timeout: Duration,
@@ -308,10 +267,4 @@ mod tests {
         assert_eq!(capabilities.hover_provider, caps.hover_provider);
     }
 
-    // NOTE: full end-to-end coverage (`client.send` → server, `fake.notify`
-    // → client, simulated crash) lives in `crates/bevscode/tests/lsp_integration.rs`.
-    // Those tests drive a Bevy `App` whose schedule pumps `drain_lsp_responses`
-    // each frame — the same model production uses. The harness only stalls
-    // when the test thread itself busy-polls `client.try_recv` from outside
-    // the smol pool; under `app.update()`, traffic flows.
 }

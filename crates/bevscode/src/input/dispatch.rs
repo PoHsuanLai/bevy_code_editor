@@ -2,32 +2,7 @@
 //!
 //! Polls leafwing's `ActionState`, picks the just-pressed-or-repeating
 //! action for the focused editor, and emits the corresponding
-//! `*Requested` event. Per-action handler systems consume those events
-//! one-by-one elsewhere (basic editing handlers in `bevy_instanced_text_editor`,
-//! IDE-specific handlers in this crate).
-//!
-//! The dispatcher orchestrates a small chain of responsibilities:
-//!
-//! 1. **Rename modal early-return.** When the rename modal is visible the
-//!    dispatcher exits — input flows through `crate::input::keyboard`'s
-//!    typed-char observer for the modal instead.
-//! 2. **Pick the action** from leafwing's `ActionState` (just-pressed or
-//!    key-repeat).
-//! 3. **Per-feature interceptors** get first crack at consuming the action.
-//!    Each lives in its feature module, returns `true` when consumed:
-//!    - `completion_popup_intercept`: arrow keys / Enter / Tab / Escape on a
-//!      visible completion popup.
-//!    - [`crate::types::fold::goto_line_intercept`]: Escape on an active
-//!      goto-line dialog.
-//!      Adding a new popup feature means adding its interceptor module and
-//!      one more `if` at this point — no scattered popup state in the
-//!      dispatcher itself.
-//! 4. **Save / Open** are special transforms: these build host-facing events
-//!    with payloads constructed from the editor's current state.
-//! 5. **LSP follow-up snapshot** captures pre-edit state so the post-edit
-//!    follow-up system can detect what changed and refresh popups / send
-//!    `did_change`.
-//! 6. **Emit the typed `*Requested` event** via `ActionEventWriters::emit`.
+//! `*Requested` event.
 
 use super::action_events::*;
 use super::auto_indent::compute_newline_indent;
@@ -96,22 +71,17 @@ const ALL_ACTIONS: [EditorAction; 49] = [
     EditorAction::Open,
 ];
 
-/// All MessageWriters the dispatcher writes into. Bundling into a SystemParam
-/// trims the function signature from ~50 individual writer params to one.
 #[derive(SystemParam)]
 pub struct ActionEventWriters<'w> {
-    // Deletion
     delete_backward: MessageWriter<'w, DeleteBackwardRequested>,
     delete_forward: MessageWriter<'w, DeleteForwardRequested>,
     delete_word_backward: MessageWriter<'w, DeleteWordBackwardRequested>,
     delete_word_forward: MessageWriter<'w, DeleteWordForwardRequested>,
     delete_line: MessageWriter<'w, DeleteLineRequested>,
 
-    // Special insertion
     insert_newline: MessageWriter<'w, InsertNewlineRequested>,
     insert_tab: MessageWriter<'w, InsertTabRequested>,
 
-    // Cursor movement
     move_cursor_left: MessageWriter<'w, MoveCursorLeftRequested>,
     move_cursor_right: MessageWriter<'w, MoveCursorRightRequested>,
     move_cursor_up: MessageWriter<'w, MoveCursorUpRequested>,
@@ -125,7 +95,6 @@ pub struct ActionEventWriters<'w> {
     move_cursor_page_up: MessageWriter<'w, MoveCursorPageUpRequested>,
     move_cursor_page_down: MessageWriter<'w, MoveCursorPageDownRequested>,
 
-    // Selection
     select_left: MessageWriter<'w, SelectLeftRequested>,
     select_right: MessageWriter<'w, SelectRightRequested>,
     select_up: MessageWriter<'w, SelectUpRequested>,
@@ -137,41 +106,33 @@ pub struct ActionEventWriters<'w> {
     select_all: MessageWriter<'w, SelectAllRequested>,
     clear_selection: MessageWriter<'w, ClearSelectionRequested>,
 
-    // Clipboard
     copy: MessageWriter<'w, CopyRequested>,
     cut: MessageWriter<'w, CutRequested>,
     paste: MessageWriter<'w, PasteRequested>,
 
-    // Undo/redo
     undo: MessageWriter<'w, UndoRequested>,
     redo: MessageWriter<'w, RedoRequested>,
 
-    // Navigation
     goto_line: MessageWriter<'w, GotoLineRequested>,
 
-    // LSP
     request_completion: MessageWriter<'w, RequestCompletionRequested>,
     goto_definition: MessageWriter<'w, GotoDefinitionRequested>,
     rename_symbol: MessageWriter<'w, RenameSymbolRequested>,
 
-    // Multi-cursor
     add_cursor_next: MessageWriter<'w, AddCursorAtNextOccurrenceRequested>,
     add_cursor_above: MessageWriter<'w, AddCursorAboveRequested>,
     add_cursor_below: MessageWriter<'w, AddCursorBelowRequested>,
     clear_secondary_cursors: MessageWriter<'w, ClearSecondaryCursorsRequested>,
 
-    // Folding
     toggle_fold: MessageWriter<'w, ToggleFoldRequested>,
     fold: MessageWriter<'w, FoldRequested>,
     unfold: MessageWriter<'w, UnfoldRequested>,
     fold_all: MessageWriter<'w, FoldAllRequested>,
     unfold_all: MessageWriter<'w, UnfoldAllRequested>,
 
-    // File operations — reuse pre-existing host-facing events.
     save: MessageWriter<'w, SaveRequested>,
     open: MessageWriter<'w, OpenRequested>,
 
-    // Programmatic edits (LSP completion application, auto-indent, etc.)
     replace_range: MessageWriter<'w, bevy_instanced_text_editor::ReplaceRangeRequested>,
 }
 
@@ -351,9 +312,6 @@ type DispatchLspQuery<'w, 's> = Query<
     With<CodeEditor>,
 >;
 
-/// Non-cfg'd queries the dispatcher reads/writes. Bundled into a
-/// `SystemParam` so the system signature stays under clippy's threshold
-/// even with cfg'd LSP params.
 #[derive(SystemParam)]
 pub(crate) struct DispatchParams<'w, 's> {
     input_focus: Res<'w, InputFocus>,
@@ -408,18 +366,12 @@ pub(crate) fn dispatch_action_events(
         return;
     };
 
-    // Rename modal eats all action input until dismissed (input flows
-    // through `crate::input::keyboard` instead).
     #[cfg(feature = "lsp")]
     if let Ok((_, _, _, _, rename_state, _, _)) = lsp_q.get(focused) {
         if rename_state.visible {
             return;
         }
     }
-    // (We could route this through `lsp_ui::interceptors::rename_modal_active`,
-    // but the inline check is two lines and avoids an extra Query — the
-    // single `lsp_q` already carries the rename state.)
-
     let now = Instant::now();
     let mut action_to_execute: Option<EditorAction> = None;
 
@@ -433,13 +385,9 @@ pub(crate) fn dispatch_action_events(
         }
     }
 
-    // Key repeat on held actions.
     if action_to_execute.is_none() {
         if let Some(current_action) = key_repeat_state.current_action {
             if action_state.pressed(&current_action) {
-                // Pull key-repeat timing from the focused editor's
-                // `CursorSettings`; fall back to default if the focused entity
-                // isn't a CodeEditor (e.g. a terminal pane is focused).
                 let default = CursorSettings::default();
                 let cursor_settings = params.cursor_settings_q.get(focused).unwrap_or(&default);
                 if let Some(action) = key_repeat_state.tick(now, &cursor_settings.key_repeat) {
@@ -455,8 +403,6 @@ pub(crate) fn dispatch_action_events(
         return;
     };
 
-    // Read-only: drop content-mutating actions before they reach handlers.
-    // Navigation, selection, copy, search, and fold actions still flow.
     if action.is_mutating() {
         if let Ok(misc) = params.misc_q.get(focused) {
             if misc.read_only {
@@ -480,9 +426,6 @@ pub(crate) fn dispatch_action_events(
         }
     }
 
-    // Feature-owned interceptors get first crack at the action. Each returns
-    // `true` if it consumed the action; the dispatcher early-returns and the
-    // bevy_instanced_text_editor / IDE handlers never see the event.
     #[cfg(feature = "lsp")]
     if let Ok((
         _lsp_client,
@@ -516,8 +459,6 @@ pub(crate) fn dispatch_action_events(
         }
     }
 
-    // Save / Open are special — they carry payloads constructed from the
-    // editor's current state.
     match action {
         EditorAction::Save => {
             if let Ok((_cursor, buffer, _)) = editor_q.get(focused) {
@@ -533,7 +474,6 @@ pub(crate) fn dispatch_action_events(
         _ => {}
     }
 
-    // Snapshot for the LSP follow-up system before handlers run.
     #[cfg(feature = "lsp")]
     {
         pending.was_delete_backward = matches!(action, EditorAction::DeleteBackward);

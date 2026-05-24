@@ -18,11 +18,8 @@ pub struct TerminalApplyStateSet;
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TerminalSnapshotSet;
 
-/// Terminal renderer plugin. Handles VT parsing, grid snapshotting, input,
-/// selection, and all ECS state. Does not spawn any PTY — add
-/// [`crate::TerminalPtyPlugin`] alongside this for native PTY support, or supply
-/// your own [`crate::text::TerminalSession`] and
-/// [`crate::text::TerminalEventChannel`] for WASM / custom IO backends.
+/// Terminal renderer plugin (no PTY). Add [`crate::TerminalPtyPlugin`] for
+/// native PTY, or supply your own session for WASM / custom IO.
 #[derive(Default)]
 pub struct TerminalPlugin;
 
@@ -164,11 +161,7 @@ impl Plugin for TerminalPlugin {
     }
 }
 
-/// Full bundle for native hosts: text engine GPU + view, input dispatch,
-/// text interaction, renderer, and PTY backend.
-///
-/// Disable individual entries with `.build().disable::<T>()` when composing
-/// with a host that already owns one of the dependencies.
+/// Full plugin group: renderer + PTY backend + all dependencies.
 pub struct TerminalPlugins;
 
 impl PluginGroup for TerminalPlugins {

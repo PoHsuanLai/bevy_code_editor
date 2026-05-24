@@ -44,13 +44,6 @@ impl TextEdited {
     }
 }
 
-// LSP request events.
-//
-// `cursor_char` is a rope char offset; the listener resolves it to an LSP
-// `Position` in the negotiated wire encoding (UTF-16 by spec default). This
-// keeps producers honest about non-ASCII content — no inline char-counting
-// at the construction site.
-
 /// Fired when user presses Ctrl+Space or types a trigger character.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
@@ -64,7 +57,7 @@ impl CompletionRequested {
     }
 }
 
-/// Fired when user hovers over a symbol.
+/// Fired when the pointer hovers over a symbol long enough to trigger a request.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct HoverRequested {
@@ -77,7 +70,7 @@ impl HoverRequested {
     }
 }
 
-/// Fired when user initiates a rename (F2).
+/// Fired when the user initiates a rename.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct RenameRequested {
@@ -90,7 +83,7 @@ impl RenameRequested {
     }
 }
 
-/// Fired when user types '(' or ','.
+/// Fired when a signature-help trigger character is typed.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct SignatureHelpRequested {
@@ -103,12 +96,12 @@ impl SignatureHelpRequested {
     }
 }
 
-/// Fired to close the completion popup without applying any item.
+/// Close the completion popup without applying any item.
 #[derive(Message, Clone, Debug, Default, Reflect)]
 #[reflect(Clone, Debug, Default)]
 pub struct CompletionDismissed;
 
-/// Fired to apply the completion item at `item_index` in the popup list.
+/// Apply the completion item at `item_index` in the popup list.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct CompletionApplied {

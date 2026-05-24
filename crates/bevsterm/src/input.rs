@@ -1,9 +1,7 @@
 //! Keyboard → wezterm key encoding via `FocusedInput<KeyboardInput>` observer.
 //!
-//! The observer encodes Bevy keyboard events into `wezterm-term` key codes
-//! and forwards them onto the message bus as `TerminalKeyInput`; the actual
-//! `key_down` call happens in `handle_key_input` so synthetic and physical
-//! keystrokes share one code path.
+//! The actual `key_down` call lives in `handle_key_input` so synthetic and
+//! physical keystrokes share one code path.
 
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input::ButtonState;

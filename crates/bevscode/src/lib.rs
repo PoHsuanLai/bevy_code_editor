@@ -158,42 +158,29 @@ pub mod prelude {
     //! history live on the crate path (`bevscode::types::*`,
     //! `::display_map::*`, etc.) for hosts that need them.
 
-    // Engine surface — InstancedTextPlugins, InstancedTextPlugin, TextBuffer,
-    // TextFont, DisplayLayout, ContentMetrics.
     pub use bevy_instanced_text::prelude::*;
 
-    // Editor plugin + its standalone PluginGroup, and the interaction +
-    // UI plugins that hosts compose with.
     pub use crate::plugin::{
         AutoResizeViewport, CodeEditorPlugin, CodeEditorPlugins, EditorAppExt, EditorUiPlugin,
     };
 
-    // Editor marker + save/open events.
     pub use crate::types::editor::{CodeEditor, OpenRequested, SaveRequested};
     pub use crate::types::events::FoldStateChanged;
     pub use crate::types::events::SetLanguageRequested;
     pub use bevy_tree_sitter::TreeSitterGrammar;
 
-    // Editable-text widget types from `bevy_instanced_text_editor`. Re-exported so
-    // prelude users get them without a separate import.
     pub use bevy_instanced_text_editor::{
         InstancedTextEditPlugin, InstancedTextInteractionPlugin, RopeBuffer, SetTextRequested,
         TextEditor,
     };
 
-    // System-set ordering anchor for hosts that schedule overlay-producing
-    // systems relative to the engine's rendering set.
     pub use bevy_instanced_text::TextViewRenderSet;
 
-    // Selection / multi-cursor types and the EditorAction enum.
     pub use crate::input::EditorAction;
     pub use crate::types::{Selection, SelectionCollection};
 
-    // Theme — hosts that match the editor's clear color in their own
-    // Camera2d setup grab `EditorTheme::default().background`.
     pub use crate::settings::{EditorTheme, GutterConfig};
 
-    // Monaco-parity settings Components, reachable as `crate::prelude::*`.
     #[cfg(feature = "lsp")]
     pub use crate::lsp_ui_tempera::{LspPopupRoot, LspUiTemperaPlugin, LspUiViewSet};
     pub use crate::settings::{
@@ -204,10 +191,6 @@ pub mod prelude {
     #[cfg(feature = "lsp")]
     pub use crate::settings::{DiagnosticColors, LspConfig, Suggest};
 
-    // Tempera tokens — hosts that want to match the editor's chrome in
-    // their own UI grab these from tempera's prelude directly, but we
-    // re-export the most common entry points so a host that only
-    // imports `bevscode::prelude::*` can still flip the palette.
     pub use crate::ui_kit::BevscodePalettePlugin;
     pub use tempera::theme::{
         ColorPalette, FontHandle, MenuTokens, Spacing, ThemePlugin, Typography,

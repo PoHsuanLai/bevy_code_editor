@@ -1,9 +1,4 @@
 //! Core terminal components.
-//!
-//! `BevyTerminal` is the only thing the user spawns; `#[require]` cascades
-//! the rest. Each component carries a single concern (PTY handle, event
-//! channel, grid snapshot, mode flags, scrollback config, theme) so Bevy's
-//! change-detection and scheduler do real work.
 
 use std::sync::Arc;
 
@@ -13,12 +8,8 @@ use parking_lot::Mutex;
 
 use crate::backend;
 
-/// Spawn this on an entity to make it a terminal; the `#[require]`
-/// cascade brings in rendering substrate, selection state, terminal
-/// state, theme, and `Pickable` for mouse routing. PTY + child shell
-/// open lazily once `ComputedNode` and `TextFont` produce a
-/// non-zero (cols, rows), so the shell never renders a stale 80×24
-/// frame. Configure shell / argv / env / cwd via [`TerminalConfig`].
+/// Marker component for a terminal. PTY opens lazily once the viewport
+/// produces a non-zero size. Configure via [`TerminalConfig`].
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 #[require(
@@ -49,45 +40,20 @@ use crate::backend;
 )]
 pub struct BevyTerminal;
 
-/// Per-spawn shell configuration. Optional — omit and the session uses
-/// `$SHELL` (or `powershell.exe` on Windows), no extra args, the user's
-/// `$HOME` as cwd, and no environment overrides on top of the parent's.
-///
-/// Insert alongside `BevyTerminal` to override any subset of these:
-///
-/// ```rust,ignore
-/// commands.spawn((
-///     BevyTerminal,
-///     TerminalConfig {
-///         shell: Some("bash".into()),
-///         args: vec!["-l".into()],
-///         env: vec![("TERM".into(), "xterm-256color".into())],
-///         cwd: Some("/work".into()),
-///     },
-///     font,
-///     viewport,
-/// ));
-/// ```
-///
-/// Read once when the PTY is opened. Mutating fields after the session
-/// exists has no effect — despawn and respawn instead.
+/// Per-spawn shell configuration. Read once when the PTY opens; mutating
+/// after the session exists has no effect.
 #[derive(Component, Clone, Debug, Default, Reflect)]
 #[reflect(Component, Default)]
 pub struct TerminalConfig {
-    /// Program to launch. `None` → fall back to `$SHELL` (Unix) /
-    /// `powershell.exe` (Windows).
+    /// `None` falls back to `$SHELL` (Unix) / `powershell.exe` (Windows).
     pub shell: Option<String>,
-    /// Arguments passed to the shell.
     pub args: Vec<String>,
-    /// Environment overrides layered on top of the parent process's env.
-    /// Stored as a `Vec` rather than a `HashMap` to keep `Reflect` happy.
+    /// Layered on top of the parent process's env.
     pub env: Vec<(String, String)>,
-    /// Working directory. `None` → `$HOME` on Unix, parent's cwd on Windows.
+    /// `None` falls back to `$HOME` (Unix) / parent cwd (Windows).
     pub cwd: Option<String>,
 }
 
-/// Live terminal handles. Inserted by `open_pending_sessions` (native PTY) or
-/// by the host directly (WASM / custom IO).
 #[derive(Component)]
 pub struct TerminalSession {
     pub terminal: Arc<Mutex<backend::Terminal>>,
@@ -96,38 +62,26 @@ pub struct TerminalSession {
 }
 
 /// Channels from the PTY reader thread to the ECS drain system.
-/// `rx` carries raw byte chunks; `alerts` carries wezterm `Alert` values
-/// (bell, title changes, OSC sequences).
 #[derive(Component)]
 pub struct TerminalEventChannel {
     pub rx: crossbeam_channel::Receiver<Vec<u8>>,
     pub alerts: crossbeam_channel::Receiver<backend::Alert>,
 }
 
-/// Snapshot of the visible grid metadata: dims + cursor + version. The
-/// actual cell text/styles flow through `LineStyles` (engine signal-
-/// component); the cursor stays here so input + overlay code can read
-/// without touching the term lock.
-///
-/// `Default` produces an empty 0×0 snapshot; the spawn observer replaces
-/// it with the right size on the first sync tick.
+/// Grid dimensions and cursor position, updated each frame from the term lock.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 pub struct TerminalGridSnapshot {
     pub version: u64,
     pub cols: u16,
     pub rows: u16,
-    /// Cursor row as a buffer-line index (0 = top of scrollback, growing
-    /// downward). The visible window is the last `rows` lines, so when
-    /// scrollback is non-empty `cursor_row >= total_lines - rows`.
+    /// Buffer-line index (0 = top of scrollback).
     pub cursor_row: u32,
-    /// Cursor column (0-based).
     pub cursor_col: u16,
-    /// `true` when the cursor is hidden (DECTCEM off).
     pub cursor_hidden: bool,
 }
 
-/// Shell info reported by the PTY child + OSC 0/1/2/7 escape sequences.
+/// Shell title and CWD from OSC 0/1/2/7.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 pub struct TerminalShellInfo {
@@ -135,8 +89,7 @@ pub struct TerminalShellInfo {
     pub cwd: Option<String>,
 }
 
-/// Mode flags driven by the alacritty `Term`'s `TermMode`. Mirrored into
-/// ECS so input observers can read them without taking the term lock.
+/// Terminal mode flags mirrored into ECS to avoid taking the term lock.
 #[derive(Component, Default, Clone, Copy, PartialEq, Eq, Reflect)]
 #[reflect(Component, Default, PartialEq)]
 pub struct TerminalInputMode {
@@ -148,7 +101,7 @@ pub struct TerminalInputMode {
     pub kitty_keyboard: bool,
 }
 
-/// Warp-style command blocks parsed from OSC 133. Empty without shell-integration.
+/// OSC 133 command blocks. Empty without shell integration.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 pub struct TerminalBlockState {
@@ -156,7 +109,7 @@ pub struct TerminalBlockState {
     pub current_block: Option<usize>,
 }
 
-/// One OSC 133 shell-integration block (prompt + command + output).
+/// One OSC 133 block (prompt + command + output).
 #[derive(Clone, Debug, Default, Reflect)]
 pub struct TerminalBlock {
     pub id: u64,
@@ -168,35 +121,23 @@ pub struct TerminalBlock {
     pub command_text: String,
 }
 
-/// Lifecycle state of a [`TerminalBlock`].
 #[derive(Clone, Copy, Debug, Default, Reflect, PartialEq, Eq)]
 pub enum BlockStatus {
-    /// Block started but no output yet (prompt shown, no command entered).
     #[default]
     Pending,
-    /// Command is executing.
     Running,
-    /// Command exited; exit code is available on the block.
     Completed,
 }
 
-/// Per-terminal theme: ANSI 16-color palette.
-///
-/// Pure rendering colors come from `bevy_instanced_text::TextColor`
-/// (background, foreground); cursor + selection colors from
-/// `bevy_instanced_text_interaction::EditTheme`. This component carries the
-/// terminal-specific 16 ANSI colors used by the grid snapshot.
+/// ANSI 16-color palette for terminal rendering.
 #[derive(Component, Clone, Debug, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct TerminalColorPalette {
-    /// ANSI 0..=7 (normal) followed by 8..=15 (bright).
     pub ansi: [Color; 16],
 }
 
 impl Default for TerminalColorPalette {
     fn default() -> Self {
-        // VS Code "Dark+" palette. Hosts that want a different look should
-        // override the component on spawn or mutate it at runtime.
         let ansi = [
             Color::srgb(0.000, 0.000, 0.000), // 0 black
             Color::srgb(0.804, 0.000, 0.000), // 1 red
@@ -219,11 +160,9 @@ impl Default for TerminalColorPalette {
     }
 }
 
-/// Scrollback configuration. Maps to `alacritty_terminal::term::Config::scrolling_history`.
 #[derive(Component, Clone, Debug, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct TerminalScrollback {
-    /// Maximum number of lines kept in history.
     pub max_lines: usize,
 }
 
@@ -233,14 +172,7 @@ impl Default for TerminalScrollback {
     }
 }
 
-/// Bottom-follow state. When `stick_to_bottom` is `true`, `sync_grid_snapshot`
-/// pins `ScrollState` to the latest output so new lines stay visible. The wheel
-/// observer flips it `false` when the user scrolls away from the bottom; the
-/// same system flips it back `true` when they wheel within one row of the
-/// bottom. Hosts can drive it directly (toggle button) or via the
-/// [`crate::messages::TerminalScrollToBottom`] /
-/// [`crate::messages::TerminalScrollToTop`] /
-/// [`crate::messages::TerminalScrollTo`] messages.
+/// When `stick_to_bottom` is true, new output auto-scrolls into view.
 #[derive(Component, Clone, Copy, Debug, Reflect)]
 #[require(ScrollFollowState)]
 #[reflect(Component, Default, Debug)]
@@ -256,10 +188,8 @@ impl Default for TerminalScrollFollow {
     }
 }
 
-/// Internal book-keeping paired with [`TerminalScrollFollow`]. Carries the
-/// scroll offset the follower last wrote, so the apply system can tell a
-/// host-driven scroll (wheel, drag) apart from its own writes. Not part of
-/// the public surface — hosts never touch it.
+/// Tracks the last scroll offset written by the follower, so the apply system
+/// can distinguish host-driven scrolls from its own writes.
 #[derive(Component, Clone, Copy, Debug, Default, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub(crate) struct ScrollFollowState {

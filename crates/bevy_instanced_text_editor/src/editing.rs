@@ -1,11 +1,4 @@
 //! Text editing operations on [`EditHistoryState`].
-//!
-//! Insert, delete, undo / redo, set_text, anchor management. Methods mutate
-//! the rope on the entity's [`bevy_instanced_text::TextBuffer<RopeBuffer>`], the cursor
-//! / selection components, and bookkeeping fields on `EditHistoryState`.
-//!
-//! Editor-level systems read [`EditHistoryState::pending_byte_edit`] (set by
-//! every edit op for incremental tree-sitter reparse) then clear it.
 
 use crate::text::RopeBuffer;
 use bevy_instanced_text::{ContentMetrics, TextBuffer};
@@ -17,7 +10,6 @@ use bevy_instanced_text_interaction::{
     Anchor, AnchorBias, CursorState, SelectionCollection, SelectionState, TextEdit,
 };
 
-/// Compute (row, byte_column) for a given byte offset in `rope`.
 pub fn point_at_byte(rope: &Rope, byte_offset: usize) -> EditPoint {
     let byte_offset = byte_offset.min(rope.len_bytes());
     let line = rope.byte_to_line(byte_offset);
@@ -28,8 +20,6 @@ pub fn point_at_byte(rope: &Rope, byte_offset: usize) -> EditPoint {
     }
 }
 
-/// Outcome of a [`EditHistoryState::replace_range`] call. The cursor that the
-/// editor wants to "follow" the edit lands at `new_cursor_pos`.
 #[derive(Clone, Debug)]
 pub struct EditOutcome {
     pub start: usize,
@@ -37,14 +27,9 @@ pub struct EditOutcome {
 }
 
 impl EditHistoryState {
-    /// Replace `[start_char..end_char]` with `text`. The single primitive that
-    /// every editor mutation funnels through — handles char-vs-byte ranges,
-    /// position capture, anchor edits, history recording, content_version
-    /// bumps, and `EditDelta` for downstream reparse / LSP.
-    ///
-    /// `kind` controls the [`EditKind`] recorded in undo history.
-    /// `record_history = false` skips history (for undo/redo replay or
-    /// programmatic edits that shouldn't push a new transaction).
+    /// Single primitive for all buffer mutations: replaces `[start_char..end_char]`
+    /// with `text`, records history (unless `record_history = false`), updates
+    /// anchors, and emits an [`EditDelta`].
     pub fn replace_range(
         &mut self,
         buffer: &mut TextBuffer<RopeBuffer>,
@@ -71,9 +56,7 @@ impl EditHistoryState {
         let start_position = point_at_byte(buffer.rope(), start_byte);
         let old_end_position = point_at_byte(buffer.rope(), end_byte);
 
-        // Capture pre-edit rope when an LSP-style consumer asked for it.
-        // Ropey's structural sharing makes this O(log n); the snapshot is
-        // dropped same-frame after the OnEdit observer chain runs.
+        // Ropey clones are O(log n) due to structural sharing.
         if self.snapshot_pre_edits && self.pre_edit_rope.is_none() {
             self.pre_edit_rope = Some(buffer.rope().clone());
         }
@@ -92,9 +75,6 @@ impl EditHistoryState {
         if !text.is_empty() {
             buffer.insert(start, text);
         }
-        // Change detection: mutations through DerefMut already marked
-        // TextBuffer<RopeBuffer> changed. No manual content_version bump needed.
-
         let new_end_byte = start_byte + inserted_bytes;
         let new_cursor_pos = start + inserted_chars;
 
@@ -185,18 +165,14 @@ impl EditHistoryState {
         sel.apply_primary_cursor(cursor);
     }
 
-    /// Insert text at a specific position (used for undo/redo). Skips
-    /// history recording — the caller already manages the transaction.
     pub fn insert_text_at(&mut self, buffer: &mut TextBuffer<RopeBuffer>, pos: usize, text: &str) {
         self.replace_range(buffer, pos, pos, text, EditKind::Other, false);
     }
 
-    /// Remove text range (used for undo/redo). Skips history recording.
     pub fn remove_range(&mut self, buffer: &mut TextBuffer<RopeBuffer>, start: usize, end: usize) {
         self.replace_range(buffer, start, end, "", EditKind::Other, false);
     }
 
-    /// Perform undo operation. Returns `true` if anything was undone.
     pub fn undo(
         &mut self,
         sel: &mut SelectionState,
@@ -226,7 +202,6 @@ impl EditHistoryState {
         }
     }
 
-    /// Perform redo operation. Returns `true` if anything was redone.
     pub fn redo(
         &mut self,
         sel: &mut SelectionState,
@@ -256,8 +231,6 @@ impl EditHistoryState {
         }
     }
 
-    /// Replace all buffer text with `text`. Resets selection to a single
-    /// cursor (clamped) and clears the anchor set. Skips history.
     pub fn set_text(
         &mut self,
         sel: &mut SelectionState,
@@ -274,36 +247,27 @@ impl EditHistoryState {
         metrics.max_content_width = 0.0;
     }
 
-    /// Create an anchor at the given position.
     pub fn create_anchor(&mut self, rope: &Rope, offset: usize, bias: AnchorBias) -> Anchor {
         let offset = offset.min(rope.len_chars());
         self.anchors.anchor_at(offset, bias)
     }
 
-    /// Create an anchor with left bias.
     pub fn anchor_at(&mut self, rope: &Rope, offset: usize) -> Anchor {
         self.create_anchor(rope, offset, AnchorBias::Left)
     }
 
-    /// Resolve an anchor's current position.
     pub fn resolve_anchor(&self, rope: &Rope, anchor: &Anchor) -> usize {
         self.anchors.resolve(anchor).min(rope.len_chars())
     }
 
-    /// Apply pending anchor edits.
     pub fn apply_anchor_edits(&mut self) {
         self.anchors.apply_pending_edits();
     }
 
-    /// Remove an anchor by its ID.
     pub fn remove_anchor(&mut self, id: u64) -> Option<Anchor> {
         self.anchors.remove(id)
     }
 }
-
-// `SelectionState`'s `apply_primary_cursor`, `add_cursor_at`,
-// `clear_secondary_cursors`, `primary_range`, etc. now live in
-// `bevy_instanced_text_interaction::state` so terminals can use them too.
 
 #[cfg(test)]
 mod tests {
@@ -312,7 +276,6 @@ mod tests {
     use bevy_instanced_text::TextBuffer;
     use bevy_instanced_text_interaction::{CursorState, SelectionState};
 
-    /// Build (buffer, cursor at `pos`, fresh history & selection).
     fn editor_at(
         text: &str,
         pos: usize,

@@ -3,11 +3,10 @@
 //! Wraps `pulldown-cmark` so the rest of the crate works against a tree
 //! of [`Block`] / [`Inline`] values it owns, not borrowed parser events.
 //!
-//! v1 scope (the subset LSP servers actually emit in hover/completion
-//! docs): headings, paragraphs, code blocks, lists, blockquote, hr,
+//! Supported: headings, paragraphs, code blocks, lists, blockquote, hr,
 //! emphasis (bold/italic/strike), inline code, links, hard/soft breaks.
 //! Tables, images, footnotes, task-list markers, HTML, and math collapse
-//! to plain text in v1 and are extension points for later.
+//! to plain text.
 
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Parser, Tag, TagEnd};
 
@@ -55,12 +54,8 @@ pub fn parse(source: &str) -> Vec<Block> {
     walker.finish()
 }
 
-/// Recursive-descent state machine over the pulldown-cmark event stream.
-///
-/// `block_stack` holds nested block containers (root, list items,
-/// blockquote contents) — pushed on `Start`, popped on `End`.
-/// `inline_stack` holds in-progress inline parents (paragraphs,
-/// headings, links) and the current emphasis style.
+/// Recursive-descent state machine driven by pulldown-cmark events.
+/// Block/inline stacks track nesting; pushed on `Start`, popped on `End`.
 #[derive(Default)]
 struct Walker {
     blocks: Vec<Block>,
@@ -113,9 +108,6 @@ impl Walker {
             Event::SoftBreak => self.push_inline(Inline::SoftBreak),
             Event::HardBreak => self.push_inline(Inline::HardBreak),
             Event::Rule => self.push_block(Block::Rule),
-            // v1: unsupported events collapse to plain text where it makes
-            // sense, or are dropped. Tables/images/footnotes/HTML/math are
-            // future extension points.
             Event::Html(_) | Event::InlineHtml(_) => {}
             Event::FootnoteReference(_) => {}
             Event::TaskListMarker(_) => {}
@@ -169,9 +161,6 @@ impl Walker {
                 href: dest_url.into_string(),
                 children: Vec::new(),
             }),
-            // v1 deferred — children still flow through, but the wrapping
-            // tag is ignored (image alt-text becomes inline text, table
-            // cells become loose paragraphs).
             Tag::Image { .. } => {}
             Tag::Table(_) | Tag::TableHead | Tag::TableRow | Tag::TableCell => {}
             Tag::FootnoteDefinition(_) => {}
@@ -365,7 +354,6 @@ mod tests {
                 items,
             } => {
                 assert_eq!(items.len(), 1);
-                // outer item: a paragraph + a nested list
                 assert!(matches!(items[0].iter().last(), Some(Block::List { .. })));
             }
             other => panic!("expected List, got {other:?}"),

@@ -1,6 +1,6 @@
-//! Per-entity Component holding parsed LSP server capabilities. Until the
-//! editor adapter sets it on `LspResponse::Initialized`, all `supports_*`
-//! predicates return `false` and capability-gated sends are dropped.
+//! Per-entity LSP server capabilities. All `supports_*` predicates return
+//! `false` until [`LspResponse::Initialized`](crate::LspResponse::Initialized)
+//! has been observed.
 
 use bevy_ecs::prelude::*;
 use lsp_types::*;
@@ -19,7 +19,6 @@ impl ServerCapabilities {
         self.inner = Some(capabilities);
     }
 
-    /// `None` until [`crate::LspResponse::Initialized`] has been observed.
     pub fn get(&self) -> Option<&lsp_types::ServerCapabilities> {
         self.inner.as_ref()
     }
@@ -30,8 +29,7 @@ impl ServerCapabilities {
             .is_some_and(|c| c.completion_provider.is_some())
     }
 
-    /// `completionItem/resolve` for lazy-loading docs and additional edits.
-    /// Falls back to `false` so we don't fire requests servers would reject.
+    /// Falls back to `false` when the server omits `completionProvider.resolveProvider`.
     pub fn supports_completion_resolve(&self) -> bool {
         self.inner
             .as_ref()
@@ -275,8 +273,6 @@ impl ServerCapabilities {
             .is_some_and(|c| c.diagnostic_provider.is_some())
     }
 
-    /// Whether `textDocument/codeAction` results require a follow-up
-    /// `codeAction/resolve` for their edits.
     pub fn supports_code_action_resolve(&self) -> bool {
         self.inner
             .as_ref()
@@ -288,8 +284,6 @@ impl ServerCapabilities {
             .unwrap_or(false)
     }
 
-    /// Whether the server returns `textDocument/inlayHint` items that
-    /// need follow-up `inlayHint/resolve`.
     pub fn supports_inlay_hint_resolve(&self) -> bool {
         self.inner
             .as_ref()

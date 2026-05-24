@@ -9,7 +9,6 @@ use crate::text::{
     TerminalShellInfo,
 };
 
-/// Drain pending bytes + alerts and update ECS state.
 #[allow(clippy::too_many_arguments)]
 pub fn drain_pty_events(
     mut q: Query<(

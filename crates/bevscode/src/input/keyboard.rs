@@ -1,15 +1,5 @@
-//! Per-event keyboard observer for the focused editor.
-//!
-//! Only one observer lives here: [`on_focused_keyboard`], which runs on
-//! [`bevy::input_focus::FocusedInput<KeyboardInput>`]. It handles
-//! rename-modal routing, character insertion, bracket / quote auto-close,
-//! and LSP completion triggers.
-//!
-//! Action-based input (just-pressed / repeating shortcuts via leafwing's
-//! `ActionState`) was previously also handled here in `process_editor_actions`.
-//! That function is gone — its responsibilities are split between
-//! [`super::dispatch::dispatch_action_events`] (event emission) and the
-//! per-action handler systems under [`super::handlers`].
+//! Per-event keyboard observer: character insertion, bracket/quote
+//! auto-close, and LSP completion triggers.
 
 use super::actions::{
     auto_close_allowed, get_closing_bracket, get_closing_quote, insert_closing_char,

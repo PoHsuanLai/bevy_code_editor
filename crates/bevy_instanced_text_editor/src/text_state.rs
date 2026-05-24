@@ -1,10 +1,5 @@
-//! Editor-only state components: edit history, indentation, the TextEditor
+//! Editor-only state components: edit history, indentation, the [`TextEditor`]
 //! marker, and the per-edit byte snapshot.
-//!
-//! The cursor + selection components live in [`bevy_instanced_text_interaction`] —
-//! editors and terminals share them. Everything in this module is
-//! rope-specific or only meaningful when undo / LSP-style edit tracking
-//! is in play.
 
 use bevy::prelude::*;
 use ropey::Rope;
@@ -12,37 +7,20 @@ use ropey::Rope;
 use crate::history::EditHistory;
 use bevy_instanced_text_interaction::text_edit::AnchorSet;
 
-/// Marker requesting that [`EditHistoryState`] keep a clone of the rope
-/// from before each edit. Consumers that need pre-edit positions in the
-/// LSP wire encoding (incremental `did_change`) attach this to the
-/// editor entity. Plain text widgets don't need it — adding the marker
-/// is opt-in so we don't pay the structural-clone cost when no one is
-/// listening.
-///
-/// Ropey clones are O(log n) memory because of structural sharing, so
-/// the cost is small per-edit. The snapshot is dropped same-frame, after
-/// the [`OnEdit`] observer chain has read it.
+/// Opt-in marker: clone the rope before each edit for LSP incremental sync.
+/// Ropey clones are O(log n) due to structural sharing.
 #[derive(Component, Default, Clone, Copy, Debug, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct SnapshotPreEdit;
 
-/// Undo/redo stacks, anchors, and transient pending-edit fields. Consumers
-/// **observe [`OnEdit`]** rather than reading fields directly —
-/// [`crate::plugin::emit_edit_triggers`] drains the fields each frame.
 #[derive(Component)]
 pub struct EditHistoryState {
     pub history: EditHistory,
     pub anchors: AnchorSet,
-    /// Captured at edit-time; drained into [`OnEdit`] so consumers get byte
-    /// offsets without needing the pre-edit rope.
     #[doc(hidden)]
     pub pending_byte_edit: Option<EditDelta>,
-    /// Mirrored from the [`SnapshotPreEdit`] marker each frame so `replace_range`
-    /// can decide whether to clone the rope without an extra Bevy query.
     #[doc(hidden)]
     pub snapshot_pre_edits: bool,
-    /// Cloned before the edit when `snapshot_pre_edits` is set; used by LSP
-    /// incremental sync. Drained into [`OnEdit`] by `emit_edit_triggers`.
     #[doc(hidden)]
     pub pre_edit_rope: Option<Rope>,
 }
@@ -59,10 +37,7 @@ impl Default for EditHistoryState {
     }
 }
 
-/// True when the char at `pos` looks like the closer of an auto-inserted
-/// pair: either a standard bracket whose opener sits at `pos - 1`, or a
-/// matching quote with a quote immediately before it. This neighbor check
-/// is index-free, so it stays correct as the buffer is edited elsewhere.
+/// True when `pos - 1` and `pos` form a bracket/quote auto-pair.
 pub fn is_auto_pair_neighbor(rope: &Rope, pos: usize) -> bool {
     if pos == 0 || pos >= rope.len_chars() {
         return false;
@@ -75,10 +50,7 @@ pub fn is_auto_pair_neighbor(rope: &Rope, pos: usize) -> bool {
     )
 }
 
-/// Emitted per edit by [`crate::plugin::emit_edit_triggers`]. Consumers add
-/// observers to react. `byte_edit` is `None` for line-structure-only signals;
-/// `pre_edit_rope` is `Some` only when [`SnapshotPreEdit`] is on the entity
-/// (used by LSP incremental sync).
+/// Emitted per edit. `pre_edit_rope` is `Some` only with [`SnapshotPreEdit`].
 #[derive(Message, EntityEvent, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct OnEdit {
@@ -88,15 +60,13 @@ pub struct OnEdit {
     pub pre_edit_rope: Option<Rope>,
 }
 
-/// 0-indexed `(row, byte_column)`. Mirrors `tree_sitter::Point` without the dep.
+/// 0-indexed `(row, byte_column)`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Reflect)]
 pub struct EditPoint {
     pub row: u32,
     pub column_byte: u32,
 }
 
-/// Edit snapshot captured at edit-time so consumers can build
-/// `tree_sitter::InputEdit` or LSP `did_change` without the pre-edit rope.
 #[derive(Clone, Copy, Debug, Reflect)]
 pub struct EditDelta {
     pub start_byte: usize,
@@ -107,7 +77,6 @@ pub struct EditDelta {
     pub new_end_position: EditPoint,
 }
 
-/// Indentation policy. Default: 4 spaces.
 #[derive(Component, Clone, Copy, Debug, Reflect)]
 #[reflect(Component, Default, Debug)]
 pub struct IndentConfig {
@@ -134,17 +103,8 @@ impl Default for IndentConfig {
     }
 }
 
-/// Marker for an editable text widget. `#[require]` cascades all supporting
-/// state. Pair with [`crate::InstancedTextEditPlugin`].
-///
-/// **Includes [`bevy_instanced_text::TextBuffer<crate::RopeBuffer>`]** in
-/// the cascade, which in turn (via the renderer's
-/// `register_required_components` for `TextBuffer<T>`) brings in every
-/// renderer component a text view needs: `DisplayLayout`, `TextFont`,
-/// `MonoFontFaces`, `MonoCellWidth`, `ScrollPosition`,
-/// `ContentMetrics`, `LineStyles`, `HiddenLines`,
-/// `LayoutTuning`, `Node`, `Transform`, `Visibility`, `Pickable`.
-/// Spawning just `TextEditor` is enough to get a fully-rendered editor.
+/// Spawning just `TextEditor` is enough for a fully-rendered editor;
+/// `#[require]` cascades all supporting state.
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 #[require(

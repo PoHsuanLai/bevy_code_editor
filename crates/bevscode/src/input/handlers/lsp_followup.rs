@@ -1,16 +1,4 @@
-//! Post-action LSP follow-up system.
-//!
-//! The pre-refactor `execute_action` ran three side-effects after the action
-//! body finished:
-//!   1. If the cursor moved horizontally, hide the completion popup.
-//!   2. If `DeleteBackward` ran with the popup visible, refilter or hide.
-//!   3. If text changed, send `textDocument/didChange`.
-//!
-//! With handlers now event-driven we can't carry per-action flags through
-//! the dispatch. Instead, `dispatch_action_events` writes a
-//! [`PendingActionFollowup`] resource each frame, and this system inspects
-//! the cursor/content snapshot delta against the editor's current state and
-//! fires the same three side-effects. Behavior matches the original.
+//! Post-action LSP follow-up: backspace refilter and popup dismiss.
 
 use crate::types::*;
 use bevy::input_focus::InputFocus;

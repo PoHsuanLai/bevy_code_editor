@@ -10,8 +10,6 @@ use futures::FutureExt;
 
 use super::{BoxedFuture, LspTransport, TransportHandle};
 
-/// Spawn `command` with `args` and wire the resulting child's stdio into the
-/// async-lsp main loop. stderr is drained to the debug log.
 pub struct StdioTransport {
     command: String,
     args: Vec<String>,

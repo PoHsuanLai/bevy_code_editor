@@ -1,17 +1,12 @@
 //! Theme components controlling markdown rendering.
 //!
-//! The theme is split into four independent `Component`s so callers can
-//! override one axis (e.g. just `MarkdownColors`) without restating the
-//! others, and the rebuild system can react via per-component
-//! `Changed<_>` filters. All four are `#[require]`d by [`crate::Markdown`]
-//! so any of them not explicitly inserted falls back to its `Default`.
+//! Split into four independent `Component`s so callers can override one
+//! axis without restating the others. All four are `#[require]`d by
+//! [`crate::Markdown`] and fall back to `Default` when not inserted.
 
 use bevy::prelude::*;
 
-/// Font handles. `bold` / `italic` / `bold_italic` are optional — when
-/// `None`, the renderer falls back to `body` (for emphasis) or `mono`
-/// (for code) and lets `bevy_text` handle weight/skew synthesis if the
-/// loaded face supports it.
+/// Font handles. `bold`/`italic`/`bold_italic` fall back to `body` when `None`.
 #[derive(Component, Clone, Debug, Default)]
 pub struct MarkdownFonts {
     pub body: Handle<Font>,
@@ -26,10 +21,7 @@ pub struct MarkdownColors {
     pub text: Color,
     pub link: Color,
     pub code_bg: Color,
-    /// Optional 1px border around fenced code blocks. `Color::NONE`
-    /// (the default) draws no border — the block reads as a filled
-    /// surface only. Hosts that want a chip-like outline (matching
-    /// shadcn/tempera's `<kbd>` styling) set this to a subtle line.
+    /// `Color::NONE` (default) draws no border around code blocks.
     pub code_border: Color,
     pub inline_code_bg: Color,
     pub blockquote_border: Color,
@@ -57,8 +49,7 @@ pub struct MarkdownSpacing {
     pub block_gap: f32,
     pub list_indent: f32,
     pub code_padding: UiRect,
-    /// Border radius applied to fenced code block surfaces. Set `0.0`
-    /// for sharp corners.
+    /// Border radius for fenced code blocks (`0.0` for sharp corners).
     pub code_corner_radius: f32,
     pub blockquote_border_width: f32,
 }
@@ -87,8 +78,6 @@ impl Default for MarkdownScales {
     }
 }
 
-/// Private borrowed bundle passed through the spawn pipeline so internal
-/// helpers don't need four parameters each.
 pub(crate) struct ThemeRef<'a> {
     pub fonts: &'a MarkdownFonts,
     pub colors: &'a MarkdownColors,

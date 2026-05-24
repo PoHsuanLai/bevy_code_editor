@@ -89,8 +89,6 @@ pub mod prelude {
         TerminalConfig, TerminalEventChannel, TerminalGridSnapshot, TerminalInputMode,
         TerminalScrollFollow, TerminalScrollback, TerminalSession, TerminalShellInfo,
     };
-    // Backend-side primitives hosts need when wiring their own IO (WASM,
-    // alternative PTY drivers, mock terminals for tests).
     pub use crate::backend::{DefaultConfig, TerminalSize};
     pub use bevy::text::TextFont;
     pub use bevy_instanced_text::{MonoCellWidth, MonoFontFaces};

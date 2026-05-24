@@ -1,9 +1,4 @@
 //! Component-driven async tree-sitter parsing.
-//!
-//! `parse_dirty` detects when `ParseSource::content_version()` outruns the
-//! stored tree version, transitions the entity's `ParseState` to `InFlight`,
-//! and writes the result back when the task completes. Single-flight per
-//! entity; never blocks the main thread.
 
 use bevy_ecs::prelude::*;
 use bevy_tasks::{AsyncComputeTaskPool, Task};
@@ -14,25 +9,17 @@ use crate::language::TreeSitterGrammar;
 use crate::tree_sitter::{build_parser, RopeReader};
 use crate::ts;
 
-/// Buffer interface for the parse pipeline. `content_version` and `snapshot`
-/// are called on the main thread; the cloned `Rope` is moved to the worker.
-/// `apply_edit` is called on the main thread before each parse to keep the
-/// cached tree's byte offsets valid for highlight queries.
+/// Buffer interface for the parse pipeline.
 pub trait ParseSource: Send + Sync + 'static {
-    /// Monotonically increasing; a new parse kicks off when this differs from
-    /// the version stored in [`SyntaxTree`].
+    /// A bump triggers a re-parse.
     fn content_version(&self) -> u64;
 
-    /// Cheap clone (`Rope` is Arc-backed); moved to the async worker.
     fn snapshot(&self) -> Rope;
 
-    /// Optional: implementations without their own cached tree can leave this as
-    /// the default no-op.
     fn apply_edit(&self, _edit: ts::InputEdit) {}
 }
 
-/// Wraps a [`ParseSource`] trait object. Cheap to clone (`Arc` bump).
-/// Not Reflect: `dyn` isn't reflectable.
+/// Not Reflect: wraps `dyn`.
 #[derive(Component, Clone)]
 pub struct ParseSourceComp(pub Arc<dyn ParseSource>);
 
@@ -42,29 +29,18 @@ impl ParseSourceComp {
     }
 }
 
-/// Per-entity parsed-tree state. Written by `parse_dirty` on completion;
-/// filter `Changed<SyntaxTree>` to react when a new tree lands.
-///
 /// Not Reflect: `ts::Tree` owns FFI-side state.
 #[derive(Component, Default)]
 #[require(ParseState)]
 pub struct SyntaxTree {
     pub tree: Option<ts::Tree>,
     pub content_version: u64,
-    /// Bumps on each tree replacement so readers can cache derived data by
-    /// tree identity instead of pointer equality.
     pub tree_version: u64,
-    /// Buffer-line range dirtied by the edit(s) that produced this tree.
-    /// `None` means the full visible window must be rehighlighted (e.g. first
-    /// parse, or a huge edit that dropped the cached tree). Set by
-    /// `record_edits_for_incremental_parsing` via `bypass_change_detection`
-    /// and forwarded through the async task so `produce_line_styles` can do
-    /// an incremental rehighlight instead of a full-window rebuild.
+    /// `None` means a full rehighlight is needed.
     pub dirty_rows: Option<(u32, u32)>,
 }
 
 impl SyntaxTree {
-    /// Drop the cached tree and reset `content_version` to trigger a fresh parse.
     pub fn clear(&mut self) {
         self.tree = None;
         self.content_version = 0;
@@ -72,15 +48,9 @@ impl SyntaxTree {
     }
 }
 
-/// Per-entity parse pipeline state. Internal to this crate; hosts observe
-/// results via `Changed<SyntaxTree>` rather than querying this component.
 #[derive(Component)]
 pub(crate) enum ParseState {
-    /// Holds the reusable parser between parses. `None` until the grammar
-    /// is first set; repopulated when each async parse completes.
     Idle(Option<ts::Parser>),
-    /// Parser is moved into the task and returned alongside the tree so it
-    /// can be reused on the next parse without re-allocating.
     InFlight {
         task: Task<(Option<ts::Tree>, ts::Parser)>,
         content_version: u64,
@@ -112,7 +82,6 @@ pub(crate) fn parse_dirty(
 
                 let grammar = grammar_comp.grammar.clone();
 
-                // Build the parser once; reuse it on every subsequent parse.
                 let parser = match stored_parser.take() {
                     Some(p) => p,
                     None => match build_parser(&grammar) {
@@ -146,7 +115,6 @@ pub(crate) fn parse_dirty(
 
                 let content_version = *content_version;
                 let dirty_rows = *dirty_rows;
-                // Return the parser to Idle so the next parse can reuse it.
                 *state = ParseState::Idle(Some(parser));
 
                 if let Some(tree) = tree {
@@ -163,8 +131,6 @@ pub(crate) fn parse_dirty(
     }
 }
 
-/// Async worker: incremental parse using the provided `parser`. Returns the
-/// parser alongside the tree so the caller can reuse it next parse.
 fn parse_tree_async(
     mut parser: ts::Parser,
     rope: Rope,
@@ -178,7 +144,6 @@ fn parse_tree_async(
     (tree, parser)
 }
 
-/// O(log n) rope lookup — safe to call on the main thread per edit.
 pub fn byte_to_point(rope: &Rope, byte_offset: usize) -> ts::Point {
     let byte_offset = byte_offset.min(rope.len_bytes());
     let char_offset = rope.byte_to_char(byte_offset);

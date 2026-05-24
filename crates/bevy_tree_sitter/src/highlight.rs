@@ -1,9 +1,4 @@
-//! Structural highlight types and the `highlight_ranges` free function.
-//!
-//! `HighlightRange` exposes byte ranges and capture names — no colors.
-//! Capture names are `Arc<str>` so emitting one per token doesn't allocate.
-//! `highlight_ranges` is the query-execution entry point; line-splitting is
-//! the consumer's responsibility.
+//! Highlight types and query execution.
 
 use crate::ts;
 use crate::ts::{Query, QueryCursor, Tree};
@@ -13,16 +8,12 @@ use std::sync::Arc;
 use streaming_iterator::StreamingIterator;
 
 /// One contiguous run of text sharing a single tree-sitter capture.
-/// `byte_range` is document-absolute; `capture_name` is the raw query capture
-/// (e.g. `"keyword"`, `"function.method"`). Mapping to color is the consumer's job.
 #[derive(Clone, Debug)]
 pub struct HighlightRange {
     pub byte_range: Range<usize>,
     pub capture_name: Arc<str>,
 }
 
-/// Wraps a `Rope` so tree-sitter can pull text bytes through the
-/// `TextProvider` trait (used inside query execution).
 pub(crate) struct RopeProvider<'a>(pub(crate) &'a Rope);
 
 pub(crate) struct RopeChunks<'a> {
@@ -50,11 +41,6 @@ impl<'a> Iterator for RopeChunks<'a> {
     }
 }
 
-/// Run tree-sitter highlight queries against `tree`/`rope` for `byte_range`.
-///
-/// Returns a flat, sorted `Vec<HighlightRange>` with document-absolute byte
-/// ranges. Line-splitting is the caller's responsibility. The `query_cursor`
-/// is passed in so callers can reuse its internal allocation across calls.
 pub fn highlight_ranges(
     tree: &Tree,
     rope: &Rope,

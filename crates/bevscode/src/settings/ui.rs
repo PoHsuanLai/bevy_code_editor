@@ -100,9 +100,6 @@ impl GutterBand {
 
 impl Default for EditorUi {
     fn default() -> Self {
-        // Monaco/VSCode defaults — bands are flush with no outer
-        // padding and no inter-band gap. Layout (left → right):
-        //   [ glyph-margin | line-numbers | line-decorations | text ]
         Self {
             line_numbers: LineNumbers::On,
             line_numbers_min_chars: 2,

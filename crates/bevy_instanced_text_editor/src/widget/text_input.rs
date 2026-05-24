@@ -1,10 +1,4 @@
-//! Buffer edit handlers — Insert{Newline,Tab}, Delete{Backward,Forward,
-//! WordBackward,WordForward,Line}, Undo, Redo.
-//!
-//! Tab insertion uses a hard `\t` here. Hosts that want "soft tabs" (insert
-//! N spaces) should consume `InsertTabRequested` themselves with a more
-//! involved handler ahead of this one — or skip emitting the event when
-//! their indentation policy is non-default.
+//! Buffer edit handlers: insert, delete, undo, redo.
 
 use crate::history::EditKind;
 use crate::text::RopeBuffer;
@@ -40,9 +34,6 @@ type EditorSetTextQuery<'w, 's> = Query<
     With<TextEditor>,
 >;
 
-/// Insert a character at cursor — drops any active selection first, then
-/// records the insert in history. Available for hosts that want to type a
-/// specific character programmatically.
 pub fn insert_char(
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
@@ -56,7 +47,6 @@ pub fn insert_char(
     hist.insert_char(sel, cursor, buffer, c);
 }
 
-/// Delete the active selection range and record one undo operation.
 pub fn delete_selection(
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
@@ -71,7 +61,6 @@ pub fn delete_selection(
     sel.apply_primary_cursor(cursor);
 }
 
-/// System: inserts a newline at the cursor (with optional auto-indent).
 pub fn handle_insert_newline(
     mut events: MessageReader<InsertNewlineRequested>,
     input_focus: Res<InputFocus>,
@@ -89,7 +78,6 @@ pub fn handle_insert_newline(
     insert_char(&mut sel, &mut hist, &mut cursor, &mut buffer, '\n');
 }
 
-/// System: inserts a tab (or spaces, depending on `IndentConfig`) at the cursor.
 pub fn handle_insert_tab(
     mut events: MessageReader<InsertTabRequested>,
     input_focus: Res<InputFocus>,
@@ -123,7 +111,6 @@ pub fn handle_insert_tab(
     }
 }
 
-/// System: deletes one character before the cursor (or the selection).
 pub fn handle_delete_backward(
     mut events: MessageReader<DeleteBackwardRequested>,
     input_focus: Res<InputFocus>,
@@ -222,7 +209,6 @@ pub fn handle_delete_backward(
     }
 }
 
-/// System: deletes one character after the cursor (or the selection).
 pub fn handle_delete_forward(
     mut events: MessageReader<DeleteForwardRequested>,
     input_focus: Res<InputFocus>,
@@ -244,7 +230,6 @@ pub fn handle_delete_forward(
     }
 }
 
-/// System: deletes from the previous word boundary to the cursor (Ctrl+Backspace).
 pub fn handle_delete_word_backward(
     mut events: MessageReader<DeleteWordBackwardRequested>,
     input_focus: Res<InputFocus>,
@@ -266,7 +251,6 @@ pub fn handle_delete_word_backward(
     }
 }
 
-/// System: deletes from the cursor to the next word boundary (Ctrl+Delete).
 pub fn handle_delete_word_forward(
     mut events: MessageReader<DeleteWordForwardRequested>,
     input_focus: Res<InputFocus>,
@@ -288,13 +272,10 @@ pub fn handle_delete_word_forward(
     }
 }
 
-/// System: deletes the current line (stub — drains the event queue).
 pub fn handle_delete_line(mut events: MessageReader<DeleteLineRequested>) {
-    // Stub: not implemented in the legacy editor either; drain the queue.
     events.read().for_each(|_| {});
 }
 
-/// System: undoes the last edit operation.
 pub fn handle_undo(
     mut events: MessageReader<UndoRequested>,
     input_focus: Res<InputFocus>,
@@ -312,7 +293,6 @@ pub fn handle_undo(
     let _ = hist.undo(&mut sel, &mut cursor, &mut buffer);
 }
 
-/// System: redoes the last undone edit operation.
 pub fn handle_redo(
     mut events: MessageReader<RedoRequested>,
     input_focus: Res<InputFocus>,
@@ -330,7 +310,6 @@ pub fn handle_redo(
     let _ = hist.redo(&mut sel, &mut cursor, &mut buffer);
 }
 
-/// Delete from word start to cursor.
 pub fn delete_word_backward(
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
@@ -354,7 +333,6 @@ pub fn delete_word_backward(
     sel.apply_primary_cursor(cursor);
 }
 
-/// Delete from cursor to word end.
 pub fn delete_word_forward(
     sel: &mut SelectionState,
     hist: &mut EditHistoryState,
@@ -377,10 +355,6 @@ pub fn delete_word_forward(
     sel.apply_primary_cursor(cursor);
 }
 
-/// Apply `ReplaceRangeRequested` events. Routes to the requested entity and
-/// uses `replace_range` to mutate, ensuring history + anchors + `OnEdit`
-/// stay correct. Cross-crate consumers (LSP, completion, formatting,
-/// refactoring) emit the event and never touch editor state directly.
 pub fn handle_replace_range(
     mut events: MessageReader<ReplaceRangeRequested>,
     mut q: EditorBufQuery,
@@ -404,7 +378,6 @@ pub fn handle_replace_range(
     }
 }
 
-/// Apply `SetTextRequested` events. Replaces the whole buffer.
 pub fn handle_set_text(mut events: MessageReader<SetTextRequested>, mut q: EditorSetTextQuery) {
     for event in events.read() {
         let Ok((mut sel, mut hist, mut cursor, mut buffer, mut metrics)) = q.get_mut(event.entity)

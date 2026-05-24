@@ -1,27 +1,13 @@
-//! LSP message types for communication with language servers.
+//! LSP message types — full LSP 3.17 spec coverage.
 //!
-//! Two layers:
-//! - [`LspMessage`] / [`LspResponse`] are the protocol DTOs that flow over the
-//!   async transport channel inside `LspClient`. Internal to the crate's
-//!   transport.
-//! - The `Lsp*Response` `Message` types below mirror each [`LspResponse`]
-//!   variant onto Bevy's message bus, tagged with the originating
-//!   [`Entity`]. `LspPlugin` runs `drain_lsp_responses` each frame to fan the
-//!   transport channel out into typed Bevy messages so any host system can
-//!   subscribe without owning the [`crate::LspClient`].
-//!
-//! Coverage goal: every request/notification in the LSP 3.17 spec that has a
-//! typed shape in [`lsp_types`] is represented here. Some of them are not
-//! consumed by `bevy_code_editor`, but a host that wants to build (say) an
-//! outline panel from `documentSymbol` or render call hierarchies just needs
-//! to send the request and subscribe to the response message — this crate
-//! does not gate features it doesn't itself use.
+//! [`LspMessage`] / [`LspResponse`] flow over the async transport channel.
+//! The `Lsp*Response` Bevy `Message` types mirror each variant onto the ECS
+//! message bus, tagged with the originating [`Entity`].
 
 use bevy_ecs::prelude::*;
 use lsp_types::*;
 use serde::{Deserialize, Serialize};
 
-/// Type of LSP request, used to match responses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RequestType {
     Initialize,
@@ -69,34 +55,21 @@ pub enum RequestType {
     Shutdown,
 }
 
-/// Outgoing message to the language server. Variants are 1:1 with the LSP
-/// 3.17 spec; consumers send via [`crate::LspClient::send`] and observe
-/// matching [`LspResponse`] variants on the bridge channel.
-///
-/// Variants carrying an opaque `id: u64` echo it back on their response so
-/// consumers can drop stale results when the user moves on. Variants with
-/// no `id` are fire-and-forget notifications.
+/// Outgoing message to the language server. Variants with `id` echo it back
+/// on their response; variants without are fire-and-forget notifications.
 #[derive(Debug, Clone)]
 pub enum LspMessage {
-    // ─── Lifecycle ────────────────────────────────────────────────────────
     Initialize {
         root_uri: Url,
         capabilities: Box<ClientCapabilities>,
     },
 
-    /// Sent by the transport once `initialize` succeeds. Hosts do not
-    /// usually emit this directly.
     Initialized,
 
-    /// Cancel the in-flight request with the given id. `id` matches the id
-    /// returned at request submission time on the underlying JSON-RPC
-    /// request. async-lsp manages most cancellation via futures, but this
-    /// variant exists for completeness.
     CancelRequest {
         id: u64,
     },
 
-    // ─── Document sync ────────────────────────────────────────────────────
     DidOpen {
         uri: Url,
         language_id: String,
@@ -110,62 +83,45 @@ pub enum LspMessage {
         changes: Vec<TextDocumentContentChangeEvent>,
     },
 
-    /// `text` is included only when the server's `save.includeText` option
-    /// is `true`. Pass `None` otherwise.
+    /// `text` is only `Some` when the server's `save.includeText` is `true`.
     DidSave {
         uri: Url,
         text: Option<String>,
     },
 
-    /// The matching `didOpen` is paired with this notification when a
-    /// document tab closes.
     DidClose {
         uri: Url,
     },
 
-    /// `reason` is one of the `TextDocumentSaveReason` values
-    /// (Manual / AfterDelay / FocusOut).
     WillSave {
         uri: Url,
         reason: TextDocumentSaveReason,
     },
 
-    /// Synchronous variant — the server returns text edits to apply before
-    /// the actual save. `id` echoes back on [`LspResponse::WillSaveWaitUntil`].
     WillSaveWaitUntil {
         uri: Url,
         reason: TextDocumentSaveReason,
         id: u64,
     },
 
-    // ─── Workspace sync ───────────────────────────────────────────────────
-    /// Settings the server should re-read. `settings` is opaque JSON keyed
-    /// however the specific server expects (e.g. rust-analyzer's section
-    /// tree, pyright's `python.analysis.*`).
     DidChangeConfiguration {
         settings: serde_json::Value,
     },
 
-    /// Files that changed outside the editor (git pull, rebase, build
-    /// outputs). Servers expect this to refresh their watchers.
     DidChangeWatchedFiles {
         changes: Vec<FileEvent>,
     },
 
-    /// Multi-root workspace folder set changed.
     DidChangeWorkspaceFolders {
         event: WorkspaceFoldersChangeEvent,
     },
 
-    // ─── Completion / hover / signature ──────────────────────────────────
     Completion {
         uri: Url,
         position: Position,
         id: u64,
     },
 
-    /// Lazy-load completion details (docs, additional edits). Gated on
-    /// `completion_provider.resolve_provider`.
     ResolveCompletionItem {
         item: Box<CompletionItem>,
         id: u64,
@@ -183,7 +139,6 @@ pub enum LspMessage {
         id: u64,
     },
 
-    // ─── Navigation ───────────────────────────────────────────────────────
     GotoDeclaration {
         uri: Url,
         position: Position,
@@ -220,43 +175,32 @@ pub enum LspMessage {
         id: u64,
     },
 
-    /// File-scoped outline. Servers either return a `SymbolInformation[]`
-    /// (flat) or a `DocumentSymbol[]` (hierarchical) — the response carries
-    /// both so consumers pick the shape they want.
     DocumentSymbol {
         uri: Url,
         id: u64,
     },
 
-    /// Workspace-wide symbol query (Cmd+T / Ctrl+T). `query` is the
-    /// substring filter.
     WorkspaceSymbol {
         query: String,
         id: u64,
     },
 
-    /// Some servers (rust-analyzer) return cheap stubs from
-    /// `WorkspaceSymbol` and fill in `Location` lazily here.
     WorkspaceSymbolResolve {
         symbol: WorkspaceSymbol,
         id: u64,
     },
 
-    // ─── Folding / selection ──────────────────────────────────────────────
     FoldingRange {
         uri: Url,
         id: u64,
     },
 
-    /// "Smart expand selection" — server-driven semantic ranges around
-    /// each cursor position.
     SelectionRange {
         uri: Url,
         positions: Vec<Position>,
         id: u64,
     },
 
-    // ─── Code actions / formatting ────────────────────────────────────────
     CodeAction {
         uri: Url,
         range: Range,
@@ -264,8 +208,6 @@ pub enum LspMessage {
         id: u64,
     },
 
-    /// Lazy-resolve the edits / commands inside a `CodeAction` returned
-    /// without an `edit` field.
     CodeActionResolve {
         action: Box<CodeAction>,
         id: u64,
@@ -292,27 +234,22 @@ pub enum LspMessage {
         id: u64,
     },
 
-    /// Execute a server command, usually one returned by a code action.
     ExecuteCommand {
         command: String,
         arguments: Option<Vec<serde_json::Value>>,
     },
 
-    // ─── Inlay hints / decorative ─────────────────────────────────────────
     InlayHint {
         uri: Url,
         range: Range,
         id: u64,
     },
 
-    /// Lazy-resolve inlay hint details (tooltips, command bindings).
     InlayHintResolve {
         hint: InlayHint,
         id: u64,
     },
 
-    /// Clickable spans in the document (URL → goto). Most servers
-    /// implement this for comments containing URIs.
     DocumentLink {
         uri: Url,
         id: u64,
@@ -323,13 +260,11 @@ pub enum LspMessage {
         id: u64,
     },
 
-    /// Color literals (`#fff`, `rgb(...)`) the server can recognize.
     DocumentColor {
         uri: Url,
         id: u64,
     },
 
-    /// Alternate textual presentations for a picked color.
     ColorPresentation {
         uri: Url,
         color: lsp_types::Color,
@@ -337,22 +272,18 @@ pub enum LspMessage {
         id: u64,
     },
 
-    /// Synchronized rename: typing in one part of a tag pair updates the
-    /// other (HTML/JSX-style).
     LinkedEditingRange {
         uri: Url,
         position: Position,
         id: u64,
     },
 
-    /// Symbol-graph identity for code-intel pipelines.
     Moniker {
         uri: Url,
         position: Position,
         id: u64,
     },
 
-    // ─── Rename ───────────────────────────────────────────────────────────
     PrepareRename {
         uri: Url,
         position: Position,
@@ -366,7 +297,6 @@ pub enum LspMessage {
         id: u64,
     },
 
-    // ─── Call hierarchy ───────────────────────────────────────────────────
     PrepareCallHierarchy {
         uri: Url,
         position: Position,
@@ -383,7 +313,6 @@ pub enum LspMessage {
         id: u64,
     },
 
-    // ─── Type hierarchy ──────────────────────────────────────────────────
     PrepareTypeHierarchy {
         uri: Url,
         position: Position,
@@ -400,13 +329,11 @@ pub enum LspMessage {
         id: u64,
     },
 
-    // ─── Semantic tokens ──────────────────────────────────────────────────
     SemanticTokensFull {
         uri: Url,
         id: u64,
     },
 
-    /// Delta encoding from a previous response's `result_id`.
     SemanticTokensFullDelta {
         uri: Url,
         previous_result_id: String,
@@ -419,7 +346,6 @@ pub enum LspMessage {
         id: u64,
     },
 
-    // ─── Pull diagnostics (LSP 3.17) ──────────────────────────────────────
     DocumentDiagnostic {
         uri: Url,
         identifier: Option<String>,
@@ -433,18 +359,7 @@ pub enum LspMessage {
         id: u64,
     },
 
-    // ─── Server-pull responses (host responds to server-initiated requests)
-    //
-    // When the server sends `workspace/configuration`, `workspace/applyEdit`,
-    // `window/showMessageRequest`, `window/showDocument`,
-    // `window/workDoneProgress/create`, `client/registerCapability`, or
-    // `client/unregisterCapability`, the transport surfaces it as a
-    // matching `LspResponse::*Requested` variant carrying a `request_id`.
-    // The host computes its answer and sends one of these `Respond*`
-    // variants back through the same client; the transport pairs `id`
-    // with the suspended JSON-RPC response slot.
-    /// Reply to a `workspace/configuration` request from the server. The
-    /// `items` Vec must match the order of the requested items.
+    /// `items` must match the order of the server's `workspace/configuration` request.
     RespondConfiguration {
         id: u64,
         items: Vec<serde_json::Value>,
@@ -481,43 +396,28 @@ pub enum LspMessage {
         folders: Option<Vec<WorkspaceFolder>>,
     },
 
-    /// Cancel an active progress operation by its token.
     WorkDoneProgressCancel {
         token: ProgressToken,
     },
 
-    // ─── Termination ──────────────────────────────────────────────────────
-    /// Send before [`LspMessage::Exit`] for graceful termination. `id` is
-    /// opaque; the response arrives as [`LspResponse::ShutdownAck`].
     Shutdown {
         id: u64,
     },
 
-    /// Tell the server to exit. Notification — no response.
     Exit,
 }
 
-/// Incoming message from the language server. Variants split into:
-/// - **Responses to client-initiated requests** — carry `id` echoed from the
-///   originating [`LspMessage`].
-/// - **Server-initiated notifications** — diagnostics, log messages,
-///   progress updates. Fire-and-forget on the host side.
-/// - **Server-initiated requests** — variants ending in `Requested` carry
-///   `request_id`; the host must respond with the matching
-///   `LspMessage::Respond*` variant or the server may stall.
+/// Incoming message from the language server. `*Requested` variants carry
+/// `request_id` and require a matching `LspMessage::Respond*` reply.
 #[derive(Debug, Clone)]
 pub enum LspResponse {
     Initialized {
         capabilities: Box<ServerCapabilities>,
     },
 
-    // ─── Notifications from the server ────────────────────────────────────
     Diagnostics {
         uri: Url,
-        /// Server-supplied document version this batch was computed against.
-        /// `None` means the server didn't supply one (older spec). Consumers
-        /// should discard batches whose `version` is older than the client's
-        /// current [`crate::LspDocument::version`].
+        /// `None` if the server omitted it (older spec). Stale versions should be discarded.
         version: Option<i32>,
         diagnostics: Vec<Diagnostic>,
     },
@@ -532,13 +432,11 @@ pub enum LspResponse {
         message: String,
     },
 
-    /// `$/progress` payload. Hosts that don't render progress can ignore.
     Progress {
         token: ProgressToken,
         value: ProgressParamsValue,
     },
 
-    /// `telemetry/event` — opaque JSON payload for analytics.
     Telemetry {
         data: serde_json::Value,
     },
@@ -548,9 +446,6 @@ pub enum LspResponse {
         verbose: Option<String>,
     },
 
-    // ─── Server requests requiring a host reply ──────────────────────────
-    /// Server asks for configuration sections — host inspects `items` and
-    /// replies with [`LspMessage::RespondConfiguration`].
     ConfigurationRequested {
         request_id: u64,
         items: Vec<ConfigurationItem>,
@@ -596,13 +491,11 @@ pub enum LspResponse {
         request_id: u64,
     },
 
-    // ─── Refresh hints (server asks the client to invalidate caches) ─────
     SemanticTokensRefreshRequested,
     InlayHintRefreshRequested,
     CodeLensRefreshRequested,
     DiagnosticsRefreshRequested,
 
-    // ─── Responses keyed by request id ────────────────────────────────────
     Completion {
         id: u64,
         items: Vec<CompletionItem>,
@@ -658,9 +551,6 @@ pub enum LspResponse {
         highlights: Vec<DocumentHighlight>,
     },
 
-    /// Either `SymbolInformation[]` (flat, deprecated but widespread) or
-    /// `DocumentSymbol[]` (hierarchical). Hosts pick whichever shape they
-    /// render; servers only return one.
     DocumentSymbols {
         id: u64,
         flat: Vec<SymbolInformation>,
@@ -827,12 +717,9 @@ pub enum LspResponse {
         id: u64,
     },
 
-    /// Server process exited unexpectedly or its read channel closed
-    /// without an explicit shutdown. Hosts can drop or restart the client.
     Crashed,
 }
 
-/// Code action or command returned by the server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum CodeActionOrCommand {
@@ -840,10 +727,6 @@ pub enum CodeActionOrCommand {
     Command(lsp_types::Command),
 }
 
-/// `workspace/symbol` returns either the legacy `SymbolInformation` shape
-/// or the newer `WorkspaceSymbol` (which carries an opaque `data` payload
-/// for `workspaceSymbol/resolve`). Both are surfaced; hosts pick the shape
-/// they render.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum WorkspaceSymbolResponseItem {
@@ -851,25 +734,11 @@ pub enum WorkspaceSymbolResponseItem {
     Information(SymbolInformation),
 }
 
-// ─── Outbound request message ──────────────────────────────────────────
-//
-// Hosts write `MessageWriter<LspRequest>` to send any LSP request or
-// notification without importing `LspClient` directly. `LspPlugin` wires
-// one observer that routes each message to the right client entity.
-
-/// Wraps an [`LspMessage`] with the target [`LspClient`] entity.
-/// Write with `MessageWriter<LspRequest>`; respond by reading the
-/// matching `Lsp*Response` message.
 #[derive(Message, EntityEvent, Clone, Debug)]
 pub struct LspRequest {
     pub entity: Entity,
     pub msg: LspMessage,
 }
-
-// ─── Bevy messages ─────────────────────────────────────────────────────
-//
-// One per LspResponse variant. Hosts subscribe to whichever they care about.
-// None of these are `Reflect` — the lsp_types payloads aren't.
 
 macro_rules! lsp_msg {
     ($($name:ident { $($field:ident : $ty:ty),* $(,)? }),* $(,)?) => {

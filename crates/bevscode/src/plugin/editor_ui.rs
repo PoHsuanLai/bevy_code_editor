@@ -25,19 +25,12 @@ use bevy_instanced_text::gpu::GlyphAtlas;
 
 use super::{update_bracket_highlight, update_bracket_match};
 
-/// Editor UI plugin: renders line numbers, separator, cursor, selection.
-/// Added automatically by `CodeEditorPlugin`.
 #[derive(Default)]
 pub struct EditorUiPlugin;
 
 impl Plugin for EditorUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_editor_ui.after(EditorSetupSet));
-        // Gutter icons need bevy_resvg's pipeline, which in turn needs
-        // `Assets<Image>` from `bevy::image::ImagePlugin`. Test apps that
-        // omit ImagePlugin (e.g. `MinimalPlugins` setups) will skip icon
-        // rendering — they'd panic on bevy_resvg's `Assets<Image>` access
-        // otherwise.
         if app.is_plugin_added::<bevy::image::ImagePlugin>() {
             if !app.is_plugin_added::<bevy_resvg::plugin::SvgPlugin>() {
                 app.add_plugins(bevy_resvg::plugin::SvgPlugin);
@@ -55,20 +48,10 @@ impl Plugin for EditorUiPlugin {
             );
         }
 
-        // Gutter setup runs every frame because the editor's required
-        // components may not all be present during Startup; idempotent
-        // via its `existing` guard.
         app.add_systems(Update, setup_gutter_text_view);
 
-        // AutoResizeViewport: keep Node::width/height in Val::Px sync with the window.
-        // This runs every frame so window resizes are picked up automatically.
         app.add_systems(Update, sync_node_from_window);
 
-        // Mirror bevscode's `Indentation` into the widget crate's `IndentConfig`
-        // (which the typing/tab handlers read). `Indentation` is the
-        // Monaco-shaped surface; `IndentConfig` is the underlying handler input.
-        // Observer-driven so the schedule has zero per-frame cost — fires
-        // only on the entity that just had `Indentation` inserted or replaced.
         app.add_observer(sync_indent_config_on_change);
         app.add_observer(disable_scroll_beyond_last_line);
 
@@ -77,9 +60,6 @@ impl Plugin for EditorUiPlugin {
         app.add_systems(Update, sync_cursor_icon);
         app.add_systems(Update, sync_automatic_layout);
 
-        // Update separator position when the viewport resizes OR when
-        // the resolved gutter width changes (digit-count grew, glyph
-        // margin toggled, fold controls toggled, …).
         app.add_systems(
             Update,
             update_separator_on_resize.run_if(viewport_or_gutter_changed),
@@ -135,7 +115,6 @@ impl Plugin for EditorUiPlugin {
             super::diagnostic_underlines::update_diagnostic_underlines.in_set(super::RenderingSet),
         );
 
-        // State update stays in Update; overlay producer reads DisplayLayout so it runs in PostUpdate.
         app.add_systems(Update, update_bracket_match.in_set(super::ApplyStateSet));
         app.add_systems(
             PostUpdate,
@@ -218,8 +197,6 @@ fn merge_overlay_components(
     }
 }
 
-/// LSP-enabled variant: same as the base merger, plus
-/// [`DiagnosticUnderlineRects`] folded into `TextOverlays`.
 #[cfg(feature = "lsp")]
 fn merge_overlay_components(
     mut query: Query<
@@ -261,14 +238,6 @@ fn merge_overlay_components(
 #[reflect(Component, Default)]
 pub struct AutoResizeViewport;
 
-/// Keep `Node` pixel size in sync with the primary window for `AutoResizeViewport` editors.
-/// Val::Px is used (not Val::Percent) so Bevy UI layout can resolve the size without
-/// needing a UI camera to compute percentages against.
-/// Set the editor's `Node` to fill 100% of the primary window viewport.
-/// Writes `Val::Vw(100)` / `Val::Vh(100)` once when the marker is first
-/// observed — Bevy's layout pass resolves viewport-relative units against
-/// the live window on every resize, so no explicit resize listener is
-/// needed.
 fn sync_node_from_window(
     mut editors: Query<&mut Node, (With<CodeEditor>, With<AutoResizeViewport>)>,
 ) {
@@ -284,22 +253,8 @@ fn sync_node_from_window(
     }
 }
 
-/// Mirror `Indentation` (Monaco-shaped surface in bevscode) into
-/// `IndentConfig` (the widget-layer Component the Tab / typing handlers
-/// read). Fires on insert *and* on replace of `Indentation`, so the
-/// initial `#[require]` cascade and any later mutation both trip it.
-/// Default `ScrollConfig::scroll_beyond_last_line` to `false` for code
-/// editors. The engine-side default mirrors Monaco (`true`) which is
-/// "park the last line at the top of the viewport" — fine in Monaco
-/// where a scrollbar tells you you've gone past the end, but in a
-/// scrollbar-less embed it just looks like the file scrolled into
-/// nothing. Hosts that want the Monaco behavior can re-enable on the
-/// `ScrollConfig` Component after spawn.
-///
-/// Fires on `CodeEditor` insertion (rather than on `ScrollConfig`
-/// insertion) so the cascade order doesn't matter — by the time
-/// `CodeEditor` is in place, every Component it requires (including
-/// `ScrollConfig` via the `TextEditor` chain) is present.
+/// Defaults `scroll_beyond_last_line` to `false` -- in a scrollbar-less
+/// embed the Monaco default (`true`) scrolls into nothing.
 fn disable_scroll_beyond_last_line(
     trigger: On<bevy::ecs::lifecycle::Insert, CodeEditor>,
     mut editors: Query<&mut bevy_instanced_text_editor::ScrollConfig>,
@@ -343,14 +298,9 @@ fn sync_indent_config_on_change(
     }
 }
 
-/// Marker preventing repeat detection on the same editor after the first run.
 #[derive(Component, Default)]
 struct DetectIndentationDone;
 
-/// Spawn-with-content path: when an editor's `TextBuffer` is inserted with
-/// non-empty content, run detection immediately. The `#[require]`-cascaded
-/// empty buffer hits this with len=0 and is no-op'd; hosts that spawn
-/// `(CodeEditor, TextBuffer::from(content))` get detection at spawn time.
 fn detect_indentation_on_buffer_insert(
     trigger: On<
         bevy::ecs::lifecycle::Insert,
@@ -368,9 +318,6 @@ fn detect_indentation_on_buffer_insert(
     run_detect_indentation(trigger.event().entity, commands, editors);
 }
 
-/// Post-spawn path: hosts that mutate the buffer after spawn (file open via
-/// `set_text`, paste-from-clipboard onto an empty editor) trigger detection
-/// on the first emitted `OnEdit`.
 fn detect_indentation_on_first_edit(
     trigger: On<bevy_instanced_text_editor::OnEdit>,
     commands: Commands,
@@ -450,8 +397,6 @@ fn run_detect_indentation(
     }
 }
 
-/// Toggle [`AutoResizeViewport`] on every `CodeEditor` based on
-/// `Misc::automatic_layout`.
 fn sync_automatic_layout(
     mut commands: Commands,
     editors: Query<
@@ -472,10 +417,6 @@ fn sync_automatic_layout(
     }
 }
 
-/// Mirror the focused editor's `Misc::mouse_style` to the primary window's
-/// [`CursorIcon`]. The OS arrow shows over the gutter; `mouse_style` (the
-/// text cursor, by default) shows over the text area. Unfocused editors
-/// don't drive the OS cursor.
 fn sync_cursor_icon(
     mut commands: Commands,
     input_focus: Res<bevy::input_focus::InputFocus>,
@@ -520,19 +461,8 @@ fn sync_cursor_icon(
     }
 }
 
-/// Resolve every gutter column's width and left-edge for each editor
-/// in one top-down pass, then publish the result as a `GutterConfig`.
-///
-/// Monaco parity (`src/vs/editor/common/config/editorOptions.ts`,
-/// `EditorLayoutInfoComputer.computeLayout`):
-///   `[ pad_l | glyph | numbers | decorations(chevron|bar) | pad_r ]`
-///
-/// The left chain is built strictly left-to-right — a width change in
-/// any upstream band cascades to every downstream `left` in the same
-/// frame, with no per-decoration recomputation downstream.
-///
-/// Runs every frame (not `Changed`-filtered) so async `char_width`
-/// updates from `update_font_metrics` land immediately.
+/// Resolve gutter column widths and left-edges in one left-to-right pass.
+/// Layout: `[ pad_l | glyph | numbers | decorations(chevron|bar) | pad_r ]`.
 fn resolve_gutter_layout(
     mut editors: Query<
         (
@@ -637,11 +567,6 @@ fn resolve_gutter_layout(
     }
 }
 
-/// Mirror `GutterConfig::editor_padding_left` onto the editor's
-/// `Node::padding`, along with the host's vertical padding. Splitting
-/// this out of `resolve_gutter_layout` is what stops `Node.padding.left`
-/// and `GutterContainer.width` from drifting — both now derive from the
-/// same `GutterConfig`.
 fn apply_editor_padding(
     mut editors: Query<
         (&mut Node, &GutterConfig, &crate::settings::Padding),
@@ -667,7 +592,6 @@ fn apply_editor_padding(
     }
 }
 
-/// Setup UI entities (separator) for each `CodeEditor`.
 fn setup_editor_ui(
     mut commands: Commands,
     editor_query: Query<
@@ -766,9 +690,6 @@ fn update_font_metrics(
     }
 }
 
-/// Number of decimal digits required to render `n`. Used to size the
-/// line-numbers band dynamically — Monaco does the same so small files
-/// don't reserve column space for line numbers they'll never reach.
 fn digit_count_for(n: u32) -> u32 {
     let mut digits = 1;
     let mut v = n;

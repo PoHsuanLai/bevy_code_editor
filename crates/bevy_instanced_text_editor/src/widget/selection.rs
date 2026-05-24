@@ -1,8 +1,4 @@
 //! Selection extension handler systems.
-//!
-//! Each `handle_select_*` function is a Bevy system that reads one
-//! `*Requested` event from [`crate::editing_events`] and extends (or clears)
-//! the primary selection on the focused [`crate::TextEditor`] entity.
 
 use crate::cursor_movement::{
     move_cursor, move_cursor_down_display, move_cursor_line_end_display,
@@ -195,21 +191,12 @@ pub fn handle_select_all(
     let Ok((mut sel, _cursor, buffer, _layout)) = q.get_mut(entity) else {
         return;
     };
-    // Cover the entire document with the selection but leave the cursor
-    // (visual caret) at its current position so the viewport doesn't jump
-    // to the end of the buffer. `auto_scroll_to_cursor` reads
-    // `cursor.cursor_pos`; if we don't move it, the scroll offset stays
-    // put. The selection rect renderer is clipped to the visible window
-    // already, so the off-screen extent is free.
+    // Leave cursor in place so auto_scroll_to_cursor doesn't jump the viewport.
     let end = buffer.len_chars();
     sel.selections.set_selection(end, 0);
 }
 
-/// Generic clear-selection — drops secondary cursors first, otherwise
-/// collapses the selection to a single cursor at the head.
-///
-/// Hosts with extra dismissable UI (LSP popups, goto-line dialogs) should
-/// run their own handler ahead of this one and consume the event there.
+/// Drops secondary cursors first; otherwise collapses to a single caret.
 pub fn handle_clear_selection(
     mut events: MessageReader<ClearSelectionRequested>,
     input_focus: Res<InputFocus>,

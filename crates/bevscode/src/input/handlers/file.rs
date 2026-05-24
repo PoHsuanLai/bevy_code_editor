@@ -1,8 +1,4 @@
-//! File / dialog handlers — Save, Open, GotoLine.
-//!
-//! `Save` and `Open` re-emit the existing host-facing `SaveRequested` /
-//! `OpenRequested` events; the dispatch path emits these directly, so the
-//! handlers here only deal with `GotoLine`.
+//! GotoLine dialog handler.
 
 use crate::input::action_events::*;
 use crate::types::*;

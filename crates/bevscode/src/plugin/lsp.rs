@@ -1,24 +1,7 @@
 //! Editor-side LSP adapter plugin.
 //!
-//! Adds the LSP transport (`bevy_lsp::LspPlugin`) plus the editor's sync +
-//! event-listener bridges. The plugin produces popup *data* (see
-//! `lsp_ui::components`) and lets the host render however it wants — see
-//! `examples/lsp.rs` for an `egui` + `armas` reference renderer.
-//!
-//! What this plugin *does* do:
-//! - Register editor-only events (input requests like `CompletionRequested`,
-//!   output events like `NavigateToFileEvent`, `MultipleLocationsEvent`,
-//!   `WorkspaceEditEvent`).
-//! - Drive `process_lsp_messages` (translates `LspResponse` → editor effects:
-//!   move cursor, apply text edits, store hover content).
-//! - Drive `sync_lsp_document` (debounced editor `did_change` notifications).
-//! - Drive `request_inlay_hints` / `request_document_highlights` (cursor- and
-//!   viewport-driven request fanout).
-//! - Drive `tick_lsp_debounce_timers` (Zed-style tiered request debouncing).
-//! - Drive sync systems that materialize state into marker components for the
-//!   host renderer to query.
-//! - Drive event-listener systems that translate editor events into
-//!   `LspMessage::DidChange` / `LspMessage::Completion` / etc.
+//! Bridges editor events to LSP requests, drains responses into per-editor
+//! state, and materializes popup data into Components for the host renderer.
 
 use bevy::prelude::*;
 
@@ -45,27 +28,6 @@ use crate::lsp_ui::systems::{
 use crate::settings::LspConfig;
 use crate::types::CodeEditor;
 
-/// LSP adapter plugin: bridges editor events to LSP requests, drains LSP
-/// responses into editor state, and materializes state into marker components
-/// for the host renderer.
-///
-/// Must be added **after** `CodeEditorPlugin`. The `bevy_lsp::LspPlugin`
-/// transport is added idempotently. The host is responsible for rendering
-/// popups — query the marker components materialized by this plugin's sync
-/// systems; see `examples/lsp.rs` for an egui+armas reference.
-///
-/// # Example
-/// ```no_run
-/// use bevy::prelude::*;
-/// use bevscode::prelude::*;
-/// use bevy_lsp::LspPlugin as LspTransportPlugin;
-///
-/// App::new()
-///     .add_plugins(CodeEditorPlugin)
-///     .add_plugins(LspTransportPlugin)              // transport
-///     .add_plugins(bevscode::plugin::LspPlugin)  // editor adapter
-///     .run();
-/// ```
 pub struct LspPlugin;
 
 impl Default for LspPlugin {
@@ -75,7 +37,6 @@ impl Default for LspPlugin {
 }
 
 impl LspPlugin {
-    /// Create a new LSP plugin
     pub fn new() -> Self {
         Self
     }
@@ -83,23 +44,14 @@ impl LspPlugin {
 
 impl Plugin for LspPlugin {
     fn build(&self, app: &mut App) {
-        // The transport layer lives in `bevy_lsp` (per-entity Components, not
-        // Resources). `bevy_lsp::LspPlugin` is currently a no-op stable API
-        // anchor; we still add it idempotently so future additions there
-        // propagate to hosts that wire only this editor plugin.
         if !app.is_plugin_added::<bevy_lsp::LspPlugin>() {
             app.add_plugins(bevy_lsp::LspPlugin);
         }
 
-        // Editor-side output events (LSP responses → editor effects user code may observe).
         app.add_message::<NavigateToFileEvent>();
         app.add_message::<MultipleLocationsEvent>();
         app.add_message::<WorkspaceEditEvent>();
 
-        // Editor-side input events (user keypress / mouse hover → LSP request).
-        // These are intentionally *editor-side*: they're the host's vocabulary
-        // for "I want a completion at this cursor position", which the listener
-        // systems below translate into bevy_lsp::LspMessage variants.
         app.add_message::<crate::types::events::CompletionRequested>();
         app.add_message::<crate::types::events::HoverRequested>();
         app.add_message::<crate::types::events::RenameRequested>();
@@ -107,12 +59,6 @@ impl Plugin for LspPlugin {
         app.add_message::<crate::types::events::CompletionDismissed>();
         app.add_message::<crate::types::events::CompletionApplied>();
 
-        // Core LSP-driven systems. These query each editor entity for both
-        // editor state (CursorState, TextBuffer<RopeBuffer>) and per-editor LSP
-        // Components (LspClient, LspDocument, popup state, debounce timers).
-        // The `on_lsp_*` systems each consume one outbound message from
-        // `bevy_lsp` and apply it to per-editor Components. They run
-        // in parallel where Bevy's scheduler can prove disjoint mutability.
         app.add_systems(
             Update,
             clear_stale_diagnostics_on_edit.before(on_lsp_diagnostics),
@@ -149,8 +95,6 @@ impl Plugin for LspPlugin {
             ),
         );
 
-        // LSP UI sync systems (state -> marker components).
-        // These always run so hosts can query marker components.
         app.add_systems(
             Update,
             (
@@ -164,10 +108,6 @@ impl Plugin for LspPlugin {
             ),
         );
 
-        // Splice inlay hints into the editor's LineStyles so the engine
-        // shapes them inline with source glyphs. Runs in the same set as
-        // produce_line_styles, ordered after so it sees this frame's
-        // fresh LineStyles write.
         app.add_systems(
             Update,
             splice_inlays_into_line_styles
@@ -175,7 +115,6 @@ impl Plugin for LspPlugin {
                 .in_set(crate::display_map::plugin::LayoutSyncSet),
         );
 
-        // Event listener systems (listen to editor events, fire LSP requests).
         app.add_systems(
             Update,
             (
@@ -194,9 +133,6 @@ impl Plugin for LspPlugin {
             ),
         );
 
-        // Tabstop interception runs before the bevy_instanced_text_editor handler
-        // for `InsertTabRequested` so the session consumes the event
-        // when active. Schedule explicitly via system ordering.
         app.add_systems(
             Update,
             advance_tabstop_session
@@ -205,8 +141,6 @@ impl Plugin for LspPlugin {
     }
 }
 
-/// Mirror each editor's `LspConfig::completion::words_mode` onto its
-/// `LspCompletionPopup` so the popup can gate filtering without re-reading settings.
 fn sync_completion_settings(
     mut query: Query<(&LspConfig, &mut LspCompletionPopup), With<CodeEditor>>,
 ) {
@@ -218,11 +152,6 @@ fn sync_completion_settings(
     }
 }
 
-/// Attach [`bevy_instanced_text_editor::SnapshotPreEdit`] to any editor that has an
-/// `LspDocument`. The marker tells `EditHistoryState::replace_range` to
-/// snapshot the rope before mutating, so `listen_text_edit_events` can
-/// build incremental `did_change` payloads with positions in the
-/// negotiated wire encoding.
 type AttachSnapshotQuery<'w, 's> = Query<
     'w,
     's,

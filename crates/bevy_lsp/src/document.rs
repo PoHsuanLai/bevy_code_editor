@@ -3,13 +3,8 @@
 use bevy_ecs::prelude::*;
 use lsp_types::{TextDocumentContentChangeEvent, Url};
 
-/// One open LSP document, keyed by URI per the protocol.
-///
-/// Attach to the same entity as [`crate::LspClient`]. When the document
-/// content changes, call [`LspDocument::push_change`] or
-/// [`LspDocument::push_full_sync`] — [`crate::LspPlugin`] detects the
-/// mutation via Bevy change detection and sends `textDocument/didChange`
-/// automatically.
+/// One open LSP document. [`crate::LspPlugin`] auto-sends
+/// `textDocument/didChange` on mutation via Bevy change detection.
 #[derive(Component, Debug, Clone)]
 pub struct LspDocument {
     pub uri: Url,
@@ -28,13 +23,10 @@ impl LspDocument {
         }
     }
 
-    /// Queue an incremental change. [`crate::LspPlugin`] will flush it as
-    /// `textDocument/didChange` on the next frame.
     pub fn push_change(&mut self, change: TextDocumentContentChangeEvent) {
         self.pending_changes.push(change);
     }
 
-    /// Queue a full-document sync, discarding any queued incremental changes.
     pub fn push_full_sync(&mut self, text: String) {
         self.pending_changes.clear();
         self.pending_changes.push(TextDocumentContentChangeEvent {

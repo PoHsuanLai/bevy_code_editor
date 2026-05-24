@@ -1,14 +1,5 @@
-//! Per-action handler systems for IDE-specific actions.
-//!
-//! The basic editing handlers (cursor movement, selection, delete / insert,
-//! clipboard, undo / redo) live in [`bevy_instanced_text_editor::handlers`] and are
-//! registered by [`bevy_instanced_text_editor::InstancedTextEditPlugin`]. The handlers in
-//! this module cover IDE-only concerns: multi-cursor, folding, the
-//! goto-line dialog, and LSP request handlers.
-//!
-//! `LspFollowup` runs after every Update frame to mirror the post-action
-//! behavior the legacy `execute_action` had: send `did_change` after edits
-//! and hide / refilter the completion popup on cursor moves.
+//! Per-action handler systems for IDE-specific actions (multi-cursor,
+//! folding, goto-line, LSP requests).
 
 pub mod file;
 pub mod folding;

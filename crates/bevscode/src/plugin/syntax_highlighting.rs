@@ -1,19 +1,4 @@
-//! Editor-side syntax highlighting glue.
-//!
-//! The structural parsing lives in `bevy_tree_sitter`. This module owns the
-//! editor-only pieces:
-//!
-//! - [`EditorSyntaxState`]: a simple Component wrapping `Option<TreeSitterProvider>`
-//!   (the compiled query + cursor). No Arc, no RwLock — it's an ordinary ECS
-//!   component queried directly by the systems that need it.
-//! - `EditorParseSource` / `EditorBufferSnapshot`: bridge between the editor's
-//!   `TextBuffer<RopeBuffer>` and `bevy_tree_sitter`'s `ParseSource` trait. Drives async parses.
-//! - [`init_editor_syntax`]: startup system that attaches `EditorSyntaxState` +
-//!   `ParseSourceComp` + `SyntaxTree` and configures the provider's highlights
-//!   query from a `TreeSitterGrammar` component when one is present.
-//!
-//! `SyntaxTree` (written by `parse_dirty`) is the single source of truth for the
-//! parsed tree. Highlighting queries read from it directly — no mirror system.
+//! Editor-side syntax highlighting glue for tree-sitter.
 
 use crate::text_view::TextBuffer;
 use crate::types::CodeEditor;
@@ -53,14 +38,6 @@ type SyncEditorParseSourceQuery<'w, 's> = Query<
     With<CodeEditor>,
 >;
 
-/// Per-entity Component holding the compiled highlight query provider.
-///
-/// An ordinary ECS component — no Arc, no RwLock. Systems that need it query
-/// `&mut EditorSyntaxState` directly. `SyntaxTree` (written by `parse_dirty`)
-/// is the single source of truth for the parsed tree.
-///
-/// Not reflectable: holds `TreeSitterProvider` which wraps `tree_sitter::*`
-/// types that don't implement `Reflect`.
 #[derive(Component, Default)]
 pub struct EditorSyntaxState {
     pub(crate) provider: Option<bevy_tree_sitter::TreeSitterProvider>,
@@ -292,15 +269,12 @@ fn lines_to_segments(
     out
 }
 
-/// Snapshot of an editor's buffer state for the async parse pipeline.
 #[derive(Default)]
 pub(crate) struct EditorBufferSnapshot {
     pub(crate) rope: ropey::Rope,
     pub(crate) content_version: u64,
 }
 
-/// `ParseSource` impl wired into `bevy_tree_sitter`'s parse pipeline.
-/// Only carries the buffer snapshot — no tree state.
 pub(crate) struct EditorParseSource {
     pub(crate) buf: Arc<RwLock<EditorBufferSnapshot>>,
 }
@@ -315,9 +289,6 @@ impl bevy_tree_sitter::ParseSource for EditorParseSource {
     }
 }
 
-/// On startup, attach `EditorSyntaxState` + `ParseSourceComp` + `SyntaxTree`
-/// to every `CodeEditor` entity. `TreeSitterGrammar`, if present, drives the
-/// initial provider setup.
 pub fn init_editor_syntax(mut commands: Commands, editors: InitEditorSyntaxQuery) {
     for (entity, grammar) in editors.iter() {
         let mut syntax_state = EditorSyntaxState::new();
@@ -340,11 +311,9 @@ pub fn init_editor_syntax(mut commands: Commands, editors: InitEditorSyntaxQuery
     }
 }
 
-/// Per-entity handle to the `EditorBufferSnapshot` the `ParseSource` reads from.
 #[derive(Component)]
 pub(crate) struct EditorParseBufferRef(pub(crate) Arc<RwLock<EditorBufferSnapshot>>);
 
-/// React to a `TreeSitterGrammar` change by (re-)configuring the provider.
 pub(crate) fn react_language_changed(mut editors: ReactLanguageChangedQuery) {
     for (grammar, mut syntax_state) in editors.iter_mut() {
         if let Some(provider) = grammar.create_provider() {
@@ -353,10 +322,6 @@ pub(crate) fn react_language_changed(mut editors: ReactLanguageChangedQuery) {
     }
 }
 
-/// Mirror `TextBuffer<RopeBuffer>` into the per-entity `EditorBufferSnapshot`
-/// so the next `parse_dirty` tick sees the latest content. Bumps an internal
-/// `content_version` counter on every change so `ParseSource::content_version`
-/// keeps returning a strictly-increasing value (tree-sitter cache key).
 pub(crate) fn sync_editor_parse_source(editors: SyncEditorParseSourceQuery) {
     for (buffer, buf_ref) in editors.iter() {
         // `is_changed()` can miss the first observation of a buffer when
@@ -377,11 +342,6 @@ pub(crate) fn sync_editor_parse_source(editors: SyncEditorParseSourceQuery) {
     }
 }
 
-/// Apply edits synchronously to `SyntaxTree::tree` (tree interpolation).
-///
-/// `tree.edit()` shifts byte offsets in O(log n) so highlight queries stay
-/// valid while the async re-parse runs. Reads `TextEdited` events emitted by
-/// the `on_edit_invalidate_caches` observer.
 pub(crate) fn record_edits_for_incremental_parsing(
     mut editor_query: Query<&mut bevy_tree_sitter::SyntaxTree, With<CodeEditor>>,
     mut events: MessageReader<crate::types::events::TextEdited>,
@@ -461,8 +421,6 @@ impl Plugin for SyntaxPlugin {
                     .in_set(crate::plugin::ApplyStateSet)
                     .before(bevy_tree_sitter::ParseSet),
             );
-            // mirror_syntax_tree_to_provider removed: SyntaxTree is the
-            // single source of truth; highlight_range reads it directly.
         }
     }
 }

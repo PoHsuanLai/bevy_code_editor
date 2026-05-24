@@ -1,6 +1,5 @@
-//! LSP client transport. async-lsp over Bevy's smol-based AsyncComputeTaskPool,
-//! with an async-channel bridge from the async side into ECS via
-//! [`LspClient::try_recv`].
+//! LSP client transport over Bevy's `AsyncComputeTaskPool`, with an
+//! async-channel bridge into ECS via [`LspClient::try_recv`].
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -22,9 +21,8 @@ use futures::channel::oneshot;
 use crate::transport::StdioTransport;
 use crate::transport::{LspTransport, MaybeSend};
 
-/// Spawn an async task on Bevy's compute pool. Uses `spawn_local` on wasm32
-/// (single-threaded, where many in-browser handles such as `WebSocket` are
-/// `!Send`) and the thread-pooled `spawn` everywhere else.
+/// Spawn on Bevy's compute pool: `spawn_local` on wasm32 (`!Send` handles),
+/// thread-pooled `spawn` elsewhere.
 fn spawn_task<Fut>(future: Fut) -> Task<()>
 where
     Fut: Future<Output = ()> + MaybeSend + 'static,
@@ -73,26 +71,18 @@ pub(crate) struct InboundReplySlots {
     pub(crate) workspace_folders: ReplySlots<Option<Vec<WorkspaceFolder>>>,
 }
 
-/// Pair with [`crate::LspDocument`] and [`crate::ServerCapabilities`] on the
-/// same entity to bind a server connection to a document.
 #[derive(Component)]
 pub struct LspClient {
     server: Option<ServerSocket>,
     response_tx: async_channel::Sender<LspResponse>,
     response_rx: async_channel::Receiver<LspResponse>,
-    pub(crate) initialized: bool, // set by plugin.rs on LspServerInitialized
-    // Holds the background tasks alive. Dropped on shutdown/drop.
+    pub(crate) initialized: bool,
     _tasks: Vec<Task<()>>,
-    // Messages queued before initialize completes. Drained by plugin.rs on
-    // the frame it processes LspServerInitialized — no Arc<Mutex> needed.
     pub(crate) pre_init_queue: Vec<LspMessage>,
     init_done: Arc<AtomicBool>,
     shutting_down: Arc<AtomicBool>,
     next_inbound_request_id: Arc<AtomicU64>,
     inbound_slots: Arc<InboundReplySlots>,
-    /// Populated by the connect task once the transport reports a PID. `None`
-    /// when the transport has no concept of a local PID (WebSocket, in-browser
-    /// worker). Surfaced in [`InitializeParams::process_id`].
     client_process_id: Arc<OnceLock<Option<u32>>>,
 }
 
@@ -120,21 +110,15 @@ impl LspClient {
         }
     }
 
-    /// Spawn the language server over a stdio subprocess. Convenience for the
-    /// native default; equivalent to [`Self::start_with`] with a
-    /// [`StdioTransport`]. `Err` only on synchronous setup failure (e.g.
-    /// caller asked for an empty command). Connect / async errors surface as
-    /// [`LspResponse::Crashed`].
+    /// Convenience for [`Self::start_with`] with a [`StdioTransport`].
     #[cfg(not(target_arch = "wasm32"))]
     pub fn start(&mut self, command: &str, args: &[&str]) -> std::io::Result<()> {
         self.start_with(StdioTransport::new(command, args.iter().copied()));
         Ok(())
     }
 
-    /// Spawn the language server using `transport`. The async [`LspTransport::connect`]
-    /// call runs on Bevy's task pool; any transport-side failure (failed spawn,
-    /// failed WebSocket handshake, premature exit) is reported by emitting
-    /// [`LspResponse::Crashed`] on this client's response channel.
+    /// Spawn the language server using `transport`. Transport-side failures
+    /// surface as [`LspResponse::Crashed`].
     pub fn start_with<T: LspTransport>(&mut self, transport: T) {
         let bridge_tx = self.response_tx.clone();
         let next_id = self.next_inbound_request_id.clone();
@@ -200,7 +184,6 @@ impl LspClient {
         self.server.is_some()
     }
 
-    /// Queue or dispatch a message. Responses arrive via [`Self::try_recv`].
     pub fn send(&mut self, message: LspMessage) {
         let Some(server) = self.server.as_ref() else {
             #[cfg(debug_assertions)]
@@ -351,8 +334,6 @@ pub(crate) fn text_pos(uri: Url, position: Position) -> TextDocumentPositionPara
 fn build_router(tx: Tx, next_id: Arc<AtomicU64>, slots: Arc<InboundReplySlots>) -> Router<()> {
     let mut router: Router<()> = Router::new(());
 
-    // ─── Notifications ──────────────────────────────────────────────────────
-
     let t = tx.clone();
     router.notification::<PublishDiagnostics>(move |_, params| {
         info!(
@@ -427,8 +408,6 @@ fn build_router(tx: Tx, next_id: Arc<AtomicU64>, slots: Arc<InboundReplySlots>) 
         });
         ControlFlow::Continue(())
     });
-
-    // ─── Server requests requiring host reply ────────────────────────────────
 
     inbound_request::<WorkspaceConfiguration, _>(
         &mut router,
@@ -520,8 +499,6 @@ fn build_router(tx: Tx, next_id: Arc<AtomicU64>, slots: Arc<InboundReplySlots>) 
         tx.clone(),
         |request_id, _params| LspResponse::WorkspaceFoldersRequested { request_id },
     );
-
-    // ─── Refresh requests (no payload, () return) ────────────────────────────
 
     let t = tx.clone();
     router.request::<SemanticTokensRefresh, _>(move |_, _params| {

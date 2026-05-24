@@ -1,16 +1,4 @@
 //! Keyboard and mouse input handling via leafwing-input-manager.
-//!
-//! Two layers:
-//!   1. [`keybindings::EditorAction`] — the leafwing `Actionlike` enum that
-//!      keymaps target. Stays the keymap currency; not consumed directly by
-//!      handlers.
-//!   2. [`action_events`] — one typed `*Requested` event per `EditorAction`
-//!      variant. The [`dispatch::dispatch_action_events`] system fans the
-//!      enum out into events. Editing events (cursor movement, selection,
-//!      delete / insert / clipboard / undo / redo) are defined in and
-//!      handled by [`bevy_instanced_text_editor`]; IDE-only events (multi-cursor,
-//!      folding, LSP, goto-line, save / open) are handled by the per-action
-//!      handler systems under [`handlers`].
 
 pub mod action_events;
 pub mod actions;

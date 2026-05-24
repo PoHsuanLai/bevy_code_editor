@@ -1,11 +1,4 @@
-//! Styled text segment + token types used by the syntax highlighting layer.
-//!
-//! Despite the file name (kept stable to minimize import churn), there is
-//! no `DisplayMap` type here anymore — soft-wrap layout lives entirely in
-//! the engine's `DisplayLayout` (per-row `ShapedLine`s with explicit
-//! `is_wrap_continuation` and `buffer_byte_offset` fields). What remains
-//! are the data interchange types between syntax highlighting and the
-//! display-map producer.
+//! Styled text segment types used by the syntax highlighting layer.
 
 use bevy::prelude::*;
 

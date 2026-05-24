@@ -1,11 +1,8 @@
 //! Tree-sitter syntax highlighter for fenced code blocks.
 //!
-//! Implements [`crate::highlight::CodeHighlighter`] by dispatching the
-//! code block's `lang` tag (` ```rust `, ` ```python `, …) to a bundled
-//! `arborium` grammar. One [`TreeSitterProvider`] is built and cached
-//! per language on first use.
-//!
-//! Hosts install it as a resource:
+//! Dispatches the code block's `lang` tag to a bundled `arborium`
+//! grammar. One [`TreeSitterProvider`] is built and cached per
+//! language on first use.
 //!
 //! ```rust,no_run
 //! use bevy::prelude::*;
@@ -19,11 +16,6 @@
 //! )));
 //! # }
 //! ```
-//!
-//! Language dispatch is based on the lowercase lang tag plus a few common
-//! aliases (`rs` → rust, `ts` → typescript, `py` → python, `sh` → bash).
-//! Unknown languages return no ranges; the renderer falls back to plain
-//! mono text in the theme's default color.
 
 use std::collections::HashMap;
 use std::ops::Range;

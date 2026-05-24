@@ -1,8 +1,4 @@
 //! Convenient re-exports for typical consumer use.
-//!
-//! This module re-exports the *whole* per-variant Bevy message surface so
-//! a host can `use bevy_lsp::prelude::*;` and pick whichever
-//! `MessageReader<Lsp*Response>` they care about.
 
 pub use crate::capabilities::ServerCapabilities;
 pub use crate::client::{LspClient, DEFAULT_REQUEST_TIMEOUT_SECS};

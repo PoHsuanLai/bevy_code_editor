@@ -1,5 +1,3 @@
-//! Convenient re-exports for typical consumer use.
-
 pub use crate::highlight::{highlight_ranges, HighlightRange};
 pub use crate::language::TreeSitterGrammar;
 pub use crate::pipeline::{byte_to_point, ParseSource, ParseSourceComp, SyntaxTree};

@@ -6,7 +6,6 @@ use crate::types::*;
 use bevy_instanced_text_editor::RopeBuffer;
 use ropey::Rope;
 
-/// Move cursor by delta
 pub fn move_cursor(cursor: &mut CursorState, rope: &Rope, delta: isize) {
     if delta < 0 {
         let amount = (-delta) as usize;
@@ -17,7 +16,6 @@ pub fn move_cursor(cursor: &mut CursorState, rope: &Rope, delta: isize) {
     }
 }
 
-/// Find word boundaries around a position and return (start, end).
 pub fn word_at_position(rope: &Rope, pos: usize, separators: &str) -> Option<(usize, usize)> {
     let pos = pos.min(rope.len_chars());
     if pos >= rope.len_chars() {
@@ -35,7 +33,6 @@ pub fn word_at_position(rope: &Rope, pos: usize, separators: &str) -> Option<(us
     }
 }
 
-/// Find the next occurrence of text after a given position
 pub fn find_next_occurrence(rope: &Rope, text: &str, after_pos: usize) -> Option<(usize, usize)> {
     if text.is_empty() {
         return None;
@@ -45,7 +42,6 @@ pub fn find_next_occurrence(rope: &Rope, text: &str, after_pos: usize) -> Option
     let text_len = text_chars.len();
     let rope_len = rope.len_chars();
 
-    // Search from after_pos to end
     let mut pos = after_pos;
     while pos + text_len <= rope_len {
         let mut matches = true;
@@ -61,7 +57,6 @@ pub fn find_next_occurrence(rope: &Rope, text: &str, after_pos: usize) -> Option
         pos += 1;
     }
 
-    // Wrap around and search from beginning to after_pos
     pos = 0;
     while pos + text_len <= after_pos && pos + text_len <= rope_len {
         let mut matches = true;
@@ -80,7 +75,6 @@ pub fn find_next_occurrence(rope: &Rope, text: &str, after_pos: usize) -> Option
     None
 }
 
-/// Add cursor at next occurrence of current selection/word (Ctrl+D behavior)
 pub fn add_cursor_at_next_occurrence(
     sel: &mut SelectionState,
     cursor: &mut CursorState,

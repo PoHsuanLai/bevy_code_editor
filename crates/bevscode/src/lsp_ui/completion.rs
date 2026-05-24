@@ -3,22 +3,16 @@ use bevy::prelude::*;
 use lsp_types::*;
 use std::collections::{HashMap, VecDeque};
 
-/// Default maximum number of visible items in completion popup
 pub const COMPLETION_MAX_VISIBLE_DEFAULT: usize = 10;
 
-/// A word completion item (extracted from document)
 #[derive(Clone, Debug)]
 pub struct WordCompletionItem {
-    /// The word text
     pub word: String,
 }
 
-/// Unified completion item for display (can be LSP or word-based)
 #[derive(Clone, Debug)]
 pub enum UnifiedCompletionItem {
-    /// LSP completion item
     Lsp(Box<CompletionItem>),
-    /// Word from document
     Word(WordCompletionItem),
 }
 
@@ -70,9 +64,6 @@ impl UnifiedCompletionItem {
     }
 }
 
-/// Per-editor completion popup state.
-///
-/// Was `bevy_lsp::CompletionState` (Resource).
 #[derive(Component, Default)]
 pub struct LspCompletionPopup {
     pub visible: bool,
@@ -135,12 +126,10 @@ impl LspCompletionPopup {
         self.resolved.clear();
     }
 
-    /// Ensure the selected item is visible by adjusting scroll_offset
     pub fn ensure_selected_visible(&mut self) {
         self.ensure_selected_visible_with_max(COMPLETION_MAX_VISIBLE_DEFAULT);
     }
 
-    /// Ensure the selected item is visible with a specific max visible count
     pub fn ensure_selected_visible_with_max(&mut self, max_visible: usize) {
         let filtered_count = self.filtered_items().len();
         if filtered_count == 0 {
@@ -148,24 +137,18 @@ impl LspCompletionPopup {
             return;
         }
 
-        // Clamp selected_index to valid range
         self.selected_index = self.selected_index.min(filtered_count.saturating_sub(1));
 
-        // If selected is above visible area, scroll up
         if self.selected_index < self.scroll_offset {
             self.scroll_offset = self.selected_index;
-        }
-        // If selected is below visible area, scroll down
-        else if self.selected_index >= self.scroll_offset + max_visible {
+        } else if self.selected_index >= self.scroll_offset + max_visible {
             self.scroll_offset = self.selected_index - max_visible + 1;
         }
 
-        // Clamp scroll_offset to valid range
         let max_scroll = filtered_count.saturating_sub(max_visible);
         self.scroll_offset = self.scroll_offset.min(max_scroll);
     }
 
-    /// Get filtered items based on current filter text using fuzzy matching
     pub fn filtered_items(&self) -> Vec<UnifiedCompletionItem> {
         use fuzzy_matcher::skim::SkimMatcherV2;
         use fuzzy_matcher::FuzzyMatcher;
@@ -173,7 +156,6 @@ impl LspCompletionPopup {
 
         let matcher = SkimMatcherV2::default();
 
-        // First, filter and score LSP items
         let mut lsp_scored: Vec<(UnifiedCompletionItem, i64)> = if self.filter.is_empty() {
             self.items
                 .iter()
@@ -193,20 +175,16 @@ impl LspCompletionPopup {
                 .collect()
         };
 
-        // Sort LSP items by score (higher is better)
         lsp_scored.sort_by_key(|b| std::cmp::Reverse(b.1));
 
-        // Decide whether to merge buffer-word completions based on the mode.
         let include_words = match self.words_mode {
             WordsCompletionMode::Disabled => false,
             WordsCompletionMode::Always => true,
             WordsCompletionMode::Fallback => self.items.is_empty() || self.is_incomplete,
         };
 
-        // Collect LSP labels to avoid duplicates with word completions
         let lsp_labels: HashSet<&str> = self.items.iter().map(|i| i.label.as_str()).collect();
 
-        // Filter and score word completions (only if filter is not empty)
         let mut word_scored: Vec<(UnifiedCompletionItem, i64)> =
             if !include_words || self.filter.is_empty() {
                 Vec::new()
@@ -222,10 +200,8 @@ impl LspCompletionPopup {
                     .collect()
             };
 
-        // Sort word items by score
         word_scored.sort_by_key(|b| std::cmp::Reverse(b.1));
 
-        // Combine: LSP items first, then word completions
         let mut result: Vec<UnifiedCompletionItem> =
             lsp_scored.into_iter().map(|(item, _)| item).collect();
         result.extend(word_scored.into_iter().map(|(item, _)| item));
@@ -246,11 +222,8 @@ impl LspCompletionPopup {
         let mut seen: HashSet<String> = HashSet::new();
         let mut words: Vec<WordCompletionItem> = Vec::new();
 
-        // Get the word at cursor position (to exclude it)
         let cursor_word = get_word_at_position(rope, cursor_pos);
 
-        // Iterate through the entire document and extract words
-        // OPTIMIZATION: Use rope chunks instead of full to_string() conversion
         let chunk_text: String = rope.chunks().collect();
         let mut word_start: Option<usize> = None;
 
@@ -276,7 +249,6 @@ impl LspCompletionPopup {
             }
         }
 
-        // Handle word at end of text
         if let Some(start) = word_start {
             let word = &chunk_text[start..];
             if word.len() >= 2
@@ -292,7 +264,6 @@ impl LspCompletionPopup {
         self.word_items = words;
     }
 
-    /// Reset completion state
     pub fn reset(&mut self) {
         self.visible = false;
         self.items.clear();
@@ -358,13 +329,11 @@ impl LspCompletionPopup {
     }
 }
 
-/// Get the word at a given character position
 fn get_word_at_position(rope: &ropey::Rope, char_pos: usize) -> Option<String> {
     if char_pos == 0 || char_pos > rope.len_chars() {
         return None;
     }
 
-    // OPTIMIZATION: Work with rope directly instead of converting to string
     let line_idx = rope.char_to_line(char_pos);
     let line = rope.line(line_idx);
     let line_start_char = rope.line_to_char(line_idx);
@@ -372,7 +341,6 @@ fn get_word_at_position(rope: &ropey::Rope, char_pos: usize) -> Option<String> {
 
     let line_text: String = line.chars().collect();
 
-    // Find word boundaries within the line
     let byte_pos_in_line = line_text
         .char_indices()
         .nth(pos_in_line)

@@ -5,7 +5,6 @@ use leafwing_input_manager::prelude::*;
 pub fn default_input_map() -> InputMap<EditorAction> {
     let mut input_map = InputMap::default();
 
-    // Deletion
     input_map.insert(EditorAction::DeleteBackward, KeyCode::Backspace);
     input_map.insert(EditorAction::DeleteForward, KeyCode::Delete);
     input_map.insert(
@@ -17,11 +16,9 @@ pub fn default_input_map() -> InputMap<EditorAction> {
         ButtonlikeChord::new([KeyCode::ControlLeft, KeyCode::Delete]),
     );
 
-    // Special insertion
     input_map.insert(EditorAction::InsertNewline, KeyCode::Enter);
     input_map.insert(EditorAction::InsertTab, KeyCode::Tab);
 
-    // Cursor movement
     input_map.insert(EditorAction::MoveCursorLeft, KeyCode::ArrowLeft);
     input_map.insert(EditorAction::MoveCursorRight, KeyCode::ArrowRight);
     input_map.insert(EditorAction::MoveCursorUp, KeyCode::ArrowUp);
@@ -47,7 +44,6 @@ pub fn default_input_map() -> InputMap<EditorAction> {
     input_map.insert(EditorAction::MoveCursorPageUp, KeyCode::PageUp);
     input_map.insert(EditorAction::MoveCursorPageDown, KeyCode::PageDown);
 
-    // Selection (Shift + movement)
     input_map.insert(
         EditorAction::SelectLeft,
         ButtonlikeChord::new([KeyCode::ShiftLeft, KeyCode::ArrowLeft]),
@@ -90,7 +86,6 @@ pub fn default_input_map() -> InputMap<EditorAction> {
     );
     input_map.insert(EditorAction::ClearSelection, KeyCode::Escape);
 
-    // Clipboard
     input_map.insert(
         EditorAction::Copy,
         ButtonlikeChord::new([KeyCode::ControlLeft, KeyCode::KeyC]),
@@ -104,7 +99,6 @@ pub fn default_input_map() -> InputMap<EditorAction> {
         ButtonlikeChord::new([KeyCode::ControlLeft, KeyCode::KeyV]),
     );
 
-    // Undo/Redo
     input_map.insert(
         EditorAction::Undo,
         ButtonlikeChord::new([KeyCode::ControlLeft, KeyCode::KeyZ]),
@@ -118,20 +112,17 @@ pub fn default_input_map() -> InputMap<EditorAction> {
         ButtonlikeChord::new([KeyCode::ControlLeft, KeyCode::ShiftLeft, KeyCode::KeyZ]),
     );
 
-    // Navigation
     input_map.insert(
         EditorAction::GotoLine,
         ButtonlikeChord::new([KeyCode::ControlLeft, KeyCode::KeyG]),
     );
 
-    // LSP
     input_map.insert(
         EditorAction::RequestCompletion,
         ButtonlikeChord::new([KeyCode::ControlLeft, KeyCode::Space]),
     );
     input_map.insert(EditorAction::RenameSymbol, KeyCode::F2);
 
-    // Multi-cursor
     input_map.insert(
         EditorAction::AddCursorAtNextOccurrence,
         ButtonlikeChord::new([KeyCode::ControlLeft, KeyCode::KeyD]),
@@ -145,7 +136,6 @@ pub fn default_input_map() -> InputMap<EditorAction> {
         ButtonlikeChord::new([KeyCode::ControlLeft, KeyCode::AltLeft, KeyCode::ArrowDown]),
     );
 
-    // Code folding
     input_map.insert(
         EditorAction::ToggleFold,
         ButtonlikeChord::new([
@@ -183,7 +173,6 @@ pub fn default_input_map() -> InputMap<EditorAction> {
         ]),
     );
 
-    // File operations
     input_map.insert(
         EditorAction::Save,
         ButtonlikeChord::new([KeyCode::ControlLeft, KeyCode::KeyS]),
@@ -199,18 +188,15 @@ pub fn default_input_map() -> InputMap<EditorAction> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Reflect, Actionlike)]
 #[reflect(Debug, Hash, PartialEq)]
 pub enum EditorAction {
-    // Deletion
     DeleteBackward,
     DeleteForward,
     DeleteWordBackward,
     DeleteWordForward,
     DeleteLine,
 
-    // Special insertion
     InsertNewline,
     InsertTab,
 
-    // Cursor movement
     MoveCursorLeft,
     MoveCursorRight,
     MoveCursorUp,
@@ -224,7 +210,6 @@ pub enum EditorAction {
     MoveCursorPageUp,
     MoveCursorPageDown,
 
-    // Selection
     SelectLeft,
     SelectRight,
     SelectUp,
@@ -236,37 +221,30 @@ pub enum EditorAction {
     SelectAll,
     ClearSelection,
 
-    // Clipboard
     Copy,
     Cut,
     Paste,
 
-    // Undo/Redo
     Undo,
     Redo,
 
-    // Navigation
     GotoLine,
 
-    // LSP
     RequestCompletion,
     GotoDefinition,
     RenameSymbol,
 
-    // Multi-cursor
     AddCursorAtNextOccurrence,
     AddCursorAbove,
     AddCursorBelow,
     ClearSecondaryCursors,
 
-    // Code folding
     ToggleFold,
     Fold,
     Unfold,
     FoldAll,
     UnfoldAll,
 
-    // File operations — emit events for the host app to handle
     Save,
     Open,
 }

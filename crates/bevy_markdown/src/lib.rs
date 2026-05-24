@@ -1,11 +1,7 @@
 //! CommonMark renderer for `bevy_ui` + `bevy_text`.
 //!
-//! Spawn a [`Markdown`] component on a UI [`Node`]; the plugin's reactive
-//! system rebuilds the entity's children whenever the source string or
-//! any theme component changes. Theme is split into four small
-//! `Component`s ([`MarkdownFonts`], [`MarkdownColors`], [`MarkdownSpacing`],
-//! [`MarkdownScales`]) and any of them not explicitly inserted falls
-//! back to its `Default` via `#[require]`.
+//! Spawn a [`Markdown`] component on a UI [`Node`]; the plugin rebuilds
+//! children whenever the source string or any theme component changes.
 //!
 //! ```rust,no_run
 //! use bevy::prelude::*;
@@ -48,13 +44,8 @@ pub use parse::{parse, Block, Inline, InlineStyle};
 pub use spawn::{spawn_markdown, MarkdownLink};
 pub use theme::{MarkdownColors, MarkdownFonts, MarkdownScales, MarkdownSpacing};
 
-/// Source string to render. The plugin rebuilds children whenever this
-/// component (or any of the required theme components) changes.
-///
-/// The host's `Node` should be a column flex container — children are
-/// stacked vertically. `#[require(Node, ...)]` guarantees every theme
-/// piece exists at default values so a bare `commands.spawn(Markdown { source })`
-/// renders correctly (using Bevy's default font).
+/// Source string to render. Children are rebuilt whenever this
+/// component or any required theme component changes.
 #[derive(Component, Clone, Debug)]
 #[require(Node, MarkdownFonts, MarkdownColors, MarkdownSpacing, MarkdownScales)]
 pub struct Markdown {
@@ -92,25 +83,10 @@ fn rebuild_markdown(
     highlighter: Option<Res<MarkdownHighlighter>>,
 ) {
     for (entity, md, fonts, colors, spacing, scales) in &targets {
-        // The host can despawn the markdown root between when this
-        // system observed `Changed<Markdown>` and when its commands
-        // apply (popup teardown is a common case). Both halves of the
-        // rebuild — despawn-old-children and spawn-new-children — must
-        // skip if the entity is gone at flush time.
-        //
-        // Earlier this only guarded the despawn half with
-        // `queue_silenced`; the `with_children` half queued spawn
-        // commands unconditionally. When the parent was despawned
-        // between this system and command flush, those spawns
-        // succeeded but their `ChildOf(parent)` pointed at a dead
-        // entity. Bevy stripped the relationship one frame later,
-        // leaving parentless `Node`s floating at viewport (0,0)
-        // full-width with no one to despawn them.
-        //
-        // Fix: do the whole rebuild inside one `queue_silenced`
-        // closure so the despawn + respawn are atomic w.r.t. parent
-        // existence. If the entity is gone at flush time, the entire
-        // closure is skipped — no orphan children get spawned.
+        // Whole rebuild runs inside `queue_silenced` so if the host
+        // despawns the markdown root between change-detection and
+        // command flush, the closure is skipped atomically — no
+        // orphan children get spawned at viewport (0,0).
         if commands.get_entity(entity).is_err() {
             continue;
         }
@@ -127,10 +103,8 @@ fn rebuild_markdown(
             .queue_silenced(move |mut e: bevy::ecs::world::EntityWorldMut| {
                 e.despawn_related::<bevy::prelude::Children>();
                 let parent_id = e.id();
-                // `spawn_markdown` is typed against the command-mode
-                // `ChildSpawnerCommands`, so step out to `Commands` via
-                // `world_scope` to get one. Flushing afterwards keeps the
-                // despawn-then-spawn atomic within the closure.
+                // Need `Commands` for `ChildSpawnerCommands`; flush
+                // keeps despawn-then-spawn atomic within the closure.
                 e.world_scope(|world| {
                     let mut cmds = world.commands();
                     cmds.entity(parent_id).with_children(|p| {

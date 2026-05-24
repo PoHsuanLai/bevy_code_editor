@@ -1,8 +1,4 @@
-//! Clipboard handler systems — Copy, Cut, Paste.
-//!
-//! Each `handle_copy/cut/paste` function is a Bevy system that reads one
-//! `*Requested` event and operates on the focused [`crate::TextEditor`] entity
-//! via [`crate::clipboard::ClipboardResource`].
+//! Clipboard handler systems: Copy, Cut, Paste.
 
 use crate::history::EditKind;
 use crate::text::RopeBuffer;

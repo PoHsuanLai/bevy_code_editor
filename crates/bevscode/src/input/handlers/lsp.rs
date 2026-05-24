@@ -1,9 +1,4 @@
-//! LSP-related handlers — RequestCompletion, GotoDefinition, RenameSymbol.
-//!
-//! `GotoDefinition` is keyboard-bindable but currently only fired by
-//! mouse-click; the handler here drains the event for completeness, matching
-//! the pre-refactor `EditorAction::GotoDefinition => { /* handled by mouse */ }`
-//! arm.
+//! LSP-related handlers -- RequestCompletion, GotoDefinition, RenameSymbol.
 
 use crate::input::action_events::*;
 use crate::input::actions::request_completion;

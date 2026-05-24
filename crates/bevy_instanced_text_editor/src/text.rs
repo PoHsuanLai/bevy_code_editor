@@ -1,8 +1,4 @@
 //! Rope-backed [`TextContent`] implementation for editable text views.
-//!
-//! [`RopeBuffer`] wraps a `ropey::Rope` and implements both [`TextContent`]
-//! (so the engine can render it) and `Deref<Target = Rope>` (so all
-//! existing edit call sites that call rope methods directly continue to work).
 
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut, Range};
@@ -11,11 +7,6 @@ use bevy::prelude::*;
 use bevy_instanced_text::TextContent;
 use ropey::Rope;
 
-/// A `ropey::Rope` wrapped as a Bevy `Component` with [`TextContent`] support.
-///
-/// This is the concrete content type for editable text views. Derefs to
-/// `Rope` so all rope call sites (`buf.insert(...)`, `buf.char_to_line(...)`,
-/// etc.) work without changes through `TextBuffer<RopeBuffer>`.
 #[derive(Component, Clone, Default)]
 pub struct RopeBuffer(pub Rope);
 
@@ -24,8 +15,6 @@ impl RopeBuffer {
         Self(Rope::from_str(text))
     }
 
-    /// Access the inner rope. Convenient for call sites that pass `&Rope`
-    /// to helpers like cursor_movement.
     pub fn rope(&self) -> &Rope {
         &self.0
     }

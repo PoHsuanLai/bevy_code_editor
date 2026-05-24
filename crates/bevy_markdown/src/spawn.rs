@@ -1,10 +1,8 @@
-//! Block tree → `bevy_ui` entity tree.
+//! Block tree to `bevy_ui` entity tree.
 //!
-//! Each [`Block`] becomes one flex child of the markdown root, which is
-//! itself a `Column` flex container. Inline runs become `TextSpan`
-//! children of a parent `Text` / heading entity, which is how
-//! `bevy_text` composes multi-style paragraphs (parent `Text` + child
-//! `TextSpan`s, each carrying its own `TextFont` / `TextColor`).
+//! Each [`Block`] becomes a flex child of the markdown root. Inline
+//! runs become `TextSpan` children of a parent `Text` entity (how
+//! `bevy_text` composes multi-style paragraphs).
 
 use bevy::prelude::*;
 
@@ -12,16 +10,11 @@ use crate::highlight::{CodeHighlighter, MarkdownHighlighter, NoHighlight};
 use crate::parse::{parse, Block, Inline, InlineStyle};
 use crate::theme::{MarkdownColors, MarkdownFonts, MarkdownScales, MarkdownSpacing, ThemeRef};
 
-/// Marker attached to the [`TextSpan`] for a link, carrying the href so a
-/// click-handler system can dispatch later.
+/// Href marker on link [`TextSpan`]s for click-handler systems.
 #[derive(Component, Clone, Debug)]
 pub struct MarkdownLink(pub String);
 
-/// Public builder. Parses `source` and spawns the block tree as children
-/// of the current entity. Use from `EntityCommands::with_children`.
-///
-/// `highlighter` defaults to [`NoHighlight`] when `None` — fenced code
-/// blocks then render in the default text color.
+/// `highlighter` defaults to [`NoHighlight`] when `None`.
 pub fn spawn_markdown(
     parent: &mut ChildSpawnerCommands<'_>,
     source: &str,
@@ -370,11 +363,8 @@ fn spawn_inline_span(
             ));
         }
         Inline::Code(code) => {
-            // `TextSpan` doesn't accept a per-span background in bevy
-            // 0.18, so inline code is visually distinguished by mono font
-            // + a slightly muted color (the inline_code_bg color reused
-            // as foreground accent). Hosts that need a true background
-            // can render inline code as wrapped chip nodes instead.
+            // `TextSpan` has no per-span background in Bevy 0.18, so
+            // inline code uses mono font + `inline_code_bg` as foreground.
             parent.spawn((
                 TextSpan::new(code.clone()),
                 TextFont {
@@ -387,8 +377,6 @@ fn spawn_inline_span(
         }
         Inline::Link { href, children } => {
             for child in children {
-                // Style child as text but with link color; recurse so
-                // emphasis inside a link still applies.
                 spawn_link_child(parent, child, theme, size, heading, href);
             }
         }
@@ -451,8 +439,7 @@ fn spawn_link_child(
             ));
         }
         Inline::Link { .. } => {
-            // Nested links are non-standard; treat the inner link's
-            // children as plain link text under the outer href.
+            // Nested links are non-standard; ignored.
         }
         Inline::SoftBreak | Inline::HardBreak => {
             spawn_inline_span(parent, inline, theme, size, heading);
@@ -477,8 +464,6 @@ fn pick_face(style: InlineStyle, fonts: &MarkdownFonts, heading: bool) -> Handle
         }
     }
     if heading {
-        // Heading defaults to bold face when no inline style requested one
-        // — except if no bold face is loaded, fall through to body.
         if let Some(h) = fonts.bold.clone() {
             return h;
         }

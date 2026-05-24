@@ -1,8 +1,4 @@
-//! Typed editing-request events — the public contract between hosts (or the
-//! code editor's leafwing dispatcher) and this crate's editing handlers.
-//!
-//! All events are unit-style structs today. The crate's [`crate::InstancedTextEditPlugin`]
-//! registers them; per-action handler systems consume them.
+//! Typed editing-request events consumed by per-action handler systems.
 
 use bevy::prelude::*;
 
@@ -16,7 +12,6 @@ macro_rules! editing_event {
     };
 }
 
-// Cursor movement (12)
 editing_event!(
     MoveCursorLeftRequested,
     MoveCursorRightRequested,
@@ -32,7 +27,6 @@ editing_event!(
     MoveCursorPageDownRequested,
 );
 
-// Selection (10)
 editing_event!(
     SelectLeftRequested,
     SelectRightRequested,
@@ -46,7 +40,6 @@ editing_event!(
     ClearSelectionRequested,
 );
 
-// Editing (7)
 editing_event!(
     DeleteBackwardRequested,
     DeleteForwardRequested,
@@ -57,13 +50,10 @@ editing_event!(
     InsertTabRequested,
 );
 
-// Clipboard (3)
 editing_event!(CopyRequested, CutRequested, PasteRequested);
 
-// Undo / redo (2)
 editing_event!(UndoRequested, RedoRequested);
 
-/// Replace `[start..end]` (char offsets) with `text` on a specific editor entity.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct ReplaceRangeRequested {
@@ -75,7 +65,6 @@ pub struct ReplaceRangeRequested {
     pub record_history: bool,
 }
 
-/// Replace the entire buffer of an editor entity with `text`. Skips history.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct SetTextRequested {
@@ -83,10 +72,7 @@ pub struct SetTextRequested {
     pub text: String,
 }
 
-/// Outbound: the primary cursor moved this frame. Hosts subscribe to mirror
-/// the caret in a status bar, minimap, breadcrumb trail, or external view.
-/// Emitted at most once per editor per frame; the emitter dedupes against
-/// the previous frame's `cursor_pos`. `from`/`to` are rope char offsets.
+/// Emitted at most once per editor per frame. `from`/`to` are rope char offsets.
 #[derive(Message, Clone, Copy, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct CursorMoved {
@@ -95,19 +81,11 @@ pub struct CursorMoved {
     pub to: usize,
 }
 
-/// Outbound: the selection set changed this frame (added/removed selections,
-/// any anchor or head moved, mode flipped). Emitted at most once per editor
-/// per frame, deduped against the previous frame's selection state. Hosts
-/// rebuild selection-driven UI (find-in-selection counts, highlight overlays
-/// in other panes) on this signal.
+/// Emitted at most once per editor per frame when selections change.
 #[derive(Message, Clone, Debug, Reflect)]
 #[reflect(Clone, Debug)]
 pub struct SelectionChanged {
     pub entity: Entity,
-    /// Number of selections after the change. `1` means a single primary
-    /// caret/range; `>1` means multi-cursor mode.
     pub selection_count: usize,
-    /// Total number of characters covered by all selections (`0` when every
-    /// selection is empty — i.e. just carets).
     pub total_chars_selected: usize,
 }

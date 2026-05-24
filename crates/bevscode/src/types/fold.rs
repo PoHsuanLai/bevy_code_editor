@@ -68,24 +68,19 @@ pub fn goto_line_intercept(
     false
 }
 
-/// Represents a foldable region in the code
 #[derive(Clone, Debug, PartialEq, Eq, Reflect)]
 #[reflect(Debug, PartialEq)]
 pub struct FoldRegion {
-    /// Start line of the foldable region (0-indexed)
+    /// 0-indexed, inclusive.
     pub start_line: usize,
-    /// End line of the foldable region (0-indexed, inclusive)
+    /// 0-indexed, inclusive.
     pub end_line: usize,
-    /// Whether this region is currently folded
     pub is_folded: bool,
-    /// The kind of fold (function, class, block, etc.)
     pub kind: FoldKind,
-    /// Indentation level (for nested folds)
     pub indent_level: usize,
 }
 
 impl FoldRegion {
-    /// Create a new fold region
     pub fn new(start_line: usize, end_line: usize, kind: FoldKind) -> Self {
         Self {
             start_line,
@@ -164,19 +159,15 @@ impl Default for FoldState {
 }
 
 impl FoldState {
-    /// Create a new empty fold state
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Clear all fold regions
     pub fn clear(&mut self) {
         self.regions.clear();
     }
 
-    /// Add a fold region, maintaining sorted order by start_line
     pub fn add_region(&mut self, region: FoldRegion) {
-        // Find insertion point to maintain sorted order
         let pos = self
             .regions
             .iter()
@@ -185,17 +176,14 @@ impl FoldState {
         self.regions.insert(pos, region);
     }
 
-    /// Get the fold region that starts at the given line
     pub fn region_at_line(&self, line: usize) -> Option<&FoldRegion> {
         self.regions.iter().find(|r| r.start_line == line)
     }
 
-    /// Get a mutable reference to the fold region that starts at the given line
     pub fn region_at_line_mut(&mut self, line: usize) -> Option<&mut FoldRegion> {
         self.regions.iter_mut().find(|r| r.start_line == line)
     }
 
-    /// Toggle the fold state of the region at the given line
     pub fn toggle_fold_at_line(&mut self, line: usize) -> bool {
         if let Some(region) = self.region_at_line_mut(line) {
             region.is_folded = !region.is_folded;
@@ -205,7 +193,6 @@ impl FoldState {
         }
     }
 
-    /// Fold the region at the given line
     pub fn fold_at_line(&mut self, line: usize) -> bool {
         if let Some(region) = self.region_at_line_mut(line) {
             if !region.is_folded {
@@ -216,7 +203,6 @@ impl FoldState {
         false
     }
 
-    /// Unfold the region at the given line
     pub fn unfold_at_line(&mut self, line: usize) -> bool {
         if let Some(region) = self.region_at_line_mut(line) {
             if region.is_folded {
@@ -227,38 +213,33 @@ impl FoldState {
         false
     }
 
-    /// Check if a line is hidden by any fold
     pub fn is_line_hidden(&self, line: usize) -> bool {
         self.regions.iter().any(|r| r.hides_line(line))
     }
 
-    /// Check if a line is the start of a foldable region
     pub fn is_foldable_line(&self, line: usize) -> bool {
         self.regions.iter().any(|r| r.start_line == line)
     }
 
-    /// Check if a line is the start of a folded region
     pub fn is_folded_line(&self, line: usize) -> bool {
         self.regions
             .iter()
             .any(|r| r.start_line == line && r.is_folded)
     }
 
-    /// Fold all regions
     pub fn fold_all(&mut self) {
         for region in &mut self.regions {
             region.is_folded = true;
         }
     }
 
-    /// Unfold all regions
     pub fn unfold_all(&mut self) {
         for region in &mut self.regions {
             region.is_folded = false;
         }
     }
 
-    /// Fold all regions at a specific level (0 = top-level functions/classes)
+    /// `level` 0 = top-level functions/classes.
     pub fn fold_level(&mut self, level: usize) {
         for region in &mut self.regions {
             if region.indent_level == level {
@@ -267,7 +248,6 @@ impl FoldState {
         }
     }
 
-    /// Get total number of hidden lines
     pub fn total_hidden_lines(&self) -> usize {
         self.regions
             .iter()
@@ -351,7 +331,6 @@ impl FoldState {
         actual_line - hidden
     }
 
-    /// Get the innermost fold region containing a line (for nested folds)
     pub fn innermost_region_containing(&self, line: usize) -> Option<&FoldRegion> {
         self.regions
             .iter()
@@ -359,7 +338,6 @@ impl FoldState {
             .max_by_key(|r| r.start_line) // The one starting latest is the innermost
     }
 
-    /// Unfold any regions that hide the given line (to reveal it)
     pub fn reveal_line(&mut self, line: usize) {
         for region in &mut self.regions {
             if region.hides_line(line) {

@@ -1,7 +1,4 @@
-//! Editor-core plugin: registers the rope-backed editing systems for any
-//! [`TextEditor`] entity. Pair with [`bevy_instanced_text::InstancedTextPlugins`]
-//! and [`bevy_instanced_text_interaction::InstancedTextInteractionPlugin`] (the latter
-//! is added transitively).
+//! Editor-core plugin: registers rope-backed editing systems for [`TextEditor`] entities.
 
 use bevy::prelude::*;
 use bevy_instanced_text_interaction::{
@@ -19,30 +16,16 @@ type ChangedCursorQuery<'w, 's> =
 type ChangedSelectionQuery<'w, 's> =
     Query<'w, 's, (Entity, &'static SelectionState), (With<TextEditor>, Changed<SelectionState>)>;
 
-/// Set containing the request-handler systems that mutate the rope (insert
-/// newline / tab, delete, replace, set text, undo, redo, clipboard).
-///
-/// Scheduled `.before(EditEmitSet)` so each edit's [`OnEdit`] trigger /
-/// `TextEdited` event reaches downstream consumers in the same frame as the
-/// rope mutation — otherwise systems that key off the edit (line-index
-/// caches, syntax invalidation, LSP did-change) would lag one frame behind
-/// the visible rope state.
+/// Runs before [`EditEmitSet`] so downstream consumers see the edit same-frame.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EditApplySet;
 
-/// Contains `emit_edit_triggers`. Schedule downstream systems `.after(EditEmitSet)`.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EditEmitSet;
 
-/// Editable-text core: typed-char insertion, edit history, undo/redo, clipboard.
-/// Adds [`InstancedTextInteractionPlugin::<RopeBuffer>`] and the renderer
-/// content-type plugin idempotently. Use
-/// [`Self::without_typing_observer()`] when the host handles typing itself
-/// (bracket auto-close, IME, LSP completion triggers).
 #[derive(Clone, Copy, Debug)]
 pub struct InstancedTextEditPlugin {
-    /// When `true`, registers a `FocusedInput<KeyboardInput>` observer that
-    /// inserts printable chars. Set `false` when the host inserts them itself.
+    /// Set `false` when the host handles typed-char insertion itself.
     pub typing_observer: bool,
 }
 
@@ -64,12 +47,7 @@ impl InstancedTextEditPlugin {
 
 impl Plugin for InstancedTextEditPlugin {
     fn build(&self, app: &mut App) {
-        // Pull in the shared interaction layer (clipboard, pointer observers,
-        // caret/selection components) for the RopeBuffer content type.
         app.add_plugins(InstancedTextInteractionPlugin::<RopeBuffer>::default());
-
-        // Register the RopeBuffer content type so TextBuffer<RopeBuffer>
-        // entities participate in layout.
         app.add_plugins(bevy_instanced_text::TextContentPlugin::<RopeBuffer>::default());
 
         app.register_type::<TextEditor>();
@@ -105,8 +83,6 @@ impl Plugin for InstancedTextEditPlugin {
     }
 }
 
-/// Mirrors [`SnapshotPreEdit`] into `EditHistoryState.snapshot_pre_edits` so
-/// `replace_range` can decide to clone without an extra Bevy query.
 fn mirror_snapshot_marker(
     mut q: Query<(&mut EditHistoryState, Has<SnapshotPreEdit>), With<TextEditor>>,
 ) {
@@ -117,7 +93,6 @@ fn mirror_snapshot_marker(
     }
 }
 
-/// Drain pending edit fields into per-entity [`OnEdit`] triggers. Runs once per frame.
 pub fn emit_edit_triggers(
     mut commands: Commands,
     mut q: Query<(Entity, &mut EditHistoryState), With<TextEditor>>,
@@ -136,10 +111,6 @@ pub fn emit_edit_triggers(
     }
 }
 
-/// Compare each editor's `cursor_pos` to the previous frame's, emit one
-/// `CursorMoved` per actual movement. The state's `last_cursor_pos` is the
-/// auto-scroll detector's field; we keep our own tracker so we don't race
-/// with that system's reads.
 pub fn emit_cursor_moved(
     mut writer: MessageWriter<EditorCursorMoved>,
     q: ChangedCursorQuery,
@@ -159,9 +130,6 @@ pub fn emit_cursor_moved(
     last.retain(|e, _| all.get(*e).is_ok());
 }
 
-/// Watch the selection collection for any change (anchor/head/mode/count)
-/// and emit `SelectionChanged`. Hashes the collection's anchored points so
-/// the dedupe survives a re-construction that produces the same selection.
 pub fn emit_selection_changed(
     mut writer: MessageWriter<SelectionChanged>,
     q: ChangedSelectionQuery,
@@ -201,7 +169,6 @@ fn register_editing_events(app: &mut App) {
     }
 
     register!(
-        // Cursor movement
         MoveCursorLeftRequested,
         MoveCursorRightRequested,
         MoveCursorUpRequested,
@@ -214,7 +181,6 @@ fn register_editing_events(app: &mut App) {
         MoveCursorDocumentEndRequested,
         MoveCursorPageUpRequested,
         MoveCursorPageDownRequested,
-        // Selection
         SelectLeftRequested,
         SelectRightRequested,
         SelectUpRequested,
@@ -225,7 +191,6 @@ fn register_editing_events(app: &mut App) {
         SelectLineEndRequested,
         SelectAllRequested,
         ClearSelectionRequested,
-        // Editing
         DeleteBackwardRequested,
         DeleteForwardRequested,
         DeleteWordBackwardRequested,
@@ -233,14 +198,11 @@ fn register_editing_events(app: &mut App) {
         DeleteLineRequested,
         InsertNewlineRequested,
         InsertTabRequested,
-        // Clipboard
         CopyRequested,
         CutRequested,
         PasteRequested,
-        // Undo / redo
         UndoRequested,
         RedoRequested,
-        // Programmatic edits (LSP, completion, formatting, refactoring, host setup)
         ReplaceRangeRequested,
         SetTextRequested,
     );

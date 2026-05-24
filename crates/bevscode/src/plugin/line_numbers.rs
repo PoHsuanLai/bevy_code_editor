@@ -54,13 +54,6 @@ pub(crate) fn setup_gutter_text_view(
             continue;
         }
 
-        // Gutter container: anchored at the editor's top-left, offset
-        // down by `Padding::top` each frame in `sync_gutter_container`
-        // so its content-box origin lines up with the text renderer's
-        // row-0 baseline. `bottom: 0` lets it stretch to the editor's
-        // padding-box bottom; width is tracked alongside `top` each frame.
-        // `overflow: clip` guarantees no child renders past the gutter's
-        // right edge into the code area.
         let mut container_cmds = commands.spawn((
             GutterContainer {
                 editor: editor_entity,
@@ -83,9 +76,6 @@ pub(crate) fn setup_gutter_text_view(
         let container_id = container_cmds.id();
         commands.entity(editor_entity).add_child(container_id);
 
-        // Line-number TextView: child of the container, filling it
-        // (width 100%, height 100%). Padding carves out the digit
-        // content box; `Justify::Right` right-aligns digits inside.
         let mut gutter_cmds = commands.spawn((
             GutterTextView {
                 editor: editor_entity,
@@ -93,13 +83,6 @@ pub(crate) fn setup_gutter_text_view(
             TextBuffer::<TextSpan>::default(),
             font.clone(),
             faces.clone(),
-            // Mirror the editor's `LineHeight` so the gutter's row
-            // stride matches the code area's. Without this, the gutter
-            // inherits the renderer's default (`RelativeToFont(1.2)`)
-            // and digits drift relative to chevrons / decorations by
-            // `(editor_lh - default_lh) * row` — a compounding bug that
-            // looks like a 2-row offset around row 13 for 14px text
-            // with `LineHeight::Px(21)`.
             *line_height,
             TextLayout {
                 justify: Justify::Right,
@@ -207,20 +190,11 @@ pub(crate) fn sync_gutter_text_view(
             continue;
         }
 
-        // `padding.top` lives on `GutterContainer` (see
-        // `sync_gutter_container`) — the TextView fills the container
-        // from y=0 so its row 0 matches the code area's row 0.
         let zero = Val::Px(0.0);
         if g_node.padding.top != zero {
             g_node.padding.top = zero;
         }
 
-        // Monaco layout: bands are flush, no inter-band gap. The
-        // line-numbers TextView fills the container; left padding
-        // skips the (optional) glyph margin and the gutter's left
-        // pad, right padding skips the decorations band and the
-        // gutter's right pad — leaving the digits right-justified
-        // inside the numbers band exactly.
         let target_left = Val::Px(gutter.numbers.left);
         if g_node.padding.left != target_left {
             g_node.padding.left = target_left;
@@ -230,14 +204,11 @@ pub(crate) fn sync_gutter_text_view(
             g_node.padding.right = target_right;
         }
 
-        // Keep default color in sync with theme (theme might change at runtime).
         let default_color = bevy_instanced_text::TextColor(theme.line_numbers);
         if g_color.0 != default_color.0 {
             *g_color = default_color;
         }
 
-        // Mirror the editor's scroll onto the gutter's. The gutter doesn't
-        // animate independently — it tracks the editor's current position.
         if (g_scroll.y - editor_scroll.y).abs() > 1e-4 {
             g_scroll.y = editor_scroll.y;
         }
@@ -266,10 +237,6 @@ pub(crate) fn sync_gutter_text_view(
         let mode = ui.line_numbers;
         let mouseover_chevrons = matches!(folding.show_controls, ShowFoldingControls::Mouseover);
         let always_chevrons = matches!(folding.show_controls, ShowFoldingControls::Always);
-        // Chevrons render as overlay SVG icons (see
-        // `sync_fold_chevron_icons`), not as inline text. The text
-        // buffer holds only the digit string so `Justify::Right`
-        // aligns digits flush against the band's right edge.
         let old_count = if g_buffer.0 .0.is_empty() {
             0
         } else {
@@ -312,11 +279,7 @@ pub(crate) fn sync_gutter_text_view(
             g_buffer.0 = TextSpan(text);
         }
 
-        // Update hidden lines when fold state changes (independent of line count).
         if fold_state.is_changed() || count_stale {
-            // Walk folded regions directly. The previous form scanned every
-            // line and asked each region — O(line_count × regions), which
-            // froze the editor for seconds on large files with many folds.
             let mut hidden: HashSet<usize> = HashSet::new();
             for region in &fold_state.regions {
                 if !region.is_folded {
@@ -331,10 +294,6 @@ pub(crate) fn sync_gutter_text_view(
             *g_hidden = HiddenLines::new(hidden);
         }
 
-        // Per-line styles: active line number color for cursor lines.
-        // Only rewrite g_styles when the set of cursor lines changes — an
-        // unconditional write creates a fresh Arc every frame, triggering
-        // layout_miss_styles in the gutter's produce_layouts on every tick.
         let cursor_lines: HashSet<usize> = sel
             .selections
             .iter()

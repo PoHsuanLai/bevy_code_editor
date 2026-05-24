@@ -1,20 +1,12 @@
 //! Cursor movement and word-boundary helpers.
 //!
-//! Pure rope/cursor functions — no syntax, no folding. Hosts that need
-//! fold-aware movement (the code editor) layer their own movement on top.
-//!
-//! Wrap-aware variants suffixed `_display` accept an optional
-//! [`DisplayLayout`] reference and, when present, walk display rows
-//! instead of buffer lines. They fall back to the rope-only path when
-//! `layout` is `None`, so callers that don't ship a layout get the same
-//! behavior as before. Soft-wrap (`Wrapping::word_wrap != Off`) becomes
-//! correct just by feeding the layout in; nothing else changes.
+//! `_display` variants walk display rows (soft-wrap aware) when given a
+//! [`DisplayLayout`]; they fall back to rope-only movement when `None`.
 
 use bevy_instanced_text::{DisplayLayout, ShapedLine};
 use bevy_instanced_text_interaction::CursorState;
 use ropey::Rope;
 
-/// Move cursor up one line, preserving column offset.
 pub fn move_cursor_up(cursor: &mut CursorState, rope: &Rope) {
     if cursor.cursor_pos > 0 {
         let line_idx = rope.char_to_line(cursor.cursor_pos);
@@ -28,7 +20,6 @@ pub fn move_cursor_up(cursor: &mut CursorState, rope: &Rope) {
     }
 }
 
-/// Move cursor down one line, preserving column offset.
 pub fn move_cursor_down(cursor: &mut CursorState, rope: &Rope) {
     let line_idx = rope.char_to_line(cursor.cursor_pos);
     if line_idx + 1 < rope.len_lines() {
@@ -40,13 +31,11 @@ pub fn move_cursor_down(cursor: &mut CursorState, rope: &Rope) {
     }
 }
 
-/// Move cursor to the first character of the current line.
 pub fn move_cursor_line_start(cursor: &mut CursorState, rope: &Rope) {
     let line_idx = rope.char_to_line(cursor.cursor_pos);
     cursor.cursor_pos = rope.line_to_char(line_idx);
 }
 
-/// Move cursor to the last character of the current line (before the newline).
 pub fn move_cursor_line_end(cursor: &mut CursorState, rope: &Rope) {
     let line_idx = rope.char_to_line(cursor.cursor_pos);
     let line_start = rope.line_to_char(line_idx);
@@ -54,7 +43,6 @@ pub fn move_cursor_line_end(cursor: &mut CursorState, rope: &Rope) {
     cursor.cursor_pos = line_start + line_len.saturating_sub(1);
 }
 
-/// Move cursor by a signed delta, clamped to the rope.
 pub fn move_cursor(cursor: &mut CursorState, rope: &Rope, delta: isize) {
     if delta < 0 {
         let amount = (-delta) as usize;
@@ -82,7 +70,6 @@ fn classify_char(c: char) -> CharClass {
     }
 }
 
-/// Find the start of the previous word (Ctrl+Left, Ctrl+Backspace).
 /// Skips trailing whitespace, then characters of the same class.
 pub fn find_word_boundary_left(rope: &Rope, pos: usize) -> usize {
     if pos == 0 {
@@ -121,7 +108,6 @@ pub fn find_word_boundary_left(rope: &Rope, pos: usize) -> usize {
     current
 }
 
-/// Find the end of the next word (Ctrl+Right, Ctrl+Delete).
 pub fn find_word_boundary_right(rope: &Rope, pos: usize) -> usize {
     let len = rope.len_chars();
     if pos >= len {
@@ -173,20 +159,14 @@ pub fn find_word_boundary_right(rope: &Rope, pos: usize) -> usize {
     current
 }
 
-/// Move cursor to the start of the previous word (Ctrl+Left).
 pub fn move_cursor_word_left(cursor: &mut CursorState, rope: &Rope) {
     cursor.cursor_pos = find_word_boundary_left(rope, cursor.cursor_pos);
 }
 
-/// Move cursor to the end of the next word (Ctrl+Right).
 pub fn move_cursor_word_right(cursor: &mut CursorState, rope: &Rope) {
     cursor.cursor_pos = find_word_boundary_right(rope, cursor.cursor_pos);
 }
 
-/// Wrap-aware [`move_cursor_up`]. With `layout = None` this is the
-/// rope-only path; with a layout, the cursor walks one *display row*
-/// up — moving within a wrapped buffer line instead of jumping past
-/// its continuations.
 pub fn move_cursor_up_display(
     cursor: &mut CursorState,
     rope: &Rope,
@@ -199,7 +179,6 @@ pub fn move_cursor_up_display(
     move_cursor_display_rows(cursor, rope, layout, -1);
 }
 
-/// Wrap-aware [`move_cursor_down`].
 pub fn move_cursor_down_display(
     cursor: &mut CursorState,
     rope: &Rope,
@@ -212,9 +191,7 @@ pub fn move_cursor_down_display(
     move_cursor_display_rows(cursor, rope, layout, 1);
 }
 
-/// Wrap-aware [`move_cursor_line_start`] — goes to the start of the
-/// current *display row*, not the buffer line. Pressing Home on a
-/// wrapped row lands at the row's left edge.
+/// Home lands at the current display row's left edge, not the buffer line start.
 pub fn move_cursor_line_start_display(
     cursor: &mut CursorState,
     rope: &Rope,
@@ -239,9 +216,7 @@ pub fn move_cursor_line_start_display(
         });
 }
 
-/// Wrap-aware [`move_cursor_line_end`] — goes to the end of the current
-/// *display row*. On a wrapped row that doesn't end with a `\n`, lands
-/// just before the wrap break (not at the buffer-line newline).
+/// End lands at the current display row's right edge, not the buffer line end.
 pub fn move_cursor_line_end_display(
     cursor: &mut CursorState,
     rope: &Rope,
@@ -267,7 +242,6 @@ pub fn move_cursor_line_end_display(
     let _ = row; // silence unused warning when display_row not needed downstream
 }
 
-/// Wrap-aware [`move_cursor_lines`] — N display rows up / down.
 pub fn move_cursor_lines_display(
     cursor: &mut CursorState,
     rope: &Rope,
@@ -281,11 +255,7 @@ pub fn move_cursor_lines_display(
     move_cursor_display_rows(cursor, rope, layout, lines);
 }
 
-/// Shared body for the display-row movements: locate the current
-/// display row, compute a target row by adding `delta`, project the
-/// current pixel-x onto the target row, and convert back to a rope
-/// char position. Clamps target outside the layout window to the
-/// nearest visible row.
+/// Projects the cursor's pixel-x onto target display row `cur + delta`.
 fn move_cursor_display_rows(
     cursor: &mut CursorState,
     rope: &Rope,
@@ -318,9 +288,7 @@ fn move_cursor_display_rows(
     cursor.cursor_pos = rope.byte_to_char(abs_byte);
 }
 
-/// Locate `(display_row, byte_in_row, &ShapedLine)` for a cursor char
-/// position. Returns `None` if the cursor's buffer row has no entry in
-/// the layout (off-viewport).
+/// Returns `None` if the cursor's buffer row is off-viewport.
 fn cursor_to_display<'a>(
     cursor_pos: usize,
     rope: &Rope,
@@ -335,8 +303,6 @@ fn cursor_to_display<'a>(
     Some((row, byte_in_row, line))
 }
 
-/// Return the `buffer_byte_offset` of `display_row` in `layout`, or 0 if
-/// not present. Helper for `move_cursor_line_start_display`'s fallback.
 fn row_buffer_byte_offset(layout: &DisplayLayout, display_row: u32) -> usize {
     layout
         .lines
@@ -346,9 +312,6 @@ fn row_buffer_byte_offset(layout: &DisplayLayout, display_row: u32) -> usize {
         .unwrap_or(0)
 }
 
-/// Convert `(display_row, byte_in_row)` back to a rope char position,
-/// using `buffer_row` as a hint for which buffer line the display row
-/// belongs to. Returns `None` if the row isn't in the layout window.
 fn display_row_byte_to_char(
     rope: &Rope,
     layout: &DisplayLayout,
@@ -364,9 +327,6 @@ fn display_row_byte_to_char(
     Some(rope.byte_to_char(abs_byte))
 }
 
-/// Move the cursor `lines` lines up (negative) or down (positive),
-/// preserving the column offset like single-line up/down do. Used by
-/// PageUp / PageDown.
 pub fn move_cursor_lines(cursor: &mut CursorState, rope: &Rope, lines: isize) {
     if lines == 0 {
         return;

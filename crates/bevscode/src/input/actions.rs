@@ -15,19 +15,15 @@ use bevy::log::trace;
 #[cfg(feature = "lsp")]
 use bevy_lsp::{LspDocument, LspMessage, LspRequest};
 
-/// Insert a closing bracket / quote without moving the cursor (auto-close).
 pub fn insert_closing_char(cursor: &CursorState, buffer: &mut TextBuffer<RopeBuffer>, c: char) {
     let cursor_pos = cursor.cursor_pos.min(buffer.len_chars());
     buffer.insert_char(cursor_pos, c);
-    // Mutation through DerefMut auto-bumps Bevy's change detection.
 }
 
-/// Get the closing bracket for an opening bracket.
 pub fn get_closing_bracket(open: char, pairs: &[(char, char)]) -> Option<char> {
     pairs.iter().find(|(o, _)| *o == open).map(|(_, c)| *c)
 }
 
-/// Get the matching quote character (quotes are self-closing).
 pub fn get_closing_quote(c: char) -> Option<char> {
     match c {
         '"' | '\'' | '`' => Some(c),
@@ -66,11 +62,6 @@ pub fn auto_close_allowed(
     }
 }
 
-/// Apply selected completion item.
-///
-/// Emits a `ReplaceRangeRequested` event for the editor entity to apply the
-/// completion through `bevy_instanced_text_editor`'s handler. Pure ECS — no mutable
-/// editor state in the caller.
 #[cfg(feature = "lsp")]
 pub fn apply_completion(
     entity: Entity,
@@ -98,7 +89,6 @@ pub fn apply_completion(
     completion_lc.dismiss();
 }
 
-/// Find the start of the current word (for auto-triggering completion).
 #[cfg(feature = "lsp")]
 pub fn find_word_start(rope: &ropey::Rope, cursor_pos: usize) -> usize {
     if cursor_pos == 0 {
@@ -117,7 +107,6 @@ pub fn find_word_start(rope: &ropey::Rope, cursor_pos: usize) -> usize {
     pos
 }
 
-/// Update the completion filter based on text typed since `start_char_index`.
 #[cfg(feature = "lsp")]
 pub fn update_completion_filter(
     cursor: &CursorState,
@@ -140,7 +129,6 @@ pub fn update_completion_filter(
     }
 }
 
-/// Request completion from LSP.
 #[cfg(feature = "lsp")]
 pub fn request_completion(
     entity: Entity,

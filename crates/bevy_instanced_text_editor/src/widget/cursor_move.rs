@@ -1,9 +1,5 @@
-//! Cursor movement handler systems.
-//!
-//! Each `handle_move_cursor_*` function is a Bevy system that reads one
-//! `*Requested` event from [`crate::editing_events`] and moves the primary
-//! cursor on the focused [`crate::TextEditor`] entity accordingly.
-//! Selection is cleared; use the selection handlers for shift-extended moves.
+//! Cursor movement handler systems. Selection is cleared; use the selection
+//! handlers for shift-extended moves.
 
 use crate::cursor_movement::{
     move_cursor, move_cursor_down_display, move_cursor_line_end_display,
@@ -231,9 +227,7 @@ type PagingView<'w, 's> = Query<
     With<TextEditor>,
 >;
 
-/// Visible-line count for one page jump. Mirrors VS Code / Zed: a
-/// page is the visible line count minus one line of overlap so the
-/// reader keeps a single line of context after the jump.
+/// Visible lines minus one overlap line for context.
 fn page_lines(computed: &ComputedNode, line_height: f32) -> isize {
     if line_height <= 0.0 {
         return 1;

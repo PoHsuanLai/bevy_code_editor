@@ -52,13 +52,6 @@ pub struct EditorTheme {
 
 impl Default for EditorTheme {
     fn default() -> Self {
-        // Surfaces / text / separator / placeholder come from tempera's
-        // shadcn-zinc dark palette so a freshly-spawned editor matches
-        // the rest of the user's tempera-based UI before
-        // `BevscodePalettePlugin`'s sync system has had a chance to run.
-        // Editor-specific fields (cursor, selection, line numbers,
-        // bracket pairs, fold, whitespace, link) have no shadcn
-        // equivalent and keep their tuned values.
         let palette = tempera::theme::ColorPalette::dark();
         Self {
             background: palette.background,
@@ -101,10 +94,6 @@ pub struct DiagnosticColors {
 #[cfg(feature = "lsp")]
 impl Default for DiagnosticColors {
     fn default() -> Self {
-        // Mirror `EditorTheme::default()`: pull from the shadcn-aligned
-        // tempera `DiagnosticTokens` defaults so a freshly-spawned
-        // editor matches the rest of the UI before
-        // `BevscodePalettePlugin`'s sync system has a chance to run.
         let tokens = crate::ui_kit::DiagnosticTokens::default();
         Self {
             error: tokens.error,

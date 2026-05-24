@@ -2,31 +2,13 @@ use bevy::prelude::*;
 
 use crate::backend::SharedWriter;
 
-/// Injects shell integration hooks into a freshly-opened PTY session.
-///
-/// Called once by `TerminalPtyPlugin` right after the PTY opens.
-/// Implementations write whatever bytes are needed to the PTY input —
-/// typically an `eval '...'` wrapped in a bootstrap guard so subshells
-/// don't re-inject.
+/// Injects shell integration hooks (e.g. OSC 133) into a freshly-opened PTY.
 pub trait ShellIntegration: Send + Sync {
     fn inject(&self, pty_input: &SharedWriter);
 }
 
-/// Per-entity shell integration. Insert alongside [`crate::text::BevyTerminal`]
-/// to enable OSC 133 command blocks for that terminal:
-///
-/// ```rust,no_run
-/// # use bevy::prelude::*;
-/// # use bevsterm::prelude::*;
-/// # use bevsterm::shell_integration::{ShellIntegrationComponent, ZshIntegration, auto_detect};
-/// # fn setup(mut commands: Commands) {
-/// // Explicit:
-/// commands.spawn((BevyTerminal, ShellIntegrationComponent::new(ZshIntegration)));
-///
-/// // Auto-detect from $SHELL:
-/// commands.spawn((BevyTerminal, ShellIntegrationComponent::auto()));
-/// # }
-/// ```
+/// Per-entity shell integration. Insert alongside `BevyTerminal` to enable
+/// OSC 133 command blocks.
 #[derive(Component)]
 pub struct ShellIntegrationComponent(pub Box<dyn ShellIntegration>);
 
@@ -40,7 +22,6 @@ impl ShellIntegrationComponent {
     }
 }
 
-/// No-op — the default when no [`ShellIntegrationComponent`] is on the entity.
 pub struct NoIntegration;
 
 impl ShellIntegration for NoIntegration {
@@ -86,8 +67,6 @@ export BEVSTERM_BOOTSTRAPPED=1"#;
     }
 }
 
-/// Detects the shell from `$SHELL` (or the provided program name) and returns
-/// the matching integration. Falls back to [`NoIntegration`] for unknown shells.
 pub fn auto_detect(shell_program: Option<&str>) -> Box<dyn ShellIntegration> {
     let shell = shell_program
         .map(|s| s.to_string())

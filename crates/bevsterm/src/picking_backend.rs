@@ -25,8 +25,7 @@ pub fn on_terminal_block_press(
     let Ok((state, layout, scroll, computed)) = q.get(entity) else {
         return;
     };
-    // Bevy UI hit position: normalized (-0.5,-0.5)→(0.5,0.5) from node center.
-    // Convert to viewport-local logical pixels (0,0 = top-left of node).
+    // Hit position is normalized (-0.5..0.5) from node center.
     let Some(norm) = trigger.event().hit.position.map(|p| Vec2::new(p.x, p.y)) else {
         return;
     };

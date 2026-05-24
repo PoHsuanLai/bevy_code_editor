@@ -10,7 +10,6 @@
 //! `RectOverlay`s into `TextViewOverlays` so they go through the engine's
 //! GPU instanced batch). Click-to-toggle stays wired up via `on_gutter_click`
 //! in `input/mouse.rs` regardless of whether anything is rendered there.
-#![allow(dead_code)]
 
 use crate::text_view::TextBuffer;
 use crate::types::*;
@@ -192,7 +191,6 @@ pub(crate) fn collect_foldable_regions(
 ) {
     let kind = node.kind();
 
-    // Check if this is a function-like or class-like construct that contains a body
     let is_foldable_construct = matches!(
         kind,
         // Function-like constructs
@@ -204,8 +202,7 @@ pub(crate) fn collect_foldable_regions(
         "enum_item" | "interface_declaration" | "trait_item" | "impl_item"
     );
 
-    // Skip block/body nodes that are direct children of foldable constructs
-    // to avoid creating duplicate fold regions at the same line
+    // Skip block/body direct children of foldable constructs to avoid duplicates.
     let skip_this_node = parent_is_foldable_construct
         && matches!(
             kind,
@@ -219,16 +216,13 @@ pub(crate) fn collect_foldable_regions(
         );
 
     if !skip_this_node {
-        // Check if this node is foldable
         if let Some(region) = node_to_fold_region(node, rope) {
-            // Only add regions that span multiple lines
             if region.end_line > region.start_line {
                 regions.push(region);
             }
         }
     }
 
-    // Recursively process children
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         collect_foldable_regions(&child, rope, regions, is_foldable_construct);
@@ -265,10 +259,7 @@ pub(crate) fn node_to_fold_region(
 ) -> Option<FoldRegion> {
     let kind = node.kind();
 
-    // Map tree-sitter node kinds to FoldKind
-    // These mappings work for most languages (Rust, JavaScript, TypeScript, Python, etc.)
     let fold_kind = match kind {
-        // Function-like constructs
         "function_item"
         | "function_definition"
         | "function_declaration"
@@ -279,7 +270,6 @@ pub(crate) fn node_to_fold_region(
         | "lambda"
         | "closure_expression" => Some(FoldKind::Function),
 
-        // Class-like constructs
         "class_definition"
         | "class_declaration"
         | "struct_item"
@@ -288,25 +278,19 @@ pub(crate) fn node_to_fold_region(
         | "trait_item"
         | "impl_item" => Some(FoldKind::Class),
 
-        // Block constructs
         "block" | "compound_statement" | "statement_block" | "if_expression" | "if_statement"
         | "match_expression" | "switch_statement" | "for_statement" | "for_expression"
         | "while_statement" | "while_expression" | "loop_expression" | "try_statement"
         | "catch_clause" | "finally_clause" => Some(FoldKind::Block),
 
-        // Import/use statements (when grouped)
         "use_declaration" | "import_statement" | "import_declaration" => Some(FoldKind::Imports),
 
-        // Comments
         "comment" | "block_comment" | "line_comment" | "doc_comment" => Some(FoldKind::Comment),
 
-        // String literals (multi-line)
         "string_literal" | "raw_string_literal" | "template_string" => Some(FoldKind::Literal),
 
-        // Region markers (e.g., #region in C#)
         "region" | "preproc_region" => Some(FoldKind::Region),
 
-        // Array/object literals (when multi-line)
         "array" | "array_expression" | "object" | "object_expression" | "struct_expression"
         | "tuple_expression" => Some(FoldKind::Other),
 
@@ -317,13 +301,11 @@ pub(crate) fn node_to_fold_region(
         let start_line = fold_start_row_skipping_attributes(node);
         let end_line = node.end_position().row;
 
-        // Bounds check: tree might have stale line numbers after text deletion
         let line_count = rope.len_lines();
         if start_line >= line_count || end_line >= line_count {
             return None;
         }
 
-        // Calculate indent level from the start of the line
         let _line_start = rope.line_to_char(start_line);
         let line = rope.line(start_line);
         let mut indent_level = 0;
@@ -334,7 +316,7 @@ pub(crate) fn node_to_fold_region(
                 _ => break,
             }
         }
-        indent_level /= 4; // Convert to indent levels
+        indent_level /= 4;
 
         Some(FoldRegion {
             start_line,
@@ -416,7 +398,6 @@ pub(crate) fn shift_fold_regions_on_edit(
                     }
                 }
             }
-            // Drop fully-deleted regions; process descending so indices stay valid.
             if !drop_indices.is_empty() {
                 drop_indices.sort_unstable_by(|a, b| b.cmp(a));
                 for i in drop_indices.drain(..) {

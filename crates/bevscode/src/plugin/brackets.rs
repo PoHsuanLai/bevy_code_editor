@@ -1,4 +1,3 @@
-//! Bracket matching and find highlights
 #![allow(dead_code)]
 
 use crate::settings::*;
@@ -43,12 +42,7 @@ type BracketHighlightQuery<'w, 's> = Query<
 pub struct BracketPlugin;
 
 impl Plugin for BracketPlugin {
-    fn build(&self, _app: &mut App) {
-        // `update_bracket_match` (state) and `update_bracket_highlight` (overlay
-        // producer) are scheduled in EditorUiPlugin alongside the other overlay
-        // systems so the indent-guide / bracket-highlight ordering stays local
-        // to that plugin.
-    }
+    fn build(&self, _app: &mut App) {}
 }
 
 pub(crate) fn find_matching_bracket(
@@ -80,7 +74,6 @@ pub(crate) fn find_matching_bracket(
         }
     }
 
-    // Also check character before cursor (common UX pattern)
     if pos > 0 {
         let char_before = rope.char(pos - 1);
         for &(open, close) in bracket_pairs {

@@ -1,15 +1,6 @@
-//! WebSocket transport — for `wasm32-unknown-unknown` Bevy builds running in
-//! the browser, where a stdio subprocess isn't possible.
-//!
-//! ## Wire format
-//!
-//! Each WebSocket message carries raw LSP wire bytes (the `Content-Length`
-//! framed JSON-RPC stream that `async-lsp`'s [`MainLoop::run_buffered`]
-//! produces). The host-side bridge is expected to pipe these bytes verbatim
-//! between the WebSocket and the language server's stdio. A minimal Node /
-//! Rust forwarder is enough — see the wasm LSP example for one.
-//!
-//! [`MainLoop::run_buffered`]: async_lsp::MainLoop::run_buffered
+//! WebSocket transport for `wasm32` Bevy builds. Each message carries raw LSP
+//! wire bytes; the host-side bridge pipes them verbatim to/from the server's
+//! stdio.
 
 use std::collections::VecDeque;
 use std::io;
@@ -28,9 +19,6 @@ use gloo_net::websocket::Message;
 
 use super::{BoxedFuture, LspTransport, TransportHandle};
 
-/// Connect to `url` (e.g. `ws://localhost:9876`). The host on the other end
-/// must be a JSON-RPC forwarder that pipes WebSocket payloads to/from a
-/// language server's stdio.
 pub struct WebSocketTransport {
     url: String,
 }
@@ -204,8 +192,6 @@ mod tests {
 
     wasm_bindgen_test_configure!(run_in_browser);
 
-    /// Bytes pushed into the shared buffer are surfaced verbatim through
-    /// the `AsyncRead` adapter, across multiple WebSocket "messages".
     #[wasm_bindgen_test]
     async fn ws_reader_round_trips_pushed_bytes() {
         let buffer = Arc::new(Mutex::new(SharedReadBuffer::default()));
@@ -223,8 +209,6 @@ mod tests {
         assert_eq!(out, b"Content-Length: 2\r\n\r\nok");
     }
 
-    /// `close()` after the queue drains causes `read_to_end` to terminate
-    /// rather than hang waiting for more bytes.
     #[wasm_bindgen_test]
     async fn ws_reader_terminates_on_close() {
         let buffer = Arc::new(Mutex::new(SharedReadBuffer::default()));

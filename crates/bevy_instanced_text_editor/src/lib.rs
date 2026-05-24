@@ -1,12 +1,6 @@
 #![allow(clippy::type_complexity)]
 
-//! Rope-backed text editor on top of [`bevy_instanced_text`] +
-//! [`bevy_instanced_text_interaction`].
-//!
-//! Spawn a [`TextEditor`] entity with a [`bevy_instanced_text::TextBuffer`]
-//! holding a [`RopeBuffer`]; the crate's plugin wires up edit history,
-//! cursor movement, typed-char insertion, copy/cut/paste, undo/redo, and
-//! anchors. Pair with [`InstancedTextEditPlugin`].
+//! Rope-backed text editor on top of [`bevy_instanced_text`].
 //!
 //! ```rust,no_run
 //! use bevy::prelude::*;
@@ -50,9 +44,6 @@ pub use text_state::{
     SnapshotPreEdit, TextEditor,
 };
 
-// Re-export everything from bevy_instanced_text_interaction so downstream editors
-// (bevscode) can depend on this single crate and still reach the shared
-// interaction primitives (clipboard, selection, caret).
 #[cfg(feature = "arboard")]
 pub use bevy_instanced_text_interaction::SystemClipboard;
 pub use bevy_instanced_text_interaction::{

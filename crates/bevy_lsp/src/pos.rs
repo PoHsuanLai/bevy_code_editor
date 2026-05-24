@@ -5,9 +5,6 @@
 use lsp_types::{Position, Range};
 use ropey::Rope;
 
-/// Code-unit width an LSP position uses on the wire. Servers advertise a
-/// preferred value in `initialize.serverInfo.capabilities.positionEncoding`;
-/// the spec default is UTF-16.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PositionEncoding {
     Utf8,
@@ -17,7 +14,6 @@ pub enum PositionEncoding {
 }
 
 impl PositionEncoding {
-    /// Code-unit count of `c` in this encoding.
     fn units_in(self, c: char) -> usize {
         match self {
             Self::Utf8 => c.len_utf8(),
@@ -27,7 +23,6 @@ impl PositionEncoding {
     }
 }
 
-/// Char offset → LSP `Position`. Clamps `char_offset` to `rope.len_chars()`.
 pub fn rope_char_to_lsp_position(
     rope: &Rope,
     char_offset: usize,
@@ -52,8 +47,6 @@ pub fn rope_byte_to_lsp_position(
     rope_char_to_lsp_position(rope, rope.byte_to_char(byte_offset), encoding)
 }
 
-/// LSP `Range` from a half-open char range `[start, end)`. `end` may equal
-/// `rope.len_chars()`.
 pub fn rope_range_to_lsp_range(
     rope: &Rope,
     start_char: usize,
@@ -66,7 +59,6 @@ pub fn rope_range_to_lsp_range(
     }
 }
 
-/// LSP `Position` → char offset. Clamps the line and the in-line offset.
 pub fn lsp_position_to_rope_char(
     rope: &Rope,
     position: Position,
@@ -97,7 +89,6 @@ pub fn lsp_position_to_rope_byte(
     rope.char_to_byte(char_offset)
 }
 
-/// Sum the encoding units of `[start_char, end_char)` within `rope`.
 fn count_units(
     rope: &Rope,
     start_char: usize,
@@ -119,8 +110,6 @@ fn count_units(
 mod tests {
     use super::*;
 
-    /// Round-trip case: `text`, the char offset to convert, the expected
-    /// `Position` per encoding (utf8, utf16, utf32 character counts).
     struct Case {
         name: &'static str,
         text: &'static str,

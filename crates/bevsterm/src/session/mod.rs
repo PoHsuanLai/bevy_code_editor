@@ -1,6 +1,5 @@
 #![cfg(feature = "pty")]
-//! PTY session lifecycle: deferred open once viewport is known, kill +
-//! thread join on entity removal.
+//! PTY session lifecycle.
 
 use std::io::Read;
 use std::sync::Arc;
@@ -28,14 +27,11 @@ pub(crate) struct ReaderHandle {
     pub pty_master: Mutex<Box<dyn MasterPty + Send>>,
 }
 
-/// Tracks per-entity PTY handles.
 #[derive(Resource, Default)]
 pub struct TerminalEventLoopRegistry {
     pub(crate) handles: HashMap<Entity, ReaderHandle>,
 }
 
-/// Open the PTY for any `BevyTerminal` entity that has a usable viewport + font
-/// but no `TerminalSession` yet. Deferred so the PTY opens at the correct size.
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn open_pending_sessions(
     pending: Query<
@@ -96,8 +92,6 @@ pub fn open_pending_sessions(
     }
 }
 
-/// Forward PTY resize to the master whenever the renderer has already updated
-/// `session.size` (via viewport change or `TerminalResize` message).
 pub fn sync_pty_size(
     q: Query<(Entity, &TerminalSession), Changed<TerminalSession>>,
     registry: Res<TerminalEventLoopRegistry>,
@@ -232,7 +226,6 @@ fn default_shell() -> String {
     }
 }
 
-/// Kill the child process and join the reader thread when a `BevyTerminal` is removed.
 pub fn on_terminal_removed(
     trigger: On<Remove, BevyTerminal>,
     mut registry: ResMut<TerminalEventLoopRegistry>,
@@ -252,7 +245,6 @@ pub fn on_terminal_removed(
     }
 }
 
-/// Register PTY systems on an existing `TerminalPlugin` app.
 pub struct TerminalPtyPlugin;
 
 impl Plugin for TerminalPtyPlugin {
@@ -275,7 +267,6 @@ impl Plugin for TerminalPtyPlugin {
     }
 }
 
-/// Forward a POSIX signal to the PTY child's process group.
 #[cfg(unix)]
 pub fn handle_send_signal(
     mut events: MessageReader<crate::messages::TerminalSendSignal>,

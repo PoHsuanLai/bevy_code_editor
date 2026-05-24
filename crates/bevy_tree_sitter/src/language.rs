@@ -1,14 +1,7 @@
-//! Tree-sitter grammar configuration component.
-
 use crate::tree_sitter::TreeSitterProvider;
 use crate::ts;
 use bevy_ecs::prelude::*;
 
-/// Tree-sitter grammar + highlight query for an entity.
-///
-/// Insert this component to opt into async parsing and highlight queries.
-/// Omit it for plain-text entities.
-///
 /// Not Reflect: `ts::Language` owns FFI-side state.
 #[derive(Component, Clone)]
 pub struct TreeSitterGrammar {
@@ -24,8 +17,7 @@ impl TreeSitterGrammar {
         }
     }
 
-    /// Build a [`TreeSitterProvider`] from this grammar. Returns `None` if the
-    /// highlight query fails to compile.
+    /// Returns `None` if the highlight query fails to compile.
     pub fn create_provider(&self) -> Option<TreeSitterProvider> {
         let mut provider = TreeSitterProvider::new();
         provider

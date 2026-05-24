@@ -35,35 +35,28 @@ pub mod state;
 pub mod sync;
 pub mod systems;
 
-/// Prelude for convenient imports
 pub mod prelude {
-    // Transport-side surface — re-exported from bevy_lsp so consumers don't
-    // have to know that's a separate crate at the import-line level.
     pub use bevy_lsp::{
         CodeActionOrCommand, LspClient, LspDocument, LspMessage, LspResponse, RequestType,
         ServerCapabilities, DEFAULT_REQUEST_TIMEOUT_SECS,
     };
 
-    // Per-editor completion popup state Components.
     pub use super::completion::{
         LspCompletionPopup, UnifiedCompletionItem, WordCompletionItem,
         COMPLETION_MAX_VISIBLE_DEFAULT,
     };
 
-    // Per-editor popup lifecycle Components.
     pub use super::lifecycle::{
         CodeActionsLifecycle, CodeActionsPopupBackref, CompletionLifecycle, CompletionPopupBackref,
         HoverLifecycle, HoverPopupBackref, PopupLifecycleData, PopupObserversAttached,
         RenameLifecycle, RenamePopupBackref, SignatureLifecycle, SignaturePopupBackref,
     };
 
-    // Per-editor LSP UI state Components.
     pub use super::state::{
         LspCodeActionsPopup, LspDebounceTimers, LspDidChangeBatcher, LspDocumentHighlights,
         LspHoverPopup, LspInlayHints, LspRenamePopup, LspSignatureHelpPopup, PendingLspRequest,
     };
 
-    // Editor-coupled UI render-data Components.
     pub use super::components::{
         CodeActionItemData, CodeActionsPopupData, CompletionItemData, CompletionPopupData,
         DocumentHighlightData, HoverPopupData, InlayHintData, InlayHintKind, LspUiElement,
@@ -85,8 +78,6 @@ pub mod prelude {
     };
 }
 
-// Re-export commonly used types at module level for backward compatibility.
-// Transport types come from bevy_lsp; UI types are local.
 pub use bevy_lsp::{
     CodeActionOrCommand, LspClient, LspDocument, LspMessage, LspRequest, LspResponse, RequestType,
     ServerCapabilities,
@@ -107,7 +98,6 @@ pub use systems::{
     sync_lsp_document, DiagnosticMarker, LocationType, MultipleLocationsEvent, NavigateToFileEvent,
 };
 
-/// Reset hover state helper (operates on the per-entity Component).
 pub fn reset_hover_state(hover_state: &mut state::LspHoverPopup) {
     hover_state.reset();
 }

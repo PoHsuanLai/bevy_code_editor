@@ -1,4 +1,4 @@
-//! The only file that names `wezterm_term::*` / `termwiz::*`.
+//! Wezterm / termwiz re-exports and helpers.
 
 use std::io::Write;
 use std::sync::Arc;
@@ -12,8 +12,7 @@ pub use wezterm_term::{
 
 pub use termwiz::input::{KeyCode, KeyboardEncoding, Modifiers as KeyModifiers};
 
-/// `TerminalConfiguration` implementation used when the host does not supply
-/// a custom config. Drives scrollback size, color palette, and keyboard encoding.
+/// Default `TerminalConfiguration` when the host does not supply one.
 #[derive(Debug)]
 pub struct DefaultConfig {
     pub scrollback: usize,
@@ -48,8 +47,6 @@ impl TerminalConfiguration for DefaultConfig {
     }
 }
 
-/// `AlertHandler` implementation that forwards wezterm `Alert` values
-/// (bell, title change, OSC sequences) into a crossbeam channel for the ECS drain.
 pub struct AlertChannel {
     pub tx: crossbeam_channel::Sender<Alert>,
 }
@@ -60,8 +57,7 @@ impl AlertHandler for AlertChannel {
     }
 }
 
-/// Lets both [`Terminal`] (which consumes a `Box<dyn Write>`) and host
-/// systems (via the cloned `Arc`) write into the same PTY input.
+/// Thread-safe PTY input writer, clonable via inner `Arc`.
 #[derive(Clone)]
 pub struct SharedWriter {
     inner: Arc<parking_lot::Mutex<Box<dyn Write + Send>>>,

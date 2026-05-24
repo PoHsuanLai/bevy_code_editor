@@ -1,13 +1,10 @@
-//! Tree-sitter syntax-highlight provider using the low-level `QueryCursor` API.
-
 use crate::highlight::{highlight_ranges, HighlightRange};
 use crate::ts::{Language, Parser, Query, QueryCursor, Tree};
 use ropey::Rope;
 use std::ops::Range;
 use std::sync::Arc;
 
-/// Zero-copy rope reader for `parse_with`. Streams chunks forward; seeking
-/// backwards resets the chunk iterator.
+/// Seeking backwards resets the chunk iterator.
 pub(crate) struct RopeReader<'a> {
     rope: &'a Rope,
     chunks: ropey::iter::Chunks<'a>,
@@ -45,15 +42,12 @@ impl<'a> RopeReader<'a> {
     }
 }
 
-/// Maximum bytes to query at once (matches Zed's heuristic).
-/// Exposed for `bevscode`'s `highlight_range` call site.
+/// Matches Zed's heuristic.
 pub const MAX_BYTES_TO_QUERY_INTERNAL: usize = 16 * 1024;
 
-/// Pure query executor: compiled highlight query + reusable cursor.
-/// Does not own a tree or rope — callers pass those in from `SyntaxTree`.
+/// Compiled highlight query + reusable cursor.
 pub struct TreeSitterProvider {
     query: Option<Query>,
-    /// Intern table indexed by `capture.index`; cloning is a refcount bump.
     capture_names: Vec<Arc<str>>,
     query_cursor: QueryCursor,
 }
@@ -67,7 +61,6 @@ impl TreeSitterProvider {
         }
     }
 
-    /// Compile a highlight query for `language`.
     pub fn set_query(
         &mut self,
         query_source: &str,
@@ -83,30 +76,22 @@ impl TreeSitterProvider {
         Ok(())
     }
 
-    /// True when a highlight query is compiled and ready.
     pub fn is_available(&self) -> bool {
         self.query.is_some()
     }
 
-    /// Access the compiled query (for callers that call `highlight_ranges` directly).
     pub fn query(&self) -> Option<&Query> {
         self.query.as_ref()
     }
 
-    /// Interned capture names slice.
     pub fn capture_names(&self) -> &[Arc<str>] {
         &self.capture_names
     }
 
-    /// Mutable access to the reusable query cursor.
     pub fn query_cursor_mut(&mut self) -> &mut QueryCursor {
         &mut self.query_cursor
     }
 
-    /// Query `tree`/`rope` for highlights in `byte_range`.
-    ///
-    /// Returns `None` when no query is compiled. Callers fall back to plain
-    /// text styling on `None`.
     pub fn highlight_range(
         &mut self,
         tree: &Tree,
@@ -133,7 +118,6 @@ impl Default for TreeSitterProvider {
     }
 }
 
-/// Build a `Parser` for `language`. Used by the async parse pipeline.
 pub(crate) fn build_parser(language: &Language) -> Option<Parser> {
     let mut parser = Parser::new();
     parser.set_language(language).ok()?;

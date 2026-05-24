@@ -44,12 +44,7 @@ use bevy_instanced_text_editor::{BlinkPhase, EditDelta, EditPoint, RopeBuffer};
 use bevy_tree_sitter::{SyntaxTree, TreeSitterGrammar, TreeSitterPlugin};
 use std::time::{Duration, Instant};
 
-// ── Shared helpers ───────────────────────────────────────────────────────
-
-/// Build a test app with the minimum plugins needed to drive the syntax /
-/// layout pipeline headlessly: `TreeSitterPlugin`, `SyntaxPlugin`, and
-/// `DisplayMapPlugin`, with the same `Update` set ordering `CodeEditorPlugin`
-/// configures in production.
+/// Build a headless test app with the minimum plugins for syntax / layout.
 fn make_test_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins.build().disable::<TimePlugin>());
@@ -454,8 +449,6 @@ fn assert_pipeline_consistent_for_keyword(
         stale_rows,
     );
 }
-
-// ── Tests ────────────────────────────────────────────────────────────────
 
 /// Smoke check: after Startup, the editor entity should have both
 /// `EditorSyntaxState` (with a usable provider) and `SyntaxTree`.
