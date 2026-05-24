@@ -23,9 +23,9 @@ bevy_log = "0.18"
 bevy_tasks = "0.18"
 bevy_camera = "0.18"
 
-# In-workspace bevy_instanced_text family (sibling repo).
-bevy_instanced_text = { path = "../bevy_instanced_text/crates/bevy_instanced_text", version = "0.1.1" }
-bevy_instanced_text_interaction = { path = "../bevy_instanced_text/crates/bevy_instanced_text_interaction", version = "0.1.1", default-features = false }
+# In-workspace bevy_instanced_text family.
+bevy_instanced_text = { git = "https://github.com/PoHsuanLai/bevy_instanced_text.git", rev = "51220b7" }
+bevy_instanced_text_interaction = { git = "https://github.com/PoHsuanLai/bevy_instanced_text.git", rev = "51220b7", default-features = false }
 
 # Shared third-party crates with 2+ callers.
 ropey = "1.6"
