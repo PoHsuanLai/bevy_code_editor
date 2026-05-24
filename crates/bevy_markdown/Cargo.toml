@@ -10,7 +10,7 @@ keywords = ["bevy", "markdown", "commonmark", "ui", "lsp"]
 categories = ["game-development", "rendering", "text-processing"]
 
 [dependencies]
-bevy = { version = "0.18", default-features = false, features = [
+bevy = { workspace = true, features = [
     "bevy_asset",
     "bevy_color",
     "bevy_render",
@@ -39,10 +39,10 @@ bevy_tree_sitter = { path = "../bevy_tree_sitter", version = "0.1.1", features =
     "lang-css",
     "lang-markdown",
 ] }
-ropey = "1.6"
+ropey = { workspace = true }
 
 [dev-dependencies]
-bevy = { version = "0.18", default-features = false, features = [
+bevy = { workspace = true, features = [
     "ui",
     "bevy_text",
     "default_font",

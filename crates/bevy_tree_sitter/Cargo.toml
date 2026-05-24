@@ -11,14 +11,14 @@ keywords = ["bevy", "tree-sitter", "syntax", "parsing"]
 categories = ["game-development", "parser-implementations"]
 
 [dependencies]
-bevy_app = "0.18"
-bevy_ecs = "0.18"
-bevy_log = "0.18"
-bevy_tasks = "0.18"
+bevy_app = { workspace = true }
+bevy_ecs = { workspace = true }
+bevy_log = { workspace = true }
+bevy_tasks = { workspace = true }
 
 arborium = { version = "2.17", default-features = false }
 streaming-iterator = "0.1"
-ropey = "1.6"
+ropey = { workspace = true }
 futures-lite = "2.5"
 
 [features]

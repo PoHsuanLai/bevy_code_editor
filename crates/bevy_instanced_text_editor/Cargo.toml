@@ -17,10 +17,10 @@ arboard = ["bevy_instanced_text_interaction/arboard"]
 clipboard-wasm = ["bevy_instanced_text_interaction/clipboard-wasm"]
 
 [dependencies]
-bevy_instanced_text = { path = "../../../bevy_instanced_text/crates/bevy_instanced_text", version = "0.1.1" }
-bevy_instanced_text_interaction = { path = "../../../bevy_instanced_text/crates/bevy_instanced_text_interaction", version = "0.1.1", default-features = false }
+bevy_instanced_text = { workspace = true }
+bevy_instanced_text_interaction = { workspace = true }
 
-bevy = { version = "0.18", default-features = false, features = [
+bevy = { workspace = true, features = [
     "bevy_render",
     "bevy_core_pipeline",
     "bevy_asset",
@@ -36,8 +36,8 @@ bevy = { version = "0.18", default-features = false, features = [
     "bevy_ui",
 ] }
 
-ropey = "1.6"
-serde = { version = "1.0", features = ["derive"] }
+ropey = { workspace = true }
+serde = { workspace = true }
 
 [dev-dependencies]
-bevy = { version = "0.18", default-features = false, features = ["bevy_window", "bevy_winit"] }
+bevy = { workspace = true, features = ["bevy_window", "bevy_winit"] }

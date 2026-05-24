@@ -6,7 +6,7 @@ publish = false
 description = "Workspace examples for the bevscode family of crates."
 
 [dependencies]
-bevy = { version = "0.18", default-features = false, features = [
+bevy = { workspace = true, features = [
     "bevy_render",
     "bevy_core_pipeline",
     "bevy_asset",
@@ -25,9 +25,9 @@ bevy = { version = "0.18", default-features = false, features = [
     "bevy_log",
     "multi_threaded",
 ] }
-bevy_camera = "0.18"
+bevy_camera = { workspace = true }
 
-bevy_instanced_text = { path = "../../bevy_instanced_text/crates/bevy_instanced_text" }
+bevy_instanced_text = { workspace = true }
 bevy_instanced_text_editor = { path = "../crates/bevy_instanced_text_editor" }
 bevscode = { path = "../crates/bevscode" }
 bevsterm = { path = "../crates/bevsterm" }
@@ -37,7 +37,7 @@ bevy_lsp = { path = "../crates/bevy_lsp", optional = true }
 # Used by editor_lsp.
 bevy_egui = { version = "0.39", features = ["picking"], optional = true }
 armas = { git = "https://github.com/PoHsuanLai/Armas.git", default-features = false, features = ["basic"], optional = true }
-lsp-types = { version = "0.95", optional = true }
+lsp-types = { workspace = true, optional = true }
 
 [features]
 default = []
