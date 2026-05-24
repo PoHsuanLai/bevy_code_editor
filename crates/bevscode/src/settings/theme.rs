@@ -101,11 +101,16 @@ pub struct DiagnosticColors {
 #[cfg(feature = "lsp")]
 impl Default for DiagnosticColors {
     fn default() -> Self {
+        // Mirror `EditorTheme::default()`: pull from the shadcn-aligned
+        // tempera `DiagnosticTokens` defaults so a freshly-spawned
+        // editor matches the rest of the UI before
+        // `BevscodePalettePlugin`'s sync system has a chance to run.
+        let tokens = crate::ui_kit::DiagnosticTokens::default();
         Self {
-            error: Color::srgb(0.976, 0.298, 0.298),
-            warning: Color::srgb(0.804, 0.667, 0.0),
-            info: Color::srgb(0.294, 0.678, 0.961),
-            hint: Color::srgb(0.675, 0.675, 0.675),
+            error: tokens.error,
+            warning: tokens.warning,
+            info: tokens.info,
+            hint: tokens.hint,
         }
     }
 }

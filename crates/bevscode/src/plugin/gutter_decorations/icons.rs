@@ -25,7 +25,6 @@ const SVG_INFO: &[u8] = include_bytes!("../../../assets/icons/info.svg");
 const SVG_LIGHT_BULB: &[u8] = include_bytes!("../../../assets/icons/light-bulb.svg");
 const SVG_DIFF_REMOVED: &[u8] = include_bytes!("../../../assets/icons/diff-removed.svg");
 const SVG_CHEVRON_DOWN: &[u8] = include_bytes!("../../../assets/icons/chevron-down.svg");
-const SVG_CHEVRON_RIGHT: &[u8] = include_bytes!("../../../assets/icons/chevron-right.svg");
 
 /// Rasterised icon handles, populated once at plugin PreStartup.
 #[derive(Resource, Default, Clone)]
@@ -38,7 +37,6 @@ pub struct IconAtlas {
     pub diag_hint: Handle<SvgFile>,
     pub diff_removed: Handle<SvgFile>,
     pub chevron_down: Handle<SvgFile>,
-    pub chevron_right: Handle<SvgFile>,
 }
 
 impl IconAtlas {
@@ -98,7 +96,6 @@ pub(crate) fn setup_icon_atlas(mut commands: Commands, mut svgs: ResMut<Assets<S
         diag_hint: bake_icon(&mut svgs, SVG_LIGHT_BULB),
         diff_removed: bake_icon(&mut svgs, SVG_DIFF_REMOVED),
         chevron_down: bake_icon(&mut svgs, SVG_CHEVRON_DOWN),
-        chevron_right: bake_icon(&mut svgs, SVG_CHEVRON_RIGHT),
     };
     commands.insert_resource(atlas);
 }

@@ -13,6 +13,7 @@ use bevy_resvg::prelude::*;
 
 use crate::settings::{EditorUi, GutterConfig, Padding};
 use crate::types::{CodeEditor, GutterContainer};
+use crate::ui_kit::GutterTokens;
 
 use super::bars::{DecorationKind, GutterDecorations};
 use super::common::{diff_place, group_pools_by_editor, RowGeometry};
@@ -66,6 +67,7 @@ pub struct GutterIcon {
 pub(crate) fn sync_gutter_icons(
     mut commands: Commands,
     atlas: Option<Res<IconAtlas>>,
+    tokens: Option<Res<GutterTokens>>,
     editors: Query<
         (
             Entity,
@@ -93,6 +95,7 @@ pub(crate) fn sync_gutter_icons(
     let Some(atlas) = atlas else {
         return;
     };
+    let tokens = tokens.map(|t| t.clone()).unwrap_or_default();
 
     let mut by_editor = group_pools_by_editor(
         existing.iter().map(|(id, gi, ..)| (id, gi)),
@@ -137,7 +140,8 @@ pub(crate) fn sync_gutter_icons(
             let handle = handle.clone();
 
             if let Some(geom) = geom {
-                let icon_size = (gutter.glyph_margin_width.min(geom.line_height_px) * 0.6)
+                let icon_size = (gutter.glyph_margin_width.min(geom.line_height_px)
+                    * tokens.glyph_icon_scale)
                     .round()
                     .max(8.0);
                 let nudge_right = (geom.line_height_px * 0.2).round();

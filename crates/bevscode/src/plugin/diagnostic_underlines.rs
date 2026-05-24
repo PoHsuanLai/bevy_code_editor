@@ -25,6 +25,7 @@ use lsp_types::DiagnosticSeverity;
 use crate::lsp_ui::systems::DiagnosticMarker;
 use crate::settings::{DiagnosticColors, EditorUi, Padding, RenderSettings, RenderValidationDecorations};
 use crate::types::{CodeEditor, FoldState};
+use crate::ui_kit::DiagnosticTokens;
 
 /// Wavy underline overlays per visible diagnostic — written by
 /// `update_diagnostic_underlines`, merged into `TextOverlays` by
@@ -33,7 +34,6 @@ use crate::types::{CodeEditor, FoldState};
 #[reflect(Component, Default)]
 pub struct DiagnosticUnderlineRects(pub Vec<RectOverlay>);
 
-const SQUIGGLE_THICKNESS: f32 = 1.5;
 /// Logical-px width of each pill in the wave. The system passes the
 /// inverse DPI factor so the on-screen width stays stable on hi-DPI.
 const SQUIGGLE_TOOTH_PX: f32 = 1.5;
@@ -43,13 +43,11 @@ const SQUIGGLE_BASE_GAP: f32 = 1.0;
 const SQUIGGLE_AMPLITUDE_PX: f32 = 1.25;
 /// Pills per full sinusoidal period (down → up → down).
 const SQUIGGLE_TEETH_PER_PERIOD: usize = 6;
-/// Alpha multiplier applied to the diagnostic colour so the wave
-/// recedes slightly under the text instead of dominating.
-const SQUIGGLE_ALPHA: f32 = 0.85;
 
 #[allow(clippy::type_complexity)]
 pub(crate) fn update_diagnostic_underlines(
     diagnostics: Query<&DiagnosticMarker>,
+    tokens: Option<Res<DiagnosticTokens>>,
     mut editors: Query<
         (
             &TextBuffer<RopeBuffer>,
@@ -71,6 +69,7 @@ pub(crate) fn update_diagnostic_underlines(
         With<CodeEditor>,
     >,
 ) {
+    let tokens = tokens.map(|t| t.clone()).unwrap_or_default();
     for (
         buffer,
         fold,
@@ -177,7 +176,7 @@ pub(crate) fn update_diagnostic_underlines(
             let color = color_for(d.severity, colors);
 
             if start_row == end_row {
-                push_squiggle(&mut new_rects, start_row, start_x..end_x, color, inv);
+                push_squiggle(&mut new_rects, start_row, start_x..end_x, color, inv, &tokens);
             } else {
                 let start_row_end = layout
                     .lines
@@ -185,11 +184,25 @@ pub(crate) fn update_diagnostic_underlines(
                     .find(|l| l.display_row == start_row)
                     .and_then(|l| layout.x_at_byte(start_row, l.text.len()))
                     .unwrap_or(end_char as f32 * char_width);
-                push_squiggle(&mut new_rects, start_row, start_x..start_row_end, color, inv);
+                push_squiggle(
+                    &mut new_rects,
+                    start_row,
+                    start_x..start_row_end,
+                    color,
+                    inv,
+                    &tokens,
+                );
                 for r in (start_row + 1)..end_row {
-                    push_squiggle(&mut new_rects, r, 0.0..start_row_end, color, inv);
+                    push_squiggle(
+                        &mut new_rects,
+                        r,
+                        0.0..start_row_end,
+                        color,
+                        inv,
+                        &tokens,
+                    );
                 }
-                push_squiggle(&mut new_rects, end_row, 0.0..end_x, color, inv);
+                push_squiggle(&mut new_rects, end_row, 0.0..end_x, color, inv, &tokens);
             }
         }
 
@@ -228,15 +241,16 @@ fn push_squiggle(
     x_range: std::ops::Range<f32>,
     color: Color,
     inv: f32,
+    tokens: &DiagnosticTokens,
 ) {
     if x_range.end <= x_range.start {
         return;
     }
     let dpi = inv.max(1.0);
     let tooth_px = SQUIGGLE_TOOTH_PX * dpi;
-    let thickness = SQUIGGLE_THICKNESS * dpi;
+    let thickness = tokens.squiggle_thickness * dpi;
     let radius = (thickness * 0.5).min(tooth_px * 0.5);
-    let tint = color.with_alpha(color.alpha() * SQUIGGLE_ALPHA);
+    let tint = color.with_alpha(color.alpha() * tokens.squiggle_alpha);
     let teeth = SQUIGGLE_TEETH_PER_PERIOD.max(2) as f32;
 
     let mut x = x_range.start;

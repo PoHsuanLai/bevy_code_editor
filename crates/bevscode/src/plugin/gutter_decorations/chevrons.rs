@@ -18,6 +18,7 @@ use bevy_resvg::prelude::*;
 
 use crate::settings::{EditorTheme, GutterConfig, Padding};
 use crate::types::{CodeEditor, FoldState, GutterContainer, HoveredGutterLine};
+use crate::ui_kit::GutterTokens;
 
 use super::common::{diff_place, group_pools_by_editor, RowGeometry};
 use super::icons::IconAtlas;
@@ -74,6 +75,7 @@ fn desired_chevrons(
 pub(crate) fn sync_fold_chevron_icons(
     mut commands: Commands,
     atlas: Option<Res<IconAtlas>>,
+    tokens: Option<Res<GutterTokens>>,
     editors: Query<
         (
             Entity,
@@ -102,6 +104,7 @@ pub(crate) fn sync_fold_chevron_icons(
     let Some(atlas) = atlas else {
         return;
     };
+    let tokens = tokens.map(|t| t.clone()).unwrap_or_default();
 
     let mut by_editor = group_pools_by_editor(
         existing.iter().map(|(id, ch, ..)| (id, ch)),
@@ -149,7 +152,7 @@ pub(crate) fn sync_fold_chevron_icons(
                 continue;
             };
 
-            let icon_size = (gutter.chevron_width.min(geom.line_height_px) * 0.6)
+            let icon_size = (gutter.chevron_width.min(geom.line_height_px) * tokens.chevron_scale)
                 .round()
                 .max(8.0);
             let nudge_left = (geom.line_height_px * 0.2).round();

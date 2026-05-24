@@ -14,6 +14,7 @@ use bevy_instanced_text::{DisplayLayout, RectOverlay};
 
 use crate::settings::{GutterConfig, Padding};
 use crate::types::{CodeEditor, GutterContainer};
+use crate::ui_kit::GutterTokens;
 
 use super::common::{diff_place, group_pools_by_editor, RowGeometry};
 
@@ -75,6 +76,7 @@ pub(crate) fn update_line_decoration_overlays(
 #[allow(clippy::type_complexity)]
 pub(crate) fn sync_gutter_decoration_bars(
     mut commands: Commands,
+    tokens: Option<Res<GutterTokens>>,
     editors: Query<
         (
             Entity,
@@ -96,6 +98,7 @@ pub(crate) fn sync_gutter_decoration_bars(
     )>,
     containers: Query<(Entity, &GutterContainer)>,
 ) {
+    let tokens = tokens.map(|t| t.clone()).unwrap_or_default();
     let mut by_editor = group_pools_by_editor(
         existing.iter().map(|(id, bar, ..)| (id, bar)),
         |bar: &GutterDecorationBar| bar.editor,
@@ -106,11 +109,11 @@ pub(crate) fn sync_gutter_decoration_bars(
             continue;
         }
 
-        let bar_width: f32 = 3.0_f32.min(gutter.line_decorations_width);
+        let bar_width: f32 = tokens.bar_width.min(gutter.line_decorations_width);
         // Bar sits 6 px right of the line-decorations band's left
         // edge — small breathing room from the digits.
         let bar_left = (gutter.line_decorations_x + 6.0).round().max(0.0);
-        let bar_radius = (bar_width * 0.5).max(0.5);
+        let bar_radius = tokens.bar_radius.max(0.5);
 
         let active: Vec<&LineDecoration> = decorations
             .0
@@ -133,7 +136,7 @@ pub(crate) fn sync_gutter_decoration_bars(
 
             if let Some(geom) = geom {
                 let height_px = geom.line_height_px.round();
-                let bar_color = color.with_alpha(color.alpha() * 0.85);
+                let bar_color = color.with_alpha(color.alpha() * tokens.bar_alpha);
                 if let Some(&entity) = pool.get(idx) {
                     if let Ok((_, _bar, mut node, mut bg, mut vis)) = existing.get_mut(entity) {
                         diff_place(&mut node, bar_left, geom.top_px, bar_width, height_px);
