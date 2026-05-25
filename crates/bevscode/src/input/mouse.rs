@@ -360,11 +360,15 @@ pub fn on_alt_click(
 pub fn on_ctrl_click_goto_definition(
     trigger: On<Pointer<Press>>,
     editor_query: CtrlClickQuery,
-    mut lsp_query: Query<
-        (&mut bevy_lsp::LspClient, Option<&bevy_lsp::LspDocument>),
+    lsp_query: Query<
+        (
+            Option<&bevy_lsp::LspDocument>,
+            Option<&crate::lsp_ui::session::LspSession>,
+        ),
         With<CodeEditor>,
     >,
     keyboard: Res<ButtonInput<KeyCode>>,
+    mut lsp_w: MessageWriter<bevy_lsp::LspRequest>,
 ) {
     if trigger.event().button != PointerButton::Primary {
         return;
@@ -378,7 +382,7 @@ pub fn on_ctrl_click_goto_definition(
     else {
         return;
     };
-    let Ok((mut lsp_client, lsp_document)) = lsp_query.get_mut(entity) else {
+    let Ok((lsp_document, session)) = lsp_query.get(entity) else {
         return;
     };
     let Some(doc) = lsp_document else {
@@ -418,11 +422,15 @@ pub fn on_ctrl_click_goto_definition(
         char_pos,
         bevy_lsp::PositionEncoding::Utf16,
     );
-    lsp_client.send(LspMessage::GotoDefinition {
-        uri: doc.uri.clone(),
-        position: lsp_position,
-        id: 0,
-    });
+    lsp_w.write(crate::lsp_ui::session::lsp_request(
+        entity,
+        session,
+        LspMessage::GotoDefinition {
+            uri: doc.uri.clone(),
+            position: lsp_position,
+            id: 0,
+        },
+    ));
 }
 
 /// LSP hover-trigger observer: arms a delay timer when the pointer moves to
@@ -568,16 +576,17 @@ pub fn tick_lsp_hover_timer(
     mut state_query: Query<
         (
             Entity,
-            &mut bevy_lsp::LspClient,
             Option<&bevy_lsp::LspDocument>,
             &mut crate::lsp_ui::state::LspHoverPopup,
             &mut crate::lsp_ui::state::HoverLifecycle,
+            Option<&crate::lsp_ui::session::LspSession>,
         ),
         With<CodeEditor>,
     >,
     time: Res<Time>,
+    mut lsp_w: MessageWriter<bevy_lsp::LspRequest>,
 ) {
-    for (entity, mut lsp_client, lsp_document, mut hover_state, mut hover_lc) in
+    for (entity, lsp_document, mut hover_state, mut hover_lc, session) in
         state_query.iter_mut()
     {
         let Ok(buffer) = editor_query.get(entity) else {
@@ -607,11 +616,15 @@ pub fn tick_lsp_hover_timer(
         );
 
         let id = hover_lc.new_request();
-        lsp_client.send(LspMessage::Hover {
-            uri: doc.uri.clone(),
-            position: lsp_position,
-            id,
-        });
+        lsp_w.write(crate::lsp_ui::session::lsp_request(
+            entity,
+            session,
+            LspMessage::Hover {
+                uri: doc.uri.clone(),
+                position: lsp_position,
+                id,
+            },
+        ));
     }
 }
 

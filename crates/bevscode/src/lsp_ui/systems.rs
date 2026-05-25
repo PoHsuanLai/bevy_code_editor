@@ -53,7 +53,6 @@ type RequestInlayHintsQuery<'w, 's> = Query<
     's,
     (
         Entity,
-        &'static LspClient,
         &'static ServerCapabilities,
         Ref<'static, TextBuffer<RopeBuffer>>,
         Ref<'static, ScrollPosition>,
@@ -64,6 +63,7 @@ type RequestInlayHintsQuery<'w, 's> = Query<
         &'static bevy::text::LineHeight,
         &'static MonoCellWidth,
         Option<&'static crate::settings::Suggest>,
+        Option<&'static crate::lsp_ui::session::LspSession>,
     ),
     With<CodeEditor>,
 >;
@@ -79,6 +79,7 @@ type RequestDocumentHighlightsQuery<'w, 's> = Query<
         Option<&'static LspDocument>,
         &'static mut LspDocumentHighlights,
         &'static crate::settings::LspConfig,
+        Option<&'static crate::lsp_ui::session::LspSession>,
     ),
     With<CodeEditor>,
 >;
@@ -751,10 +752,10 @@ pub fn sync_lsp_document(
 pub fn request_inlay_hints(
     mut query: RequestInlayHintsQuery,
     mut lsp_w: MessageWriter<LspRequest>,
+    lsp_ready: crate::lsp_ui::session::LspReady,
 ) {
     let Ok((
         entity,
-        lsp_client,
         capabilities,
         buffer,
         scroll,
@@ -765,12 +766,13 @@ pub fn request_inlay_hints(
         lh,
         _mono,
         suggest,
+        session,
     )) = query.single_mut()
     else {
         return;
     };
     let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
-    if !lsp_client.is_ready() || !capabilities.supports_inlay_hints() {
+    if !lsp_ready.is_ready(entity) || !capabilities.supports_inlay_hints() {
         return;
     }
     if let Some(s) = suggest {
@@ -829,24 +831,29 @@ pub fn request_inlay_hints(
         return;
     }
 
-    lsp_w.write(LspRequest {
+    lsp_w.write(crate::lsp_ui::session::lsp_request(
         entity,
-        origin: None,
-        msg: LspMessage::InlayHint {
+        session,
+        LspMessage::InlayHint {
             uri: lsp_document.uri.clone(),
             range,
             id: 0,
         },
-    });
+    ));
 
     hint_state.cached_range = Some(range);
     hint_state.needs_refresh = false;
 }
 
 /// System to clean up LSP timeout requests
-pub fn cleanup_lsp_timeouts(query: Query<&LspClient, With<CodeEditor>>) {
-    for lsp_client in query.iter() {
-        lsp_client.cleanup_timeouts();
+pub fn cleanup_lsp_timeouts(
+    sessions: Query<&crate::lsp_ui::session::LspSession, With<CodeEditor>>,
+    clients: Query<&LspClient>,
+) {
+    for session in sessions.iter() {
+        if let Ok(lsp_client) = clients.get(session.0) {
+            lsp_client.cleanup_timeouts();
+        }
     }
 }
 
@@ -954,18 +961,19 @@ pub fn request_signature_help(
     position: Position,
     sig_lc: &mut SignatureLifecycle,
     lsp_w: &mut MessageWriter<LspRequest>,
+    session: Option<&crate::lsp_ui::session::LspSession>,
 ) {
     if capabilities.supports_signature_help() {
         let id = sig_lc.new_request();
-        lsp_w.write(LspRequest {
+        lsp_w.write(crate::lsp_ui::session::lsp_request(
             entity,
-        origin: None,
-            msg: LspMessage::SignatureHelp {
+            session,
+            LspMessage::SignatureHelp {
                 uri: uri.clone(),
                 position,
                 id,
             },
-        });
+        ));
     }
 }
 
@@ -1057,6 +1065,7 @@ pub fn request_document_highlights(
         lsp_document,
         mut highlight_state,
         settings,
+        session,
     )) = query.single_mut()
     else {
         return;
@@ -1104,15 +1113,15 @@ pub fn request_document_highlights(
         cursor_pos,
         capabilities.position_encoding(),
     );
-    lsp_w.write(LspRequest {
+    lsp_w.write(crate::lsp_ui::session::lsp_request(
         entity,
-        origin: None,
-        msg: LspMessage::DocumentHighlight {
+        session,
+        LspMessage::DocumentHighlight {
             uri: lsp_document.uri.clone(),
             position,
             id: 0,
         },
-    });
+    ));
 }
 
 /// Helper to request prepare rename

@@ -61,7 +61,10 @@ impl Plugin for LspPlugin {
 
         app.add_systems(
             Update,
-            crate::lsp_ui::session::init_lsp_components_on_session,
+            (
+                crate::lsp_ui::session::init_lsp_components_on_session,
+                crate::lsp_ui::session::sync_capabilities_from_service,
+            ),
         );
         app.add_systems(
             Update,

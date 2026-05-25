@@ -57,6 +57,48 @@ impl LspReady<'_, '_> {
     }
 }
 
+/// Builds an [`LspRequest`] that routes through [`LspSession`] when
+/// present. Call this instead of constructing `LspRequest` directly.
+///
+/// - If the editor has `LspSession`, targets the service entity and
+///   sets `origin` to the editor so responses route back.
+/// - If the editor has no session, targets the editor itself (legacy
+///   path where `LspClient` lives on the editor).
+pub fn lsp_request(
+    editor: Entity,
+    session: Option<&LspSession>,
+    msg: bevy_lsp::LspMessage,
+) -> bevy_lsp::LspRequest {
+    match session {
+        Some(s) => bevy_lsp::LspRequest {
+            entity: s.0,
+            origin: Some(editor),
+            msg,
+        },
+        None => bevy_lsp::LspRequest {
+            entity: editor,
+            origin: None,
+            msg,
+        },
+    }
+}
+
+/// Syncs [`bevy_lsp::ServerCapabilities`] from the service entity to
+/// editors that have an [`LspSession`]. This lets existing systems
+/// that query `&ServerCapabilities` on the editor continue to work
+/// without modification.
+pub(crate) fn sync_capabilities_from_service(
+    mut commands: Commands,
+    editors: Query<(Entity, &LspSession), With<CodeEditor>>,
+    services: Query<&bevy_lsp::ServerCapabilities>,
+) {
+    for (editor, session) in &editors {
+        if let Ok(caps) = services.get(session.0) {
+            commands.entity(editor).insert(caps.clone());
+        }
+    }
+}
+
 /// Inserts all LSP UI state components when [`LspSession`] is added to
 /// an editor. This replaces the old `#[require]` cascade for LSP
 /// components.

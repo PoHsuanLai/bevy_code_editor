@@ -83,7 +83,7 @@ pub use bevy_lsp::{
     CodeActionOrCommand, LspClient, LspDocument, LspMessage, LspRequest, LspRequestOrigins,
     LspResponse, LspServiceRef, RequestType, ServerCapabilities,
 };
-pub use session::{LspCaps, LspReady, LspSession};
+pub use session::{lsp_request, LspCaps, LspReady, LspSession};
 pub use completion::{
     LspCompletionPopup, UnifiedCompletionItem, WordCompletionItem, COMPLETION_MAX_VISIBLE_DEFAULT,
 };
