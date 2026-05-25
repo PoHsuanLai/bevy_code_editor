@@ -30,6 +30,7 @@ pub mod event_listeners;
 pub mod inlay_splice;
 pub mod interceptors;
 pub mod lifecycle;
+pub mod session;
 pub mod snippet;
 pub mod state;
 pub mod sync;
@@ -79,9 +80,10 @@ pub mod prelude {
 }
 
 pub use bevy_lsp::{
-    CodeActionOrCommand, LspClient, LspDocument, LspMessage, LspRequest, LspResponse, RequestType,
-    ServerCapabilities,
+    CodeActionOrCommand, LspClient, LspDocument, LspMessage, LspRequest, LspRequestOrigins,
+    LspResponse, LspServiceRef, RequestType, ServerCapabilities,
 };
+pub use session::{LspCaps, LspReady, LspSession};
 pub use completion::{
     LspCompletionPopup, UnifiedCompletionItem, WordCompletionItem, COMPLETION_MAX_VISIBLE_DEFAULT,
 };

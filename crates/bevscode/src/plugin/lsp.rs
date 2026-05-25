@@ -61,6 +61,10 @@ impl Plugin for LspPlugin {
 
         app.add_systems(
             Update,
+            crate::lsp_ui::session::init_lsp_components_on_session,
+        );
+        app.add_systems(
+            Update,
             clear_stale_diagnostics_on_edit.before(on_lsp_diagnostics),
         );
         app.add_systems(

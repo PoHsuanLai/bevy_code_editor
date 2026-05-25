@@ -3,18 +3,22 @@
 //! All popup rendering (completion, hover, signature help, code actions,
 //! rename) plus inline decorations (inlay hints, document highlights)
 //! ship inside `CodeEditorPlugins` under the `lsp` feature — no host UI
-//! code required. The host just spawns the editor, attaches an LSP
-//! transport, and sends the `Initialize` / `DidOpen` requests.
+//! code required. The host spawns a `LanguageService` entity (owns the
+//! LSP transport), spawns an editor with `LspSession` pointing at it,
+//! and sends the `Initialize` / `DidOpen` requests.
 //!
 //! Run: `cargo run --example editor_lsp --features lsp`. Requires
 //! `rust-analyzer` on `PATH` (`rustup component add rust-analyzer`).
 
-use bevscode::lsp_ui::{LspClient, LspDocument, LspMessage, LspRequest};
+use bevscode::lsp_ui::{
+    LspClient, LspDocument, LspMessage, LspRequest, LspRequestOrigins, LspServiceRef, LspSession,
+};
 use bevscode::prelude::*;
 use bevscode::prelude::{BufferAnchorParam, RopeBuffer};
 use bevscode::types::{CodeEditor, CursorState};
 use bevy::prelude::*;
 use bevy_lsp::messages::{LspLogMessage, LspShowMessage};
+use bevy_lsp::ServerCapabilities;
 
 fn main() {
     let mut app = App::new();
@@ -49,9 +53,6 @@ fn main() {
         .run();
 }
 
-/// Surface every `window/logMessage` and `window/showMessage` the server
-/// sends. Debugging aid: if rust-analyzer can't load the workspace, you'll
-/// see it complain here.
 fn log_lsp_server_messages(
     mut logs: MessageReader<LspLogMessage>,
     mut shows: MessageReader<LspShowMessage>,
@@ -80,12 +81,12 @@ fn setup_camera(mut commands: Commands) {
 
 fn setup_editor(
     mut commands: Commands,
-    mut editor_query: Query<(Entity, &mut LspClient), With<CodeEditor>>,
+    editor_query: Query<Entity, With<CodeEditor>>,
     asset_server: Res<AssetServer>,
     mut set_text_writer: MessageWriter<SetTextRequested>,
     mut lsp_w: MessageWriter<LspRequest>,
 ) {
-    let Ok((editor_entity, mut lsp_client)) = editor_query.single_mut() else {
+    let Ok(editor_entity) = editor_query.single() else {
         return;
     };
 
@@ -119,18 +120,35 @@ fn setup_editor(
 
     let doc_uri = lsp_types::Url::parse(&file_uri_str).expect("Failed to parse URI");
 
+    // Build and start the language server before spawning so we can
+    // bail on failure without leaving an orphan entity.
+    let mut lsp_client = LspClient::new();
     if let Err(e) = lsp_client.start("rust-analyzer", &[]) {
         error!("Failed to start rust-analyzer: {:?}", e);
         return;
     }
 
+    // Spawn a LanguageService entity that owns the LSP transport.
+    let service = commands
+        .spawn((
+            lsp_client,
+            ServerCapabilities::default(),
+            LspRequestOrigins::default(),
+            Name::new("RustAnalyzer"),
+        ))
+        .id();
+
+    // Wire the editor to the service.
+    commands.entity(editor_entity).insert((
+        LspSession(service),
+        LspDocument::new(doc_uri.clone(), "rust"),
+        LspServiceRef(service),
+    ));
+
     let project_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let root_uri =
         lsp_types::Url::from_directory_path(&project_root).expect("Failed to get project root URI");
-    // Advertise Markdown as the preferred format for hover, completion
-    // docs, and signature help so rust-analyzer sends fenced code +
-    // formatted prose instead of stripped plain text. `bevy_markdown`
-    // renders the markdown in the popup chrome.
+
     let markdown_then_plain = vec![
         lsp_types::MarkupKind::Markdown,
         lsp_types::MarkupKind::PlainText,
@@ -161,7 +179,7 @@ fn setup_editor(
     };
 
     lsp_w.write(LspRequest {
-        entity: editor_entity,
+        entity: service,
         origin: None,
         msg: LspMessage::Initialize {
             root_uri: root_uri.clone(),
@@ -170,30 +188,26 @@ fn setup_editor(
     });
 
     lsp_w.write(LspRequest {
-        entity: editor_entity,
+        entity: service,
         origin: None,
         msg: LspMessage::Initialized,
     });
 
     lsp_w.write(LspRequest {
-        entity: editor_entity,
+        entity: service,
         origin: None,
         msg: LspMessage::DidOpen {
-            uri: doc_uri.clone(),
+            uri: doc_uri,
             language_id: "rust".to_string(),
             version: 1,
             text: rust_code.to_string(),
         },
     });
 
-    commands
-        .entity(editor_entity)
-        .insert(LspDocument::new(doc_uri, "rust"));
-
     info!("LSP started for file: {:?}", example_file_path);
 }
 
-fn display_lsp_info(query: Query<&LspClient, (With<CodeEditor>, Changed<LspClient>)>) {
+fn display_lsp_info(query: Query<&LspClient, Changed<LspClient>>) {
     if !query.is_empty() {
         debug!("LSP client state changed");
     }
