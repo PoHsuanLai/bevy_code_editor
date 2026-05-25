@@ -10,15 +10,12 @@
 //! Run: `cargo run --example editor_lsp --features lsp`. Requires
 //! `rust-analyzer` on `PATH` (`rustup component add rust-analyzer`).
 
-use bevscode::lsp_ui::{
-    LspClient, LspDocument, LspMessage, LspRequest, LspRequestOrigins, LspServiceRef, LspSession,
-};
+use bevscode::lsp_ui::{attach_lsp, spawn_language_service, LspClient, LspRequest};
 use bevscode::prelude::*;
 use bevscode::prelude::{BufferAnchorParam, RopeBuffer};
 use bevscode::types::{CodeEditor, CursorState};
 use bevy::prelude::*;
 use bevy_lsp::messages::{LspLogMessage, LspShowMessage};
-use bevy_lsp::ServerCapabilities;
 
 fn main() {
     let mut app = App::new();
@@ -120,31 +117,6 @@ fn setup_editor(
 
     let doc_uri = lsp_types::Url::parse(&file_uri_str).expect("Failed to parse URI");
 
-    // Build and start the language server before spawning so we can
-    // bail on failure without leaving an orphan entity.
-    let mut lsp_client = LspClient::new();
-    if let Err(e) = lsp_client.start("rust-analyzer", &[]) {
-        error!("Failed to start rust-analyzer: {:?}", e);
-        return;
-    }
-
-    // Spawn a LanguageService entity that owns the LSP transport.
-    let service = commands
-        .spawn((
-            lsp_client,
-            ServerCapabilities::default(),
-            LspRequestOrigins::default(),
-            Name::new("RustAnalyzer"),
-        ))
-        .id();
-
-    // Wire the editor to the service.
-    commands.entity(editor_entity).insert((
-        LspSession(service),
-        LspDocument::new(doc_uri.clone(), "rust"),
-        LspServiceRef(service),
-    ));
-
     let project_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let root_uri =
         lsp_types::Url::from_directory_path(&project_root).expect("Failed to get project root URI");
@@ -178,31 +150,30 @@ fn setup_editor(
         ..Default::default()
     };
 
-    lsp_w.write(LspRequest {
-        entity: service,
-        origin: None,
-        msg: LspMessage::Initialize {
-            root_uri: root_uri.clone(),
-            capabilities: Box::new(capabilities),
-        },
-    });
+    let service = match spawn_language_service(
+        &mut commands,
+        &mut lsp_w,
+        "rust-analyzer",
+        &[],
+        root_uri,
+        capabilities,
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("Failed to start rust-analyzer: {:?}", e);
+            return;
+        }
+    };
 
-    lsp_w.write(LspRequest {
-        entity: service,
-        origin: None,
-        msg: LspMessage::Initialized,
-    });
-
-    lsp_w.write(LspRequest {
-        entity: service,
-        origin: None,
-        msg: LspMessage::DidOpen {
-            uri: doc_uri,
-            language_id: "rust".to_string(),
-            version: 1,
-            text: rust_code.to_string(),
-        },
-    });
+    attach_lsp(
+        &mut commands,
+        &mut lsp_w,
+        editor_entity,
+        service,
+        doc_uri,
+        "rust",
+        rust_code.to_string(),
+    );
 
     info!("LSP started for file: {:?}", example_file_path);
 }

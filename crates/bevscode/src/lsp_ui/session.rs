@@ -83,6 +83,86 @@ pub fn lsp_request(
     }
 }
 
+/// Spawn a `LanguageService` entity that owns the LSP transport.
+///
+/// Starts the language server process, spawns an entity with the
+/// [`LspClient`](bevy_lsp::LspClient),
+/// [`ServerCapabilities`](bevy_lsp::ServerCapabilities), and
+/// [`LspRequestOrigins`](bevy_lsp::LspRequestOrigins), then queues
+/// `Initialize` and `Initialized` requests. Returns the service
+/// entity, or an error if the server process failed to start.
+///
+/// Wire editors to this service with [`attach_lsp`].
+pub fn spawn_language_service(
+    commands: &mut Commands,
+    lsp_w: &mut MessageWriter<bevy_lsp::LspRequest>,
+    command: &str,
+    args: &[&str],
+    root_uri: lsp_types::Url,
+    capabilities: lsp_types::ClientCapabilities,
+) -> std::io::Result<Entity> {
+    let mut client = bevy_lsp::LspClient::new();
+    client.start(command, args)?;
+
+    let service = commands
+        .spawn((
+            client,
+            bevy_lsp::ServerCapabilities::default(),
+            bevy_lsp::LspRequestOrigins::default(),
+        ))
+        .id();
+
+    lsp_w.write(bevy_lsp::LspRequest {
+        entity: service,
+        origin: None,
+        msg: bevy_lsp::LspMessage::Initialize {
+            root_uri,
+            capabilities: Box::new(capabilities),
+        },
+    });
+    lsp_w.write(bevy_lsp::LspRequest {
+        entity: service,
+        origin: None,
+        msg: bevy_lsp::LspMessage::Initialized,
+    });
+
+    Ok(service)
+}
+
+/// Wire a [`CodeEditor`] entity to a `LanguageService`. Inserts
+/// [`LspSession`], [`LspDocument`](bevy_lsp::LspDocument), and
+/// [`LspServiceRef`](bevy_lsp::LspServiceRef), then sends a
+/// `textDocument/didOpen` notification.
+///
+/// The `init_lsp_components_on_session` system will insert all LSP UI
+/// state components on the next frame.
+pub fn attach_lsp(
+    commands: &mut Commands,
+    lsp_w: &mut MessageWriter<bevy_lsp::LspRequest>,
+    editor: Entity,
+    service: Entity,
+    uri: lsp_types::Url,
+    language_id: &str,
+    text: String,
+) {
+    commands.entity(editor).insert((
+        LspSession(service),
+        bevy_lsp::LspDocument::new(uri.clone(), language_id),
+        bevy_lsp::LspServiceRef(service),
+    ));
+
+    lsp_w.write(bevy_lsp::LspRequest {
+        entity: service,
+        origin: None,
+        msg: bevy_lsp::LspMessage::DidOpen {
+            uri,
+            language_id: language_id.to_string(),
+            version: 1,
+            text,
+        },
+    });
+}
+
 /// Syncs [`bevy_lsp::ServerCapabilities`] from the service entity to
 /// editors that have an [`LspSession`]. This lets existing systems
 /// that query `&ServerCapabilities` on the editor continue to work
