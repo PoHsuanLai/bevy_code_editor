@@ -68,6 +68,18 @@ impl Plugin for LspPlugin {
         );
         app.add_systems(
             Update,
+            (
+                crate::lsp_ui::fanout::fanout_initialized,
+                crate::lsp_ui::fanout::fanout_crashed,
+                crate::lsp_ui::fanout::fanout_diagnostics,
+                crate::lsp_ui::fanout::fanout_semantic_refresh,
+                crate::lsp_ui::fanout::fanout_inlay_refresh,
+                crate::lsp_ui::fanout::fanout_diagnostics_refresh,
+            )
+                .before(on_lsp_initialized),
+        );
+        app.add_systems(
+            Update,
             clear_stale_diagnostics_on_edit.before(on_lsp_diagnostics),
         );
         app.add_systems(

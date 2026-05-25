@@ -27,6 +27,7 @@
 pub mod completion;
 pub mod components;
 pub mod event_listeners;
+pub mod fanout;
 pub mod inlay_splice;
 pub mod interceptors;
 pub mod lifecycle;
