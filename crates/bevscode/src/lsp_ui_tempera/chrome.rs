@@ -3,8 +3,8 @@
 //!
 //! Every popup renderer in this module calls [`apply_chrome`] to set its
 //! own `Node`'s position and chrome, then fills in its own children. The
-//! palette and metrics come from tempera's [`ColorPalette`], [`Spacing`],
-//! and [`MenuTokens`] resources via [`PopupChrome`], so changing the
+//! palette and metrics come from tempera's `ColorPalette`, `Spacing`,
+//! and `MenuTokens` resources via [`PopupChrome`], so changing the
 //! palette in the app re-tints every popup the same frame.
 
 use bevy::picking::events::{Out, Over};

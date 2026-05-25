@@ -1,4 +1,4 @@
-//! Word-boundary helpers parametrized by [`SelectionConfig::word_separators`].
+//! Word-boundary helpers parametrized by `SelectionConfig::word_separators`.
 //!
 //! Centralizes the "is this char part of a word" predicate plus
 //! `find_word_start`/`find_word_end` so cursor word-left/right, double-click

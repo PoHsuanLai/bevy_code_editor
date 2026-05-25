@@ -69,7 +69,7 @@ pub struct LspHoverPopup {
     /// Distinct from the dismiss-grace timer on [`HoverLifecycle`].
     pub timer: Option<Timer>,
     /// The actual LSP range for the hover content (useful for highlighting).
-    /// The same range is mirrored to [`HoverLifecycle::hot_zone`] so the
+    /// The same range is mirrored to `HoverLifecycle::hot_zone` so the
     /// pointer-move observer can suppress re-arm inside it.
     pub range: Option<Range>,
     /// Last viewport-local pointer position seen by the hover-move observer.
@@ -146,12 +146,10 @@ impl LspSignatureHelpPopup {
 /// Per-editor code actions popup state. Holds the response from
 /// `textDocument/codeAction` (quick-fix / refactor menu).
 ///
-/// **Producer not yet wired.** The transport
-/// ([`super::super::systems::request_code_actions`] helper) and the
-/// response handler are in place; a system that watches for diagnostics
-/// under the cursor (or an explicit user trigger like `Ctrl+.`) and
-/// calls the helper still needs to be added before the lightbulb UI is
-/// fed.
+/// **Producer not yet wired.** The transport helper and the response
+/// handler are in place; a system that watches for diagnostics under
+/// the cursor (or an explicit user trigger like `Ctrl+.`) still needs
+/// to be added before the lightbulb UI is fed.
 #[derive(Component, Default)]
 pub struct LspCodeActionsPopup {
     pub visible: bool,

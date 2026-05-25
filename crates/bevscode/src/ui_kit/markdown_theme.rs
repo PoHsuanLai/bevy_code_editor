@@ -6,7 +6,7 @@
 //! foreground color, popover background, accent for links). One call
 //! site, kept here so renderers stay one-liners.
 //!
-//! Tempera's [`FontHandle`] carries `regular` + optional `bold` only —
+//! Tempera's `FontHandle` carries `regular` + optional `bold` only —
 //! no italic, no monospace face. We reuse `regular` for both body and
 //! mono and let `bevy_text` synthesize italic via skew. Hosts that
 //! want a true mono / italic face can spawn their own `MarkdownFonts`

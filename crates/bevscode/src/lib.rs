@@ -80,7 +80,7 @@
 //! no manual viewport management is needed.
 //!
 //! **Single window (default):** spawn `CodeEditor` alone. The
-//! [`AutoResizeViewport`] component (added automatically) keeps the node
+//! `AutoResizeViewport` component (added automatically) keeps the node
 //! pixel-perfect with the primary window. One `Camera2d` at the default origin
 //! is all the rendering side needs.
 //!

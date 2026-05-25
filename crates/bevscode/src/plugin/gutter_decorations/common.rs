@@ -91,7 +91,7 @@ where
     by_editor
 }
 
-/// Inverse of [`RowGeometry::compute`]: given an editor-local y in
+/// Inverse of `RowGeometry::compute`: given an editor-local y in
 /// screen pixels (the same coordinate space as a UI pointer's
 /// `local_pos.y`), return the buffer line the renderer painted at
 /// that y. Returns `None` when the y falls outside any shaped row

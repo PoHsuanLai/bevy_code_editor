@@ -1,13 +1,10 @@
 //! LSP event listener systems.
 //!
-//! These systems read editor events ([`crate::types::events::*`]) and translate
-//! them into LSP request sends through each editor entity's
-//! [`bevy_lsp::LspClient`] Component.
+//! These systems read editor events and translate them into LSP request
+//! sends through each editor entity's `bevy_lsp::LspClient` Component.
 //!
-//! Position conversion goes through [`bevy_lsp::rope_char_to_lsp_position`]
-//! with [`PositionEncoding::Utf16`] (LSP spec default). Once we read the
-//! server's negotiated `position_encoding` from `initialize.serverInfo.
-//! capabilities` we'll thread that through here instead.
+//! Position conversion goes through `bevy_lsp::rope_char_to_lsp_position`
+//! with `PositionEncoding::Utf16` (LSP spec default).
 
 use super::snippet;
 use super::completion::{LspCompletionPopup, UnifiedCompletionItem};

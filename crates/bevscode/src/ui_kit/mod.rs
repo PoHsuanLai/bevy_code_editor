@@ -1,8 +1,8 @@
 //! Tempera glue layer.
 //!
 //! Bevscode's chrome — every LSP popup, the gutter, the editor background —
-//! reads its colors and metrics from tempera's [`ColorPalette`], [`Spacing`],
-//! [`Typography`], [`FontHandle`], and [`MenuTokens`] resources. That is
+//! reads its colors and metrics from tempera's `ColorPalette`, `Spacing`,
+//! `Typography`, `FontHandle`, and `MenuTokens` resources. That is
 //! the same surface tempera uses to style buttons, dropdowns, dialogs in
 //! the user's other apps, so swapping the palette here flips the editor in
 //! lockstep with the rest of the UI.
@@ -10,7 +10,7 @@
 //! Pieces:
 //!
 //! - [`BevscodePalettePlugin`] installs tempera's [`ThemePlugin`] (idempotent)
-//!   and runs [`sync_palette_into_editor_theme`] every time the palette
+//!   and runs `sync_palette_into_editor_theme` every time the palette
 //!   changes, mapping the shadcn-aligned tokens onto each `EditorTheme`.
 //! - [`palette_to_editor_theme`] is the single mapping function. Editor-
 //!   specific fields (selection background, line numbers, bracket pair

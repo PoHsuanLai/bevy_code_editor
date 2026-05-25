@@ -112,7 +112,7 @@ pub const RECENT_PREFIX_LEN: usize = 3;
 impl LspCompletionPopup {
     /// Clear popup-local state (filter, selection, scroll, resolved
     /// cache). The lifecycle id-bump that invalidates in-flight LSP
-    /// responses lives on [`CompletionLifecycle`] — call its
+    /// responses lives on `CompletionLifecycle` — call its
     /// `.dismiss()` at the same site.
     pub fn dismiss(&mut self) {
         self.visible = false;

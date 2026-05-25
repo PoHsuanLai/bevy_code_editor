@@ -41,7 +41,7 @@ pub fn should_skip_auto_close(cursor: &CursorState, rope: &Rope, closing: char) 
     rope.char(cursor_pos) == closing
 }
 
-/// True when an [`AutoClosingPairs`] policy permits inserting the closing
+/// True when an `AutoClosingPairs` policy permits inserting the closing
 /// character at the cursor's current position.
 pub fn auto_close_allowed(
     mode: crate::settings::AutoClosingPairs,

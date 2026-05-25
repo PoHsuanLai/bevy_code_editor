@@ -6,7 +6,7 @@
 //!
 //! Because popups are parented under the editor entity (see
 //! [`LspPopupRoot`](super::LspPopupRoot)), the editor-local
-//! [`AnchorPoint::top_left`] from [`BufferAnchorParam`] is what an
+//! `AnchorPoint::top_left` from [`BufferAnchorParam`] is what an
 //! absolutely-positioned child `Node` wants — no screen-offset addition,
 //! unlike the `bevy_egui` reference renderer.
 

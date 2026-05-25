@@ -1,6 +1,6 @@
 //! Gutter decorations: glyph-margin icons, line-decoration bars,
 //! fold chevrons. Each lives in its own submodule with a focused sync
-//! system; shared pool-and-diff helpers sit in [`common`].
+//! system; shared pool-and-diff helpers sit in `common`.
 //!
 //! Host-facing surface:
 //! - [`GlyphMarkers`] / [`GlyphMarker`] / [`GlyphKind`] — glyph-margin icons.
