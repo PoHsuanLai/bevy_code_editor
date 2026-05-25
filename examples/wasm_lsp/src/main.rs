@@ -96,6 +96,7 @@ fn main() {
 
         lsp_w.write(LspRequest {
             entity,
+            origin: None,
             msg: LspMessage::Initialize {
                 root_uri,
                 capabilities: Box::new(lsp_types::ClientCapabilities::default()),
@@ -103,10 +104,12 @@ fn main() {
         });
         lsp_w.write(LspRequest {
             entity,
+            origin: None,
             msg: LspMessage::Initialized,
         });
         lsp_w.write(LspRequest {
             entity,
+            origin: None,
             msg: LspMessage::DidOpen {
                 uri: doc_uri.clone(),
                 language_id: "rust".to_string(),

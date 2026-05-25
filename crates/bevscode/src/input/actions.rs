@@ -177,6 +177,7 @@ pub fn request_completion(
             let id = completion_lc.new_request();
             lsp_w.write(LspRequest {
                 entity,
+                origin: None,
                 msg: LspMessage::Completion {
                     uri: doc.uri.clone(),
                     position: lsp_position,

@@ -831,6 +831,7 @@ pub fn request_inlay_hints(
 
     lsp_w.write(LspRequest {
         entity,
+        origin: None,
         msg: LspMessage::InlayHint {
             uri: lsp_document.uri.clone(),
             range,
@@ -958,6 +959,7 @@ pub fn request_signature_help(
         let id = sig_lc.new_request();
         lsp_w.write(LspRequest {
             entity,
+        origin: None,
             msg: LspMessage::SignatureHelp {
                 uri: uri.clone(),
                 position,
@@ -988,6 +990,7 @@ pub fn request_code_actions(
         let id = action_lc.new_request();
         lsp_w.write(LspRequest {
             entity,
+        origin: None,
             msg: LspMessage::CodeAction {
                 uri: uri.clone(),
                 range,
@@ -1015,6 +1018,7 @@ pub fn execute_code_action(
             if let Some(command) = &action.command {
                 lsp_w.write(LspRequest {
                     entity,
+        origin: None,
                     msg: LspMessage::ExecuteCommand {
                         command: command.command.clone(),
                         arguments: command.arguments.clone(),
@@ -1025,6 +1029,7 @@ pub fn execute_code_action(
         CodeActionOrCommand::Command(command) => {
             lsp_w.write(LspRequest {
                 entity,
+        origin: None,
                 msg: LspMessage::ExecuteCommand {
                     command: command.command.clone(),
                     arguments: command.arguments.clone(),
@@ -1101,6 +1106,7 @@ pub fn request_document_highlights(
     );
     lsp_w.write(LspRequest {
         entity,
+        origin: None,
         msg: LspMessage::DocumentHighlight {
             uri: lsp_document.uri.clone(),
             position,
@@ -1120,6 +1126,7 @@ pub fn request_prepare_rename(
     if capabilities.supports_prepare_rename() {
         lsp_w.write(LspRequest {
             entity,
+        origin: None,
             msg: LspMessage::PrepareRename {
                 uri: uri.clone(),
                 position,
@@ -1140,6 +1147,7 @@ pub fn execute_rename(
     if capabilities.supports_rename() {
         lsp_w.write(LspRequest {
             entity,
+        origin: None,
             msg: LspMessage::Rename {
                 uri: uri.clone(),
                 position,

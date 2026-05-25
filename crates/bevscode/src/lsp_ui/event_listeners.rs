@@ -230,6 +230,7 @@ pub fn listen_rename_requests(
         let id = rename_lc.new_request();
         lsp_w.write(LspRequest {
             entity,
+        origin: None,
             msg: LspMessage::PrepareRename {
                 uri: lsp_document.uri.clone(),
                 position,
@@ -263,6 +264,7 @@ pub fn listen_signature_help_requests(
         let id = sig_help_lc.new_request();
         lsp_w.write(LspRequest {
             entity,
+        origin: None,
             msg: LspMessage::SignatureHelp {
                 uri: lsp_document.uri.clone(),
                 position: rope_char_to_lsp_position(buffer.rope(), event.cursor_char, enc),
@@ -339,6 +341,7 @@ pub fn drive_completion_resolve(
     popup.pending_resolve = Some((lsp_item.label.clone(), id));
     lsp_w.write(LspRequest {
         entity,
+        origin: None,
         msg: LspMessage::ResolveCompletionItem { item: lsp_item, id },
     });
 }
@@ -406,6 +409,7 @@ pub fn tick_lsp_debounce_timers(
                 let id = completion_lc.new_request();
                 lsp_w.write(LspRequest {
                     entity,
+        origin: None,
                     msg: LspMessage::Completion {
                         uri: req.uri,
                         position: req.position,
@@ -423,6 +427,7 @@ pub fn tick_lsp_debounce_timers(
                 let id = hover_lc.new_request();
                 lsp_w.write(LspRequest {
                     entity,
+        origin: None,
                     msg: LspMessage::Hover {
                         uri: req.uri,
                         position: req.position,

@@ -407,6 +407,59 @@ pub enum LspMessage {
     Exit,
 }
 
+impl LspMessage {
+    /// Returns the client-allocated request ID, if this is a
+    /// request/response message (not a notification).
+    pub fn request_id(&self) -> Option<u64> {
+        match self {
+            Self::Completion { id, .. }
+            | Self::ResolveCompletionItem { id, .. }
+            | Self::Hover { id, .. }
+            | Self::SignatureHelp { id, .. }
+            | Self::GotoDeclaration { id, .. }
+            | Self::GotoDefinition { id, .. }
+            | Self::GotoTypeDefinition { id, .. }
+            | Self::GotoImplementation { id, .. }
+            | Self::References { id, .. }
+            | Self::DocumentHighlight { id, .. }
+            | Self::DocumentSymbol { id, .. }
+            | Self::WorkspaceSymbol { id, .. }
+            | Self::WorkspaceSymbolResolve { id, .. }
+            | Self::FoldingRange { id, .. }
+            | Self::SelectionRange { id, .. }
+            | Self::CodeAction { id, .. }
+            | Self::CodeActionResolve { id, .. }
+            | Self::Format { id, .. }
+            | Self::RangeFormatting { id, .. }
+            | Self::OnTypeFormatting { id, .. }
+            | Self::WillSaveWaitUntil { id, .. }
+            | Self::InlayHint { id, .. }
+            | Self::InlayHintResolve { id, .. }
+            | Self::DocumentLink { id, .. }
+            | Self::DocumentLinkResolve { id, .. }
+            | Self::DocumentColor { id, .. }
+            | Self::ColorPresentation { id, .. }
+            | Self::LinkedEditingRange { id, .. }
+            | Self::Moniker { id, .. }
+            | Self::PrepareRename { id, .. }
+            | Self::Rename { id, .. }
+            | Self::PrepareCallHierarchy { id, .. }
+            | Self::CallHierarchyIncomingCalls { id, .. }
+            | Self::CallHierarchyOutgoingCalls { id, .. }
+            | Self::PrepareTypeHierarchy { id, .. }
+            | Self::TypeHierarchySupertypes { id, .. }
+            | Self::TypeHierarchySubtypes { id, .. }
+            | Self::SemanticTokensFull { id, .. }
+            | Self::SemanticTokensFullDelta { id, .. }
+            | Self::SemanticTokensRange { id, .. }
+            | Self::DocumentDiagnostic { id, .. }
+            | Self::WorkspaceDiagnostic { id, .. }
+            | Self::Shutdown { id, .. } => Some(*id),
+            _ => None,
+        }
+    }
+}
+
 /// Incoming message from the language server. `*Requested` variants carry
 /// `request_id` and require a matching `LspMessage::Respond*` reply.
 #[derive(Debug, Clone)]
@@ -720,6 +773,59 @@ pub enum LspResponse {
     Crashed,
 }
 
+impl LspResponse {
+    /// Returns the request ID for request/response pairs, `None` for
+    /// server-initiated notifications.
+    pub fn response_id(&self) -> Option<u64> {
+        match self {
+            Self::Completion { id, .. }
+            | Self::ResolvedCompletionItem { id, .. }
+            | Self::Hover { id, .. }
+            | Self::SignatureHelp { id, .. }
+            | Self::Declaration { id, .. }
+            | Self::Definition { id, .. }
+            | Self::TypeDefinition { id, .. }
+            | Self::Implementation { id, .. }
+            | Self::References { id, .. }
+            | Self::DocumentHighlights { id, .. }
+            | Self::DocumentSymbols { id, .. }
+            | Self::WorkspaceSymbols { id, .. }
+            | Self::ResolvedWorkspaceSymbol { id, .. }
+            | Self::FoldingRanges { id, .. }
+            | Self::SelectionRanges { id, .. }
+            | Self::CodeActions { id, .. }
+            | Self::ResolvedCodeAction { id, .. }
+            | Self::Format { id, .. }
+            | Self::RangeFormatting { id, .. }
+            | Self::OnTypeFormatting { id, .. }
+            | Self::WillSaveWaitUntil { id, .. }
+            | Self::InlayHints { id, .. }
+            | Self::ResolvedInlayHint { id, .. }
+            | Self::DocumentLinks { id, .. }
+            | Self::ResolvedDocumentLink { id, .. }
+            | Self::DocumentColors { id, .. }
+            | Self::ColorPresentations { id, .. }
+            | Self::LinkedEditingRanges { id, .. }
+            | Self::Monikers { id, .. }
+            | Self::PrepareRename { id, .. }
+            | Self::Rename { id, .. }
+            | Self::PrepareCallHierarchy { id, .. }
+            | Self::CallHierarchyIncomingCalls { id, .. }
+            | Self::CallHierarchyOutgoingCalls { id, .. }
+            | Self::PrepareTypeHierarchy { id, .. }
+            | Self::TypeHierarchySupertypes { id, .. }
+            | Self::TypeHierarchySubtypes { id, .. }
+            | Self::SemanticTokens { id, .. }
+            | Self::SemanticTokensDelta { id, .. }
+            | Self::SemanticTokensRange { id, .. }
+            | Self::DocumentDiagnostic { id, .. }
+            | Self::WorkspaceDiagnostic { id, .. }
+            | Self::ShutdownAck { id, .. } => Some(*id),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum CodeActionOrCommand {
@@ -736,7 +842,13 @@ pub enum WorkspaceSymbolResponseItem {
 
 #[derive(Message, EntityEvent, Clone, Debug)]
 pub struct LspRequest {
+    /// Entity carrying the [`crate::LspClient`] that should handle this
+    /// request.
     pub entity: Entity,
+    /// If set and the target entity has [`crate::LspRequestOrigins`],
+    /// responses for this request will be stamped with `origin` instead
+    /// of `entity`.
+    pub origin: Option<Entity>,
     pub msg: LspMessage,
 }
 

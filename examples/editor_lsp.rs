@@ -162,6 +162,7 @@ fn setup_editor(
 
     lsp_w.write(LspRequest {
         entity: editor_entity,
+        origin: None,
         msg: LspMessage::Initialize {
             root_uri: root_uri.clone(),
             capabilities: Box::new(capabilities),
@@ -170,11 +171,13 @@ fn setup_editor(
 
     lsp_w.write(LspRequest {
         entity: editor_entity,
+        origin: None,
         msg: LspMessage::Initialized,
     });
 
     lsp_w.write(LspRequest {
         entity: editor_entity,
+        origin: None,
         msg: LspMessage::DidOpen {
             uri: doc_uri.clone(),
             language_id: "rust".to_string(),
