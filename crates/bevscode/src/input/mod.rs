@@ -10,7 +10,6 @@ pub mod keybindings;
 pub mod keyboard;
 pub mod mouse;
 pub mod picking_backend;
-pub mod selection_ops;
 pub mod word_boundary;
 
 pub use dispatch::dispatch_action_events;

@@ -1011,7 +1011,6 @@ pub fn execute_code_action(
 ) {
     match action {
         CodeActionOrCommand::Action(action) => {
-            // TODO: Apply workspace edit when present.
             #[cfg(debug_assertions)]
             if let Some(edit) = &action.edit {
                 debug!("[LSP] Code action has workspace edit: {:?}", edit);

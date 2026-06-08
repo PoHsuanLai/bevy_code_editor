@@ -822,7 +822,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bevscode"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_instanced_text",
@@ -1471,7 +1471,7 @@ dependencies = [
 
 [[package]]
 name = "bevy_instanced_text_editor"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_instanced_text",
@@ -1591,7 +1591,7 @@ dependencies = [
 
 [[package]]
 name = "bevy_lsp"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "async-channel",
  "async-lsp",
@@ -2096,7 +2096,7 @@ dependencies = [
 
 [[package]]
 name = "bevy_tree_sitter"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "arborium",
  "bevy_app",
