@@ -6,7 +6,6 @@
 //! invariant was violated — enough to identify which system wrote a bad value.
 
 #![cfg(test)]
-#![allow(clippy::field_reassign_with_default)]
 
 use bevy::input::mouse::MouseScrollUnit;
 use bevy::math::{Affine2, Vec2, Vec3};
@@ -59,9 +58,11 @@ fn make_test_app() -> App {
 }
 
 fn spawn_editor(app: &mut App, text: &str) -> Entity {
-    let mut computed = ComputedNode::default();
-    computed.size = Vec2::new(800.0, 600.0);
-    computed.inverse_scale_factor = 1.0;
+    let computed = ComputedNode {
+        size: Vec2::new(800.0, 600.0),
+        inverse_scale_factor: 1.0,
+        ..default()
+    };
 
     let font_bundle = (
         TextFont::from_font_size(14.0),

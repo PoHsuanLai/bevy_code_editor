@@ -37,6 +37,7 @@ pub mod spawn;
 pub mod theme;
 pub mod tree_sitter;
 
+use bevy::ecs::query::QueryData;
 use bevy::prelude::*;
 
 pub use highlight::{CodeHighlighter, MarkdownHighlighter, NoHighlight};
@@ -60,29 +61,32 @@ impl Plugin for BevyMarkdownPlugin {
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[derive(QueryData)]
+struct MarkdownRow {
+    entity: Entity,
+    md: &'static Markdown,
+    fonts: &'static MarkdownFonts,
+    colors: &'static MarkdownColors,
+    spacing: &'static MarkdownSpacing,
+    scales: &'static MarkdownScales,
+}
+
+type MarkdownChanged = Or<(
+    Changed<Markdown>,
+    Changed<MarkdownFonts>,
+    Changed<MarkdownColors>,
+    Changed<MarkdownSpacing>,
+    Changed<MarkdownScales>,
+)>;
+
 fn rebuild_markdown(
     mut commands: Commands,
-    targets: Query<
-        (
-            Entity,
-            &Markdown,
-            &MarkdownFonts,
-            &MarkdownColors,
-            &MarkdownSpacing,
-            &MarkdownScales,
-        ),
-        Or<(
-            Changed<Markdown>,
-            Changed<MarkdownFonts>,
-            Changed<MarkdownColors>,
-            Changed<MarkdownSpacing>,
-            Changed<MarkdownScales>,
-        )>,
-    >,
+    targets: Query<MarkdownRow, MarkdownChanged>,
     highlighter: Option<Res<MarkdownHighlighter>>,
 ) {
-    for (entity, md, fonts, colors, spacing, scales) in &targets {
+    for row in &targets {
+        let (entity, md, fonts, colors, spacing, scales) =
+            (row.entity, row.md, row.fonts, row.colors, row.spacing, row.scales);
         // Whole rebuild runs inside `queue_silenced` so if the host
         // despawns the markdown root between change-detection and
         // command flush, the closure is skipped atomically — no

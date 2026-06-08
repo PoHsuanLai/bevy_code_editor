@@ -1,5 +1,3 @@
-#![allow(clippy::type_complexity)]
-
 //! UI-agnostic Language Server Protocol transport for Bevy.
 //!
 //! Attach [`LspClient`], [`LspDocument`], and [`ServerCapabilities`] to an

@@ -26,18 +26,20 @@ pub fn cells_from_viewport(
     Some((cols, rows))
 }
 
-#[allow(clippy::type_complexity)]
+#[derive(bevy::ecs::query::QueryData)]
+#[query_data(mutable)]
+pub(crate) struct TerminalSizeRow {
+    computed: &'static ComputedNode,
+    font: &'static TextFont,
+    line_height: &'static bevy::text::LineHeight,
+    mono: &'static MonoCellWidth,
+    session: &'static mut TerminalSession,
+}
+
+type TerminalSizeChanged = Or<(Changed<ComputedNode>, Changed<MonoCellWidth>)>;
+
 pub fn sync_terminal_size(
-    mut q: Query<
-        (
-            &ComputedNode,
-            &TextFont,
-            &bevy::text::LineHeight,
-            &MonoCellWidth,
-            &mut TerminalSession,
-        ),
-        Or<(Changed<ComputedNode>, Changed<MonoCellWidth>)>,
-    >,
+    mut q: Query<TerminalSizeRow, TerminalSizeChanged>,
     windows: Query<&bevy::window::Window, With<bevy::window::PrimaryWindow>>,
 ) {
     let scale = windows
@@ -46,7 +48,9 @@ pub fn sync_terminal_size(
         .unwrap_or(1)
         .max(1);
 
-    for (computed, font, lh, mono, mut session) in q.iter_mut() {
+    for mut row in q.iter_mut() {
+        let (computed, font, lh, mono) = (row.computed, row.font, row.line_height, row.mono);
+        let session = &mut row.session;
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
         let char_width = mono.px;
         let Some((raw_cols, raw_rows)) = cells_from_viewport(computed, char_width, line_height)

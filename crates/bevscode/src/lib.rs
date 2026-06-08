@@ -1,5 +1,3 @@
-#![allow(clippy::type_complexity)]
-
 //! Embeddable code editor plugin for Bevy.
 //!
 //! Designed to be dropped into any Bevy application as a self-contained
@@ -161,7 +159,8 @@ pub mod prelude {
     pub use bevy_instanced_text::prelude::*;
 
     pub use crate::plugin::{
-        AutoResizeViewport, CodeEditorPlugin, CodeEditorPlugins, EditorAppExt, EditorUiPlugin,
+        AutoResizeViewport, CodeEditorPlugin, CodeEditorPlugins, EditorAppExt,
+        EditorDispatchPlugin, EditorUiPlugin,
     };
 
     pub use crate::types::editor::{CodeEditor, OpenRequested, SaveRequested};

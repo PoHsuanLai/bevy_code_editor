@@ -10,9 +10,6 @@
 //! or corrupted the color, not just "colors are wrong."
 
 #![cfg(test)]
-// `ComputedNode` has no constructor that accepts size/scale — tests must
-// build it via `default()` then assign fields.
-#![allow(clippy::field_reassign_with_default)]
 
 use super::plugin::DisplayMapPlugin;
 use crate::plugin::syntax_highlighting::SyntaxPlugin;
@@ -71,9 +68,11 @@ fn make_test_app() -> App {
 /// styling / layout plumbing reads — the same bundle the editor's host
 /// app would spawn in production.
 fn spawn_test_editor(app: &mut App, text: &str) -> Entity {
-    let mut computed = ComputedNode::default();
-    computed.size = Vec2::new(800.0, 600.0);
-    computed.inverse_scale_factor = 1.0;
+    let computed = ComputedNode {
+        size: Vec2::new(800.0, 600.0),
+        inverse_scale_factor: 1.0,
+        ..default()
+    };
 
     let font_bundle = (
         TextFont::from_font_size(14.0),
@@ -480,10 +479,15 @@ fn editor_initializes_with_syntax_provider() {
 fn computed_node_logical_pixel_conversion() {
     // 1600x1200 physical at 2x DPI → 800x600 logical.
     // padding.left=100px physical (50 logical), padding.top=20px physical (10 logical).
-    let mut computed = ComputedNode::default();
-    computed.size = Vec2::new(1600.0, 1200.0);
-    computed.inverse_scale_factor = 0.5;
-    computed.padding.min_inset = Vec2::new(100.0, 20.0);
+    let computed = ComputedNode {
+        size: Vec2::new(1600.0, 1200.0),
+        inverse_scale_factor: 0.5,
+        padding: bevy::sprite::BorderRect {
+            min_inset: Vec2::new(100.0, 20.0),
+            ..default()
+        },
+        ..default()
+    };
 
     let inv = computed.inverse_scale_factor();
     assert_eq!((computed.size().x * inv) as u32, 800, "logical width");
@@ -969,9 +973,11 @@ fn full_postupdate_schedule_with_real_overlays() {
         CursorLine::default(),
     ));
 
-    let mut computed = ComputedNode::default();
-    computed.size = Vec2::new(800.0, 600.0);
-    computed.inverse_scale_factor = 1.0;
+    let computed = ComputedNode {
+        size: Vec2::new(800.0, 600.0),
+        inverse_scale_factor: 1.0,
+        ..default()
+    };
     app.world_mut().entity_mut(entity).insert((
         computed,
         UiGlobalTransform::from(Affine2::from_translation(Vec2::new(400.0, 300.0))),
@@ -1095,9 +1101,11 @@ fn gpu_readback_renders_colored_pixels() {
     ));
 
     let entity = spawn_test_editor(&mut app, "fn main() {}\n");
-    let mut computed = ComputedNode::default();
-    computed.size = Vec2::new(W as f32, H as f32);
-    computed.inverse_scale_factor = 1.0;
+    let computed = ComputedNode {
+        size: Vec2::new(W as f32, H as f32),
+        inverse_scale_factor: 1.0,
+        ..default()
+    };
     app.world_mut().entity_mut(entity).insert((
         computed,
         UiGlobalTransform::from(Affine2::from_translation(Vec2::new(
