@@ -313,7 +313,7 @@ type DispatchLspQuery<'w, 's> = Query<
 >;
 
 #[derive(SystemParam)]
-pub(crate) struct DispatchParams<'w, 's> {
+pub struct DispatchParams<'w, 's> {
     input_focus: Res<'w, InputFocus>,
     action_query: Query<
         'w,
@@ -337,7 +337,17 @@ pub(crate) struct DispatchParams<'w, 's> {
 }
 
 /// `EditorAction` → typed event dispatcher.
-pub(crate) fn dispatch_action_events(
+///
+/// Polls leafwing's `ActionState<EditorAction>` and emits the
+/// corresponding `*Requested` events for the focused editor.
+/// Handles key repeat, read-only gating, auto-indent, goto-line
+/// interception, and (with `lsp`) completion-popup interception.
+///
+/// [`EditorDispatchPlugin`](crate::plugin::EditorDispatchPlugin)
+/// registers this in `Update` inside `InputSet ∩ ActionDispatchSet`.
+/// Hosts that disable `EditorDispatchPlugin` can register it
+/// themselves with a custom run condition.
+pub fn dispatch_action_events(
     mut params: DispatchParams,
     #[cfg(feature = "lsp")] mut pending: ResMut<PendingActionFollowup>,
     #[cfg(feature = "lsp")] mut editor_q: Query<

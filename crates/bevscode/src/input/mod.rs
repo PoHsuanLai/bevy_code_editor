@@ -13,7 +13,7 @@ pub mod picking_backend;
 pub mod selection_ops;
 pub mod word_boundary;
 
-pub(crate) use dispatch::dispatch_action_events;
+pub use dispatch::dispatch_action_events;
 pub use editing::on_edit_invalidate_caches;
 pub use keybindings::{default_input_map, EditorAction};
 pub use keyboard::on_focused_keyboard;
