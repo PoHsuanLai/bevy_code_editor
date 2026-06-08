@@ -1457,8 +1457,8 @@ dependencies = [
 
 [[package]]
 name = "bevy_instanced_text"
-version = "0.1.1"
-source = "git+https://github.com/PoHsuanLai/bevy_instanced_text.git?rev=51220b7#51220b790d6ed8975f0c35263771717177edfbbe"
+version = "0.1.0"
+source = "git+https://github.com/PoHsuanLai/bevy_instanced_text.git?rev=ad62e10#ad62e10050766c61957dfbfa9f96eeceb0175081"
 dependencies = [
  "bevy",
  "bevy_camera",
@@ -1482,8 +1482,8 @@ dependencies = [
 
 [[package]]
 name = "bevy_instanced_text_interaction"
-version = "0.1.1"
-source = "git+https://github.com/PoHsuanLai/bevy_instanced_text.git?rev=51220b7#51220b790d6ed8975f0c35263771717177edfbbe"
+version = "0.1.0"
+source = "git+https://github.com/PoHsuanLai/bevy_instanced_text.git?rev=ad62e10#ad62e10050766c61957dfbfa9f96eeceb0175081"
 dependencies = [
  "arboard",
  "bevy",
