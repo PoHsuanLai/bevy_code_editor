@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use bevy_instanced_text_editor::RopeBuffer;
 use lsp_types::*;
 
-use crate::text_view::TextBuffer;
+use crate::text_view::InstancedText;
 use crate::types::{CodeEditor, CursorState};
 use bevy::input_focus::InputFocus;
 use bevy::ui::{ComputedNode, ScrollPosition};
@@ -56,7 +56,7 @@ type RequestInlayHintsQuery<'w, 's> = Query<
         Entity,
         &'static LspClient,
         &'static ServerCapabilities,
-        Ref<'static, TextBuffer<RopeBuffer>>,
+        Ref<'static, InstancedText<RopeBuffer>>,
         Ref<'static, ScrollPosition>,
         Ref<'static, ComputedNode>,
         Option<&'static LspDocument>,
@@ -76,7 +76,7 @@ type RequestDocumentHighlightsQuery<'w, 's> = Query<
         Entity,
         &'static ServerCapabilities,
         &'static CursorState,
-        &'static TextBuffer<RopeBuffer>,
+        &'static InstancedText<RopeBuffer>,
         Option<&'static LspDocument>,
         &'static mut LspDocumentHighlights,
         &'static crate::settings::LspConfig,
@@ -260,7 +260,7 @@ pub fn on_lsp_diagnostics(
 pub fn clear_stale_diagnostics_on_edit(
     mut commands: Commands,
     diagnostics_q: Query<(Entity, &DiagnosticMarker)>,
-    editors: Query<(Ref<TextBuffer<RopeBuffer>>, &LspDocument), With<CodeEditor>>,
+    editors: Query<(Ref<InstancedText<RopeBuffer>>, &LspDocument), With<CodeEditor>>,
 ) {
     for (buffer, doc) in editors.iter() {
         if !buffer.is_changed() {
@@ -283,7 +283,7 @@ pub fn on_lsp_completion(
     mut q: Query<
         (
             &CursorState,
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &mut LspCompletionPopup,
             &mut CompletionLifecycle,
             Option<&crate::settings::Suggest>,
@@ -400,7 +400,7 @@ pub fn on_lsp_definition(
     mut q: Query<
         (
             &mut CursorState,
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             Option<&LspDocument>,
         ),
         With<CodeEditor>,
@@ -470,7 +470,7 @@ pub fn on_lsp_references(
 
 pub fn on_lsp_format(
     mut events: MessageReader<LspFormatResponse>,
-    q: Query<&TextBuffer<RopeBuffer>, With<CodeEditor>>,
+    q: Query<&InstancedText<RopeBuffer>, With<CodeEditor>>,
     mut replace_writer: MessageWriter<bevy_instanced_text_editor::ReplaceRangeRequested>,
 ) {
     for ev in events.read() {
@@ -583,7 +583,7 @@ pub fn on_lsp_rename(
     mut events: MessageReader<LspRenameResponse>,
     mut q: Query<
         (
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             Option<&LspDocument>,
             &mut LspRenamePopup,
         ),
@@ -662,7 +662,7 @@ pub fn on_lsp_server_crashed(
 /// and `OnEdit` consistent.
 fn apply_text_edits(
     entity: Entity,
-    buffer: &TextBuffer<RopeBuffer>,
+    buffer: &InstancedText<RopeBuffer>,
     edits: Vec<TextEdit>,
     writer: &mut MessageWriter<bevy_instanced_text_editor::ReplaceRangeRequested>,
 ) {
@@ -711,7 +711,7 @@ pub fn sync_lsp_document(
     time: Res<Time>,
     mut query: Query<
         (
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             Option<&mut LspDocument>,
             &mut LspDidChangeBatcher,
         ),

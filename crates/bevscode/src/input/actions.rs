@@ -1,7 +1,7 @@
 //! Editor-specific helpers used by the focused-keyboard observer and LSP
 //! handlers — bracket auto-close predicates and LSP completion glue.
 
-use crate::text_view::TextBuffer;
+use crate::text_view::InstancedText;
 use crate::types::*;
 #[cfg(feature = "lsp")]
 use bevy::prelude::{Entity, MessageWriter};
@@ -15,7 +15,7 @@ use bevy::log::trace;
 #[cfg(feature = "lsp")]
 use bevy_lsp::{LspDocument, LspMessage, LspRequest};
 
-pub fn insert_closing_char(cursor: &CursorState, buffer: &mut TextBuffer<RopeBuffer>, c: char) {
+pub fn insert_closing_char(cursor: &CursorState, buffer: &mut InstancedText<RopeBuffer>, c: char) {
     let cursor_pos = cursor.cursor_pos.min(buffer.len_chars());
     buffer.insert_char(cursor_pos, c);
 }

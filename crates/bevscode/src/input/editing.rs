@@ -2,12 +2,12 @@
 
 use crate::types::events::TextEdited;
 use bevy::prelude::*;
-use bevy_instanced_text::TextBuffer;
+use bevy_instanced_text::InstancedText;
 use bevy_instanced_text_editor::{OnEdit, RopeBuffer};
 
 pub fn on_edit_invalidate_caches(
     trigger: On<OnEdit>,
-    q: Query<&TextBuffer<RopeBuffer>, With<crate::types::CodeEditor>>,
+    q: Query<&InstancedText<RopeBuffer>, With<crate::types::CodeEditor>>,
     mut writer: MessageWriter<TextEdited>,
     mut version: Local<u64>,
 ) {

@@ -14,7 +14,7 @@ type EditorView<'w, 's> = Query<
     (
         &'static mut SelectionState,
         &'static mut CursorState,
-        &'static crate::text_view::TextBuffer<RopeBuffer>,
+        &'static crate::text_view::InstancedText<RopeBuffer>,
     ),
     With<CodeEditor>,
 >;
@@ -25,7 +25,7 @@ type EditorViewWithSelection<'w, 's> = Query<
     (
         &'static mut SelectionState,
         &'static mut CursorState,
-        &'static crate::text_view::TextBuffer<RopeBuffer>,
+        &'static crate::text_view::InstancedText<RopeBuffer>,
         &'static crate::settings::SelectionConfig,
     ),
     With<CodeEditor>,
@@ -113,7 +113,7 @@ pub fn handle_clear_secondary_cursors(
 fn add_cursor_above(
     sel: &mut SelectionState,
     cursor: &mut CursorState,
-    buffer: &crate::text_view::TextBuffer<RopeBuffer>,
+    buffer: &crate::text_view::InstancedText<RopeBuffer>,
 ) {
     let primary_pos = sel.selections.primary().head_offset();
     let line_idx = buffer.char_to_line(primary_pos);
@@ -137,7 +137,7 @@ fn add_cursor_above(
 fn add_cursor_below(
     sel: &mut SelectionState,
     cursor: &mut CursorState,
-    buffer: &crate::text_view::TextBuffer<RopeBuffer>,
+    buffer: &crate::text_view::InstancedText<RopeBuffer>,
 ) {
     let primary_pos = sel.selections.primary().head_offset();
     let line_idx = buffer.char_to_line(primary_pos);

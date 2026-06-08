@@ -353,7 +353,7 @@ pub fn dispatch_action_events(
     #[cfg(feature = "lsp")] mut editor_q: Query<
         (
             &mut CursorState,
-            &mut crate::text_view::TextBuffer<RopeBuffer>,
+            &mut crate::text_view::InstancedText<RopeBuffer>,
             &mut GotoLineState,
         ),
         With<CodeEditor>,
@@ -361,7 +361,7 @@ pub fn dispatch_action_events(
     #[cfg(not(feature = "lsp"))] mut editor_q: Query<
         (
             &CursorState,
-            &crate::text_view::TextBuffer<RopeBuffer>,
+            &crate::text_view::InstancedText<RopeBuffer>,
             &mut GotoLineState,
         ),
         With<CodeEditor>,

@@ -17,7 +17,7 @@ use bevy::ui::ui_transform::UiGlobalTransform;
 use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::view::measurement::LayoutTuning;
 use bevy_instanced_text::{
-    ContentMetrics, DisplayLayout, HiddenLines, LineStyles, MonoCellWidth, TextBounds, TextBuffer,
+    ContentMetrics, DisplayLayout, HiddenLines, LineStyles, MonoCellWidth, TextBounds, InstancedText,
     TextOverlays, TextUnderlays,
 };
 use bevy_instanced_text_editor::{RopeBuffer, TextViewDragState};
@@ -73,7 +73,7 @@ fn spawn_editor(app: &mut App, text: &str) -> Entity {
     );
     let scroll_bundle = (ScrollPosition::default(), ScrollAnimator::default());
     let layout_bundle = (
-        TextBuffer::<RopeBuffer>::new(RopeBuffer::new(text)),
+        InstancedText::<RopeBuffer>::new(RopeBuffer::new(text)),
         ContentMetrics::default(),
         computed,
         DisplayLayout::default(),

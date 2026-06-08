@@ -12,7 +12,7 @@
 //!     .add_systems(Startup, |mut commands: Commands| {
 //!         commands.spawn((
 //!             TextEditor,
-//!             TextBuffer::<RopeBuffer>::new(RopeBuffer::new("edit me")),
+//!             InstancedText::<RopeBuffer>::new(RopeBuffer::new("edit me")),
 //!             TextFont::default(),
 //!         ));
 //!     })

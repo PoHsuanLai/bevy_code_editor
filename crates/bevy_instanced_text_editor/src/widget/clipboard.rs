@@ -6,14 +6,14 @@ use crate::text_edit::*;
 use crate::text_state::{EditHistoryState, TextEditor};
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy_instanced_text::TextBuffer;
+use bevy_instanced_text::InstancedText;
 use bevy_instanced_text_interaction::{ClipboardResource, CursorState, SelectionState};
 
 pub fn handle_copy(
     mut events: MessageReader<CopyRequested>,
     input_focus: Res<InputFocus>,
     clipboard: Res<ClipboardResource>,
-    q: Query<(&SelectionState, &TextBuffer<RopeBuffer>), With<TextEditor>>,
+    q: Query<(&SelectionState, &InstancedText<RopeBuffer>), With<TextEditor>>,
 ) {
     if events.read().next().is_none() {
         return;
@@ -41,7 +41,7 @@ pub fn handle_cut(
             &mut SelectionState,
             &mut EditHistoryState,
             &mut CursorState,
-            &mut TextBuffer<RopeBuffer>,
+            &mut InstancedText<RopeBuffer>,
         ),
         With<TextEditor>,
     >,
@@ -78,7 +78,7 @@ pub fn handle_paste(
             &mut SelectionState,
             &mut EditHistoryState,
             &mut CursorState,
-            &mut TextBuffer<RopeBuffer>,
+            &mut InstancedText<RopeBuffer>,
         ),
         With<TextEditor>,
     >,

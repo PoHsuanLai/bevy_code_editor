@@ -1,6 +1,6 @@
 //! Editor-side syntax highlighting glue for tree-sitter.
 
-use crate::text_view::TextBuffer;
+use crate::text_view::InstancedText;
 use crate::types::CodeEditor;
 use crate::types::LineSegment;
 use bevy::prelude::*;
@@ -32,7 +32,7 @@ type SyncEditorParseSourceQuery<'w, 's> = Query<
     'w,
     's,
     (
-        Ref<'static, TextBuffer<RopeBuffer>>,
+        Ref<'static, InstancedText<RopeBuffer>>,
         &'static EditorParseBufferRef,
     ),
     With<CodeEditor>,

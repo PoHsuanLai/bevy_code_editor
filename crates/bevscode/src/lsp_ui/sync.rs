@@ -17,7 +17,7 @@ use bevy::input_focus::InputFocus;
 use bevy_instanced_text_editor::RopeBuffer;
 
 use crate::settings::*;
-use crate::text_view::TextBuffer;
+use crate::text_view::InstancedText;
 use crate::types::{CodeEditor, CursorState};
 use bevy_instanced_text::MonoCellWidth;
 
@@ -37,7 +37,7 @@ use lsp_types::DiagnosticSeverity;
 const MAX_HOVER_HEIGHT: f32 = 320.0;
 
 /// Resolve a char index into `(line, character)`.
-fn buffer_position(buffer: &TextBuffer<RopeBuffer>, char_index: usize) -> (u32, u32) {
+fn buffer_position(buffer: &InstancedText<RopeBuffer>, char_index: usize) -> (u32, u32) {
     let char_index = char_index.min(buffer.len_chars());
     let line = buffer.char_to_line(char_index);
     let line_start = buffer.line_to_char(line);
@@ -53,7 +53,7 @@ pub fn sync_completion_popup(
             Entity,
             &LspCompletionPopup,
             &CursorState,
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &TextFont,
             &bevy::text::LineHeight,
             &MonoCellWidth,
@@ -163,7 +163,7 @@ pub fn sync_hover_popup(
         (
             Entity,
             &LspHoverPopup,
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &TextFont,
             &MonoCellWidth,
             &ServerCapabilities,
@@ -328,7 +328,7 @@ pub fn sync_signature_help_popup(
             Entity,
             &LspSignatureHelpPopup,
             &CursorState,
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &TextFont,
             &MonoCellWidth,
         ),
@@ -422,7 +422,7 @@ pub fn sync_code_actions_popup(
             Entity,
             &LspCodeActionsPopup,
             &CursorState,
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &TextFont,
             &bevy::text::LineHeight,
             &MonoCellWidth,

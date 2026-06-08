@@ -21,7 +21,7 @@ use bevy::prelude::*;
 use bevy::text::{Justify, TextLayout};
 use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{
-    FormattedSpan, HiddenLines, LineStyles, MonoFontFaces, TextBuffer, TextFormat, TextSpan,
+    FormattedSpan, HiddenLines, LineStyles, MonoFontFaces, InstancedText, TextFormat, TextSpan,
 };
 use bevy_instanced_text_editor::RopeBuffer;
 
@@ -80,7 +80,7 @@ pub(crate) fn setup_gutter_text_view(
             GutterTextView {
                 editor: editor_entity,
             },
-            TextBuffer::<TextSpan>::default(),
+            InstancedText::<TextSpan>::default(),
             font.clone(),
             faces.clone(),
             *line_height,
@@ -117,7 +117,7 @@ pub(crate) fn sync_gutter_text_view(
         (
             Entity,
             &SelectionState,
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &ScrollPosition,
             &GutterConfig,
             Ref<FoldState>,
@@ -132,7 +132,7 @@ pub(crate) fn sync_gutter_text_view(
     mut gutter_query: Query<
         (
             &GutterTextView,
-            &mut TextBuffer<TextSpan>,
+            &mut InstancedText<TextSpan>,
             &mut ScrollPosition,
             &mut HiddenLines,
             &mut LineStyles,

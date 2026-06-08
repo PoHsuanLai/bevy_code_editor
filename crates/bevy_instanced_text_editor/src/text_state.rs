@@ -108,7 +108,7 @@ impl Default for IndentConfig {
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 #[require(
-    bevy_instanced_text::TextBuffer<crate::text::RopeBuffer>,
+    bevy_instanced_text::InstancedText<crate::text::RopeBuffer>,
     bevy_instanced_text_interaction::CursorState,
     bevy_instanced_text_interaction::SelectionState,
     EditHistoryState,

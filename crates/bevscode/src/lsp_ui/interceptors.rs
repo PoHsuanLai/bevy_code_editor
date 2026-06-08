@@ -11,7 +11,7 @@ use crate::input::keybindings::EditorAction;
 use crate::lsp_ui::completion::{LspCompletionPopup, UnifiedCompletionItem};
 use crate::lsp_ui::state::CompletionLifecycle;
 use crate::settings::{AcceptSuggestionOnEnter, LspConfig, Suggest, TabCompletion};
-use crate::text_view::TextBuffer;
+use crate::text_view::InstancedText;
 use crate::types::{CodeEditor, CursorState};
 use bevy::ecs::world::Mut;
 use bevy::prelude::*;
@@ -59,7 +59,7 @@ pub fn completion_popup_intercept(
     editor_q: &mut Query<
         (
             &mut CursorState,
-            &mut TextBuffer<RopeBuffer>,
+            &mut InstancedText<RopeBuffer>,
             &mut crate::types::fold::GotoLineState,
         ),
         With<CodeEditor>,
@@ -153,7 +153,7 @@ fn apply_selected(
     editor_q: &mut Query<
         (
             &mut CursorState,
-            &mut TextBuffer<RopeBuffer>,
+            &mut InstancedText<RopeBuffer>,
             &mut crate::types::fold::GotoLineState,
         ),
         With<CodeEditor>,

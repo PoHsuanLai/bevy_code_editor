@@ -58,7 +58,7 @@ pub fn on_focused_keyboard(
             &mut SelectionState,
             &mut EditHistoryState,
             &mut CursorState,
-            &mut crate::text_view::TextBuffer<RopeBuffer>,
+            &mut crate::text_view::InstancedText<RopeBuffer>,
             &crate::settings::AutoEdit,
             &crate::settings::Indentation,
             &crate::settings::Misc,
@@ -206,7 +206,7 @@ struct InsertCharCtx<'a> {
     sel: &'a mut SelectionState,
     hist: &'a mut EditHistoryState,
     cursor: &'a mut CursorState,
-    buffer: &'a mut crate::text_view::TextBuffer<RopeBuffer>,
+    buffer: &'a mut crate::text_view::InstancedText<RopeBuffer>,
     auto_edit: &'a crate::settings::AutoEdit,
     indentation: &'a crate::settings::Indentation,
 }

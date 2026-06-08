@@ -145,7 +145,7 @@ pub mod lsp_ui_tempera;
 pub mod prelude {
     //! Convenient re-exports for common editor usage.
     //!
-    //! Engine-side primitives (`TextBuffer<T>`, `TextFont`, `DisplayLayout`,
+    //! Engine-side primitives (`InstancedText<T>`, `TextFont`, `DisplayLayout`,
     //! `ContentMetrics`, `InstancedTextPlugin`, `InstancedTextPlugins`)
     //! come in via `bevy_instanced_text::prelude::*`. Scroll state is
     //! `bevy::ui::ScrollPosition`. The editor adds the editor plugin (and

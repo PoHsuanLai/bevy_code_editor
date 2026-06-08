@@ -14,7 +14,7 @@ use super::state::{
     SignatureLifecycle, TabstopSession,
 };
 use crate::settings::LspConfig;
-use crate::text_view::TextBuffer;
+use crate::text_view::InstancedText;
 use crate::types::events::{
     CompletionApplied, CompletionDismissed, CompletionRequested, HoverRequested, RenameRequested,
     SignatureHelpRequested, TextEdited,
@@ -32,7 +32,7 @@ type CompletionRequestQuery<'w, 's> = Query<
     'w,
     's,
     (
-        &'static TextBuffer<RopeBuffer>,
+        &'static InstancedText<RopeBuffer>,
         Option<&'static LspDocument>,
         &'static bevy_lsp::ServerCapabilities,
         &'static mut LspDebounceTimers,
@@ -45,7 +45,7 @@ type HoverRequestQuery<'w, 's> = Query<
     'w,
     's,
     (
-        &'static TextBuffer<RopeBuffer>,
+        &'static InstancedText<RopeBuffer>,
         Option<&'static LspDocument>,
         &'static bevy_lsp::ServerCapabilities,
         &'static mut LspDebounceTimers,
@@ -59,7 +59,7 @@ type RenameRequestQuery<'w, 's> = Query<
     's,
     (
         Entity,
-        &'static TextBuffer<RopeBuffer>,
+        &'static InstancedText<RopeBuffer>,
         Option<&'static LspDocument>,
         &'static bevy_lsp::ServerCapabilities,
         &'static mut LspRenamePopup,
@@ -73,7 +73,7 @@ type SignatureHelpRequestQuery<'w, 's> = Query<
     's,
     (
         Entity,
-        &'static TextBuffer<RopeBuffer>,
+        &'static InstancedText<RopeBuffer>,
         Option<&'static LspDocument>,
         &'static bevy_lsp::ServerCapabilities,
         &'static mut LspSignatureHelpPopup,
@@ -90,7 +90,7 @@ type ApplyCompletionQuery<'w, 's> = Query<
         &'static mut bevy_instanced_text_editor::SelectionState,
         &'static mut bevy_instanced_text_editor::EditHistoryState,
         &'static mut CursorState,
-        &'static mut TextBuffer<RopeBuffer>,
+        &'static mut InstancedText<RopeBuffer>,
         &'static mut LspCompletionPopup,
         &'static mut CompletionLifecycle,
         &'static mut TabstopSession,
@@ -112,7 +112,7 @@ pub fn listen_text_edit_events(
     mut events: MessageReader<TextEdited>,
     mut query: Query<
         (
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &bevy_lsp::ServerCapabilities,
             &mut LspDidChangeBatcher,
             &LspConfig,
@@ -371,7 +371,7 @@ pub fn dismiss_completion_on_cursor_move(
     mut query: Query<
         (
             Ref<CursorState>,
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &mut LspCompletionPopup,
             &mut CompletionLifecycle,
         ),
@@ -473,7 +473,7 @@ pub fn advance_tabstop_session(
             &mut bevy_instanced_text_editor::SelectionState,
             &mut bevy_instanced_text_editor::EditHistoryState,
             &mut CursorState,
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &mut TabstopSession,
         ),
         With<CodeEditor>,
@@ -540,7 +540,7 @@ pub fn end_tabstop_session_on_cursor_leave(
     mut query: Query<
         (
             Ref<CursorState>,
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &mut bevy_instanced_text_editor::EditHistoryState,
             &mut TabstopSession,
         ),

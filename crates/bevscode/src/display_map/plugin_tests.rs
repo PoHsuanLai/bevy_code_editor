@@ -34,7 +34,7 @@ use bevy_instanced_text::view::plugin::update_text_views;
 use bevy_instanced_text::view::render::{GlyphBatchComponent, GlyphInstance};
 use bevy_instanced_text::view::text_access::produce_layouts;
 use bevy_instanced_text::{
-    DisplayLayout, LineStyles, MonoCellWidth, TextBounds, TextBuffer, TextOverlays, TextUnderlays,
+    DisplayLayout, LineStyles, MonoCellWidth, TextBounds, InstancedText, TextOverlays, TextUnderlays,
     TextViewBatchEntity,
 };
 use bevy_instanced_text_editor::{BlinkPhase, EditDelta, EditPoint, RopeBuffer};
@@ -87,7 +87,7 @@ fn spawn_test_editor(app: &mut App, text: &str) -> Entity {
         bevy::text::TextBackgroundColor::default(),
     );
     let layout_bundle = (
-        TextBuffer::<RopeBuffer>::new(RopeBuffer::new(text)),
+        InstancedText::<RopeBuffer>::new(RopeBuffer::new(text)),
         bevy_instanced_text::ContentMetrics::default(),
         computed,
         DisplayLayout::default(),
@@ -590,7 +590,7 @@ fn pipeline_consistency_after_newline_insert() {
     {
         let mut buf = app
             .world_mut()
-            .get_mut::<TextBuffer<RopeBuffer>>(entity)
+            .get_mut::<InstancedText<RopeBuffer>>(entity)
             .unwrap();
         buf.0 = RopeBuffer(ropey::Rope::from_str(new_source));
     }
@@ -684,7 +684,7 @@ fn pipeline_consistency_after_backspace_join() {
     {
         let mut buf = app
             .world_mut()
-            .get_mut::<TextBuffer<RopeBuffer>>(entity)
+            .get_mut::<InstancedText<RopeBuffer>>(entity)
             .unwrap();
         buf.0 = RopeBuffer(ropey::Rope::from_str(new_source));
     }
@@ -792,7 +792,7 @@ fn pipeline_consistency_after_repeated_line_deletion() {
         {
             let mut buf = app
                 .world_mut()
-                .get_mut::<TextBuffer<RopeBuffer>>(entity)
+                .get_mut::<InstancedText<RopeBuffer>>(entity)
                 .unwrap();
             buf.0 = RopeBuffer(ropey::Rope::from_str(to_rope));
         }
@@ -1239,7 +1239,7 @@ fn newline_before_folded_region_does_not_hide_a_visible_line() {
     {
         let mut buf = app
             .world_mut()
-            .get_mut::<TextBuffer<RopeBuffer>>(entity)
+            .get_mut::<InstancedText<RopeBuffer>>(entity)
             .unwrap();
         buf.0 = RopeBuffer(ropey::Rope::from_str(&new_source));
     }
@@ -1278,7 +1278,7 @@ fn newline_before_folded_region_does_not_hide_a_visible_line() {
         .run_system_once(produce_hidden_lines)
         .unwrap();
 
-    let buffer = app.world().get::<TextBuffer<RopeBuffer>>(entity).unwrap();
+    let buffer = app.world().get::<InstancedText<RopeBuffer>>(entity).unwrap();
     let line_at = |i: usize| -> String {
         bevy_instanced_text::TextContent::line(&**buffer, i)
             .trim_end_matches('\n')
@@ -1357,7 +1357,7 @@ fn newline_before_folded_region_full_schedule() {
     {
         let mut buf = app
             .world_mut()
-            .get_mut::<TextBuffer<RopeBuffer>>(entity)
+            .get_mut::<InstancedText<RopeBuffer>>(entity)
             .unwrap();
         buf.0 = RopeBuffer(ropey::Rope::from_str(&new_source));
     }
@@ -1386,7 +1386,7 @@ fn newline_before_folded_region_full_schedule() {
         });
     app.update();
 
-    let buffer = app.world().get::<TextBuffer<RopeBuffer>>(entity).unwrap();
+    let buffer = app.world().get::<InstancedText<RopeBuffer>>(entity).unwrap();
     let line_at = |i: usize| -> String {
         bevy_instanced_text::TextContent::line(&**buffer, i)
             .trim_end_matches('\n')
@@ -1442,7 +1442,7 @@ fn backspace_before_folded_region_keeps_same_content_hidden() {
     {
         let mut buf = app
             .world_mut()
-            .get_mut::<TextBuffer<RopeBuffer>>(entity)
+            .get_mut::<InstancedText<RopeBuffer>>(entity)
             .unwrap();
         buf.0 = RopeBuffer(ropey::Rope::from_str(&new_source));
     }
@@ -1478,7 +1478,7 @@ fn backspace_before_folded_region_keeps_same_content_hidden() {
         .run_system_once(produce_hidden_lines)
         .unwrap();
 
-    let buffer = app.world().get::<TextBuffer<RopeBuffer>>(entity).unwrap();
+    let buffer = app.world().get::<InstancedText<RopeBuffer>>(entity).unwrap();
     let line_at = |i: usize| -> String {
         bevy_instanced_text::TextContent::line(&**buffer, i)
             .trim_end_matches('\n')
@@ -1558,13 +1558,13 @@ fn insert_newline_above_fn_main_full_pipeline() {
 
     // EDIT: insert `\n` at start of row 17.
     let row_17_byte = {
-        let buf = app.world().get::<TextBuffer<RopeBuffer>>(entity).unwrap();
+        let buf = app.world().get::<InstancedText<RopeBuffer>>(entity).unwrap();
         buf.rope().line_to_byte(17)
     };
     {
         let mut buf = app
             .world_mut()
-            .get_mut::<TextBuffer<RopeBuffer>>(entity)
+            .get_mut::<InstancedText<RopeBuffer>>(entity)
             .unwrap();
         let row_17_char = buf.rope().byte_to_char(row_17_byte);
         buf.0 .0.insert(row_17_char, "\n");
@@ -1600,7 +1600,7 @@ fn insert_newline_above_fn_main_full_pipeline() {
 
     // Assert: rope is correct.
     let post_rope_lines: Vec<String> = {
-        let buf = app.world().get::<TextBuffer<RopeBuffer>>(entity).unwrap();
+        let buf = app.world().get::<InstancedText<RopeBuffer>>(entity).unwrap();
         (0..buf.len_lines())
             .map(|i| {
                 bevy_instanced_text::TextContent::line(&**buf, i)

@@ -1,7 +1,7 @@
 //! Text editing operations on [`EditHistoryState`].
 
 use crate::text::RopeBuffer;
-use bevy_instanced_text::{ContentMetrics, TextBuffer};
+use bevy_instanced_text::{ContentMetrics, InstancedText};
 use ropey::Rope;
 
 use crate::history::{EditKind, EditOperation};
@@ -32,7 +32,7 @@ impl EditHistoryState {
     /// anchors, and emits an [`EditDelta`].
     pub fn replace_range(
         &mut self,
-        buffer: &mut TextBuffer<RopeBuffer>,
+        buffer: &mut InstancedText<RopeBuffer>,
         start_char: usize,
         end_char: usize,
         text: &str,
@@ -108,7 +108,7 @@ impl EditHistoryState {
         &mut self,
         sel: &mut SelectionState,
         cursor: &mut CursorState,
-        buffer: &mut TextBuffer<RopeBuffer>,
+        buffer: &mut InstancedText<RopeBuffer>,
         c: char,
     ) {
         let pos = cursor.cursor_pos.min(buffer.len_chars());
@@ -128,7 +128,7 @@ impl EditHistoryState {
         &mut self,
         sel: &mut SelectionState,
         cursor: &mut CursorState,
-        buffer: &mut TextBuffer<RopeBuffer>,
+        buffer: &mut InstancedText<RopeBuffer>,
     ) {
         if cursor.cursor_pos == 0 {
             return;
@@ -149,7 +149,7 @@ impl EditHistoryState {
         &mut self,
         sel: &mut SelectionState,
         cursor: &mut CursorState,
-        buffer: &mut TextBuffer<RopeBuffer>,
+        buffer: &mut InstancedText<RopeBuffer>,
     ) {
         if cursor.cursor_pos >= buffer.len_chars() {
             return;
@@ -165,11 +165,11 @@ impl EditHistoryState {
         sel.apply_primary_cursor(cursor);
     }
 
-    pub fn insert_text_at(&mut self, buffer: &mut TextBuffer<RopeBuffer>, pos: usize, text: &str) {
+    pub fn insert_text_at(&mut self, buffer: &mut InstancedText<RopeBuffer>, pos: usize, text: &str) {
         self.replace_range(buffer, pos, pos, text, EditKind::Other, false);
     }
 
-    pub fn remove_range(&mut self, buffer: &mut TextBuffer<RopeBuffer>, start: usize, end: usize) {
+    pub fn remove_range(&mut self, buffer: &mut InstancedText<RopeBuffer>, start: usize, end: usize) {
         self.replace_range(buffer, start, end, "", EditKind::Other, false);
     }
 
@@ -177,7 +177,7 @@ impl EditHistoryState {
         &mut self,
         sel: &mut SelectionState,
         cursor: &mut CursorState,
-        buffer: &mut TextBuffer<RopeBuffer>,
+        buffer: &mut InstancedText<RopeBuffer>,
     ) -> bool {
         if let Some(transaction) = self.history.pop_undo() {
             for op in transaction.operations.iter().rev() {
@@ -206,7 +206,7 @@ impl EditHistoryState {
         &mut self,
         sel: &mut SelectionState,
         cursor: &mut CursorState,
-        buffer: &mut TextBuffer<RopeBuffer>,
+        buffer: &mut InstancedText<RopeBuffer>,
     ) -> bool {
         if let Some(transaction) = self.history.pop_redo() {
             for op in transaction.operations.iter() {
@@ -235,7 +235,7 @@ impl EditHistoryState {
         &mut self,
         sel: &mut SelectionState,
         cursor: &mut CursorState,
-        buffer: &mut TextBuffer<RopeBuffer>,
+        buffer: &mut InstancedText<RopeBuffer>,
         metrics: &mut ContentMetrics,
         text: &str,
     ) {
@@ -273,19 +273,19 @@ impl EditHistoryState {
 mod tests {
     use super::*;
     use crate::text::RopeBuffer;
-    use bevy_instanced_text::TextBuffer;
+    use bevy_instanced_text::InstancedText;
     use bevy_instanced_text_interaction::{CursorState, SelectionState};
 
     fn editor_at(
         text: &str,
         pos: usize,
     ) -> (
-        TextBuffer<RopeBuffer>,
+        InstancedText<RopeBuffer>,
         CursorState,
         SelectionState,
         EditHistoryState,
     ) {
-        let buffer = TextBuffer::new(RopeBuffer::new(text));
+        let buffer = InstancedText::new(RopeBuffer::new(text));
         let cursor = CursorState {
             cursor_pos: pos,
             last_cursor_pos: pos,

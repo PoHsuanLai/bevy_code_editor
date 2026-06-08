@@ -198,7 +198,7 @@ fn display_lsp_info(query: Query<&LspClient, (With<CodeEditor>, Changed<LspClien
 
 /// Auto-trigger completion requests after typing.
 fn auto_request_completion(
-    editor_query: Query<(&CursorState, Ref<TextBuffer<RopeBuffer>>), With<CodeEditor>>,
+    editor_query: Query<(&CursorState, Ref<InstancedText<RopeBuffer>>), With<CodeEditor>>,
     mut writer: MessageWriter<bevscode::types::events::CompletionRequested>,
     _anchors: BufferAnchorParam<RopeBuffer>,
 ) {

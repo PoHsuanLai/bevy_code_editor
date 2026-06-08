@@ -10,7 +10,7 @@ use bevy_instanced_text_editor::RopeBuffer;
 pub fn handle_request_completion(
     mut events: MessageReader<RequestCompletionRequested>,
     input_focus: Res<InputFocus>,
-    editor_q: Query<(&CursorState, &crate::text_view::TextBuffer<RopeBuffer>), With<CodeEditor>>,
+    editor_q: Query<(&CursorState, &crate::text_view::InstancedText<RopeBuffer>), With<CodeEditor>>,
     mut lsp_q: Query<
         (
             Option<&bevy_lsp::LspDocument>,
@@ -53,7 +53,7 @@ pub fn handle_goto_definition(mut events: MessageReader<GotoDefinitionRequested>
 pub fn handle_rename_symbol(
     mut events: MessageReader<RenameSymbolRequested>,
     input_focus: Res<InputFocus>,
-    editor_q: Query<(&CursorState, &crate::text_view::TextBuffer<RopeBuffer>), With<CodeEditor>>,
+    editor_q: Query<(&CursorState, &crate::text_view::InstancedText<RopeBuffer>), With<CodeEditor>>,
     mut lsp_q: Query<
         (
             Option<&bevy_lsp::LspDocument>,

@@ -1,4 +1,4 @@
-//! Wezterm grid → `TextBuffer<TextSpan>` (string buffer) + per-line `LineStyles`.
+//! Wezterm grid → `InstancedText<TextSpan>` (string buffer) + per-line `LineStyles`.
 
 use std::collections::HashMap;
 
@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition};
 
 use bevy_instanced_text::{
-    FormattedSpan, LineStyles, MonoCellWidth, TextBackgroundColor, TextBuffer, TextColor,
+    FormattedSpan, LineStyles, MonoCellWidth, TextBackgroundColor, InstancedText, TextColor,
     TextFormat, TextSpan,
 };
 use wezterm_surface::SequenceNo;
@@ -39,7 +39,7 @@ type SnapshotQuery<'w, 's> = Query<
     (
         Entity,
         &'static TerminalSession,
-        &'static mut TextBuffer<TextSpan>,
+        &'static mut InstancedText<TextSpan>,
         &'static ComputedNode,
         &'static TextFont,
         &'static bevy::text::LineHeight,
