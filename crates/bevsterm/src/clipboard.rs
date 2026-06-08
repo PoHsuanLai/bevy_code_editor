@@ -6,7 +6,7 @@ use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 
 use bevy::ui::ScrollPosition;
-use bevy_instanced_text::{MonoCellWidth, InstancedText, TextSpan};
+use bevy_instanced_text::{InstancedText, MonoCellWidth};
 use bevy_instanced_text_interaction::{ClipboardResource, SelectionState};
 
 use crate::messages::{
@@ -19,7 +19,7 @@ use crate::text::{TerminalGridSnapshot, TerminalScrollFollow, TerminalSession};
 pub fn handle_copy_selection(
     mut events: MessageReader<TerminalCopySelection>,
     clipboard: Res<ClipboardResource>,
-    q: Query<(&SelectionState, &InstancedText<TextSpan>)>,
+    q: Query<(&SelectionState, &InstancedText<String>)>,
 ) {
     for ev in events.read() {
         let Ok((sel, buffer)) = q.get(ev.entity) else {
@@ -30,7 +30,7 @@ pub fn handle_copy_selection(
             continue;
         }
         let (start, end) = (primary.start(), primary.end());
-        let text = &buffer.0 .0;
+        let text = &buffer.0;
         let chars: Vec<char> = text.chars().collect();
         let s = start.min(chars.len());
         let e = end.min(chars.len());

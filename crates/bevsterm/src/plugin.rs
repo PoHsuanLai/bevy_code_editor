@@ -30,7 +30,7 @@ impl Plugin for TerminalPlugin {
         }
         app.add_plugins(
             bevy_instanced_text_interaction::InstancedTextInteractionPlugin::<
-                bevy_instanced_text::TextSpan,
+                String,
             >::default(),
         );
 
@@ -173,7 +173,7 @@ impl PluginGroup for TerminalPlugins {
             .add(bevy::input_focus::InputDispatchPlugin)
             .add(
                 bevy_instanced_text_interaction::InstancedTextInteractionPlugin::<
-                    bevy_instanced_text::TextSpan,
+                    String,
                 >::default(),
             )
             .add(TerminalPlugin);
