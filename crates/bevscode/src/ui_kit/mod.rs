@@ -18,14 +18,19 @@
 //! - [`PopupChrome`] is the `SystemParam` bundle popup renderers read so
 //!   they pull one parameter instead of five.
 
-use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
-use tempera::theme::{ColorPalette, FontHandle, MenuTokens, Spacing, ThemePlugin, Typography};
+use tempera::theme::{ColorPalette, Spacing, ThemePlugin};
+#[cfg(feature = "lsp")]
+use bevy::ecs::system::SystemParam;
+#[cfg(feature = "lsp")]
+use tempera::theme::{FontHandle, MenuTokens, Typography};
 
 use crate::settings::EditorTheme;
 use crate::types::CodeEditor;
 
+#[cfg(feature = "lsp")]
 pub mod markdown_theme;
+#[cfg(feature = "lsp")]
 pub use markdown_theme::markdown_theme_from_chrome;
 
 /// App-wide diagnostic palette + squiggle metrics. Lives alongside
@@ -33,28 +38,23 @@ pub use markdown_theme::markdown_theme_from_chrome;
 /// surface (gutter icon, decoration bar, wavy underline) by swapping
 /// one resource. Per-editor overrides go on
 /// [`crate::settings::DiagnosticColors`].
+#[cfg(feature = "lsp")]
 #[derive(Resource, Clone, Debug)]
 pub struct DiagnosticTokens {
     pub error: Color,
     pub warning: Color,
     pub info: Color,
     pub hint: Color,
-    /// Alpha multiplier applied to the squiggle pills so the wave
-    /// recedes slightly under the text.
     pub squiggle_alpha: f32,
-    /// Stroke thickness (logical px) of each squiggle pill before DPI
-    /// scaling.
     pub squiggle_thickness: f32,
 }
 
+#[cfg(feature = "lsp")]
 impl Default for DiagnosticTokens {
     fn default() -> Self {
         let palette = ColorPalette::dark();
         Self {
             error: palette.destructive,
-            // Warning / info / hint have no shadcn token. Tuned to read
-            // as a system with `destructive` (similar saturation, sit
-            // legibly on the dark popover surface).
             warning: Color::srgb(0.918, 0.706, 0.282),
             info: Color::srgb(0.349, 0.706, 0.929),
             hint: Color::srgb(0.631, 0.631, 0.671),
@@ -103,11 +103,13 @@ impl Plugin for BevscodePalettePlugin {
         if !app.is_plugin_added::<ThemePlugin>() {
             app.add_plugins(ThemePlugin);
         }
-        app.init_resource::<DiagnosticTokens>()
-            .init_resource::<GutterTokens>()
+        app.init_resource::<GutterTokens>()
             .add_systems(Update, sync_palette_into_editor_theme);
         #[cfg(feature = "lsp")]
-        app.add_systems(Update, sync_diagnostic_tokens_into_editor_colors);
+        {
+            app.init_resource::<DiagnosticTokens>();
+            app.add_systems(Update, sync_diagnostic_tokens_into_editor_colors);
+        }
     }
 }
 
@@ -199,6 +201,7 @@ fn sync_diagnostic_tokens_into_editor_colors(
 
 /// Read-only slice of tempera tokens consumed by popup renderers. Pulls
 /// the five resources every chrome path touches in one `SystemParam`.
+#[cfg(feature = "lsp")]
 #[derive(SystemParam)]
 pub struct PopupChrome<'w> {
     pub palette: Res<'w, ColorPalette>,
@@ -208,6 +211,7 @@ pub struct PopupChrome<'w> {
     pub menu: Res<'w, MenuTokens>,
 }
 
+#[cfg(feature = "lsp")]
 impl PopupChrome<'_> {
     /// Body-row font (typography.sm). Matches tempera's command palette
     /// and dropdown row sizes.

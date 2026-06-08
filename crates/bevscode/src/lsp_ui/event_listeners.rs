@@ -21,6 +21,7 @@ use crate::types::events::{
 };
 use crate::types::{CodeEditor, CursorState};
 use bevy::prelude::*;
+use bevy::input_focus::InputFocus;
 use bevy_instanced_text_editor::RopeBuffer;
 use bevy_lsp::{
     rope_byte_to_lsp_position, rope_char_to_lsp_position, LspDocument, LspMessage, LspRequest,
@@ -118,8 +119,10 @@ pub fn listen_text_edit_events(
         ),
         With<CodeEditor>,
     >,
+    input_focus: Res<InputFocus>,
 ) {
-    let Ok((buffer, caps, mut batcher, settings)) = query.single_mut() else {
+    let Some(focused) = input_focus.get() else { return; };
+    let Ok((buffer, caps, mut batcher, settings)) = query.get_mut(focused) else {
         return;
     };
 
@@ -165,8 +168,10 @@ pub fn listen_text_edit_events(
 pub fn listen_completion_requests(
     mut events: MessageReader<CompletionRequested>,
     mut query: CompletionRequestQuery,
+    input_focus: Res<InputFocus>,
 ) {
-    let Ok((buffer, lsp_document, caps, mut debounce, settings)) = query.single_mut() else {
+    let Some(focused) = input_focus.get() else { return; };
+    let Ok((buffer, lsp_document, caps, mut debounce, settings)) = query.get_mut(focused) else {
         return;
     };
     let Some(lsp_document) = lsp_document else {
@@ -190,8 +195,10 @@ pub fn listen_completion_requests(
 pub fn listen_hover_requests(
     mut events: MessageReader<HoverRequested>,
     mut query: HoverRequestQuery,
+    input_focus: Res<InputFocus>,
 ) {
-    let Ok((buffer, lsp_document, caps, mut debounce, settings)) = query.single_mut() else {
+    let Some(focused) = input_focus.get() else { return; };
+    let Ok((buffer, lsp_document, caps, mut debounce, settings)) = query.get_mut(focused) else {
         return;
     };
     let Some(lsp_document) = lsp_document else {
@@ -214,9 +221,11 @@ pub fn listen_rename_requests(
     mut events: MessageReader<RenameRequested>,
     mut query: RenameRequestQuery,
     mut lsp_w: MessageWriter<LspRequest>,
+    input_focus: Res<InputFocus>,
 ) {
+    let Some(focused) = input_focus.get() else { return; };
     let Ok((entity, buffer, lsp_document, caps, mut rename_state, mut rename_lc)) =
-        query.single_mut()
+        query.get_mut(focused)
     else {
         return;
     };
@@ -243,9 +252,11 @@ pub fn listen_signature_help_requests(
     mut events: MessageReader<SignatureHelpRequested>,
     mut query: SignatureHelpRequestQuery,
     mut lsp_w: MessageWriter<LspRequest>,
+    input_focus: Res<InputFocus>,
 ) {
+    let Some(focused) = input_focus.get() else { return; };
     let Ok((entity, buffer, lsp_document, caps, mut sig_help_state, mut sig_help_lc, suggest)) =
-        query.single_mut()
+        query.get_mut(focused)
     else {
         return;
     };
@@ -275,8 +286,10 @@ pub fn listen_signature_help_requests(
 pub fn listen_dismiss_completion(
     mut events: MessageReader<CompletionDismissed>,
     mut query: Query<(&mut LspCompletionPopup, &mut CompletionLifecycle), With<CodeEditor>>,
+    input_focus: Res<InputFocus>,
 ) {
-    let Ok((mut completion_state, mut completion_lc)) = query.single_mut() else {
+    let Some(focused) = input_focus.get() else { return; };
+    let Ok((mut completion_state, mut completion_lc)) = query.get_mut(focused) else {
         return;
     };
     for _ in events.read() {
@@ -301,8 +314,13 @@ pub fn drive_completion_resolve(
     >,
     mut lsp_w: MessageWriter<LspRequest>,
     mut last_selected: Local<Option<usize>>,
+    input_focus: Res<InputFocus>,
 ) {
-    let Ok((entity, mut popup, caps)) = query.single_mut() else {
+    let Some(focused) = input_focus.get() else {
+        *last_selected = None;
+        return;
+    };
+    let Ok((entity, mut popup, caps)) = query.get_mut(focused) else {
         *last_selected = None;
         return;
     };
@@ -359,8 +377,11 @@ pub fn dismiss_completion_on_cursor_move(
         ),
         With<CodeEditor>,
     >,
+    input_focus: Res<InputFocus>,
 ) {
-    let Ok((cursor, buffer, mut completion_state, mut completion_lc)) = query.single_mut() else {
+    let Some(focused) = input_focus.get() else { return; };
+    let Ok((cursor, buffer, mut completion_state, mut completion_lc)) = query.get_mut(focused)
+    else {
         return;
     };
     if !completion_state.visible || !cursor.is_changed() {
@@ -394,8 +415,11 @@ pub fn tick_lsp_debounce_timers(
         With<CodeEditor>,
     >,
     mut lsp_w: MessageWriter<LspRequest>,
+    input_focus: Res<InputFocus>,
 ) {
-    let Ok((entity, mut debounce, mut completion_lc, mut hover_lc)) = query.single_mut() else {
+    let Some(focused) = input_focus.get() else { return; };
+    let Ok((entity, mut debounce, mut completion_lc, mut hover_lc)) = query.get_mut(focused)
+    else {
         return;
     };
 
@@ -454,9 +478,11 @@ pub fn advance_tabstop_session(
         ),
         With<CodeEditor>,
     >,
+    input_focus: Res<InputFocus>,
 ) {
-    let Ok((mut sel, hist, mut cursor, buffer, mut session)) = query.single_mut() else {
-        // Drain events even when there's no session entity (avoid leaks).
+    let focused = input_focus.get();
+    let editor = focused.and_then(|e| query.get_mut(e).ok());
+    let Some((mut sel, hist, mut cursor, buffer, mut session)) = editor else {
         let _ = tab_events.read().count();
         let _ = clear_events.read().count();
         return;
@@ -520,8 +546,10 @@ pub fn end_tabstop_session_on_cursor_leave(
         ),
         With<CodeEditor>,
     >,
+    input_focus: Res<InputFocus>,
 ) {
-    let Ok((cursor, buffer, hist, mut session)) = query.single_mut() else {
+    let Some(focused) = input_focus.get() else { return; };
+    let Ok((cursor, buffer, hist, mut session)) = query.get_mut(focused) else {
         return;
     };
     if !session.is_active() || !cursor.is_changed() {
@@ -551,7 +579,9 @@ pub fn end_tabstop_session_on_cursor_leave(
 pub fn listen_apply_completion(
     mut events: MessageReader<CompletionApplied>,
     mut query: ApplyCompletionQuery,
+    input_focus: Res<InputFocus>,
 ) {
+    let Some(focused) = input_focus.get() else { return; };
     let Ok((
         mut sel,
         mut hist,
@@ -560,7 +590,7 @@ pub fn listen_apply_completion(
         mut completion_state,
         mut completion_lc,
         mut session,
-    )) = query.single_mut()
+    )) = query.get_mut(focused)
     else {
         return;
     };

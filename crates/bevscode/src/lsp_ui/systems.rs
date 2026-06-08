@@ -11,6 +11,7 @@ use lsp_types::*;
 
 use crate::text_view::TextBuffer;
 use crate::types::{CodeEditor, CursorState};
+use bevy::input_focus::InputFocus;
 use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::MonoCellWidth;
 
@@ -716,8 +717,10 @@ pub fn sync_lsp_document(
         ),
         With<CodeEditor>,
     >,
+    input_focus: Res<InputFocus>,
 ) {
-    let Ok((buffer, lsp_document, mut batcher)) = query.single_mut() else {
+    let Some(focused) = input_focus.get() else { return; };
+    let Ok((buffer, lsp_document, mut batcher)) = query.get_mut(focused) else {
         return;
     };
     if batcher.pending.is_empty() && !batcher.force_full_doc {
@@ -751,7 +754,9 @@ pub fn sync_lsp_document(
 pub fn request_inlay_hints(
     mut query: RequestInlayHintsQuery,
     mut lsp_w: MessageWriter<LspRequest>,
+    input_focus: Res<InputFocus>,
 ) {
+    let Some(focused) = input_focus.get() else { return; };
     let Ok((
         entity,
         lsp_client,
@@ -765,7 +770,7 @@ pub fn request_inlay_hints(
         lh,
         _mono,
         suggest,
-    )) = query.single_mut()
+    )) = query.get_mut(focused)
     else {
         return;
     };
@@ -1043,7 +1048,9 @@ pub fn request_document_highlights(
     time: Res<Time>,
     mut query: RequestDocumentHighlightsQuery,
     mut lsp_w: MessageWriter<LspRequest>,
+    input_focus: Res<InputFocus>,
 ) {
+    let Some(focused) = input_focus.get() else { return; };
     let Ok((
         entity,
         capabilities,
@@ -1052,7 +1059,7 @@ pub fn request_document_highlights(
         lsp_document,
         mut highlight_state,
         settings,
-    )) = query.single_mut()
+    )) = query.get_mut(focused)
     else {
         return;
     };
