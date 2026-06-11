@@ -1,6 +1,6 @@
 [package]
 name = "bevy_tree_sitter"
-version = "0.1.1"
+version = "0.1.0"
 edition = "2021"
 authors = ["PoHsuanLai"]
 license = "MIT OR Apache-2.0"
@@ -42,3 +42,4 @@ lang-toml = ["arborium/lang-toml"]
 lang-yaml = ["arborium/lang-yaml"]
 lang-bash = ["arborium/lang-bash"]
 lang-go = ["arborium/lang-go"]
+lang-ruby = ["arborium/lang-ruby"]

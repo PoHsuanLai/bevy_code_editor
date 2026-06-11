@@ -1,5 +1,3 @@
-#![allow(clippy::type_complexity)]
-
 //! Rope-backed text editor on top of [`bevy_instanced_text`].
 //!
 //! ```rust,no_run
@@ -14,7 +12,7 @@
 //!     .add_systems(Startup, |mut commands: Commands| {
 //!         commands.spawn((
 //!             TextEditor,
-//!             TextBuffer::<RopeBuffer>::new(RopeBuffer::new("edit me")),
+//!             InstancedText::<RopeBuffer>::new(RopeBuffer::new("edit me")),
 //!             TextFont::default(),
 //!         ));
 //!     })

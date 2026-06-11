@@ -13,10 +13,11 @@
 //! reads live engine state.
 
 use bevy::prelude::*;
+use bevy::input_focus::InputFocus;
 use bevy_instanced_text_editor::RopeBuffer;
 
 use crate::settings::*;
-use crate::text_view::TextBuffer;
+use crate::text_view::InstancedText;
 use crate::types::{CodeEditor, CursorState};
 use bevy_instanced_text::MonoCellWidth;
 
@@ -36,7 +37,7 @@ use lsp_types::DiagnosticSeverity;
 const MAX_HOVER_HEIGHT: f32 = 320.0;
 
 /// Resolve a char index into `(line, character)`.
-fn buffer_position(buffer: &TextBuffer<RopeBuffer>, char_index: usize) -> (u32, u32) {
+fn buffer_position(buffer: &InstancedText<RopeBuffer>, char_index: usize) -> (u32, u32) {
     let char_index = char_index.min(buffer.len_chars());
     let line = buffer.char_to_line(char_index);
     let line_start = buffer.line_to_char(line);
@@ -52,7 +53,7 @@ pub fn sync_completion_popup(
             Entity,
             &LspCompletionPopup,
             &CursorState,
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &TextFont,
             &bevy::text::LineHeight,
             &MonoCellWidth,
@@ -61,8 +62,11 @@ pub fn sync_completion_popup(
         With<CodeEditor>,
     >,
     existing: Query<Entity, With<CompletionPopupData>>,
+    input_focus: Res<InputFocus>,
 ) {
-    let Ok((editor, completion_state, cursor_state, buffer, font, lh, mono, lsp)) = query.single()
+    let Some(focused) = input_focus.get() else { return; };
+    let Ok((editor, completion_state, cursor_state, buffer, font, lh, mono, lsp)) =
+        query.get(focused)
     else {
         return;
     };
@@ -159,7 +163,7 @@ pub fn sync_hover_popup(
         (
             Entity,
             &LspHoverPopup,
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &TextFont,
             &MonoCellWidth,
             &ServerCapabilities,
@@ -169,8 +173,10 @@ pub fn sync_hover_popup(
     >,
     existing: Query<Entity, With<HoverPopupData>>,
     diagnostics: Query<&DiagnosticMarker>,
+    input_focus: Res<InputFocus>,
 ) {
-    let Ok((editor, hover_state, buffer, font, mono, caps, doc)) = query.single() else {
+    let Some(focused) = input_focus.get() else { return; };
+    let Ok((editor, hover_state, buffer, font, mono, caps, doc)) = query.get(focused) else {
         return;
     };
 
@@ -322,15 +328,17 @@ pub fn sync_signature_help_popup(
             Entity,
             &LspSignatureHelpPopup,
             &CursorState,
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &TextFont,
             &MonoCellWidth,
         ),
         With<CodeEditor>,
     >,
     existing: Query<Entity, With<SignatureHelpPopupData>>,
+    input_focus: Res<InputFocus>,
 ) {
-    let Ok((editor, sig_state, cursor_state, buffer, font, mono)) = query.single() else {
+    let Some(focused) = input_focus.get() else { return; };
+    let Ok((editor, sig_state, cursor_state, buffer, font, mono)) = query.get(focused) else {
         return;
     };
 
@@ -414,7 +422,7 @@ pub fn sync_code_actions_popup(
             Entity,
             &LspCodeActionsPopup,
             &CursorState,
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &TextFont,
             &bevy::text::LineHeight,
             &MonoCellWidth,
@@ -422,8 +430,11 @@ pub fn sync_code_actions_popup(
         With<CodeEditor>,
     >,
     existing: Query<Entity, With<CodeActionsPopupData>>,
+    input_focus: Res<InputFocus>,
 ) {
-    let Ok((editor, action_state, cursor_state, buffer, font, lh, mono)) = query.single() else {
+    let Some(focused) = input_focus.get() else { return; };
+    let Ok((editor, action_state, cursor_state, buffer, font, lh, mono)) = query.get(focused)
+    else {
         return;
     };
     let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
@@ -519,8 +530,10 @@ pub fn sync_rename_input(
         With<CodeEditor>,
     >,
     existing: Query<Entity, With<RenameInputData>>,
+    input_focus: Res<InputFocus>,
 ) {
-    let Ok((editor, rename_state, font, lh, mono)) = query.single() else {
+    let Some(focused) = input_focus.get() else { return; };
+    let Ok((editor, rename_state, font, lh, mono)) = query.get(focused) else {
         return;
     };
     let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
@@ -594,8 +607,10 @@ pub fn sync_inlay_hints(
     mut commands: Commands,
     query: Query<(Ref<LspInlayHints>, Option<&crate::settings::Suggest>), With<CodeEditor>>,
     existing: Query<Entity, With<InlayHintData>>,
+    input_focus: Res<InputFocus>,
 ) {
-    let Ok((hint_state, suggest)) = query.single() else {
+    let Some(focused) = input_focus.get() else { return; };
+    let Ok((hint_state, suggest)) = query.get(focused) else {
         return;
     };
 
@@ -663,8 +678,10 @@ pub fn sync_document_highlights(
     mut commands: Commands,
     query: Query<Ref<LspDocumentHighlights>, With<CodeEditor>>,
     existing: Query<Entity, With<DocumentHighlightData>>,
+    input_focus: Res<InputFocus>,
 ) {
-    let Ok(highlight_state) = query.single() else {
+    let Some(focused) = input_focus.get() else { return; };
+    let Ok(highlight_state) = query.get(focused) else {
         return;
     };
 

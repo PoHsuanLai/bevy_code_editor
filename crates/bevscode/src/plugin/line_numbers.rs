@@ -21,7 +21,7 @@ use bevy::prelude::*;
 use bevy::text::{Justify, TextLayout};
 use bevy::ui::ScrollPosition;
 use bevy_instanced_text::{
-    FormattedSpan, HiddenLines, LineStyles, MonoFontFaces, TextBuffer, TextFormat, TextSpan,
+    FormattedSpan, HiddenLines, InstancedText, LineStyles, MonoFontFaces, TextFormat,
 };
 use bevy_instanced_text_editor::RopeBuffer;
 
@@ -80,7 +80,7 @@ pub(crate) fn setup_gutter_text_view(
             GutterTextView {
                 editor: editor_entity,
             },
-            TextBuffer::<TextSpan>::default(),
+            InstancedText::<String>::default(),
             font.clone(),
             faces.clone(),
             *line_height,
@@ -117,7 +117,7 @@ pub(crate) fn sync_gutter_text_view(
         (
             Entity,
             &SelectionState,
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &ScrollPosition,
             &GutterConfig,
             Ref<FoldState>,
@@ -132,7 +132,7 @@ pub(crate) fn sync_gutter_text_view(
     mut gutter_query: Query<
         (
             &GutterTextView,
-            &mut TextBuffer<TextSpan>,
+            &mut InstancedText<String>,
             &mut ScrollPosition,
             &mut HiddenLines,
             &mut LineStyles,
@@ -237,7 +237,7 @@ pub(crate) fn sync_gutter_text_view(
         let mode = ui.line_numbers;
         let mouseover_chevrons = matches!(folding.show_controls, ShowFoldingControls::Mouseover);
         let always_chevrons = matches!(folding.show_controls, ShowFoldingControls::Always);
-        let old_count = if g_buffer.0 .0.is_empty() {
+        let old_count = if g_buffer.0.is_empty() {
             0
         } else {
             bevy_instanced_text::TextContent::line_count(&g_buffer.0)
@@ -276,7 +276,7 @@ pub(crate) fn sync_gutter_text_view(
                 };
                 text.push_str(&label);
             }
-            g_buffer.0 = TextSpan(text);
+            g_buffer.0 = text;
         }
 
         if fold_state.is_changed() || count_stale {

@@ -10,9 +10,6 @@
 //! or corrupted the color, not just "colors are wrong."
 
 #![cfg(test)]
-// `ComputedNode` has no constructor that accepts size/scale — tests must
-// build it via `default()` then assign fields.
-#![allow(clippy::field_reassign_with_default)]
 
 use super::plugin::DisplayMapPlugin;
 use crate::plugin::syntax_highlighting::SyntaxPlugin;
@@ -37,7 +34,7 @@ use bevy_instanced_text::view::plugin::update_text_views;
 use bevy_instanced_text::view::render::{GlyphBatchComponent, GlyphInstance};
 use bevy_instanced_text::view::text_access::produce_layouts;
 use bevy_instanced_text::{
-    DisplayLayout, LineStyles, MonoCellWidth, TextBounds, TextBuffer, TextOverlays, TextUnderlays,
+    DisplayLayout, LineStyles, MonoCellWidth, TextBounds, InstancedText, TextOverlays, TextUnderlays,
     TextViewBatchEntity,
 };
 use bevy_instanced_text_editor::{BlinkPhase, EditDelta, EditPoint, RopeBuffer};
@@ -71,9 +68,11 @@ fn make_test_app() -> App {
 /// styling / layout plumbing reads — the same bundle the editor's host
 /// app would spawn in production.
 fn spawn_test_editor(app: &mut App, text: &str) -> Entity {
-    let mut computed = ComputedNode::default();
-    computed.size = Vec2::new(800.0, 600.0);
-    computed.inverse_scale_factor = 1.0;
+    let computed = ComputedNode {
+        size: Vec2::new(800.0, 600.0),
+        inverse_scale_factor: 1.0,
+        ..default()
+    };
 
     let font_bundle = (
         TextFont::from_font_size(14.0),
@@ -88,7 +87,7 @@ fn spawn_test_editor(app: &mut App, text: &str) -> Entity {
         bevy::text::TextBackgroundColor::default(),
     );
     let layout_bundle = (
-        TextBuffer::<RopeBuffer>::new(RopeBuffer::new(text)),
+        InstancedText::<RopeBuffer>::new(RopeBuffer::new(text)),
         bevy_instanced_text::ContentMetrics::default(),
         computed,
         DisplayLayout::default(),
@@ -480,10 +479,15 @@ fn editor_initializes_with_syntax_provider() {
 fn computed_node_logical_pixel_conversion() {
     // 1600x1200 physical at 2x DPI → 800x600 logical.
     // padding.left=100px physical (50 logical), padding.top=20px physical (10 logical).
-    let mut computed = ComputedNode::default();
-    computed.size = Vec2::new(1600.0, 1200.0);
-    computed.inverse_scale_factor = 0.5;
-    computed.padding.min_inset = Vec2::new(100.0, 20.0);
+    let computed = ComputedNode {
+        size: Vec2::new(1600.0, 1200.0),
+        inverse_scale_factor: 0.5,
+        padding: bevy::sprite::BorderRect {
+            min_inset: Vec2::new(100.0, 20.0),
+            ..default()
+        },
+        ..default()
+    };
 
     let inv = computed.inverse_scale_factor();
     assert_eq!((computed.size().x * inv) as u32, 800, "logical width");
@@ -586,7 +590,7 @@ fn pipeline_consistency_after_newline_insert() {
     {
         let mut buf = app
             .world_mut()
-            .get_mut::<TextBuffer<RopeBuffer>>(entity)
+            .get_mut::<InstancedText<RopeBuffer>>(entity)
             .unwrap();
         buf.0 = RopeBuffer(ropey::Rope::from_str(new_source));
     }
@@ -680,7 +684,7 @@ fn pipeline_consistency_after_backspace_join() {
     {
         let mut buf = app
             .world_mut()
-            .get_mut::<TextBuffer<RopeBuffer>>(entity)
+            .get_mut::<InstancedText<RopeBuffer>>(entity)
             .unwrap();
         buf.0 = RopeBuffer(ropey::Rope::from_str(new_source));
     }
@@ -788,7 +792,7 @@ fn pipeline_consistency_after_repeated_line_deletion() {
         {
             let mut buf = app
                 .world_mut()
-                .get_mut::<TextBuffer<RopeBuffer>>(entity)
+                .get_mut::<InstancedText<RopeBuffer>>(entity)
                 .unwrap();
             buf.0 = RopeBuffer(ropey::Rope::from_str(to_rope));
         }
@@ -969,9 +973,11 @@ fn full_postupdate_schedule_with_real_overlays() {
         CursorLine::default(),
     ));
 
-    let mut computed = ComputedNode::default();
-    computed.size = Vec2::new(800.0, 600.0);
-    computed.inverse_scale_factor = 1.0;
+    let computed = ComputedNode {
+        size: Vec2::new(800.0, 600.0),
+        inverse_scale_factor: 1.0,
+        ..default()
+    };
     app.world_mut().entity_mut(entity).insert((
         computed,
         UiGlobalTransform::from(Affine2::from_translation(Vec2::new(400.0, 300.0))),
@@ -1095,9 +1101,11 @@ fn gpu_readback_renders_colored_pixels() {
     ));
 
     let entity = spawn_test_editor(&mut app, "fn main() {}\n");
-    let mut computed = ComputedNode::default();
-    computed.size = Vec2::new(W as f32, H as f32);
-    computed.inverse_scale_factor = 1.0;
+    let computed = ComputedNode {
+        size: Vec2::new(W as f32, H as f32),
+        inverse_scale_factor: 1.0,
+        ..default()
+    };
     app.world_mut().entity_mut(entity).insert((
         computed,
         UiGlobalTransform::from(Affine2::from_translation(Vec2::new(
@@ -1231,7 +1239,7 @@ fn newline_before_folded_region_does_not_hide_a_visible_line() {
     {
         let mut buf = app
             .world_mut()
-            .get_mut::<TextBuffer<RopeBuffer>>(entity)
+            .get_mut::<InstancedText<RopeBuffer>>(entity)
             .unwrap();
         buf.0 = RopeBuffer(ropey::Rope::from_str(&new_source));
     }
@@ -1270,7 +1278,7 @@ fn newline_before_folded_region_does_not_hide_a_visible_line() {
         .run_system_once(produce_hidden_lines)
         .unwrap();
 
-    let buffer = app.world().get::<TextBuffer<RopeBuffer>>(entity).unwrap();
+    let buffer = app.world().get::<InstancedText<RopeBuffer>>(entity).unwrap();
     let line_at = |i: usize| -> String {
         bevy_instanced_text::TextContent::line(&**buffer, i)
             .trim_end_matches('\n')
@@ -1349,7 +1357,7 @@ fn newline_before_folded_region_full_schedule() {
     {
         let mut buf = app
             .world_mut()
-            .get_mut::<TextBuffer<RopeBuffer>>(entity)
+            .get_mut::<InstancedText<RopeBuffer>>(entity)
             .unwrap();
         buf.0 = RopeBuffer(ropey::Rope::from_str(&new_source));
     }
@@ -1378,7 +1386,7 @@ fn newline_before_folded_region_full_schedule() {
         });
     app.update();
 
-    let buffer = app.world().get::<TextBuffer<RopeBuffer>>(entity).unwrap();
+    let buffer = app.world().get::<InstancedText<RopeBuffer>>(entity).unwrap();
     let line_at = |i: usize| -> String {
         bevy_instanced_text::TextContent::line(&**buffer, i)
             .trim_end_matches('\n')
@@ -1434,7 +1442,7 @@ fn backspace_before_folded_region_keeps_same_content_hidden() {
     {
         let mut buf = app
             .world_mut()
-            .get_mut::<TextBuffer<RopeBuffer>>(entity)
+            .get_mut::<InstancedText<RopeBuffer>>(entity)
             .unwrap();
         buf.0 = RopeBuffer(ropey::Rope::from_str(&new_source));
     }
@@ -1470,7 +1478,7 @@ fn backspace_before_folded_region_keeps_same_content_hidden() {
         .run_system_once(produce_hidden_lines)
         .unwrap();
 
-    let buffer = app.world().get::<TextBuffer<RopeBuffer>>(entity).unwrap();
+    let buffer = app.world().get::<InstancedText<RopeBuffer>>(entity).unwrap();
     let line_at = |i: usize| -> String {
         bevy_instanced_text::TextContent::line(&**buffer, i)
             .trim_end_matches('\n')
@@ -1550,13 +1558,13 @@ fn insert_newline_above_fn_main_full_pipeline() {
 
     // EDIT: insert `\n` at start of row 17.
     let row_17_byte = {
-        let buf = app.world().get::<TextBuffer<RopeBuffer>>(entity).unwrap();
+        let buf = app.world().get::<InstancedText<RopeBuffer>>(entity).unwrap();
         buf.rope().line_to_byte(17)
     };
     {
         let mut buf = app
             .world_mut()
-            .get_mut::<TextBuffer<RopeBuffer>>(entity)
+            .get_mut::<InstancedText<RopeBuffer>>(entity)
             .unwrap();
         let row_17_char = buf.rope().byte_to_char(row_17_byte);
         buf.0 .0.insert(row_17_char, "\n");
@@ -1592,7 +1600,7 @@ fn insert_newline_above_fn_main_full_pipeline() {
 
     // Assert: rope is correct.
     let post_rope_lines: Vec<String> = {
-        let buf = app.world().get::<TextBuffer<RopeBuffer>>(entity).unwrap();
+        let buf = app.world().get::<InstancedText<RopeBuffer>>(entity).unwrap();
         (0..buf.len_lines())
             .map(|i| {
                 bevy_instanced_text::TextContent::line(&**buf, i)

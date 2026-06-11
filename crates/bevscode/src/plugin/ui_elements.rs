@@ -1,7 +1,7 @@
 //! UI elements: selection, indent guides
 
 use crate::settings::*;
-use crate::text_view::{DisplayLayout, RectOverlay, RowVertical, TextBuffer};
+use crate::text_view::{DisplayLayout, RectOverlay, RowVertical, InstancedText};
 use crate::types::*;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition};
@@ -108,7 +108,7 @@ pub(crate) fn update_selection_highlight(
                 Changed<SelectionState>,
                 Changed<ScrollPosition>,
                 Changed<ComputedNode>,
-                Changed<TextBuffer<RopeBuffer>>,
+                Changed<InstancedText<RopeBuffer>>,
                 Changed<FoldState>,
                 Changed<MonoCellWidth>,
                 Changed<EditorTheme>,

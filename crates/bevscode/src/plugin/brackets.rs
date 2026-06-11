@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::settings::*;
-use crate::text_view::{DisplayLayout, TextBuffer};
+use crate::text_view::{DisplayLayout, InstancedText};
 use crate::types::*;
 use bevy::prelude::*;
 use bevy_instanced_text::{CornerRadii, MonoCellWidth, RectOverlay, RowVertical};
@@ -12,14 +12,14 @@ type BracketMatchQuery<'w, 's> = Query<
     's,
     (
         &'static CursorState,
-        &'static TextBuffer<RopeBuffer>,
+        &'static InstancedText<RopeBuffer>,
         &'static mut BracketMatchState,
         &'static BracketConfig,
         &'static AutoEdit,
     ),
     (
         With<CodeEditor>,
-        Or<(Changed<CursorState>, Changed<TextBuffer<RopeBuffer>>)>,
+        Or<(Changed<CursorState>, Changed<InstancedText<RopeBuffer>>)>,
     ),
 >;
 
@@ -27,7 +27,7 @@ type BracketHighlightQuery<'w, 's> = Query<
     'w,
     's,
     (
-        &'static TextBuffer<RopeBuffer>,
+        &'static InstancedText<RopeBuffer>,
         &'static BracketMatchState,
         &'static FoldState,
         &'static MonoCellWidth,

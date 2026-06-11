@@ -21,7 +21,7 @@ use bevy::prelude::*;
 use bevy::ui::ComputedNode;
 use bevy_instanced_text::{
     visible_buffer_range, CornerRadii, HiddenLines, MonoCellWidth, RectOverlay, RowVertical,
-    TextBounds, TextBuffer,
+    TextBounds, InstancedText,
 };
 use bevy_instanced_text_editor::RopeBuffer;
 
@@ -498,7 +498,7 @@ pub fn on_pointer_move_for_link_hover(
     trigger: On<bevy::picking::events::Pointer<bevy::picking::events::Move>>,
     mut editor_query: Query<
         (
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &ComputedNode,
             &bevy_instanced_text::DisplayLayout,
             &MonoCellWidth,
@@ -592,7 +592,7 @@ pub fn on_ctrl_click_open_url(
     trigger: On<Pointer<Press>>,
     editor_query: Query<
         (
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &ComputedNode,
             &bevy_instanced_text::DisplayLayout,
             &MonoCellWidth,

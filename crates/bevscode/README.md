@@ -51,7 +51,7 @@ All state is plain ECS — query it from any system:
 use bevy_instanced_text_editor::RopeBuffer;
 
 fn status_bar(
-    editors: Query<(&TextBuffer<RopeBuffer>, &CursorState, &FoldState), With<CodeEditor>>,
+    editors: Query<(&InstancedText<RopeBuffer>, &CursorState, &FoldState), With<CodeEditor>>,
 ) {
     for (buffer, cursor, folds) in &editors { /* … */ }
 }

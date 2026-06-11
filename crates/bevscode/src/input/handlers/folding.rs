@@ -17,7 +17,7 @@ pub fn handle_toggle_fold(
     mut q: Query<
         (
             &CursorState,
-            &crate::text_view::TextBuffer<RopeBuffer>,
+            &crate::text_view::InstancedText<RopeBuffer>,
             &mut FoldState,
         ),
         With<CodeEditor>,
@@ -42,7 +42,7 @@ pub fn handle_fold(
     mut q: Query<
         (
             &CursorState,
-            &crate::text_view::TextBuffer<RopeBuffer>,
+            &crate::text_view::InstancedText<RopeBuffer>,
             &mut FoldState,
         ),
         With<CodeEditor>,
@@ -67,7 +67,7 @@ pub fn handle_unfold(
     mut q: Query<
         (
             &CursorState,
-            &crate::text_view::TextBuffer<RopeBuffer>,
+            &crate::text_view::InstancedText<RopeBuffer>,
             &mut FoldState,
         ),
         With<CodeEditor>,

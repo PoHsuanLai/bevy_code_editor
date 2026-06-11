@@ -20,7 +20,7 @@
 //! click land on the right buffer line.
 
 use crate::settings::GutterConfig;
-use crate::text_view::TextBuffer;
+use crate::text_view::InstancedText;
 use crate::types::*;
 use bevy::picking::events::Move;
 use bevy::picking::events::{Pointer, Press};
@@ -38,7 +38,7 @@ type AltClickQuery<'w, 's> = Query<
     (
         &'static mut SelectionState,
         &'static mut CursorState,
-        &'static TextBuffer<RopeBuffer>,
+        &'static InstancedText<RopeBuffer>,
         &'static ScrollPosition,
         &'static ComputedNode,
         &'static FoldState,
@@ -55,7 +55,7 @@ type CtrlClickQuery<'w, 's> = Query<
     'w,
     's,
     (
-        &'static TextBuffer<RopeBuffer>,
+        &'static InstancedText<RopeBuffer>,
         &'static ScrollPosition,
         &'static ComputedNode,
         &'static FoldState,
@@ -73,7 +73,7 @@ type HoverMoveQuery<'w, 's> = Query<
     'w,
     's,
     (
-        &'static TextBuffer<RopeBuffer>,
+        &'static InstancedText<RopeBuffer>,
         &'static ScrollPosition,
         &'static ComputedNode,
         &'static FoldState,
@@ -227,7 +227,7 @@ pub fn on_click_past_eol_unfold(
     trigger: On<Pointer<Press>>,
     mut editor_query: Query<
         (
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &ScrollPosition,
             &ComputedNode,
             &mut FoldState,
@@ -572,7 +572,7 @@ pub fn on_pointer_out_for_hover(
 /// Editor crate only; under `feature = "lsp"`.
 #[cfg(feature = "lsp")]
 pub fn tick_lsp_hover_timer(
-    editor_query: Query<&TextBuffer<RopeBuffer>, With<CodeEditor>>,
+    editor_query: Query<&InstancedText<RopeBuffer>, With<CodeEditor>>,
     mut state_query: Query<
         (
             Entity,

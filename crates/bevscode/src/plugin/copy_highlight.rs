@@ -11,7 +11,7 @@
 
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
-use bevy_instanced_text::TextBuffer;
+use bevy_instanced_text::InstancedText;
 use bevy_instanced_text_editor::{ClipboardResource, CopyRequested, RopeBuffer, SelectionState};
 
 use crate::plugin::syntax_highlighting::EditorSyntaxState;
@@ -25,7 +25,7 @@ pub(crate) fn handle_copy_with_highlighting(
     q: Query<
         (
             &SelectionState,
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &SelectionConfig,
             &SyntaxColors,
             &EditorTheme,

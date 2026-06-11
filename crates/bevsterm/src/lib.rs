@@ -1,5 +1,3 @@
-#![allow(clippy::type_complexity)]
-
 //! Embeddable terminal widget for Bevy.
 //!
 //! ## Native usage (PTY-backed shell)

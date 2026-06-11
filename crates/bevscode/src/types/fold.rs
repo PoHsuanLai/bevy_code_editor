@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 use bevy_instanced_text_editor::RopeBuffer;
 
-use crate::text_view::TextBuffer;
+use crate::text_view::InstancedText;
 use crate::types::{CursorState, SelectionState};
 
 /// Per-editor "go to line" dialog state.
@@ -24,7 +24,7 @@ impl GotoLineState {
         &self,
         sel: &mut SelectionState,
         cursor: &mut CursorState,
-        buffer: &TextBuffer<RopeBuffer>,
+        buffer: &InstancedText<RopeBuffer>,
     ) -> bool {
         if let Some(line_num) = self.parse_line_number() {
             let total_lines = buffer.len_lines();

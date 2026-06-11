@@ -1,7 +1,7 @@
 //! Text search and cursor operations on the editor's rope buffer.
 
 use crate::input::word_boundary::is_word_char;
-use crate::text_view::TextBuffer;
+use crate::text_view::InstancedText;
 use crate::types::*;
 use bevy_instanced_text_editor::RopeBuffer;
 use ropey::Rope;
@@ -78,7 +78,7 @@ pub fn find_next_occurrence(rope: &Rope, text: &str, after_pos: usize) -> Option
 pub fn add_cursor_at_next_occurrence(
     sel: &mut SelectionState,
     cursor: &mut CursorState,
-    buffer: &TextBuffer<RopeBuffer>,
+    buffer: &InstancedText<RopeBuffer>,
     separators: &str,
 ) -> bool {
     let primary = sel.selections.primary();

@@ -122,6 +122,30 @@ impl EditorAppExt for App {
     }
 }
 
+/// Self-contained action dispatch: leafwing `InputManagerPlugin`,
+/// default `EditorInputManager` spawn, and the `dispatch_action_events`
+/// system. Disable this when the host app owns the input pipeline and
+/// writes bevscode's action events itself.
+#[derive(Default)]
+pub struct EditorDispatchPlugin;
+
+impl Plugin for EditorDispatchPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins(
+            leafwing_input_manager::plugin::InputManagerPlugin::<
+                crate::input::EditorAction,
+            >::default(),
+        );
+        app.add_systems(PostStartup, spawn_default_input_manager);
+        app.add_systems(
+            Update,
+            crate::input::dispatch_action_events
+                .in_set(InputSet)
+                .in_set(ActionDispatchSet),
+        );
+    }
+}
+
 /// Core editor plugin -- systems, observers, and event wiring.
 /// Most hosts should use [`CodeEditorPlugins`] instead.
 #[derive(Default)]
@@ -129,11 +153,6 @@ pub struct CodeEditorPlugin;
 
 impl Plugin for CodeEditorPlugin {
     fn build(&self, app: &mut App) {
-        #[cfg(feature = "lsp")]
-        if !app.is_plugin_added::<bevy_lsp::LspPlugin>() {
-            app.add_plugins(bevy_lsp::LspPlugin);
-        }
-
         app.configure_sets(
             Update,
             (
@@ -151,8 +170,6 @@ impl Plugin for CodeEditorPlugin {
                 .before(bevy_instanced_text::TextViewRenderSet),
         );
 
-        app.add_systems(PostStartup, spawn_default_input_manager);
-
         app.add_message::<SaveRequested>();
         app.add_message::<OpenRequested>();
         app.add_message::<crate::types::events::FoldStateChanged>();
@@ -164,12 +181,6 @@ impl Plugin for CodeEditorPlugin {
         app.init_resource::<crate::input::handlers::lsp_followup::PendingActionFollowup>();
 
         app.add_observer(crate::input::on_focused_keyboard);
-        app.add_systems(
-            Update,
-            crate::input::dispatch_action_events
-                .in_set(InputSet)
-                .in_set(ActionDispatchSet),
-        );
         app.add_observer(crate::input::on_fold_gutter_press);
         app.add_observer(crate::input::on_alt_click);
         app.add_observer(crate::input::on_click_past_eol_unfold);
@@ -220,9 +231,7 @@ impl PluginGroup for CodeEditorPlugins {
             .add(bevy_instanced_text::view::plugin::InstancedTextPlugin)
             .add(bevy::input_focus::InputDispatchPlugin)
             .add(bevy_instanced_text_editor::InstancedTextEditPlugin::without_typing_observer())
-            .add(leafwing_input_manager::plugin::InputManagerPlugin::<
-                crate::input::EditorAction,
-            >::default())
+            .add(EditorDispatchPlugin)
             .add(CodeEditorPlugin)
             .add(CursorPlugin)
             .add(syntax_highlighting::SyntaxPlugin)

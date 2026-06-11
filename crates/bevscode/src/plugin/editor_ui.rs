@@ -304,12 +304,12 @@ struct DetectIndentationDone;
 fn detect_indentation_on_buffer_insert(
     trigger: On<
         bevy::ecs::lifecycle::Insert,
-        bevy_instanced_text::TextBuffer<bevy_instanced_text_editor::RopeBuffer>,
+        bevy_instanced_text::InstancedText<bevy_instanced_text_editor::RopeBuffer>,
     >,
     commands: Commands,
     editors: Query<
         (
-            &bevy_instanced_text::TextBuffer<bevy_instanced_text_editor::RopeBuffer>,
+            &bevy_instanced_text::InstancedText<bevy_instanced_text_editor::RopeBuffer>,
             &mut crate::settings::Indentation,
         ),
         (With<CodeEditor>, Without<DetectIndentationDone>),
@@ -323,7 +323,7 @@ fn detect_indentation_on_first_edit(
     commands: Commands,
     editors: Query<
         (
-            &bevy_instanced_text::TextBuffer<bevy_instanced_text_editor::RopeBuffer>,
+            &bevy_instanced_text::InstancedText<bevy_instanced_text_editor::RopeBuffer>,
             &mut crate::settings::Indentation,
         ),
         (With<CodeEditor>, Without<DetectIndentationDone>),
@@ -337,7 +337,7 @@ fn run_detect_indentation(
     mut commands: Commands,
     mut editors: Query<
         (
-            &bevy_instanced_text::TextBuffer<bevy_instanced_text_editor::RopeBuffer>,
+            &bevy_instanced_text::InstancedText<bevy_instanced_text_editor::RopeBuffer>,
             &mut crate::settings::Indentation,
         ),
         (With<CodeEditor>, Without<DetectIndentationDone>),
@@ -472,7 +472,7 @@ fn resolve_gutter_layout(
             &bevy::text::LineHeight,
             &EditorUi,
             &crate::settings::Folding,
-            &bevy_instanced_text::TextBuffer<bevy_instanced_text_editor::RopeBuffer>,
+            &bevy_instanced_text::InstancedText<bevy_instanced_text_editor::RopeBuffer>,
         ),
         With<CodeEditor>,
     >,

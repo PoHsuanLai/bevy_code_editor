@@ -6,7 +6,6 @@
 //! invariant was violated — enough to identify which system wrote a bad value.
 
 #![cfg(test)]
-#![allow(clippy::field_reassign_with_default)]
 
 use bevy::input::mouse::MouseScrollUnit;
 use bevy::math::{Affine2, Vec2, Vec3};
@@ -18,7 +17,7 @@ use bevy::ui::ui_transform::UiGlobalTransform;
 use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::view::measurement::LayoutTuning;
 use bevy_instanced_text::{
-    ContentMetrics, DisplayLayout, HiddenLines, LineStyles, MonoCellWidth, TextBounds, TextBuffer,
+    ContentMetrics, DisplayLayout, HiddenLines, LineStyles, MonoCellWidth, TextBounds, InstancedText,
     TextOverlays, TextUnderlays,
 };
 use bevy_instanced_text_editor::{RopeBuffer, TextViewDragState};
@@ -59,9 +58,11 @@ fn make_test_app() -> App {
 }
 
 fn spawn_editor(app: &mut App, text: &str) -> Entity {
-    let mut computed = ComputedNode::default();
-    computed.size = Vec2::new(800.0, 600.0);
-    computed.inverse_scale_factor = 1.0;
+    let computed = ComputedNode {
+        size: Vec2::new(800.0, 600.0),
+        inverse_scale_factor: 1.0,
+        ..default()
+    };
 
     let font_bundle = (
         TextFont::from_font_size(14.0),
@@ -72,7 +73,7 @@ fn spawn_editor(app: &mut App, text: &str) -> Entity {
     );
     let scroll_bundle = (ScrollPosition::default(), ScrollAnimator::default());
     let layout_bundle = (
-        TextBuffer::<RopeBuffer>::new(RopeBuffer::new(text)),
+        InstancedText::<RopeBuffer>::new(RopeBuffer::new(text)),
         ContentMetrics::default(),
         computed,
         DisplayLayout::default(),

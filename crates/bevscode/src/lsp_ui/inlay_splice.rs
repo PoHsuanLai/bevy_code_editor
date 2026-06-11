@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 use bevy_instanced_text_editor::RopeBuffer;
 
-use crate::text_view::TextBuffer;
+use crate::text_view::InstancedText;
 use crate::types::CodeEditor;
 
 use super::components::{InlayHintData, InlayHintKind};
@@ -27,7 +27,7 @@ use super::state::LspInlayHints;
 pub fn splice_inlays_into_line_styles(
     mut editors: Query<
         (
-            &TextBuffer<RopeBuffer>,
+            &InstancedText<RopeBuffer>,
             &mut bevy_instanced_text::LineStyles,
             &bevy_lsp::ServerCapabilities,
             Ref<LspInlayHints>,

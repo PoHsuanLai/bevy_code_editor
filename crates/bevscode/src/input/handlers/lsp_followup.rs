@@ -19,7 +19,7 @@ pub struct PendingActionFollowup {
 pub fn lsp_followup(
     mut pending: ResMut<PendingActionFollowup>,
     input_focus: Res<InputFocus>,
-    editor_q: Query<(&CursorState, &crate::text_view::TextBuffer<RopeBuffer>), With<CodeEditor>>,
+    editor_q: Query<(&CursorState, &crate::text_view::InstancedText<RopeBuffer>), With<CodeEditor>>,
     mut lsp_q: Query<
         (
             &bevy_lsp::LspClient,

@@ -17,7 +17,7 @@ use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::{
     visible_buffer_range, FormattedSpan, HiddenLines, LayoutProduceSet, LineStyles, MonoCellWidth,
-    TextBounds, TextBuffer,
+    TextBounds, InstancedText,
 };
 use bevy_instanced_text_editor::RopeBuffer;
 use std::collections::{HashMap, HashSet};
@@ -118,7 +118,7 @@ pub(crate) fn produce_hidden_lines(mut editors: ProduceHiddenLinesQuery) {
 /// Recompute styled runs for each editor's visible buffer-line window and
 /// write them into the entity's `LineStyles` Component.
 ///
-/// On a pure content edit (only `TextBuffer<RopeBuffer>` changed), only the lines
+/// On a pure content edit (only `InstancedText<RopeBuffer>` changed), only the lines
 /// touched by the edit are re-highlighted and merged into the existing map —
 /// unchanged lines keep their cached runs. On any other change (scroll,
 /// viewport resize, theme swap, new parse tree, hidden-lines update) the
@@ -139,7 +139,7 @@ pub(crate) fn produce_line_styles(
         ),
         With<CodeEditor>,
     >,
-    content_changed: Query<Entity, (With<CodeEditor>, Changed<TextBuffer<RopeBuffer>>)>,
+    content_changed: Query<Entity, (With<CodeEditor>, Changed<InstancedText<RopeBuffer>>)>,
     full_rebuild_changed: Query<
         Entity,
         (

@@ -9,7 +9,7 @@
 use bevy::ecs::query::QueryData;
 use bevy::text::TextFont;
 use bevy::ui::{ComputedNode, ScrollPosition};
-use bevy_instanced_text::{DisplayLayout, MonoCellWidth, TextBounds, TextBuffer};
+use bevy_instanced_text::{DisplayLayout, MonoCellWidth, TextBounds, InstancedText};
 use bevy_instanced_text_editor::{CursorState, RopeBuffer, ScrollConfig};
 
 use crate::plugin::ScrollAnimator;
@@ -22,7 +22,7 @@ use crate::types::FoldState;
 /// them — most systems only need one or the other.
 #[derive(QueryData)]
 pub struct EditorBufferView {
-    pub buffer: &'static TextBuffer<RopeBuffer>,
+    pub buffer: &'static InstancedText<RopeBuffer>,
     pub fold: &'static FoldState,
 }
 
@@ -50,7 +50,7 @@ pub struct EditorFontView {
 /// EditorFontView)` tuple that was repeated across 6+ systems.
 #[derive(QueryData)]
 pub struct EditorRenderView {
-    pub buffer: &'static TextBuffer<RopeBuffer>,
+    pub buffer: &'static InstancedText<RopeBuffer>,
     pub fold: &'static FoldState,
     pub computed: &'static ComputedNode,
     pub scroll: &'static ScrollPosition,

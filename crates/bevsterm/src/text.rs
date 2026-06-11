@@ -13,7 +13,7 @@ use crate::backend;
 #[derive(Component, Default, Reflect)]
 #[reflect(Component, Default)]
 #[require(
-    bevy_instanced_text::TextBuffer<bevy_instanced_text::TextSpan>,
+    bevy_instanced_text::InstancedText<String>,
     bevy_instanced_text::ContentMetrics,
     bevy_instanced_text::MonoCellWidth,
     bevy_instanced_text::LineStyles,

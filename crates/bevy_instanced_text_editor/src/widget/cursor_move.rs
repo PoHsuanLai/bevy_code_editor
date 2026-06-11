@@ -12,7 +12,7 @@ use crate::text_state::TextEditor;
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy::ui::ComputedNode;
-use bevy_instanced_text::{DisplayLayout, MonoCellWidth, TextBuffer};
+use bevy_instanced_text::{DisplayLayout, MonoCellWidth, InstancedText};
 use bevy_instanced_text_interaction::{CursorState, SelectionState};
 
 type EditorView<'w, 's> = Query<
@@ -21,7 +21,7 @@ type EditorView<'w, 's> = Query<
     (
         &'static mut SelectionState,
         &'static mut CursorState,
-        &'static TextBuffer<RopeBuffer>,
+        &'static InstancedText<RopeBuffer>,
         Option<&'static DisplayLayout>,
     ),
     With<TextEditor>,
@@ -217,7 +217,7 @@ type PagingView<'w, 's> = Query<
     (
         &'static mut SelectionState,
         &'static mut CursorState,
-        &'static TextBuffer<RopeBuffer>,
+        &'static InstancedText<RopeBuffer>,
         &'static ComputedNode,
         &'static TextFont,
         &'static bevy::text::LineHeight,

@@ -11,7 +11,7 @@
 //! GPU instanced batch). Click-to-toggle stays wired up via `on_gutter_click`
 //! in `input/mouse.rs` regardless of whether anything is rendered there.
 
-use crate::text_view::TextBuffer;
+use crate::text_view::InstancedText;
 use crate::types::*;
 use bevy::prelude::*;
 use bevy_instanced_text_editor::{shift_line, LineShift, RopeBuffer};
@@ -53,7 +53,7 @@ type FoldDetectQuery<'w, 's> = Query<
     (
         Entity,
         &'static FoldState,
-        &'static TextBuffer<RopeBuffer>,
+        &'static InstancedText<RopeBuffer>,
         &'static bevy_tree_sitter::SyntaxTree,
         &'static bevy_tree_sitter::ParseSourceComp,
         &'static crate::settings::Folding,

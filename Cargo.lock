@@ -259,6 +259,7 @@ dependencies = [
  "arborium-json",
  "arborium-markdown",
  "arborium-python",
+ "arborium-ruby",
  "arborium-rust",
  "arborium-theme",
  "arborium-toml",
@@ -402,6 +403,17 @@ name = "arborium-python"
 version = "2.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aba539125250b3a6d8cbb7c2fa94487545f32c839f39650addee61054d02a9e1"
+dependencies = [
+ "arborium-sysroot",
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "arborium-ruby"
+version = "2.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "769347d80210aec4f5ee4ce4ac217ab741e93519ea47ad8eef41ef54bbc8ad3b"
 dependencies = [
  "arborium-sysroot",
  "cc",
@@ -810,7 +822,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bevscode"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_instanced_text",
@@ -1445,8 +1457,8 @@ dependencies = [
 
 [[package]]
 name = "bevy_instanced_text"
-version = "0.1.1"
-source = "git+https://github.com/PoHsuanLai/bevy_instanced_text.git?rev=51220b7#51220b790d6ed8975f0c35263771717177edfbbe"
+version = "0.1.0"
+source = "git+https://github.com/PoHsuanLai/bevy_instanced_text.git?rev=ad62e10#ad62e10050766c61957dfbfa9f96eeceb0175081"
 dependencies = [
  "bevy",
  "bevy_camera",
@@ -1459,7 +1471,7 @@ dependencies = [
 
 [[package]]
 name = "bevy_instanced_text_editor"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_instanced_text",
@@ -1470,8 +1482,8 @@ dependencies = [
 
 [[package]]
 name = "bevy_instanced_text_interaction"
-version = "0.1.1"
-source = "git+https://github.com/PoHsuanLai/bevy_instanced_text.git?rev=51220b7#51220b790d6ed8975f0c35263771717177edfbbe"
+version = "0.1.0"
+source = "git+https://github.com/PoHsuanLai/bevy_instanced_text.git?rev=ad62e10#ad62e10050766c61957dfbfa9f96eeceb0175081"
 dependencies = [
  "arboard",
  "bevy",
@@ -1579,7 +1591,7 @@ dependencies = [
 
 [[package]]
 name = "bevy_lsp"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "async-channel",
  "async-lsp",
@@ -2084,7 +2096,7 @@ dependencies = [
 
 [[package]]
 name = "bevy_tree_sitter"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "arborium",
  "bevy_app",

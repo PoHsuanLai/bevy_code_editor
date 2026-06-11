@@ -32,21 +32,21 @@ pub struct TerminalEventLoopRegistry {
     pub(crate) handles: HashMap<Entity, ReaderHandle>,
 }
 
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+#[derive(bevy::ecs::query::QueryData)]
+struct PendingSessionRow {
+    entity: Entity,
+    computed: &'static ComputedNode,
+    font: &'static TextFont,
+    line_height: &'static bevy::text::LineHeight,
+    mono: &'static MonoCellWidth,
+    config: Option<&'static TerminalConfig>,
+    scrollback: Option<&'static TerminalScrollback>,
+    integration: Option<&'static ShellIntegrationComponent>,
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn open_pending_sessions(
-    pending: Query<
-        (
-            Entity,
-            &ComputedNode,
-            &TextFont,
-            &bevy::text::LineHeight,
-            &MonoCellWidth,
-            Option<&TerminalConfig>,
-            Option<&TerminalScrollback>,
-            Option<&ShellIntegrationComponent>,
-        ),
-        (With<BevyTerminal>, Without<TerminalSession>),
-    >,
+    pending: Query<PendingSessionRow, (With<BevyTerminal>, Without<TerminalSession>)>,
     windows: Query<&bevy::window::Window, With<bevy::window::PrimaryWindow>>,
     mut commands: Commands,
     mut registry: ResMut<TerminalEventLoopRegistry>,
@@ -59,7 +59,11 @@ pub fn open_pending_sessions(
         .unwrap_or(1)
         .max(1);
 
-    for (entity, computed, font, lh, mono, config, scrollback, integration) in &pending {
+    for row in &pending {
+        let (entity, computed, font, lh, mono, config, scrollback, integration) = (
+            row.entity, row.computed, row.font, row.line_height, row.mono,
+            row.config, row.scrollback, row.integration,
+        );
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
         let char_width = mono.px;
         let Some((cols, rows)) = cells_from_viewport(computed, char_width, line_height) else {

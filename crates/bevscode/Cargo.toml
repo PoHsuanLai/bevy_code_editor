@@ -1,6 +1,6 @@
 [package]
 name = "bevscode"
-version = "0.1.1"
+version = "0.1.0"
 edition = "2021"
 authors = ["PoHsuanLai"]
 license = "MIT OR Apache-2.0"
@@ -12,10 +12,10 @@ categories = ["game-development", "text-editors"]
 
 [dependencies]
 bevy_instanced_text = { workspace = true }
-bevy_instanced_text_editor = { path = "../bevy_instanced_text_editor", version = "0.1.1", default-features = false }
-bevy_tree_sitter = { path = "../bevy_tree_sitter", version = "0.1.1" }
-bevy_markdown = { path = "../bevy_markdown", version = "0.1.0" }
-bevy_lsp = { path = "../bevy_lsp", version = "0.1.1", optional = true }
+bevy_instanced_text_editor = { path = "../bevy_instanced_text_editor", version = "0.1.0", default-features = false }
+bevy_tree_sitter = { path = "../bevy_tree_sitter", version = "0.1.0" }
+bevy_markdown = { path = "../bevy_markdown", version = "0.1.0", optional = true }
+bevy_lsp = { path = "../bevy_lsp", version = "0.1.0", optional = true }
 bevy_resvg = "2.3.3"
 tempera = { git = "https://github.com/PoHsuanLai/tempera.git", rev = "b1d186f" }
 
@@ -41,8 +41,8 @@ fuzzy-matcher = { version = "0.3", optional = true }
 
 [dev-dependencies]
 bevy = { workspace = true, features = ["bevy_window", "bevy_winit"] }
-bevy_tree_sitter = { path = "../bevy_tree_sitter", version = "0.1.1", features = ["lang-rust"] }
-bevy_lsp = { path = "../bevy_lsp", version = "0.1.1", features = ["test-support"] }
+bevy_tree_sitter = { path = "../bevy_tree_sitter", version = "0.1.0", features = ["lang-rust"] }
+bevy_lsp = { path = "../bevy_lsp", version = "0.1.0", features = ["test-support"] }
 lsp-types = { workspace = true }
 serde_json = { workspace = true }
 
@@ -51,9 +51,27 @@ default = ["clipboard"]
 
 clipboard = ["bevy_instanced_text_editor/arboard"]
 clipboard-wasm = ["bevy_instanced_text_editor/clipboard-wasm"]
-lsp = ["dep:bevy_lsp", "lsp-types", "serde_json", "fuzzy-matcher"]
+lsp = ["dep:bevy_lsp", "dep:bevy_markdown", "lsp-types", "serde_json", "fuzzy-matcher"]
 # Dynamic linking for fast dev iteration (not for release builds)
 dynamic_linking = ["bevy/dynamic_linking"]
 # Tracy-based performance profiling
 profile = ["bevy/trace", "bevy/trace_tracy"]
+
+# Grammar pass-throughs from bevy_tree_sitter
+lang-rust = ["bevy_tree_sitter/lang-rust"]
+lang-c = ["bevy_tree_sitter/lang-c"]
+lang-cpp = ["bevy_tree_sitter/lang-cpp"]
+lang-python = ["bevy_tree_sitter/lang-python"]
+lang-javascript = ["bevy_tree_sitter/lang-javascript"]
+lang-typescript = ["bevy_tree_sitter/lang-typescript"]
+lang-tsx = ["bevy_tree_sitter/lang-tsx"]
+lang-json = ["bevy_tree_sitter/lang-json"]
+lang-html = ["bevy_tree_sitter/lang-html"]
+lang-css = ["bevy_tree_sitter/lang-css"]
+lang-markdown = ["bevy_tree_sitter/lang-markdown"]
+lang-toml = ["bevy_tree_sitter/lang-toml"]
+lang-yaml = ["bevy_tree_sitter/lang-yaml"]
+lang-bash = ["bevy_tree_sitter/lang-bash"]
+lang-go = ["bevy_tree_sitter/lang-go"]
+lang-ruby = ["bevy_tree_sitter/lang-ruby"]
 

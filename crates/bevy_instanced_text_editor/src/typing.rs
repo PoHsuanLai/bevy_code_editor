@@ -7,7 +7,7 @@ use crate::text::RopeBuffer;
 use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
 use bevy::input_focus::FocusedInput;
 use bevy::prelude::*;
-use bevy_instanced_text::TextBuffer;
+use bevy_instanced_text::InstancedText;
 
 use crate::text_state::{EditHistoryState, TextEditor};
 use crate::widget::text_input::insert_char;
@@ -29,7 +29,7 @@ pub fn on_focused_keyboard_typing(
             &mut SelectionState,
             &mut EditHistoryState,
             &mut CursorState,
-            &mut TextBuffer<RopeBuffer>,
+            &mut InstancedText<RopeBuffer>,
         ),
         With<TextEditor>,
     >,
