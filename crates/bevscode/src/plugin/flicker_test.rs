@@ -348,6 +348,15 @@ fn animator_drives_current_to_target_within_duration() {
         animator.target = Vec2::new(0.0, target_y);
     }
 
+    // Advance virtual time by 8ms per tick so 30 ticks = 240ms,
+    // comfortably exceeding the 125ms animation duration. Bevy 0.18's
+    // `MinimalPlugins` defaults to wall-clock time which races a fast
+    // test loop and may never finish the animation.
+    app.world_mut()
+        .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+            std::time::Duration::from_millis(8),
+        ));
+
     let mut history: Vec<f32> = Vec::new();
     for _ in 0..30 {
         app.update();

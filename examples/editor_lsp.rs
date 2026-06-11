@@ -11,8 +11,7 @@
 //! `rust-analyzer` on `PATH` (`rustup component add rust-analyzer`).
 
 use bevscode::lsp_ui::{attach_lsp, spawn_language_service, LspClient, LspRequest};
-use bevscode::prelude::*;
-use bevscode::prelude::{BufferAnchorParam, RopeBuffer};
+use bevscode::prelude::{BufferAnchorParam, RopeBuffer, *};
 use bevscode::types::{CodeEditor, CursorState};
 use bevy::prelude::*;
 use bevy_lsp::messages::{LspLogMessage, LspShowMessage};

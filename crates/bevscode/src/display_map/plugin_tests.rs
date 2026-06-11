@@ -96,6 +96,7 @@ fn spawn_test_editor(app: &mut App, text: &str) -> Entity {
         TextBounds::default(),
         LayoutTuning::default(),
         UiGlobalTransform::from(Affine2::from_translation(Vec2::new(400.0, 300.0))),
+        bevy::camera::visibility::InheritedVisibility::VISIBLE,
     );
     let settings_bundle = (
         EditorTheme::default(),
