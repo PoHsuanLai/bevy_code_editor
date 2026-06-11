@@ -17,8 +17,8 @@ use bevy::ui::ui_transform::UiGlobalTransform;
 use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::view::measurement::LayoutTuning;
 use bevy_instanced_text::{
-    ContentMetrics, DisplayLayout, HiddenLines, LineStyles, MonoCellWidth, TextBounds, InstancedText,
-    TextOverlays, TextUnderlays,
+    ContentMetrics, DisplayLayout, HiddenLines, InstancedText, LineStyles, MonoCellWidth,
+    TextBounds, TextOverlays, TextUnderlays,
 };
 use bevy_instanced_text_editor::{RopeBuffer, TextViewDragState};
 
@@ -347,6 +347,15 @@ fn animator_drives_current_to_target_within_duration() {
         animator.duration = 0.125;
         animator.target = Vec2::new(0.0, target_y);
     }
+
+    // Advance virtual time by 8ms per tick so 30 ticks = 240ms,
+    // comfortably exceeding the 125ms animation duration. Bevy 0.18's
+    // `MinimalPlugins` defaults to wall-clock time which races a fast
+    // test loop and may never finish the animation.
+    app.world_mut()
+        .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+            std::time::Duration::from_millis(8),
+        ));
 
     let mut history: Vec<f32> = Vec::new();
     for _ in 0..30 {

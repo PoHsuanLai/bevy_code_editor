@@ -9,7 +9,7 @@
 use bevy::ecs::query::QueryData;
 use bevy::text::TextFont;
 use bevy::ui::{ComputedNode, ScrollPosition};
-use bevy_instanced_text::{DisplayLayout, MonoCellWidth, TextBounds, InstancedText};
+use bevy_instanced_text::{DisplayLayout, InstancedText, MonoCellWidth, TextBounds};
 use bevy_instanced_text_editor::{CursorState, RopeBuffer, ScrollConfig};
 
 use crate::plugin::ScrollAnimator;

@@ -10,7 +10,7 @@
 use bevy::prelude::*;
 
 use crate::lsp_ui::components::{CompletionItemData, CompletionPopupData};
-use crate::lsp_ui::state::{CompletionLifecycle, PopupObserversAttached};
+use crate::lsp_ui::state::CompletionLifecycle;
 use crate::ui_kit::PopupChrome;
 
 use super::anchor::{PopupAnchor, PopupPlacement};
@@ -18,16 +18,7 @@ use super::chrome::{apply_chrome, attach_completion_observers, clear_children, P
 
 pub fn update_completion_popup(
     mut commands: Commands,
-    mut popups: Query<
-        (
-            Entity,
-            &CompletionPopupData,
-            &mut Node,
-            Option<&Children>,
-            Has<PopupObserversAttached>,
-        ),
-        Changed<CompletionPopupData>,
-    >,
+    mut popups: super::chrome::PopupUpdateQuery<CompletionPopupData>,
     mut lifecycles: Query<&mut CompletionLifecycle>,
     anchor: PopupAnchor,
     chrome: PopupChrome,

@@ -9,6 +9,18 @@ use crate::types::CodeEditor;
 use super::components::{InlayHintData, InlayHintKind};
 use super::state::LspInlayHints;
 
+type SpliceInlaysEditorsQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static InstancedText<RopeBuffer>,
+        &'static mut bevy_instanced_text::LineStyles,
+        &'static bevy_lsp::ServerCapabilities,
+        Ref<'static, LspInlayHints>,
+    ),
+    With<CodeEditor>,
+>;
+
 /// Splice each editor's `InlayHintData` entities into its `LineStyles` so
 /// the engine's shape pipeline lays the hints out inline (subsequent source
 /// glyphs shift right). Runs after `produce_line_styles` so it sees the
@@ -25,15 +37,7 @@ use super::state::LspInlayHints;
 /// `bevy_lsp::lsp_position_to_rope_byte` using the editor's
 /// `ServerCapabilities::position_encoding()`.
 pub fn splice_inlays_into_line_styles(
-    mut editors: Query<
-        (
-            &InstancedText<RopeBuffer>,
-            &mut bevy_instanced_text::LineStyles,
-            &bevy_lsp::ServerCapabilities,
-            Ref<LspInlayHints>,
-        ),
-        With<CodeEditor>,
-    >,
+    mut editors: SpliceInlaysEditorsQuery,
     hints: Query<&InlayHintData>,
     theme: Res<crate::lsp_ui_tempera::inline_decorations::InlineDecorationsTheme>,
 ) {

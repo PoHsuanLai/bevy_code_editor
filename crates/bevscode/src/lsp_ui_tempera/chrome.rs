@@ -20,6 +20,22 @@ use crate::ui_kit::PopupChrome;
 
 use super::anchor::{PopupAnchor, PopupPlacement, PopupRect};
 
+/// Standard query shape every popup renderer in this module uses to
+/// fetch its tracked popup entities. Parameterized by the popup-data
+/// Component so each renderer instantiates it with its own data type.
+pub type PopupUpdateQuery<'w, 's, T> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static T,
+        &'static mut Node,
+        Option<&'static Children>,
+        Has<PopupObserversAttached>,
+    ),
+    Changed<T>,
+>;
+
 /// Position + tempera-styled chrome for a popup `Node`.
 ///
 /// - Sets `position_type = Absolute`, the requested size, column layout,
@@ -58,7 +74,13 @@ pub fn apply_chrome(
     node.border = UiRect::all(Val::Px(chrome.menu.border_width));
     node.border_radius = BorderRadius::all(Val::Px(chrome.spacing.corner_radius_small));
 
-    let rect = anchor.place(target.editor, target.line, target.character, target.size, target.placement);
+    let rect = anchor.place(
+        target.editor,
+        target.line,
+        target.character,
+        target.size,
+        target.placement,
+    );
     match rect {
         Some(r) => {
             node.left = r.left;

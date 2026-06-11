@@ -54,7 +54,6 @@ type RequestInlayHintsQuery<'w, 's> = Query<
     's,
     (
         Entity,
-        &'static LspClient,
         &'static ServerCapabilities,
         Ref<'static, InstancedText<RopeBuffer>>,
         Ref<'static, ScrollPosition>,
@@ -65,6 +64,7 @@ type RequestInlayHintsQuery<'w, 's> = Query<
         &'static bevy::text::LineHeight,
         &'static MonoCellWidth,
         Option<&'static crate::settings::Suggest>,
+        Option<&'static crate::lsp_ui::session::LspSession>,
     ),
     With<CodeEditor>,
 >;
@@ -80,6 +80,53 @@ type RequestDocumentHighlightsQuery<'w, 's> = Query<
         Option<&'static LspDocument>,
         &'static mut LspDocumentHighlights,
         &'static crate::settings::LspConfig,
+        Option<&'static crate::lsp_ui::session::LspSession>,
+    ),
+    With<CodeEditor>,
+>;
+
+type OnLspCompletionQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static CursorState,
+        &'static InstancedText<RopeBuffer>,
+        &'static mut LspCompletionPopup,
+        &'static mut CompletionLifecycle,
+        Option<&'static crate::settings::Suggest>,
+    ),
+    With<CodeEditor>,
+>;
+
+type OnLspDefinitionQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut CursorState,
+        &'static InstancedText<RopeBuffer>,
+        Option<&'static LspDocument>,
+    ),
+    With<CodeEditor>,
+>;
+
+type OnLspRenameQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static InstancedText<RopeBuffer>,
+        Option<&'static LspDocument>,
+        &'static mut LspRenamePopup,
+    ),
+    With<CodeEditor>,
+>;
+
+type SyncLspDocumentQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static InstancedText<RopeBuffer>,
+        Option<&'static mut LspDocument>,
+        &'static mut LspDidChangeBatcher,
     ),
     With<CodeEditor>,
 >;
@@ -280,16 +327,7 @@ pub fn clear_stale_diagnostics_on_edit(
 /// based on whether the cursor is still in the prefix word.
 pub fn on_lsp_completion(
     mut events: MessageReader<LspCompletionResponse>,
-    mut q: Query<
-        (
-            &CursorState,
-            &InstancedText<RopeBuffer>,
-            &mut LspCompletionPopup,
-            &mut CompletionLifecycle,
-            Option<&crate::settings::Suggest>,
-        ),
-        With<CodeEditor>,
-    >,
+    mut q: OnLspCompletionQuery,
 ) {
     for ev in events.read() {
         let Ok((cursor_state, buffer, mut completion_state, mut completion_lc, suggest)) =
@@ -397,14 +435,7 @@ pub fn on_lsp_hover(
 
 pub fn on_lsp_definition(
     mut events: MessageReader<LspDefinitionResponse>,
-    mut q: Query<
-        (
-            &mut CursorState,
-            &InstancedText<RopeBuffer>,
-            Option<&LspDocument>,
-        ),
-        With<CodeEditor>,
-    >,
+    mut q: OnLspDefinitionQuery,
     mut navigate_events: MessageWriter<NavigateToFileEvent>,
     mut multi_location_events: MessageWriter<MultipleLocationsEvent>,
 ) {
@@ -581,14 +612,7 @@ pub fn on_lsp_prepare_rename(
 
 pub fn on_lsp_rename(
     mut events: MessageReader<LspRenameResponse>,
-    mut q: Query<
-        (
-            &InstancedText<RopeBuffer>,
-            Option<&LspDocument>,
-            &mut LspRenamePopup,
-        ),
-        With<CodeEditor>,
-    >,
+    mut q: OnLspRenameQuery,
     mut workspace_edit_events: MessageWriter<WorkspaceEditEvent>,
     mut replace_writer: MessageWriter<bevy_instanced_text_editor::ReplaceRangeRequested>,
 ) {
@@ -709,17 +733,12 @@ fn apply_text_edits(
 /// `LspConfig::full_document_sync` is on).
 pub fn sync_lsp_document(
     time: Res<Time>,
-    mut query: Query<
-        (
-            &InstancedText<RopeBuffer>,
-            Option<&mut LspDocument>,
-            &mut LspDidChangeBatcher,
-        ),
-        With<CodeEditor>,
-    >,
+    mut query: SyncLspDocumentQuery,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((buffer, lsp_document, mut batcher)) = query.get_mut(focused) else {
         return;
     };
@@ -754,12 +773,14 @@ pub fn sync_lsp_document(
 pub fn request_inlay_hints(
     mut query: RequestInlayHintsQuery,
     mut lsp_w: MessageWriter<LspRequest>,
+    lsp_ready: crate::lsp_ui::session::LspReady,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((
         entity,
-        lsp_client,
         capabilities,
         buffer,
         scroll,
@@ -770,12 +791,13 @@ pub fn request_inlay_hints(
         lh,
         _mono,
         suggest,
+        session,
     )) = query.get_mut(focused)
     else {
         return;
     };
     let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
-    if !lsp_client.is_ready() || !capabilities.supports_inlay_hints() {
+    if !lsp_ready.is_ready(entity) || !capabilities.supports_inlay_hints() {
         return;
     }
     if let Some(s) = suggest {
@@ -834,23 +856,29 @@ pub fn request_inlay_hints(
         return;
     }
 
-    lsp_w.write(LspRequest {
+    lsp_w.write(crate::lsp_ui::session::lsp_request(
         entity,
-        msg: LspMessage::InlayHint {
+        session,
+        LspMessage::InlayHint {
             uri: lsp_document.uri.clone(),
             range,
             id: 0,
         },
-    });
+    ));
 
     hint_state.cached_range = Some(range);
     hint_state.needs_refresh = false;
 }
 
 /// System to clean up LSP timeout requests
-pub fn cleanup_lsp_timeouts(query: Query<&LspClient, With<CodeEditor>>) {
-    for lsp_client in query.iter() {
-        lsp_client.cleanup_timeouts();
+pub fn cleanup_lsp_timeouts(
+    sessions: Query<&crate::lsp_ui::session::LspSession, With<CodeEditor>>,
+    clients: Query<&LspClient>,
+) {
+    for session in sessions.iter() {
+        if let Ok(lsp_client) = clients.get(session.0) {
+            lsp_client.cleanup_timeouts();
+        }
     }
 }
 
@@ -958,17 +986,19 @@ pub fn request_signature_help(
     position: Position,
     sig_lc: &mut SignatureLifecycle,
     lsp_w: &mut MessageWriter<LspRequest>,
+    session: Option<&crate::lsp_ui::session::LspSession>,
 ) {
     if capabilities.supports_signature_help() {
         let id = sig_lc.new_request();
-        lsp_w.write(LspRequest {
+        lsp_w.write(crate::lsp_ui::session::lsp_request(
             entity,
-            msg: LspMessage::SignatureHelp {
+            session,
+            LspMessage::SignatureHelp {
                 uri: uri.clone(),
                 position,
                 id,
             },
-        });
+        ));
     }
 }
 
@@ -993,6 +1023,7 @@ pub fn request_code_actions(
         let id = action_lc.new_request();
         lsp_w.write(LspRequest {
             entity,
+            origin: None,
             msg: LspMessage::CodeAction {
                 uri: uri.clone(),
                 range,
@@ -1019,6 +1050,7 @@ pub fn execute_code_action(
             if let Some(command) = &action.command {
                 lsp_w.write(LspRequest {
                     entity,
+                    origin: None,
                     msg: LspMessage::ExecuteCommand {
                         command: command.command.clone(),
                         arguments: command.arguments.clone(),
@@ -1029,6 +1061,7 @@ pub fn execute_code_action(
         CodeActionOrCommand::Command(command) => {
             lsp_w.write(LspRequest {
                 entity,
+                origin: None,
                 msg: LspMessage::ExecuteCommand {
                     command: command.command.clone(),
                     arguments: command.arguments.clone(),
@@ -1049,7 +1082,9 @@ pub fn request_document_highlights(
     mut lsp_w: MessageWriter<LspRequest>,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((
         entity,
         capabilities,
@@ -1058,6 +1093,7 @@ pub fn request_document_highlights(
         lsp_document,
         mut highlight_state,
         settings,
+        session,
     )) = query.get_mut(focused)
     else {
         return;
@@ -1105,14 +1141,15 @@ pub fn request_document_highlights(
         cursor_pos,
         capabilities.position_encoding(),
     );
-    lsp_w.write(LspRequest {
+    lsp_w.write(crate::lsp_ui::session::lsp_request(
         entity,
-        msg: LspMessage::DocumentHighlight {
+        session,
+        LspMessage::DocumentHighlight {
             uri: lsp_document.uri.clone(),
             position,
             id: 0,
         },
-    });
+    ));
 }
 
 /// Helper to request prepare rename
@@ -1126,6 +1163,7 @@ pub fn request_prepare_rename(
     if capabilities.supports_prepare_rename() {
         lsp_w.write(LspRequest {
             entity,
+            origin: None,
             msg: LspMessage::PrepareRename {
                 uri: uri.clone(),
                 position,
@@ -1146,6 +1184,7 @@ pub fn execute_rename(
     if capabilities.supports_rename() {
         lsp_w.write(LspRequest {
             entity,
+            origin: None,
             msg: LspMessage::Rename {
                 uri: uri.clone(),
                 position,

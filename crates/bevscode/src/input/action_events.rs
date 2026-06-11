@@ -48,4 +48,3 @@ action_event!(
     FoldAllRequested,
     UnfoldAllRequested,
 );
-

@@ -17,7 +17,7 @@
 use bevy::prelude::*;
 
 use crate::lsp_ui::components::RenameInputData;
-use crate::lsp_ui::state::{PopupObserversAttached, RenameLifecycle};
+use crate::lsp_ui::state::RenameLifecycle;
 use crate::ui_kit::PopupChrome;
 
 use super::anchor::{PopupAnchor, PopupPlacement};
@@ -25,16 +25,7 @@ use super::chrome::{apply_chrome, attach_rename_observers, clear_children, Popup
 
 pub fn update_rename_input(
     mut commands: Commands,
-    mut popups: Query<
-        (
-            Entity,
-            &RenameInputData,
-            &mut Node,
-            Option<&Children>,
-            Has<PopupObserversAttached>,
-        ),
-        Changed<RenameInputData>,
-    >,
+    mut popups: super::chrome::PopupUpdateQuery<RenameInputData>,
     mut lifecycles: Query<&mut RenameLifecycle>,
     anchor: PopupAnchor,
     chrome: PopupChrome,

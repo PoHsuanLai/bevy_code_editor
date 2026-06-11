@@ -181,9 +181,11 @@ fn build_server_router(
     let mut router: Router<()> = Router::new(());
 
     router.unhandled_request(move |_, req| {
-        let lookup = handlers.lock().unwrap().get(req.method.as_str()).map(|h| {
-            h(req.params.clone())
-        });
+        let lookup = handlers
+            .lock()
+            .unwrap()
+            .get(req.method.as_str())
+            .map(|h| h(req.params.clone()));
         async move {
             match lookup {
                 Some(fut) => fut.await,
@@ -266,5 +268,4 @@ mod tests {
         };
         assert_eq!(capabilities.hover_provider, caps.hover_provider);
     }
-
 }

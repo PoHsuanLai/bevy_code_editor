@@ -29,9 +29,7 @@ impl Plugin for TerminalPlugin {
             app.add_plugins(bevy::input_focus::InputDispatchPlugin);
         }
         app.add_plugins(
-            bevy_instanced_text_interaction::InstancedTextInteractionPlugin::<
-                String,
-            >::default(),
+            bevy_instanced_text_interaction::InstancedTextInteractionPlugin::<String>::default(),
         );
 
         app.register_type::<BevyTerminal>()
@@ -172,9 +170,8 @@ impl PluginGroup for TerminalPlugins {
             .add(bevy_instanced_text::view::plugin::InstancedTextPlugin)
             .add(bevy::input_focus::InputDispatchPlugin)
             .add(
-                bevy_instanced_text_interaction::InstancedTextInteractionPlugin::<
-                    String,
-                >::default(),
+                bevy_instanced_text_interaction::InstancedTextInteractionPlugin::<String>::default(
+                ),
             )
             .add(TerminalPlugin);
         #[cfg(feature = "pty")]

@@ -3,6 +3,15 @@
 use bevy_ecs::prelude::*;
 use lsp_types::{TextDocumentContentChangeEvent, Url};
 
+/// Points an [`LspDocument`] at the entity carrying its [`crate::LspClient`].
+///
+/// When present on the same entity as an `LspDocument`,
+/// `flush_document_changes` routes `DidChange` requests to this entity
+/// instead of assuming the `LspClient` is co-located. Absent means
+/// the `LspClient` lives on the same entity (the legacy default).
+#[derive(Component, Debug, Clone, Copy)]
+pub struct LspServiceRef(pub Entity);
+
 /// One open LSP document. [`crate::LspPlugin`] auto-sends
 /// `textDocument/didChange` on mutation via Bevy change detection.
 #[derive(Component, Debug, Clone)]

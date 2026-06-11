@@ -8,7 +8,7 @@
 use bevy::prelude::*;
 
 use crate::lsp_ui::components::{CodeActionItemData, CodeActionsPopupData};
-use crate::lsp_ui::state::{CodeActionsLifecycle, PopupObserversAttached};
+use crate::lsp_ui::state::CodeActionsLifecycle;
 use crate::ui_kit::PopupChrome;
 
 use super::anchor::{PopupAnchor, PopupPlacement};
@@ -16,16 +16,7 @@ use super::chrome::{apply_chrome, attach_code_actions_observers, clear_children,
 
 pub fn update_code_actions_popup(
     mut commands: Commands,
-    mut popups: Query<
-        (
-            Entity,
-            &CodeActionsPopupData,
-            &mut Node,
-            Option<&Children>,
-            Has<PopupObserversAttached>,
-        ),
-        Changed<CodeActionsPopupData>,
-    >,
+    mut popups: super::chrome::PopupUpdateQuery<CodeActionsPopupData>,
     mut lifecycles: Query<&mut CodeActionsLifecycle>,
     anchor: PopupAnchor,
     chrome: PopupChrome,

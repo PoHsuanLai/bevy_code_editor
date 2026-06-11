@@ -16,8 +16,8 @@ use crate::types::events::TextEdited;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::{
-    visible_buffer_range, FormattedSpan, HiddenLines, LayoutProduceSet, LineStyles, MonoCellWidth,
-    TextBounds, InstancedText,
+    visible_buffer_range, FormattedSpan, HiddenLines, InstancedText, LayoutProduceSet, LineStyles,
+    MonoCellWidth, TextBounds,
 };
 use bevy_instanced_text_editor::RopeBuffer;
 use std::collections::{HashMap, HashSet};
@@ -123,50 +123,62 @@ pub(crate) fn produce_hidden_lines(mut editors: ProduceHiddenLinesQuery) {
 /// unchanged lines keep their cached runs. On any other change (scroll,
 /// viewport resize, theme swap, new parse tree, hidden-lines update) the
 /// full visible window is rebuilt from scratch.
-pub(crate) fn produce_line_styles(
-    mut editors: Query<
-        (
-            Entity,
-            crate::settings::EditorRenderView,
-            Option<&TextBounds>,
-            Option<&HiddenLines>,
-            &mut EditorSyntaxState,
-            Option<&bevy_tree_sitter::SyntaxTree>,
-            &mut LineStyles,
-            &EditorTheme,
-            &SyntaxColors,
-            &crate::settings::RenderSettings,
-        ),
-        With<CodeEditor>,
-    >,
-    content_changed: Query<Entity, (With<CodeEditor>, Changed<InstancedText<RopeBuffer>>)>,
-    full_rebuild_changed: Query<
+type ProduceLineStylesEditors<'w, 's> = Query<
+    'w,
+    's,
+    (
         Entity,
-        (
-            With<CodeEditor>,
-            Or<(
-                Changed<ScrollPosition>,
-                Changed<ComputedNode>,
-                Changed<HiddenLines>,
-                Changed<EditorTheme>,
-                Changed<SyntaxColors>,
-            )>,
-        ),
-    >,
-    syntax_tree_changed: Query<
-        (Entity, &bevy_tree_sitter::SyntaxTree),
-        (With<CodeEditor>, Changed<bevy_tree_sitter::SyntaxTree>),
-    >,
+        crate::settings::EditorRenderView,
+        Option<&'static TextBounds>,
+        Option<&'static HiddenLines>,
+        &'static mut EditorSyntaxState,
+        Option<&'static bevy_tree_sitter::SyntaxTree>,
+        &'static mut LineStyles,
+        &'static EditorTheme,
+        &'static SyntaxColors,
+        &'static crate::settings::RenderSettings,
+    ),
+    With<CodeEditor>,
+>;
+
+type FullRebuildChangedQuery<'w, 's> = Query<
+    'w,
+    's,
+    Entity,
+    (
+        With<CodeEditor>,
+        Or<(
+            Changed<ScrollPosition>,
+            Changed<ComputedNode>,
+            Changed<HiddenLines>,
+            Changed<EditorTheme>,
+            Changed<SyntaxColors>,
+        )>,
+    ),
+>;
+
+type SyntaxTreeChangedQuery<'w, 's> = Query<
+    'w,
+    's,
+    (Entity, &'static bevy_tree_sitter::SyntaxTree),
+    (With<CodeEditor>, Changed<bevy_tree_sitter::SyntaxTree>),
+>;
+
+type DirtyLinesMap = HashMap<
+    Entity,
+    (
+        Option<(u32, u32)>,
+        Vec<bevy_instanced_text_editor::EditDelta>,
+    ),
+>;
+
+pub(crate) fn produce_line_styles(
+    mut editors: ProduceLineStylesEditors,
+    content_changed: Query<Entity, (With<CodeEditor>, Changed<InstancedText<RopeBuffer>>)>,
+    full_rebuild_changed: FullRebuildChangedQuery,
+    syntax_tree_changed: SyntaxTreeChangedQuery,
     mut edit_events: MessageReader<TextEdited>,
-    mut dirty_lines: Local<
-        HashMap<
-            Entity,
-            (
-                Option<(u32, u32)>,
-                Vec<bevy_instanced_text_editor::EditDelta>,
-            ),
-        >,
-    >,
+    mut dirty_lines: Local<DirtyLinesMap>,
 ) {
     let _span = bevy::prelude::info_span!("produce_line_styles").entered();
     for event in edit_events.read() {

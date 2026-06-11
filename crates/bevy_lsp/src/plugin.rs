@@ -6,8 +6,9 @@ use bevy_ecs::system::SystemParam;
 use bevy_log::{debug, info, trace};
 
 use crate::client::LspClient;
-use crate::document::LspDocument;
+use crate::document::{LspDocument, LspServiceRef};
 use crate::messages::{LspRequest, *};
+use crate::origins::LspRequestOrigins;
 
 #[derive(Default)]
 pub struct LspPlugin;
@@ -186,15 +187,33 @@ fn response_variant_name(r: &crate::messages::LspResponse) -> &'static str {
     }
 }
 
-fn drain_lsp_responses(mut clients: Query<(Entity, &mut LspClient)>, mut w: LspResponseWriters) {
+/// For ID-bearing responses, look up the originating entity in
+/// [`LspRequestOrigins`]. Falls back to `service_entity` when no
+/// origins component is present or the ID isn't tracked (legacy path).
+fn resolve_response_entity(
+    service_entity: Entity,
+    response: &LspResponse,
+    origins: Option<&mut LspRequestOrigins>,
+) -> Entity {
+    match (response.response_id(), origins) {
+        (Some(id), Some(origins)) => origins.resolve(id).unwrap_or(service_entity),
+        _ => service_entity,
+    }
+}
+
+fn drain_lsp_responses(
+    mut clients: Query<(Entity, &mut LspClient, Option<&mut LspRequestOrigins>)>,
+    mut w: LspResponseWriters,
+) {
     use crate::messages::LspResponse as R;
-    for (entity, mut client) in clients.iter_mut() {
+    for (service_entity, mut client, mut origins) in clients.iter_mut() {
         client.cleanup_timeouts();
         while let Some(response) = client.try_recv() {
             trace!(
-                "[LSP] drain entity={entity} response={}",
+                "[LSP] drain entity={service_entity} response={}",
                 response_variant_name(&response),
             );
+            let entity = resolve_response_entity(service_entity, &response, origins.as_deref_mut());
             match response {
                 R::Initialized { capabilities } => {
                     client.initialized = true;
@@ -606,15 +625,17 @@ fn drain_lsp_responses(mut clients: Query<(Entity, &mut LspClient)>, mut w: LspR
 }
 
 fn flush_document_changes(
-    mut query: Query<(Entity, &mut LspDocument), Changed<LspDocument>>,
+    mut query: Query<(Entity, &mut LspDocument, Option<&LspServiceRef>), Changed<LspDocument>>,
     mut lsp_w: MessageWriter<LspRequest>,
 ) {
-    for (entity, mut doc) in &mut query {
+    for (entity, mut doc, service_ref) in &mut query {
         let Some((version, changes)) = doc.take_changes() else {
             continue;
         };
+        let target = service_ref.map(|s| s.0).unwrap_or(entity);
         lsp_w.write(LspRequest {
-            entity,
+            entity: target,
+            origin: None,
             msg: LspMessage::DidChange {
                 uri: doc.uri.clone(),
                 version,
@@ -626,16 +647,21 @@ fn flush_document_changes(
 
 fn dispatch_lsp_requests(
     mut requests: MessageReader<LspRequest>,
-    mut clients: Query<&mut LspClient>,
+    mut clients: Query<(&mut LspClient, Option<&mut LspRequestOrigins>)>,
 ) {
     for req in requests.read() {
-        let Ok(mut client) = clients.get_mut(req.entity) else {
+        let Ok((mut client, origins)) = clients.get_mut(req.entity) else {
             info!(
                 "[LSP] dispatch_lsp_requests: dropping (entity={} has no LspClient)",
                 req.entity,
             );
             continue;
         };
+        if let (Some(origin), Some(id), Some(mut origins)) =
+            (req.origin, req.msg.request_id(), origins)
+        {
+            origins.track(id, origin);
+        }
         client.send(req.msg.clone());
     }
 }

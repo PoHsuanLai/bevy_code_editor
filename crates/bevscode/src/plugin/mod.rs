@@ -131,11 +131,9 @@ pub struct EditorDispatchPlugin;
 
 impl Plugin for EditorDispatchPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(
-            leafwing_input_manager::plugin::InputManagerPlugin::<
-                crate::input::EditorAction,
-            >::default(),
-        );
+        app.add_plugins(leafwing_input_manager::plugin::InputManagerPlugin::<
+            crate::input::EditorAction,
+        >::default());
         app.add_systems(PostStartup, spawn_default_input_manager);
         app.add_systems(
             Update,
@@ -178,7 +176,19 @@ impl Plugin for CodeEditorPlugin {
         register_ide_action_events(app);
 
         #[cfg(feature = "lsp")]
-        app.init_resource::<crate::input::handlers::lsp_followup::PendingActionFollowup>();
+        {
+            app.init_resource::<crate::input::handlers::lsp_followup::PendingActionFollowup>();
+            // Ensure `LspRequest` is registered even when `bevy_lsp::LspPlugin`
+            // isn't installed — `CodeEditorPlugin`'s LSP-feature systems
+            // write this message and Bevy 0.18 panics on unregistered
+            // message types.
+            if !app
+                .world()
+                .contains_resource::<bevy::ecs::message::Messages<bevy_lsp::LspRequest>>()
+            {
+                app.add_message::<bevy_lsp::LspRequest>();
+            }
+        }
 
         app.add_observer(crate::input::on_focused_keyboard);
         app.add_observer(crate::input::on_fold_gutter_press);

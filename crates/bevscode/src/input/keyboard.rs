@@ -12,6 +12,21 @@ use super::picking_backend::move_cursor;
 #[cfg(feature = "lsp")]
 use crate::settings::LspConfig;
 use crate::types::*;
+
+type FocusedKeyboardEditorQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut SelectionState,
+        &'static mut EditHistoryState,
+        &'static mut CursorState,
+        &'static mut crate::text_view::InstancedText<RopeBuffer>,
+        &'static crate::settings::AutoEdit,
+        &'static crate::settings::Indentation,
+        &'static crate::settings::Misc,
+    ),
+    With<CodeEditor>,
+>;
 use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
 use bevy::input_focus::FocusedInput;
 use bevy::prelude::*;
@@ -53,18 +68,7 @@ type KeyboardLspQuery<'w, 's> = Query<
 /// is in `InputFocus`. We never manually compare to `input_focus.get()`.
 pub fn on_focused_keyboard(
     trigger: On<FocusedInput<KeyboardInput>>,
-    mut editor_query: Query<
-        (
-            &mut SelectionState,
-            &mut EditHistoryState,
-            &mut CursorState,
-            &mut crate::text_view::InstancedText<RopeBuffer>,
-            &crate::settings::AutoEdit,
-            &crate::settings::Indentation,
-            &crate::settings::Misc,
-        ),
-        With<CodeEditor>,
-    >,
+    mut editor_query: FocusedKeyboardEditorQuery,
     #[cfg(feature = "lsp")] mut lsp_query: KeyboardLspQuery,
     #[cfg(feature = "lsp")] mut lsp_w: MessageWriter<bevy_lsp::LspRequest>,
     #[cfg(feature = "lsp")] suggest_q: Query<&crate::settings::Suggest, With<CodeEditor>>,
@@ -229,7 +233,14 @@ fn insert_typed_char(
     ctx: &mut InsertCharCtx<'_>,
     #[cfg(feature = "lsp")] lsp_ctx: &mut InsertCharLspCtx<'_, '_>,
 ) {
-    let InsertCharCtx { sel, hist, cursor, buffer, auto_edit, indentation } = ctx;
+    let InsertCharCtx {
+        sel,
+        hist,
+        cursor,
+        buffer,
+        auto_edit,
+        indentation,
+    } = ctx;
     let quotes_mode = auto_edit.auto_closing_quotes;
     let brackets_mode = auto_edit.auto_closing_brackets;
     let overtype_mode = auto_edit.auto_closing_overtype;
@@ -333,8 +344,15 @@ fn insert_typed_char(
     #[cfg(feature = "lsp")]
     {
         let InsertCharLspCtx {
-            lsp, entity, capabilities, completion_state, completion_lc,
-            lsp_document, syntax_tree, lsp_w, suggest,
+            lsp,
+            entity,
+            capabilities,
+            completion_state,
+            completion_lc,
+            lsp_document,
+            syntax_tree,
+            lsp_w,
+            suggest,
         } = lsp_ctx;
         let entity = *entity;
 

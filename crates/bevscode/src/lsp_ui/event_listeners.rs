@@ -6,12 +6,12 @@
 //! Position conversion goes through `bevy_lsp::rope_char_to_lsp_position`
 //! with `PositionEncoding::Utf16` (LSP spec default).
 
-use super::snippet;
 use super::completion::{LspCompletionPopup, UnifiedCompletionItem};
+use super::snippet;
 use super::state::{
     CompletionLifecycle, HoverLifecycle, LspDebounceTimers, LspDidChangeBatcher, LspRenamePopup,
-    LspSignatureHelpPopup, PendingLspRequest, RenameLifecycle, SessionTabstop,
-    SignatureLifecycle, TabstopSession,
+    LspSignatureHelpPopup, PendingLspRequest, RenameLifecycle, SessionTabstop, SignatureLifecycle,
+    TabstopSession,
 };
 use crate::settings::LspConfig;
 use crate::text_view::InstancedText;
@@ -20,8 +20,8 @@ use crate::types::events::{
     SignatureHelpRequested, TextEdited,
 };
 use crate::types::{CodeEditor, CursorState};
-use bevy::prelude::*;
 use bevy::input_focus::InputFocus;
+use bevy::prelude::*;
 use bevy_instanced_text_editor::RopeBuffer;
 use bevy_lsp::{
     rope_byte_to_lsp_position, rope_char_to_lsp_position, LspDocument, LspMessage, LspRequest,
@@ -64,6 +64,7 @@ type RenameRequestQuery<'w, 's> = Query<
         &'static bevy_lsp::ServerCapabilities,
         &'static mut LspRenamePopup,
         &'static mut RenameLifecycle,
+        Option<&'static super::session::LspSession>,
     ),
     With<CodeEditor>,
 >;
@@ -79,6 +80,7 @@ type SignatureHelpRequestQuery<'w, 's> = Query<
         &'static mut LspSignatureHelpPopup,
         &'static mut SignatureLifecycle,
         Option<&'static crate::settings::Suggest>,
+        Option<&'static super::session::LspSession>,
     ),
     With<CodeEditor>,
 >;
@@ -93,6 +95,56 @@ type ApplyCompletionQuery<'w, 's> = Query<
         &'static mut InstancedText<RopeBuffer>,
         &'static mut LspCompletionPopup,
         &'static mut CompletionLifecycle,
+        &'static mut TabstopSession,
+    ),
+    With<CodeEditor>,
+>;
+
+type DismissCompletionQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Ref<'static, CursorState>,
+        &'static InstancedText<RopeBuffer>,
+        &'static mut LspCompletionPopup,
+        &'static mut CompletionLifecycle,
+    ),
+    With<CodeEditor>,
+>;
+
+type DebounceTickQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static mut LspDebounceTimers,
+        &'static mut CompletionLifecycle,
+        &'static mut HoverLifecycle,
+        Option<&'static super::session::LspSession>,
+    ),
+    With<CodeEditor>,
+>;
+
+type AdvanceTabstopQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut bevy_instanced_text_editor::SelectionState,
+        &'static mut bevy_instanced_text_editor::EditHistoryState,
+        &'static mut CursorState,
+        &'static InstancedText<RopeBuffer>,
+        &'static mut TabstopSession,
+    ),
+    With<CodeEditor>,
+>;
+
+type EndTabstopQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Ref<'static, CursorState>,
+        &'static InstancedText<RopeBuffer>,
+        &'static mut bevy_instanced_text_editor::EditHistoryState,
         &'static mut TabstopSession,
     ),
     With<CodeEditor>,
@@ -121,7 +173,9 @@ pub fn listen_text_edit_events(
     >,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((buffer, caps, mut batcher, settings)) = query.get_mut(focused) else {
         return;
     };
@@ -170,7 +224,9 @@ pub fn listen_completion_requests(
     mut query: CompletionRequestQuery,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((buffer, lsp_document, caps, mut debounce, settings)) = query.get_mut(focused) else {
         return;
     };
@@ -197,7 +253,9 @@ pub fn listen_hover_requests(
     mut query: HoverRequestQuery,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((buffer, lsp_document, caps, mut debounce, settings)) = query.get_mut(focused) else {
         return;
     };
@@ -223,8 +281,10 @@ pub fn listen_rename_requests(
     mut lsp_w: MessageWriter<LspRequest>,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
-    let Ok((entity, buffer, lsp_document, caps, mut rename_state, mut rename_lc)) =
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
+    let Ok((entity, buffer, lsp_document, caps, mut rename_state, mut rename_lc, session)) =
         query.get_mut(focused)
     else {
         return;
@@ -237,14 +297,15 @@ pub fn listen_rename_requests(
         let position = rope_char_to_lsp_position(buffer.rope(), event.cursor_char, enc);
         rename_state.start_prepare(position);
         let id = rename_lc.new_request();
-        lsp_w.write(LspRequest {
+        lsp_w.write(super::session::lsp_request(
             entity,
-            msg: LspMessage::PrepareRename {
+            session,
+            LspMessage::PrepareRename {
                 uri: lsp_document.uri.clone(),
                 position,
                 id,
             },
-        });
+        ));
     }
 }
 
@@ -254,9 +315,19 @@ pub fn listen_signature_help_requests(
     mut lsp_w: MessageWriter<LspRequest>,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
-    let Ok((entity, buffer, lsp_document, caps, mut sig_help_state, mut sig_help_lc, suggest)) =
-        query.get_mut(focused)
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
+    let Ok((
+        entity,
+        buffer,
+        lsp_document,
+        caps,
+        mut sig_help_state,
+        mut sig_help_lc,
+        suggest,
+        session,
+    )) = query.get_mut(focused)
     else {
         return;
     };
@@ -272,14 +343,15 @@ pub fn listen_signature_help_requests(
         sig_help_state.dismiss();
         sig_help_lc.dismiss();
         let id = sig_help_lc.new_request();
-        lsp_w.write(LspRequest {
+        lsp_w.write(super::session::lsp_request(
             entity,
-            msg: LspMessage::SignatureHelp {
+            session,
+            LspMessage::SignatureHelp {
                 uri: lsp_document.uri.clone(),
                 position: rope_char_to_lsp_position(buffer.rope(), event.cursor_char, enc),
                 id,
             },
-        });
+        ));
     }
 }
 
@@ -288,7 +360,9 @@ pub fn listen_dismiss_completion(
     mut query: Query<(&mut LspCompletionPopup, &mut CompletionLifecycle), With<CodeEditor>>,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((mut completion_state, mut completion_lc)) = query.get_mut(focused) else {
         return;
     };
@@ -309,6 +383,7 @@ pub fn drive_completion_resolve(
             Entity,
             &mut LspCompletionPopup,
             &bevy_lsp::ServerCapabilities,
+            Option<&super::session::LspSession>,
         ),
         With<CodeEditor>,
     >,
@@ -320,7 +395,7 @@ pub fn drive_completion_resolve(
         *last_selected = None;
         return;
     };
-    let Ok((entity, mut popup, caps)) = query.get_mut(focused) else {
+    let Ok((entity, mut popup, caps, session)) = query.get_mut(focused) else {
         *last_selected = None;
         return;
     };
@@ -355,10 +430,11 @@ pub fn drive_completion_resolve(
     popup.resolve_request_id = popup.resolve_request_id.wrapping_add(1);
     let id = popup.resolve_request_id;
     popup.pending_resolve = Some((lsp_item.label.clone(), id));
-    lsp_w.write(LspRequest {
+    lsp_w.write(super::session::lsp_request(
         entity,
-        msg: LspMessage::ResolveCompletionItem { item: lsp_item, id },
-    });
+        session,
+        LspMessage::ResolveCompletionItem { item: lsp_item, id },
+    ));
 }
 
 /// Dismiss the completion popup when the cursor moves out of a position
@@ -368,18 +444,12 @@ pub fn drive_completion_resolve(
 /// (clicked elsewhere, typed `;` / `(` / space, hit Backspace past the
 /// anchor) hides the menu immediately.
 pub fn dismiss_completion_on_cursor_move(
-    mut query: Query<
-        (
-            Ref<CursorState>,
-            &InstancedText<RopeBuffer>,
-            &mut LspCompletionPopup,
-            &mut CompletionLifecycle,
-        ),
-        With<CodeEditor>,
-    >,
+    mut query: DismissCompletionQuery,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((cursor, buffer, mut completion_state, mut completion_lc)) = query.get_mut(focused)
     else {
         return;
@@ -405,20 +475,15 @@ pub fn dismiss_completion_on_cursor_move(
 /// arming in `LspCodeActionsPopup`.
 pub fn tick_lsp_debounce_timers(
     time: Res<Time>,
-    mut query: Query<
-        (
-            Entity,
-            &mut LspDebounceTimers,
-            &mut CompletionLifecycle,
-            &mut HoverLifecycle,
-        ),
-        With<CodeEditor>,
-    >,
+    mut query: DebounceTickQuery,
     mut lsp_w: MessageWriter<LspRequest>,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
-    let Ok((entity, mut debounce, mut completion_lc, mut hover_lc)) = query.get_mut(focused)
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
+    let Ok((entity, mut debounce, mut completion_lc, mut hover_lc, session)) =
+        query.get_mut(focused)
     else {
         return;
     };
@@ -428,14 +493,15 @@ pub fn tick_lsp_debounce_timers(
         if debounce.completion_timer.just_finished() {
             if let Some(req) = debounce.pending_completion.take() {
                 let id = completion_lc.new_request();
-                lsp_w.write(LspRequest {
+                lsp_w.write(super::session::lsp_request(
                     entity,
-                    msg: LspMessage::Completion {
+                    session,
+                    LspMessage::Completion {
                         uri: req.uri,
                         position: req.position,
                         id,
                     },
-                });
+                ));
             }
         }
     }
@@ -445,14 +511,15 @@ pub fn tick_lsp_debounce_timers(
         if debounce.hover_timer.just_finished() {
             if let Some(req) = debounce.pending_hover.take() {
                 let id = hover_lc.new_request();
-                lsp_w.write(LspRequest {
+                lsp_w.write(super::session::lsp_request(
                     entity,
-                    msg: LspMessage::Hover {
+                    session,
+                    LspMessage::Hover {
                         uri: req.uri,
                         position: req.position,
                         id,
                     },
-                });
+                ));
             }
         }
     }
@@ -468,16 +535,7 @@ pub fn tick_lsp_debounce_timers(
 pub fn advance_tabstop_session(
     mut tab_events: MessageReader<bevy_instanced_text_editor::InsertTabRequested>,
     mut clear_events: MessageReader<bevy_instanced_text_editor::ClearSelectionRequested>,
-    mut query: Query<
-        (
-            &mut bevy_instanced_text_editor::SelectionState,
-            &mut bevy_instanced_text_editor::EditHistoryState,
-            &mut CursorState,
-            &InstancedText<RopeBuffer>,
-            &mut TabstopSession,
-        ),
-        With<CodeEditor>,
-    >,
+    mut query: AdvanceTabstopQuery,
     input_focus: Res<InputFocus>,
 ) {
     let focused = input_focus.get();
@@ -537,18 +595,12 @@ pub fn advance_tabstop_session(
 /// covered range (e.g. user clicked elsewhere) or when a non-snippet
 /// edit happens. Cheap when no session is active.
 pub fn end_tabstop_session_on_cursor_leave(
-    mut query: Query<
-        (
-            Ref<CursorState>,
-            &InstancedText<RopeBuffer>,
-            &mut bevy_instanced_text_editor::EditHistoryState,
-            &mut TabstopSession,
-        ),
-        With<CodeEditor>,
-    >,
+    mut query: EndTabstopQuery,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((cursor, buffer, hist, mut session)) = query.get_mut(focused) else {
         return;
     };
@@ -581,7 +633,9 @@ pub fn listen_apply_completion(
     mut query: ApplyCompletionQuery,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((
         mut sel,
         mut hist,

@@ -85,8 +85,14 @@ fn rebuild_markdown(
     highlighter: Option<Res<MarkdownHighlighter>>,
 ) {
     for row in &targets {
-        let (entity, md, fonts, colors, spacing, scales) =
-            (row.entity, row.md, row.fonts, row.colors, row.spacing, row.scales);
+        let (entity, md, fonts, colors, spacing, scales) = (
+            row.entity,
+            row.md,
+            row.fonts,
+            row.colors,
+            row.spacing,
+            row.scales,
+        );
         // Whole rebuild runs inside `queue_silenced` so if the host
         // despawns the markdown root between change-detection and
         // command flush, the closure is skipped atomically — no

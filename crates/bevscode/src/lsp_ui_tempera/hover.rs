@@ -13,7 +13,7 @@ use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_markdown::Markdown;
 
 use crate::lsp_ui::components::HoverPopupData;
-use crate::lsp_ui::state::{HoverLifecycle, PopupObserversAttached};
+use crate::lsp_ui::state::HoverLifecycle;
 use crate::plugin::ScrollAnimator;
 use crate::ui_kit::{markdown_theme_from_chrome, PopupChrome};
 
@@ -22,16 +22,7 @@ use super::chrome::{apply_chrome, attach_hover_observers, PopupTarget};
 
 pub fn update_hover_popup(
     mut commands: Commands,
-    mut popups: Query<
-        (
-            Entity,
-            &HoverPopupData,
-            &mut Node,
-            Option<&Children>,
-            Has<PopupObserversAttached>,
-        ),
-        Changed<HoverPopupData>,
-    >,
+    mut popups: super::chrome::PopupUpdateQuery<HoverPopupData>,
     mut markdown_children: Query<&mut Markdown>,
     mut lifecycles: Query<&mut HoverLifecycle>,
     anchor: PopupAnchor,

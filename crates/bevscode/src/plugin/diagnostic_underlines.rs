@@ -24,6 +24,20 @@ use crate::settings::{
 use crate::types::CodeEditor;
 use crate::ui_kit::DiagnosticTokens;
 
+type DiagnosticUnderlinesQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        EditorRenderView,
+        Option<&'static TextBounds>,
+        &'static DiagnosticColors,
+        &'static RenderSettings,
+        &'static crate::settings::Misc,
+        &'static mut DiagnosticUnderlineRects,
+    ),
+    With<CodeEditor>,
+>;
+
 /// Wavy underline overlays per visible diagnostic — written by
 /// `update_diagnostic_underlines`, merged into `TextOverlays` by
 /// `merge_overlay_components`.
@@ -44,17 +58,7 @@ const SQUIGGLE_TEETH_PER_PERIOD: usize = 6;
 pub(crate) fn update_diagnostic_underlines(
     diagnostics: Query<&DiagnosticMarker>,
     tokens: Option<Res<DiagnosticTokens>>,
-    mut editors: Query<
-        (
-            EditorRenderView,
-            Option<&TextBounds>,
-            &DiagnosticColors,
-            &RenderSettings,
-            &crate::settings::Misc,
-            &mut DiagnosticUnderlineRects,
-        ),
-        With<CodeEditor>,
-    >,
+    mut editors: DiagnosticUnderlinesQuery,
 ) {
     let tokens = tokens.map(|t| t.clone()).unwrap_or_default();
     for (rv, bounds, colors, render, misc, mut out_rects) in editors.iter_mut() {
@@ -175,9 +179,23 @@ pub(crate) fn update_diagnostic_underlines(
                     &tokens,
                 );
                 for r in (start_row + 1)..end_row {
-                    push_squiggle(&mut new_rects, r, 0.0..start_row_end, color, m.inv_scale, &tokens);
+                    push_squiggle(
+                        &mut new_rects,
+                        r,
+                        0.0..start_row_end,
+                        color,
+                        m.inv_scale,
+                        &tokens,
+                    );
                 }
-                push_squiggle(&mut new_rects, end_row, 0.0..end_x, color, m.inv_scale, &tokens);
+                push_squiggle(
+                    &mut new_rects,
+                    end_row,
+                    0.0..end_x,
+                    color,
+                    m.inv_scale,
+                    &tokens,
+                );
             }
         }
 

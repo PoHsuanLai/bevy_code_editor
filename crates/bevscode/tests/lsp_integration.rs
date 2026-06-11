@@ -64,6 +64,7 @@ impl LspTestContext {
     pub fn initialize(&mut self) {
         self.app.world_mut().write_message(LspRequest {
             entity: self.editor,
+            origin: None,
             msg: LspMessage::Initialize {
                 root_uri: Url::parse("file:///tmp/lsp_integration").unwrap(),
                 capabilities: Box::new(ClientCapabilities::default()),
@@ -152,6 +153,7 @@ fn client_didopen_reaches_server() {
     let uri = ctx.uri.clone();
     ctx.app.world_mut().write_message(LspRequest {
         entity: ctx.editor,
+        origin: None,
         msg: LspMessage::DidOpen {
             uri: uri.clone(),
             language_id: "rust".into(),
@@ -219,6 +221,7 @@ fn pre_init_didopen_drains_after_initialize() {
     // in `LspClient::pre_init_queue` until `LspServerInitialized` arrives.
     ctx.app.world_mut().write_message(LspRequest {
         entity: ctx.editor,
+        origin: None,
         msg: LspMessage::Initialize {
             root_uri: Url::parse("file:///tmp/lsp_integration").unwrap(),
             capabilities: Box::new(ClientCapabilities::default()),
@@ -227,6 +230,7 @@ fn pre_init_didopen_drains_after_initialize() {
     let uri = ctx.uri.clone();
     ctx.app.world_mut().write_message(LspRequest {
         entity: ctx.editor,
+        origin: None,
         msg: LspMessage::DidOpen {
             uri: uri.clone(),
             language_id: "rust".into(),
@@ -276,6 +280,7 @@ fn completion_roundtrip_emits_response() {
     let uri = ctx.uri.clone();
     ctx.app.world_mut().write_message(LspRequest {
         entity: ctx.editor,
+        origin: None,
         msg: LspMessage::Completion {
             uri: uri.clone(),
             position: Position {

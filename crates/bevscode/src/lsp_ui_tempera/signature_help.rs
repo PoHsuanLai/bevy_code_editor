@@ -7,7 +7,7 @@
 use bevy::prelude::*;
 
 use crate::lsp_ui::components::SignatureHelpPopupData;
-use crate::lsp_ui::state::{PopupObserversAttached, SignatureLifecycle};
+use crate::lsp_ui::state::SignatureLifecycle;
 use crate::ui_kit::PopupChrome;
 
 use super::anchor::{PopupAnchor, PopupPlacement};
@@ -15,16 +15,7 @@ use super::chrome::{apply_chrome, attach_signature_observers, clear_children, Po
 
 pub fn update_signature_help_popup(
     mut commands: Commands,
-    mut popups: Query<
-        (
-            Entity,
-            &SignatureHelpPopupData,
-            &mut Node,
-            Option<&Children>,
-            Has<PopupObserversAttached>,
-        ),
-        Changed<SignatureHelpPopupData>,
-    >,
+    mut popups: super::chrome::PopupUpdateQuery<SignatureHelpPopupData>,
     mut lifecycles: Query<&mut SignatureLifecycle>,
     anchor: PopupAnchor,
     chrome: PopupChrome,

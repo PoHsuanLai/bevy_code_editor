@@ -28,22 +28,61 @@ use bevy_instanced_text_editor::RopeBuffer;
 use crate::settings::*;
 use crate::types::*;
 
+type SetupGutterEditorsQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static TextFont,
+        &'static MonoFontFaces,
+        &'static EditorTheme,
+        &'static bevy::text::LineHeight,
+        Option<&'static bevy::camera::visibility::RenderLayers>,
+    ),
+    With<CodeEditor>,
+>;
+
+type SyncGutterEditorQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static SelectionState,
+        &'static InstancedText<RopeBuffer>,
+        &'static ScrollPosition,
+        &'static GutterConfig,
+        Ref<'static, FoldState>,
+        &'static EditorTheme,
+        &'static EditorUi,
+        &'static crate::settings::RenderSettings,
+        &'static crate::settings::Folding,
+        Ref<'static, HoveredGutterLine>,
+    ),
+    (With<CodeEditor>, Without<GutterTextView>),
+>;
+
+type SyncGutterTextQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static GutterTextView,
+        &'static mut InstancedText<String>,
+        &'static mut ScrollPosition,
+        &'static mut HiddenLines,
+        &'static mut LineStyles,
+        &'static mut Node,
+        &'static mut Visibility,
+        &'static mut bevy_instanced_text::TextColor,
+    ),
+    Without<CodeEditor>,
+>;
+
 /// Spawn a [`GutterContainer`] (and its child `GutterTextView`) for
 /// each new `CodeEditor`. Idempotent — re-running on an editor that
 /// already has a container is a no-op.
 pub(crate) fn setup_gutter_text_view(
     mut commands: Commands,
-    editors: Query<
-        (
-            Entity,
-            &TextFont,
-            &MonoFontFaces,
-            &EditorTheme,
-            &bevy::text::LineHeight,
-            Option<&bevy::camera::visibility::RenderLayers>,
-        ),
-        With<CodeEditor>,
-    >,
+    editors: SetupGutterEditorsQuery,
     existing_containers: Query<&GutterContainer>,
 ) {
     for (editor_entity, font, faces, theme, line_height, render_layers) in editors.iter() {
@@ -113,35 +152,8 @@ pub(crate) fn setup_gutter_text_view(
 ///
 /// Runs in PostUpdate before `LayoutProduceSet`.
 pub(crate) fn sync_gutter_text_view(
-    editor_query: Query<
-        (
-            Entity,
-            &SelectionState,
-            &InstancedText<RopeBuffer>,
-            &ScrollPosition,
-            &GutterConfig,
-            Ref<FoldState>,
-            &EditorTheme,
-            &EditorUi,
-            &crate::settings::RenderSettings,
-            &crate::settings::Folding,
-            Ref<HoveredGutterLine>,
-        ),
-        (With<CodeEditor>, Without<GutterTextView>),
-    >,
-    mut gutter_query: Query<
-        (
-            &GutterTextView,
-            &mut InstancedText<String>,
-            &mut ScrollPosition,
-            &mut HiddenLines,
-            &mut LineStyles,
-            &mut Node,
-            &mut Visibility,
-            &mut bevy_instanced_text::TextColor,
-        ),
-        Without<CodeEditor>,
-    >,
+    editor_query: SyncGutterEditorQuery,
+    mut gutter_query: SyncGutterTextQuery,
 ) {
     use crate::settings::LineNumbers as LineNumbersMode;
     use crate::settings::RenderFinalNewline;

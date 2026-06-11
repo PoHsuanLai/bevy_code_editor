@@ -38,16 +38,14 @@ where
     }
 }
 use lsp_types::notification::{
-    Initialized as InitializedNotif, LogMessage, LogTrace,
-    Notification as LspNotificationTrait, Progress, PublishDiagnostics, ShowMessage,
-    TelemetryEvent,
+    Initialized as InitializedNotif, LogMessage, LogTrace, Notification as LspNotificationTrait,
+    Progress, PublishDiagnostics, ShowMessage, TelemetryEvent,
 };
 use lsp_types::request::{
-    ApplyWorkspaceEdit, CodeLensRefresh, Initialize as InitializeRequest,
-    InlayHintRefreshRequest, RegisterCapability, Request as LspRequestTrait,
-    SemanticTokensRefresh, ShowDocument, ShowMessageRequest, UnregisterCapability,
-    WorkDoneProgressCreate, WorkspaceConfiguration, WorkspaceDiagnosticRefresh,
-    WorkspaceFoldersRequest,
+    ApplyWorkspaceEdit, CodeLensRefresh, Initialize as InitializeRequest, InlayHintRefreshRequest,
+    RegisterCapability, Request as LspRequestTrait, SemanticTokensRefresh, ShowDocument,
+    ShowMessageRequest, UnregisterCapability, WorkDoneProgressCreate, WorkspaceConfiguration,
+    WorkspaceDiagnosticRefresh, WorkspaceFoldersRequest,
 };
 use lsp_types::*;
 use tower::ServiceBuilder;

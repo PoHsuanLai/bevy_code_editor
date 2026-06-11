@@ -18,15 +18,43 @@
 use bevy::picking::events::{Pointer, Press};
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
-use bevy::ui::ComputedNode;
 use bevy_instanced_text::{
-    visible_buffer_range, CornerRadii, HiddenLines, MonoCellWidth, RectOverlay, RowVertical,
-    TextBounds, InstancedText,
+    visible_buffer_range, CornerRadii, HiddenLines, RectOverlay, RowVertical, TextBounds,
 };
-use bevy_instanced_text_editor::RopeBuffer;
 
 use crate::settings::*;
 use crate::types::*;
+
+type UpdateLinkOverlaysQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        EditorRenderView,
+        Option<&'static HiddenLines>,
+        Option<&'static TextBounds>,
+        &'static EditorTheme,
+        &'static Misc,
+        &'static HoveredLink,
+        &'static mut LinkRects,
+        &'static mut LinkRanges,
+    ),
+    With<CodeEditor>,
+>;
+
+type LinkHoverMoveQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        EditorRenderView,
+        &'static LinkRanges,
+        &'static Misc,
+        &'static mut HoveredLink,
+    ),
+    With<CodeEditor>,
+>;
+
+type LinkClickQuery<'w, 's> =
+    Query<'w, 's, (EditorRenderView, &'static LinkRanges, &'static Misc), With<CodeEditor>>;
 
 /// One detected URL inside the buffer.
 #[derive(Clone, Debug, Reflect)]
@@ -310,19 +338,7 @@ fn push_link(chars: &[char], begin: usize, end: usize, out: &mut Vec<(usize, usi
 /// `LinkRanges` is populated regardless of hover so the hover observer
 /// and the click observer have hit-test data.
 pub(crate) fn update_link_overlays(
-    mut editor_query: Query<
-        (
-            EditorRenderView,
-            Option<&HiddenLines>,
-            Option<&TextBounds>,
-            &EditorTheme,
-            &Misc,
-            &HoveredLink,
-            &mut LinkRects,
-            &mut LinkRanges,
-        ),
-        With<CodeEditor>,
-    >,
+    mut editor_query: UpdateLinkOverlaysQuery,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     let ctrl_held = keyboard.pressed(KeyCode::ControlLeft)
@@ -330,9 +346,8 @@ pub(crate) fn update_link_overlays(
         || keyboard.pressed(KeyCode::SuperLeft)
         || keyboard.pressed(KeyCode::SuperRight);
 
-    for (
-        rv, hidden, bounds, theme, misc, hovered, mut link_rects, mut link_ranges,
-    ) in editor_query.iter_mut()
+    for (rv, hidden, bounds, theme, misc, hovered, mut link_rects, mut link_ranges) in
+        editor_query.iter_mut()
     {
         if !misc.links {
             if !link_rects.0.is_empty() {
@@ -411,15 +426,13 @@ pub(crate) fn update_link_overlays(
                         .and_then(|l| l.x_at_byte(start_row, start_byte_in_row))
                         .unwrap_or(start_char as f32 * m.char_width);
                     let end_x = if start_row == end_row {
-                        rv
-                            .layout
+                        rv.layout
                             .and_then(|l| {
                                 l.x_after_source_range(end_row, start_byte_in_row, end_byte_in_row)
                             })
                             .unwrap_or(end_char as f32 * m.char_width)
                     } else {
-                        rv
-                            .layout
+                        rv.layout
                             .and_then(|l| l.x_at_byte(end_row, end_byte_in_row))
                             .unwrap_or(end_char as f32 * m.char_width)
                     };
@@ -496,23 +509,10 @@ fn push_dotted_underline(
 /// flip to a pointer cursor.
 pub fn on_pointer_move_for_link_hover(
     trigger: On<bevy::picking::events::Pointer<bevy::picking::events::Move>>,
-    mut editor_query: Query<
-        (
-            &InstancedText<RopeBuffer>,
-            &ComputedNode,
-            &bevy_instanced_text::DisplayLayout,
-            &MonoCellWidth,
-            &LinkRanges,
-            &Misc,
-            &mut HoveredLink,
-        ),
-        With<CodeEditor>,
-    >,
+    mut editor_query: LinkHoverMoveQuery,
 ) {
     let entity = trigger.event().entity;
-    let Ok((buffer, computed, layout, mono, link_ranges, misc, mut hovered)) =
-        editor_query.get_mut(entity)
-    else {
+    let Ok((view, link_ranges, misc, mut hovered)) = editor_query.get_mut(entity) else {
         return;
     };
     if !misc.links {
@@ -521,16 +521,22 @@ pub fn on_pointer_move_for_link_hover(
         }
         return;
     }
-    let Some(local_pos) = crate::input::mouse::hit_to_local_px(&trigger.event().hit, computed)
+    let Some(local_pos) = crate::input::mouse::hit_to_local_px(&trigger.event().hit, view.computed)
     else {
         if hovered.0.is_some() {
             hovered.0 = None;
         }
         return;
     };
-    let inv = computed.inverse_scale_factor();
-    let text_area_left = computed.content_inset().min_inset.x * inv;
+    let inv = view.computed.inverse_scale_factor();
+    let text_area_left = view.computed.content_inset().min_inset.x * inv;
     let relative_x = local_pos.x - text_area_left;
+    let Some(layout) = view.layout else {
+        if hovered.0.is_some() {
+            hovered.0 = None;
+        }
+        return;
+    };
     let Some(buffer_line) =
         crate::plugin::gutter_decorations::buffer_line_at_y(layout, local_pos.y)
     else {
@@ -539,7 +545,7 @@ pub fn on_pointer_move_for_link_hover(
         }
         return;
     };
-    let rope = buffer.rope();
+    let rope = view.buffer.rope();
     if buffer_line >= rope.len_lines() {
         if hovered.0.is_some() {
             hovered.0 = None;
@@ -547,7 +553,7 @@ pub fn on_pointer_move_for_link_hover(
         return;
     }
     let line = rope.line(buffer_line);
-    let col = (relative_x / mono.px).max(0.0) as usize;
+    let col = (relative_x / view.mono.px).max(0.0) as usize;
     let col = col.min(line.len_chars().saturating_sub(1));
 
     let next = link_ranges
@@ -590,17 +596,7 @@ fn underline_rect(display_row: u32, x_range: std::ops::Range<f32>, color: Color)
 /// itself checks `LinkRanges` to back off when a URL covers the click.
 pub fn on_ctrl_click_open_url(
     trigger: On<Pointer<Press>>,
-    editor_query: Query<
-        (
-            &InstancedText<RopeBuffer>,
-            &ComputedNode,
-            &bevy_instanced_text::DisplayLayout,
-            &MonoCellWidth,
-            &LinkRanges,
-            &Misc,
-        ),
-        With<CodeEditor>,
-    >,
+    editor_query: LinkClickQuery,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     if trigger.event().button != PointerButton::Primary {
@@ -614,28 +610,31 @@ pub fn on_ctrl_click_open_url(
         return;
     }
     let entity = trigger.event().entity;
-    let Ok((buffer, computed, layout, mono, link_ranges, misc)) = editor_query.get(entity) else {
+    let Ok((view, link_ranges, misc)) = editor_query.get(entity) else {
         return;
     };
     if !misc.links {
         return;
     }
-    let Some(local_pos) = crate::input::mouse::hit_to_local_px(&trigger.event().hit, computed)
+    let Some(local_pos) = crate::input::mouse::hit_to_local_px(&trigger.event().hit, view.computed)
     else {
         return;
     };
 
-    let inv = computed.inverse_scale_factor();
-    let text_area_left = computed.content_inset().min_inset.x * inv;
+    let inv = view.computed.inverse_scale_factor();
+    let text_area_left = view.computed.content_inset().min_inset.x * inv;
     let relative_x = local_pos.x - text_area_left;
+    let Some(layout) = view.layout else {
+        return;
+    };
     let Some(buffer_line) =
         crate::plugin::gutter_decorations::buffer_line_at_y(layout, local_pos.y)
     else {
         return;
     };
 
-    let line = buffer.rope().line(buffer_line);
-    let col = (relative_x / mono.px).max(0.0) as usize;
+    let line = view.buffer.rope().line(buffer_line);
+    let col = (relative_x / view.mono.px).max(0.0) as usize;
     let col = col.min(line.len_chars().saturating_sub(1));
 
     let Some(hit) = link_ranges
