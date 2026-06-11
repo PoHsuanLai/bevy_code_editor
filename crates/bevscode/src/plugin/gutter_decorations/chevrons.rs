@@ -21,6 +21,20 @@ use crate::ui_kit::GutterTokens;
 use super::common::{diff_place, group_pools_by_editor, RowGeometry};
 use super::icons::IconAtlas;
 
+type ChevronEditorsQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static FoldState,
+        crate::settings::GutterLayoutView,
+        &'static crate::settings::Folding,
+        &'static EditorTheme,
+        &'static HoveredGutterLine,
+    ),
+    With<CodeEditor>,
+>;
+
 /// Marker for a fold-chevron icon child node.
 #[derive(Component, Reflect, Clone, Copy)]
 #[reflect(Component)]
@@ -73,17 +87,7 @@ pub(crate) fn sync_fold_chevron_icons(
     mut commands: Commands,
     atlas: Option<Res<IconAtlas>>,
     tokens: Option<Res<GutterTokens>>,
-    editors: Query<
-        (
-            Entity,
-            &FoldState,
-            crate::settings::GutterLayoutView,
-            &crate::settings::Folding,
-            &EditorTheme,
-            &HoveredGutterLine,
-        ),
-        With<CodeEditor>,
-    >,
+    editors: ChevronEditorsQuery,
     mut existing: Query<(
         Entity,
         &GutterFoldChevron,
@@ -129,7 +133,8 @@ pub(crate) fn sync_fold_chevron_icons(
                 continue;
             };
 
-            let icon_size = (gl.gutter.chevron.width.min(geom.line_height_px) * tokens.chevron_scale)
+            let icon_size = (gl.gutter.chevron.width.min(geom.line_height_px)
+                * tokens.chevron_scale)
                 .round()
                 .max(8.0);
             let optical_lift = (geom.line_height_px * 0.05).round();

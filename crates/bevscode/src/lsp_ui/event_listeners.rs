@@ -6,12 +6,12 @@
 //! Position conversion goes through `bevy_lsp::rope_char_to_lsp_position`
 //! with `PositionEncoding::Utf16` (LSP spec default).
 
-use super::snippet;
 use super::completion::{LspCompletionPopup, UnifiedCompletionItem};
+use super::snippet;
 use super::state::{
     CompletionLifecycle, HoverLifecycle, LspDebounceTimers, LspDidChangeBatcher, LspRenamePopup,
-    LspSignatureHelpPopup, PendingLspRequest, RenameLifecycle, SessionTabstop,
-    SignatureLifecycle, TabstopSession,
+    LspSignatureHelpPopup, PendingLspRequest, RenameLifecycle, SessionTabstop, SignatureLifecycle,
+    TabstopSession,
 };
 use crate::settings::LspConfig;
 use crate::text_view::InstancedText;
@@ -20,8 +20,8 @@ use crate::types::events::{
     SignatureHelpRequested, TextEdited,
 };
 use crate::types::{CodeEditor, CursorState};
-use bevy::prelude::*;
 use bevy::input_focus::InputFocus;
+use bevy::prelude::*;
 use bevy_instanced_text_editor::RopeBuffer;
 use bevy_lsp::{
     rope_byte_to_lsp_position, rope_char_to_lsp_position, LspDocument, LspMessage, LspRequest,
@@ -100,6 +100,56 @@ type ApplyCompletionQuery<'w, 's> = Query<
     With<CodeEditor>,
 >;
 
+type DismissCompletionQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Ref<'static, CursorState>,
+        &'static InstancedText<RopeBuffer>,
+        &'static mut LspCompletionPopup,
+        &'static mut CompletionLifecycle,
+    ),
+    With<CodeEditor>,
+>;
+
+type DebounceTickQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static mut LspDebounceTimers,
+        &'static mut CompletionLifecycle,
+        &'static mut HoverLifecycle,
+        Option<&'static super::session::LspSession>,
+    ),
+    With<CodeEditor>,
+>;
+
+type AdvanceTabstopQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut bevy_instanced_text_editor::SelectionState,
+        &'static mut bevy_instanced_text_editor::EditHistoryState,
+        &'static mut CursorState,
+        &'static InstancedText<RopeBuffer>,
+        &'static mut TabstopSession,
+    ),
+    With<CodeEditor>,
+>;
+
+type EndTabstopQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Ref<'static, CursorState>,
+        &'static InstancedText<RopeBuffer>,
+        &'static mut bevy_instanced_text_editor::EditHistoryState,
+        &'static mut TabstopSession,
+    ),
+    With<CodeEditor>,
+>;
+
 /// Queue text edits into the [`LspDidChangeBatcher`] and arm its debounce
 /// timer. The batched flush happens in
 /// [`super::systems::sync_lsp_document`] when the timer expires.
@@ -123,7 +173,9 @@ pub fn listen_text_edit_events(
     >,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((buffer, caps, mut batcher, settings)) = query.get_mut(focused) else {
         return;
     };
@@ -172,7 +224,9 @@ pub fn listen_completion_requests(
     mut query: CompletionRequestQuery,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((buffer, lsp_document, caps, mut debounce, settings)) = query.get_mut(focused) else {
         return;
     };
@@ -199,7 +253,9 @@ pub fn listen_hover_requests(
     mut query: HoverRequestQuery,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((buffer, lsp_document, caps, mut debounce, settings)) = query.get_mut(focused) else {
         return;
     };
@@ -225,7 +281,9 @@ pub fn listen_rename_requests(
     mut lsp_w: MessageWriter<LspRequest>,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((entity, buffer, lsp_document, caps, mut rename_state, mut rename_lc, session)) =
         query.get_mut(focused)
     else {
@@ -257,7 +315,9 @@ pub fn listen_signature_help_requests(
     mut lsp_w: MessageWriter<LspRequest>,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((
         entity,
         buffer,
@@ -300,7 +360,9 @@ pub fn listen_dismiss_completion(
     mut query: Query<(&mut LspCompletionPopup, &mut CompletionLifecycle), With<CodeEditor>>,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((mut completion_state, mut completion_lc)) = query.get_mut(focused) else {
         return;
     };
@@ -382,18 +444,12 @@ pub fn drive_completion_resolve(
 /// (clicked elsewhere, typed `;` / `(` / space, hit Backspace past the
 /// anchor) hides the menu immediately.
 pub fn dismiss_completion_on_cursor_move(
-    mut query: Query<
-        (
-            Ref<CursorState>,
-            &InstancedText<RopeBuffer>,
-            &mut LspCompletionPopup,
-            &mut CompletionLifecycle,
-        ),
-        With<CodeEditor>,
-    >,
+    mut query: DismissCompletionQuery,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((cursor, buffer, mut completion_state, mut completion_lc)) = query.get_mut(focused)
     else {
         return;
@@ -419,20 +475,13 @@ pub fn dismiss_completion_on_cursor_move(
 /// arming in `LspCodeActionsPopup`.
 pub fn tick_lsp_debounce_timers(
     time: Res<Time>,
-    mut query: Query<
-        (
-            Entity,
-            &mut LspDebounceTimers,
-            &mut CompletionLifecycle,
-            &mut HoverLifecycle,
-            Option<&super::session::LspSession>,
-        ),
-        With<CodeEditor>,
-    >,
+    mut query: DebounceTickQuery,
     mut lsp_w: MessageWriter<LspRequest>,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((entity, mut debounce, mut completion_lc, mut hover_lc, session)) =
         query.get_mut(focused)
     else {
@@ -486,16 +535,7 @@ pub fn tick_lsp_debounce_timers(
 pub fn advance_tabstop_session(
     mut tab_events: MessageReader<bevy_instanced_text_editor::InsertTabRequested>,
     mut clear_events: MessageReader<bevy_instanced_text_editor::ClearSelectionRequested>,
-    mut query: Query<
-        (
-            &mut bevy_instanced_text_editor::SelectionState,
-            &mut bevy_instanced_text_editor::EditHistoryState,
-            &mut CursorState,
-            &InstancedText<RopeBuffer>,
-            &mut TabstopSession,
-        ),
-        With<CodeEditor>,
-    >,
+    mut query: AdvanceTabstopQuery,
     input_focus: Res<InputFocus>,
 ) {
     let focused = input_focus.get();
@@ -555,18 +595,12 @@ pub fn advance_tabstop_session(
 /// covered range (e.g. user clicked elsewhere) or when a non-snippet
 /// edit happens. Cheap when no session is active.
 pub fn end_tabstop_session_on_cursor_leave(
-    mut query: Query<
-        (
-            Ref<CursorState>,
-            &InstancedText<RopeBuffer>,
-            &mut bevy_instanced_text_editor::EditHistoryState,
-            &mut TabstopSession,
-        ),
-        With<CodeEditor>,
-    >,
+    mut query: EndTabstopQuery,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((cursor, buffer, hist, mut session)) = query.get_mut(focused) else {
         return;
     };
@@ -599,7 +633,9 @@ pub fn listen_apply_completion(
     mut query: ApplyCompletionQuery,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((
         mut sel,
         mut hist,

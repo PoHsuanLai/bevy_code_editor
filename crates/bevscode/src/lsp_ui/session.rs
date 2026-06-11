@@ -47,9 +47,7 @@ impl LspReady<'_, '_> {
         let Some(session) = self.sessions.get(editor).ok() else {
             return false;
         };
-        self.clients
-            .get(session.0)
-            .map_or(false, |c| c.is_ready())
+        self.clients.get(session.0).is_ok_and(|c| c.is_ready())
     }
 
     pub fn service_entity(&self, editor: Entity) -> Option<Entity> {

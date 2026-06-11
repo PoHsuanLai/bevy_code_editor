@@ -85,6 +85,52 @@ type RequestDocumentHighlightsQuery<'w, 's> = Query<
     With<CodeEditor>,
 >;
 
+type OnLspCompletionQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static CursorState,
+        &'static InstancedText<RopeBuffer>,
+        &'static mut LspCompletionPopup,
+        &'static mut CompletionLifecycle,
+        Option<&'static crate::settings::Suggest>,
+    ),
+    With<CodeEditor>,
+>;
+
+type OnLspDefinitionQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut CursorState,
+        &'static InstancedText<RopeBuffer>,
+        Option<&'static LspDocument>,
+    ),
+    With<CodeEditor>,
+>;
+
+type OnLspRenameQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static InstancedText<RopeBuffer>,
+        Option<&'static LspDocument>,
+        &'static mut LspRenamePopup,
+    ),
+    With<CodeEditor>,
+>;
+
+type SyncLspDocumentQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static InstancedText<RopeBuffer>,
+        Option<&'static mut LspDocument>,
+        &'static mut LspDidChangeBatcher,
+    ),
+    With<CodeEditor>,
+>;
+
 /// Diagnostic marker for rendering in editor
 #[derive(Component, Clone, Debug)]
 pub struct DiagnosticMarker {
@@ -281,16 +327,7 @@ pub fn clear_stale_diagnostics_on_edit(
 /// based on whether the cursor is still in the prefix word.
 pub fn on_lsp_completion(
     mut events: MessageReader<LspCompletionResponse>,
-    mut q: Query<
-        (
-            &CursorState,
-            &InstancedText<RopeBuffer>,
-            &mut LspCompletionPopup,
-            &mut CompletionLifecycle,
-            Option<&crate::settings::Suggest>,
-        ),
-        With<CodeEditor>,
-    >,
+    mut q: OnLspCompletionQuery,
 ) {
     for ev in events.read() {
         let Ok((cursor_state, buffer, mut completion_state, mut completion_lc, suggest)) =
@@ -398,14 +435,7 @@ pub fn on_lsp_hover(
 
 pub fn on_lsp_definition(
     mut events: MessageReader<LspDefinitionResponse>,
-    mut q: Query<
-        (
-            &mut CursorState,
-            &InstancedText<RopeBuffer>,
-            Option<&LspDocument>,
-        ),
-        With<CodeEditor>,
-    >,
+    mut q: OnLspDefinitionQuery,
     mut navigate_events: MessageWriter<NavigateToFileEvent>,
     mut multi_location_events: MessageWriter<MultipleLocationsEvent>,
 ) {
@@ -582,14 +612,7 @@ pub fn on_lsp_prepare_rename(
 
 pub fn on_lsp_rename(
     mut events: MessageReader<LspRenameResponse>,
-    mut q: Query<
-        (
-            &InstancedText<RopeBuffer>,
-            Option<&LspDocument>,
-            &mut LspRenamePopup,
-        ),
-        With<CodeEditor>,
-    >,
+    mut q: OnLspRenameQuery,
     mut workspace_edit_events: MessageWriter<WorkspaceEditEvent>,
     mut replace_writer: MessageWriter<bevy_instanced_text_editor::ReplaceRangeRequested>,
 ) {
@@ -710,17 +733,12 @@ fn apply_text_edits(
 /// `LspConfig::full_document_sync` is on).
 pub fn sync_lsp_document(
     time: Res<Time>,
-    mut query: Query<
-        (
-            &InstancedText<RopeBuffer>,
-            Option<&mut LspDocument>,
-            &mut LspDidChangeBatcher,
-        ),
-        With<CodeEditor>,
-    >,
+    mut query: SyncLspDocumentQuery,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((buffer, lsp_document, mut batcher)) = query.get_mut(focused) else {
         return;
     };
@@ -758,7 +776,9 @@ pub fn request_inlay_hints(
     lsp_ready: crate::lsp_ui::session::LspReady,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((
         entity,
         capabilities,
@@ -1003,7 +1023,7 @@ pub fn request_code_actions(
         let id = action_lc.new_request();
         lsp_w.write(LspRequest {
             entity,
-        origin: None,
+            origin: None,
             msg: LspMessage::CodeAction {
                 uri: uri.clone(),
                 range,
@@ -1030,7 +1050,7 @@ pub fn execute_code_action(
             if let Some(command) = &action.command {
                 lsp_w.write(LspRequest {
                     entity,
-        origin: None,
+                    origin: None,
                     msg: LspMessage::ExecuteCommand {
                         command: command.command.clone(),
                         arguments: command.arguments.clone(),
@@ -1041,7 +1061,7 @@ pub fn execute_code_action(
         CodeActionOrCommand::Command(command) => {
             lsp_w.write(LspRequest {
                 entity,
-        origin: None,
+                origin: None,
                 msg: LspMessage::ExecuteCommand {
                     command: command.command.clone(),
                     arguments: command.arguments.clone(),
@@ -1062,7 +1082,9 @@ pub fn request_document_highlights(
     mut lsp_w: MessageWriter<LspRequest>,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((
         entity,
         capabilities,
@@ -1141,7 +1163,7 @@ pub fn request_prepare_rename(
     if capabilities.supports_prepare_rename() {
         lsp_w.write(LspRequest {
             entity,
-        origin: None,
+            origin: None,
             msg: LspMessage::PrepareRename {
                 uri: uri.clone(),
                 position,
@@ -1162,7 +1184,7 @@ pub fn execute_rename(
     if capabilities.supports_rename() {
         lsp_w.write(LspRequest {
             entity,
-        origin: None,
+            origin: None,
             msg: LspMessage::Rename {
                 uri: uri.clone(),
                 position,

@@ -213,11 +213,7 @@ fn drain_lsp_responses(
                 "[LSP] drain entity={service_entity} response={}",
                 response_variant_name(&response),
             );
-            let entity = resolve_response_entity(
-                service_entity,
-                &response,
-                origins.as_deref_mut(),
-            );
+            let entity = resolve_response_entity(service_entity, &response, origins.as_deref_mut());
             match response {
                 R::Initialized { capabilities } => {
                     client.initialized = true;
@@ -629,10 +625,7 @@ fn drain_lsp_responses(
 }
 
 fn flush_document_changes(
-    mut query: Query<
-        (Entity, &mut LspDocument, Option<&LspServiceRef>),
-        Changed<LspDocument>,
-    >,
+    mut query: Query<(Entity, &mut LspDocument, Option<&LspServiceRef>), Changed<LspDocument>>,
     mut lsp_w: MessageWriter<LspRequest>,
 ) {
     for (entity, mut doc, service_ref) in &mut query {

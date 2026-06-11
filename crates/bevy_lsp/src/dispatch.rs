@@ -8,12 +8,12 @@ use lsp_types::notification::{
 };
 use lsp_types::request::{
     CallHierarchyIncomingCalls, CallHierarchyOutgoingCalls, CallHierarchyPrepare,
-    CodeActionRequest, CodeActionResolveRequest, ColorPresentationRequest,
-    Completion, DocumentColor, DocumentDiagnosticRequest, DocumentHighlightRequest,
-    DocumentLinkRequest, DocumentLinkResolve, DocumentSymbolRequest, ExecuteCommand,
-    FoldingRangeRequest, Formatting, GotoDeclaration, GotoDefinition, GotoImplementation,
-    GotoTypeDefinition, HoverRequest, InlayHintRequest, InlayHintResolveRequest, LinkedEditingRange,
-    MonikerRequest, OnTypeFormatting, PrepareRenameRequest, RangeFormatting, References, Rename,
+    CodeActionRequest, CodeActionResolveRequest, ColorPresentationRequest, Completion,
+    DocumentColor, DocumentDiagnosticRequest, DocumentHighlightRequest, DocumentLinkRequest,
+    DocumentLinkResolve, DocumentSymbolRequest, ExecuteCommand, FoldingRangeRequest, Formatting,
+    GotoDeclaration, GotoDefinition, GotoImplementation, GotoTypeDefinition, HoverRequest,
+    InlayHintRequest, InlayHintResolveRequest, LinkedEditingRange, MonikerRequest,
+    OnTypeFormatting, PrepareRenameRequest, RangeFormatting, References, Rename,
     ResolveCompletionItem, SelectionRangeRequest, SemanticTokensFullDeltaRequest,
     SemanticTokensFullRequest, SemanticTokensRangeRequest, Shutdown as ShutdownRequest,
     SignatureHelpRequest, TypeHierarchyPrepare, TypeHierarchySubtypes, TypeHierarchySupertypes,

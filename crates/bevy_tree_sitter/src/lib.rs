@@ -11,8 +11,8 @@ pub mod plugin;
 pub mod prelude;
 pub mod tree_sitter;
 
-pub use ::arborium::tree_sitter as ts;
 pub use ::arborium;
+pub use ::arborium::tree_sitter as ts;
 
 pub use crate::highlight::{highlight_ranges, HighlightRange};
 pub use crate::language::TreeSitterGrammar;

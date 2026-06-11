@@ -5,13 +5,13 @@
 
 use bevy::prelude::*;
 
+use crate::lsp_ui::completion::LspCompletionPopup;
 use crate::lsp_ui::event_listeners::{
     advance_tabstop_session, dismiss_completion_on_cursor_move, drive_completion_resolve,
     end_tabstop_session_on_cursor_leave, listen_apply_completion, listen_completion_requests,
     listen_dismiss_completion, listen_hover_requests, listen_rename_requests,
     listen_signature_help_requests, listen_text_edit_events, tick_lsp_debounce_timers,
 };
-use crate::lsp_ui::completion::LspCompletionPopup;
 use crate::lsp_ui::inlay_splice::splice_inlays_into_line_styles;
 use crate::lsp_ui::sync::{
     sync_code_actions_popup, sync_completion_popup, sync_document_highlights, sync_hover_popup,

@@ -86,6 +86,37 @@ type HoverMoveQuery<'w, 's> = Query<
     With<CodeEditor>,
 >;
 
+type ClickPastEolQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static InstancedText<RopeBuffer>,
+        &'static ScrollPosition,
+        &'static ComputedNode,
+        &'static mut FoldState,
+        &'static TextFont,
+        &'static bevy::text::LineHeight,
+        &'static MonoCellWidth,
+        Option<&'static DisplayLayout>,
+        &'static crate::settings::Folding,
+    ),
+    With<CodeEditor>,
+>;
+
+#[cfg(feature = "lsp")]
+type HoverTimerStateQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        Option<&'static bevy_lsp::LspDocument>,
+        &'static mut crate::lsp_ui::state::LspHoverPopup,
+        &'static mut crate::lsp_ui::state::HoverLifecycle,
+        Option<&'static crate::lsp_ui::session::LspSession>,
+    ),
+    With<CodeEditor>,
+>;
+
 #[cfg(feature = "lsp")]
 use crate::lsp_ui::reset_hover_state;
 #[cfg(feature = "lsp")]
@@ -225,20 +256,7 @@ pub fn on_fold_gutter_press(
 /// a click whose x lands past the end of a folded line unfolds the region.
 pub fn on_click_past_eol_unfold(
     trigger: On<Pointer<Press>>,
-    mut editor_query: Query<
-        (
-            &InstancedText<RopeBuffer>,
-            &ScrollPosition,
-            &ComputedNode,
-            &mut FoldState,
-            &TextFont,
-            &bevy::text::LineHeight,
-            &MonoCellWidth,
-            Option<&DisplayLayout>,
-            &crate::settings::Folding,
-        ),
-        With<CodeEditor>,
-    >,
+    mut editor_query: ClickPastEolQuery,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     if trigger.event().button != PointerButton::Primary {
@@ -573,22 +591,11 @@ pub fn on_pointer_out_for_hover(
 #[cfg(feature = "lsp")]
 pub fn tick_lsp_hover_timer(
     editor_query: Query<&InstancedText<RopeBuffer>, With<CodeEditor>>,
-    mut state_query: Query<
-        (
-            Entity,
-            Option<&bevy_lsp::LspDocument>,
-            &mut crate::lsp_ui::state::LspHoverPopup,
-            &mut crate::lsp_ui::state::HoverLifecycle,
-            Option<&crate::lsp_ui::session::LspSession>,
-        ),
-        With<CodeEditor>,
-    >,
+    mut state_query: HoverTimerStateQuery,
     time: Res<Time>,
     mut lsp_w: MessageWriter<bevy_lsp::LspRequest>,
 ) {
-    for (entity, lsp_document, mut hover_state, mut hover_lc, session) in
-        state_query.iter_mut()
-    {
+    for (entity, lsp_document, mut hover_state, mut hover_lc, session) in state_query.iter_mut() {
         let Ok(buffer) = editor_query.get(entity) else {
             continue;
         };

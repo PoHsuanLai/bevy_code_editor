@@ -18,7 +18,7 @@
 
 pub use bevy_instanced_text::view::{
     glyph, overlay, pipeline, render, text, ContentMetrics, DisplayLayout, GlyphBatchComponent,
-    RectOverlay, RowVertical, ShapedLine, InstancedText, TextFormat, TextOverlays, TextUnderlays,
+    InstancedText, RectOverlay, RowVertical, ShapedLine, TextFormat, TextOverlays, TextUnderlays,
     TextViewBatchEntity, TextViewRenderSet,
 };
 

@@ -17,8 +17,8 @@ use bevy::ui::ui_transform::UiGlobalTransform;
 use bevy::ui::{ComputedNode, ScrollPosition};
 use bevy_instanced_text::view::measurement::LayoutTuning;
 use bevy_instanced_text::{
-    ContentMetrics, DisplayLayout, HiddenLines, LineStyles, MonoCellWidth, TextBounds, InstancedText,
-    TextOverlays, TextUnderlays,
+    ContentMetrics, DisplayLayout, HiddenLines, InstancedText, LineStyles, MonoCellWidth,
+    TextBounds, TextOverlays, TextUnderlays,
 };
 use bevy_instanced_text_editor::{RopeBuffer, TextViewDragState};
 

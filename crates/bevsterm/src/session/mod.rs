@@ -33,7 +33,7 @@ pub struct TerminalEventLoopRegistry {
 }
 
 #[derive(bevy::ecs::query::QueryData)]
-struct PendingSessionRow {
+pub(crate) struct PendingSessionRow {
     entity: Entity,
     computed: &'static ComputedNode,
     font: &'static TextFont,
@@ -45,7 +45,7 @@ struct PendingSessionRow {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn open_pending_sessions(
+pub(crate) fn open_pending_sessions(
     pending: Query<PendingSessionRow, (With<BevyTerminal>, Without<TerminalSession>)>,
     windows: Query<&bevy::window::Window, With<bevy::window::PrimaryWindow>>,
     mut commands: Commands,
@@ -61,8 +61,14 @@ pub fn open_pending_sessions(
 
     for row in &pending {
         let (entity, computed, font, lh, mono, config, scrollback, integration) = (
-            row.entity, row.computed, row.font, row.line_height, row.mono,
-            row.config, row.scrollback, row.integration,
+            row.entity,
+            row.computed,
+            row.font,
+            row.line_height,
+            row.mono,
+            row.config,
+            row.scrollback,
+            row.integration,
         );
         let line_height = bevy_instanced_text::resolve_line_height(*lh, font.font_size);
         let char_width = mono.px;

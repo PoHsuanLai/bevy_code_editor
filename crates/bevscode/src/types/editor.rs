@@ -47,7 +47,7 @@ use bevy::prelude::*;
     crate::plugin::LineDecorationRects,
     HoveredGutterLine,
     HoveredInGutter,
-    bevy::input_focus::tab_navigation::TabIndex,
+    bevy::input_focus::tab_navigation::TabIndex
 )]
 pub struct CodeEditor;
 

@@ -12,8 +12,8 @@
 //! font change doesn't need to invalidate the popup data — the renderer
 //! reads live engine state.
 
-use bevy::prelude::*;
 use bevy::input_focus::InputFocus;
+use bevy::prelude::*;
 use bevy_instanced_text_editor::RopeBuffer;
 
 use crate::settings::*;
@@ -36,6 +36,66 @@ use lsp_types::DiagnosticSeverity;
 /// — see [`crate::lsp_ui_tempera::hover::update_hover_popup`].
 const MAX_HOVER_HEIGHT: f32 = 320.0;
 
+type CompletionSyncQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static LspCompletionPopup,
+        &'static CursorState,
+        &'static InstancedText<RopeBuffer>,
+        &'static TextFont,
+        &'static bevy::text::LineHeight,
+        &'static MonoCellWidth,
+        &'static LspConfig,
+    ),
+    With<CodeEditor>,
+>;
+
+type HoverSyncQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static LspHoverPopup,
+        &'static InstancedText<RopeBuffer>,
+        &'static TextFont,
+        &'static MonoCellWidth,
+        &'static ServerCapabilities,
+        Option<&'static bevy_lsp::LspDocument>,
+    ),
+    With<CodeEditor>,
+>;
+
+type SignatureHelpSyncQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static LspSignatureHelpPopup,
+        &'static CursorState,
+        &'static InstancedText<RopeBuffer>,
+        &'static TextFont,
+        &'static MonoCellWidth,
+    ),
+    With<CodeEditor>,
+>;
+
+type CodeActionsSyncQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static LspCodeActionsPopup,
+        &'static CursorState,
+        &'static InstancedText<RopeBuffer>,
+        &'static TextFont,
+        &'static bevy::text::LineHeight,
+        &'static MonoCellWidth,
+    ),
+    With<CodeEditor>,
+>;
+
 /// Resolve a char index into `(line, character)`.
 fn buffer_position(buffer: &InstancedText<RopeBuffer>, char_index: usize) -> (u32, u32) {
     let char_index = char_index.min(buffer.len_chars());
@@ -48,23 +108,13 @@ fn buffer_position(buffer: &InstancedText<RopeBuffer>, char_index: usize) -> (u3
 /// Sync completion state to marker entity
 pub fn sync_completion_popup(
     mut commands: Commands,
-    query: Query<
-        (
-            Entity,
-            &LspCompletionPopup,
-            &CursorState,
-            &InstancedText<RopeBuffer>,
-            &TextFont,
-            &bevy::text::LineHeight,
-            &MonoCellWidth,
-            &LspConfig,
-        ),
-        With<CodeEditor>,
-    >,
+    query: CompletionSyncQuery,
     existing: Query<Entity, With<CompletionPopupData>>,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((editor, completion_state, cursor_state, buffer, font, lh, mono, lsp)) =
         query.get(focused)
     else {
@@ -159,23 +209,14 @@ pub fn sync_completion_popup(
 /// content for that token (matches VSCode behavior).
 pub fn sync_hover_popup(
     mut commands: Commands,
-    query: Query<
-        (
-            Entity,
-            &LspHoverPopup,
-            &InstancedText<RopeBuffer>,
-            &TextFont,
-            &MonoCellWidth,
-            &ServerCapabilities,
-            Option<&bevy_lsp::LspDocument>,
-        ),
-        With<CodeEditor>,
-    >,
+    query: HoverSyncQuery,
     existing: Query<Entity, With<HoverPopupData>>,
     diagnostics: Query<&DiagnosticMarker>,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((editor, hover_state, buffer, font, mono, caps, doc)) = query.get(focused) else {
         return;
     };
@@ -323,21 +364,13 @@ fn severity_label(severity: DiagnosticSeverity) -> &'static str {
 /// Sync signature help state to marker entity
 pub fn sync_signature_help_popup(
     mut commands: Commands,
-    query: Query<
-        (
-            Entity,
-            &LspSignatureHelpPopup,
-            &CursorState,
-            &InstancedText<RopeBuffer>,
-            &TextFont,
-            &MonoCellWidth,
-        ),
-        With<CodeEditor>,
-    >,
+    query: SignatureHelpSyncQuery,
     existing: Query<Entity, With<SignatureHelpPopupData>>,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((editor, sig_state, cursor_state, buffer, font, mono)) = query.get(focused) else {
         return;
     };
@@ -417,22 +450,13 @@ pub fn sync_signature_help_popup(
 /// Sync code action state to marker entity
 pub fn sync_code_actions_popup(
     mut commands: Commands,
-    query: Query<
-        (
-            Entity,
-            &LspCodeActionsPopup,
-            &CursorState,
-            &InstancedText<RopeBuffer>,
-            &TextFont,
-            &bevy::text::LineHeight,
-            &MonoCellWidth,
-        ),
-        With<CodeEditor>,
-    >,
+    query: CodeActionsSyncQuery,
     existing: Query<Entity, With<CodeActionsPopupData>>,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((editor, action_state, cursor_state, buffer, font, lh, mono)) = query.get(focused)
     else {
         return;
@@ -532,7 +556,9 @@ pub fn sync_rename_input(
     existing: Query<Entity, With<RenameInputData>>,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((editor, rename_state, font, lh, mono)) = query.get(focused) else {
         return;
     };
@@ -609,7 +635,9 @@ pub fn sync_inlay_hints(
     existing: Query<Entity, With<InlayHintData>>,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok((hint_state, suggest)) = query.get(focused) else {
         return;
     };
@@ -680,7 +708,9 @@ pub fn sync_document_highlights(
     existing: Query<Entity, With<DocumentHighlightData>>,
     input_focus: Res<InputFocus>,
 ) {
-    let Some(focused) = input_focus.get() else { return; };
+    let Some(focused) = input_focus.get() else {
+        return;
+    };
     let Ok(highlight_state) = query.get(focused) else {
         return;
     };

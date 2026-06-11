@@ -25,6 +25,115 @@ use bevy_instanced_text::gpu::GlyphAtlas;
 
 use super::{update_bracket_highlight, update_bracket_match};
 
+type RopeText = bevy_instanced_text::InstancedText<bevy_instanced_text_editor::RopeBuffer>;
+
+type IndentationDetectQuery<'w, 's> = Query<
+    'w,
+    's,
+    (&'static RopeText, &'static mut crate::settings::Indentation),
+    (With<CodeEditor>, Without<DetectIndentationDone>),
+>;
+
+#[cfg(not(feature = "lsp"))]
+type OverlayChangedFilter = (
+    With<CodeEditor>,
+    Or<(
+        Changed<SelectionRects>,
+        Changed<IndentGuideRects>,
+        Changed<RulerRects>,
+        Changed<FoldHighlightRects>,
+        Changed<CursorLineRects>,
+        Changed<CaretRects>,
+        Changed<BracketMatchRects>,
+        Changed<LinkRects>,
+        Changed<WhitespaceRects>,
+        Changed<GlyphMarginRects>,
+        Changed<LineDecorationRects>,
+    )>,
+);
+
+#[cfg(feature = "lsp")]
+type OverlayChangedFilterLsp = (
+    With<CodeEditor>,
+    Or<(
+        Changed<SelectionRects>,
+        Changed<IndentGuideRects>,
+        Changed<RulerRects>,
+        Changed<FoldHighlightRects>,
+        Changed<CursorLineRects>,
+        Changed<CaretRects>,
+        Changed<BracketMatchRects>,
+        Changed<LinkRects>,
+        Changed<WhitespaceRects>,
+        Changed<GlyphMarginRects>,
+        Changed<LineDecorationRects>,
+        Changed<super::diagnostic_underlines::DiagnosticUnderlineRects>,
+    )>,
+);
+
+type AutoLayoutQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static crate::settings::Misc,
+        Has<AutoResizeViewport>,
+    ),
+    (With<CodeEditor>, Changed<crate::settings::Misc>),
+>;
+
+type GutterLayoutQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut GutterConfig,
+        &'static MonoCellWidth,
+        &'static TextFont,
+        &'static bevy::text::LineHeight,
+        &'static EditorUi,
+        &'static crate::settings::Folding,
+        &'static RopeText,
+    ),
+    With<CodeEditor>,
+>;
+
+type EditorPaddingQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut Node,
+        &'static GutterConfig,
+        &'static crate::settings::Padding,
+    ),
+    (
+        With<CodeEditor>,
+        Or<(Changed<GutterConfig>, Changed<crate::settings::Padding>)>,
+    ),
+>;
+
+type EditorUiSetupQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static ComputedNode,
+        &'static GutterConfig,
+        &'static EditorTheme,
+        &'static EditorUi,
+        Option<&'static bevy::camera::visibility::RenderLayers>,
+    ),
+    With<CodeEditor>,
+>;
+
+type ViewportOrGutterChangedQuery<'w, 's> = Query<
+    'w,
+    's,
+    (),
+    (
+        With<CodeEditor>,
+        Or<(Changed<ComputedNode>, Changed<GutterConfig>)>,
+    ),
+>;
+
 #[derive(Default)]
 pub struct EditorUiPlugin;
 
@@ -174,22 +283,7 @@ fn assemble_overlays(
 fn merge_overlay_components(
     mut query: Query<
         (OverlaySourcesView, &mut TextUnderlays, &mut TextOverlays),
-        (
-            With<CodeEditor>,
-            Or<(
-                Changed<SelectionRects>,
-                Changed<IndentGuideRects>,
-                Changed<RulerRects>,
-                Changed<FoldHighlightRects>,
-                Changed<CursorLineRects>,
-                Changed<CaretRects>,
-                Changed<BracketMatchRects>,
-                Changed<LinkRects>,
-                Changed<WhitespaceRects>,
-                Changed<GlyphMarginRects>,
-                Changed<LineDecorationRects>,
-            )>,
-        ),
+        OverlayChangedFilter,
     >,
 ) {
     for (src, mut underlays, mut overlays) in &mut query {
@@ -206,23 +300,7 @@ fn merge_overlay_components(
             &mut TextUnderlays,
             &mut TextOverlays,
         ),
-        (
-            With<CodeEditor>,
-            Or<(
-                Changed<SelectionRects>,
-                Changed<IndentGuideRects>,
-                Changed<RulerRects>,
-                Changed<FoldHighlightRects>,
-                Changed<CursorLineRects>,
-                Changed<CaretRects>,
-                Changed<BracketMatchRects>,
-                Changed<LinkRects>,
-                Changed<WhitespaceRects>,
-                Changed<GlyphMarginRects>,
-                Changed<LineDecorationRects>,
-                Changed<super::diagnostic_underlines::DiagnosticUnderlineRects>,
-            )>,
-        ),
+        OverlayChangedFilterLsp,
     >,
 ) {
     for (src, diag_underlines, mut underlays, mut overlays) in &mut query {
@@ -307,13 +385,7 @@ fn detect_indentation_on_buffer_insert(
         bevy_instanced_text::InstancedText<bevy_instanced_text_editor::RopeBuffer>,
     >,
     commands: Commands,
-    editors: Query<
-        (
-            &bevy_instanced_text::InstancedText<bevy_instanced_text_editor::RopeBuffer>,
-            &mut crate::settings::Indentation,
-        ),
-        (With<CodeEditor>, Without<DetectIndentationDone>),
-    >,
+    editors: IndentationDetectQuery,
 ) {
     run_detect_indentation(trigger.event().entity, commands, editors);
 }
@@ -321,13 +393,7 @@ fn detect_indentation_on_buffer_insert(
 fn detect_indentation_on_first_edit(
     trigger: On<bevy_instanced_text_editor::OnEdit>,
     commands: Commands,
-    editors: Query<
-        (
-            &bevy_instanced_text::InstancedText<bevy_instanced_text_editor::RopeBuffer>,
-            &mut crate::settings::Indentation,
-        ),
-        (With<CodeEditor>, Without<DetectIndentationDone>),
-    >,
+    editors: IndentationDetectQuery,
 ) {
     run_detect_indentation(trigger.event().entity, commands, editors);
 }
@@ -335,13 +401,7 @@ fn detect_indentation_on_first_edit(
 fn run_detect_indentation(
     entity: Entity,
     mut commands: Commands,
-    mut editors: Query<
-        (
-            &bevy_instanced_text::InstancedText<bevy_instanced_text_editor::RopeBuffer>,
-            &mut crate::settings::Indentation,
-        ),
-        (With<CodeEditor>, Without<DetectIndentationDone>),
-    >,
+    mut editors: IndentationDetectQuery,
 ) {
     let Ok((buffer, mut indent)) = editors.get_mut(entity) else {
         return;
@@ -397,13 +457,7 @@ fn run_detect_indentation(
     }
 }
 
-fn sync_automatic_layout(
-    mut commands: Commands,
-    editors: Query<
-        (Entity, &crate::settings::Misc, Has<AutoResizeViewport>),
-        (With<CodeEditor>, Changed<crate::settings::Misc>),
-    >,
-) {
+fn sync_automatic_layout(mut commands: Commands, editors: AutoLayoutQuery) {
     for (entity, misc, has_marker) in editors.iter() {
         match (misc.automatic_layout, has_marker) {
             (true, false) => {
@@ -463,20 +517,7 @@ fn sync_cursor_icon(
 
 /// Resolve gutter column widths and left-edges in one left-to-right pass.
 /// Layout: `[ pad_l | glyph | numbers | decorations(chevron|bar) | pad_r ]`.
-fn resolve_gutter_layout(
-    mut editors: Query<
-        (
-            &mut GutterConfig,
-            &MonoCellWidth,
-            &TextFont,
-            &bevy::text::LineHeight,
-            &EditorUi,
-            &crate::settings::Folding,
-            &bevy_instanced_text::InstancedText<bevy_instanced_text_editor::RopeBuffer>,
-        ),
-        With<CodeEditor>,
-    >,
-) {
+fn resolve_gutter_layout(mut editors: GutterLayoutQuery) {
     for (mut cfg, mono, font, line_height, ui, folding, buffer) in editors.iter_mut() {
         let show_numbers = !matches!(ui.line_numbers, crate::settings::LineNumbers::Off);
         let folding_enabled = matches!(
@@ -567,15 +608,7 @@ fn resolve_gutter_layout(
     }
 }
 
-fn apply_editor_padding(
-    mut editors: Query<
-        (&mut Node, &GutterConfig, &crate::settings::Padding),
-        (
-            With<CodeEditor>,
-            Or<(Changed<GutterConfig>, Changed<crate::settings::Padding>)>,
-        ),
-    >,
-) {
+fn apply_editor_padding(mut editors: EditorPaddingQuery) {
     for (mut node, cfg, padding) in editors.iter_mut() {
         let l = Val::Px(cfg.editor_padding_left);
         let t = Val::Px(padding.top);
@@ -592,19 +625,7 @@ fn apply_editor_padding(
     }
 }
 
-fn setup_editor_ui(
-    mut commands: Commands,
-    editor_query: Query<
-        (
-            &ComputedNode,
-            &GutterConfig,
-            &EditorTheme,
-            &EditorUi,
-            Option<&bevy::camera::visibility::RenderLayers>,
-        ),
-        With<CodeEditor>,
-    >,
-) {
+fn setup_editor_ui(mut commands: Commands, editor_query: EditorUiSetupQuery) {
     for (computed, gutter, theme, ui, render_layers) in editor_query.iter() {
         let inv = computed.inverse_scale_factor();
         let logical = computed.size() * inv;
@@ -635,15 +656,7 @@ fn setup_editor_ui(
     }
 }
 
-fn viewport_or_gutter_changed(
-    query: Query<
-        (),
-        (
-            With<CodeEditor>,
-            Or<(Changed<ComputedNode>, Changed<GutterConfig>)>,
-        ),
-    >,
-) -> bool {
+fn viewport_or_gutter_changed(query: ViewportOrGutterChangedQuery) -> bool {
     !query.is_empty()
 }
 

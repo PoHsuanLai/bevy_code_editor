@@ -8,10 +8,10 @@
 //! not GPU overlays — so Taffy clips them to the gutter region and
 //! they cannot spill into the code area.
 
-use bevy::prelude::*;
-use bevy_instanced_text::RectOverlay;
 use crate::types::{CodeEditor, GutterContainer};
 use crate::ui_kit::GutterTokens;
+use bevy::prelude::*;
+use bevy_instanced_text::RectOverlay;
 
 use super::common::{diff_place, group_pools_by_editor, RowGeometry};
 
@@ -123,7 +123,8 @@ pub(crate) fn sync_gutter_decoration_bars(
         // with `markers.rs` / `chevrons.rs` — keeps decoration
         // identity tied to the host's input ordering.)
         for (idx, dec) in active.iter().enumerate() {
-            let geom = RowGeometry::compute(dec.line, gl.font, gl.line_height, gl.padding, gl.layout);
+            let geom =
+                RowGeometry::compute(dec.line, gl.font, gl.line_height, gl.padding, gl.layout);
             let line = dec.line;
             let color = dec.color;
 

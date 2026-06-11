@@ -77,6 +77,7 @@ pub use crate::text::{
 };
 
 pub mod prelude {
+    pub use crate::backend::{DefaultConfig, TerminalSize};
     pub use crate::messages::*;
     pub use crate::plugin::{
         TerminalApplyStateSet, TerminalPlugin, TerminalPlugins, TerminalPtyDrainSet,
@@ -87,7 +88,6 @@ pub mod prelude {
         TerminalConfig, TerminalEventChannel, TerminalGridSnapshot, TerminalInputMode,
         TerminalScrollFollow, TerminalScrollback, TerminalSession, TerminalShellInfo,
     };
-    pub use crate::backend::{DefaultConfig, TerminalSize};
     pub use bevy::text::TextFont;
     pub use bevy_instanced_text::{MonoCellWidth, MonoFontFaces};
 }

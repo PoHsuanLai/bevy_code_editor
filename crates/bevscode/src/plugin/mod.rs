@@ -131,11 +131,9 @@ pub struct EditorDispatchPlugin;
 
 impl Plugin for EditorDispatchPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(
-            leafwing_input_manager::plugin::InputManagerPlugin::<
-                crate::input::EditorAction,
-            >::default(),
-        );
+        app.add_plugins(leafwing_input_manager::plugin::InputManagerPlugin::<
+            crate::input::EditorAction,
+        >::default());
         app.add_systems(PostStartup, spawn_default_input_manager);
         app.add_systems(
             Update,

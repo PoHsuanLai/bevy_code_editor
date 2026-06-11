@@ -38,7 +38,7 @@ pub(crate) struct TerminalSizeRow {
 
 type TerminalSizeChanged = Or<(Changed<ComputedNode>, Changed<MonoCellWidth>)>;
 
-pub fn sync_terminal_size(
+pub(crate) fn sync_terminal_size(
     mut q: Query<TerminalSizeRow, TerminalSizeChanged>,
     windows: Query<&bevy::window::Window, With<bevy::window::PrimaryWindow>>,
 ) {

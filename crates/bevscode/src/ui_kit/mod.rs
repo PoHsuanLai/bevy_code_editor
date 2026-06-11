@@ -18,10 +18,10 @@
 //! - [`PopupChrome`] is the `SystemParam` bundle popup renderers read so
 //!   they pull one parameter instead of five.
 
-use bevy::prelude::*;
-use tempera::theme::{ColorPalette, Spacing, ThemePlugin};
 #[cfg(feature = "lsp")]
 use bevy::ecs::system::SystemParam;
+use bevy::prelude::*;
+use tempera::theme::{ColorPalette, Spacing, ThemePlugin};
 #[cfg(feature = "lsp")]
 use tempera::theme::{FontHandle, MenuTokens, Typography};
 
@@ -149,6 +149,7 @@ pub fn palette_to_editor_theme(palette: &ColorPalette, theme: &mut EditorTheme) 
     theme.line_numbers = palette.muted_foreground;
 }
 
+#[allow(clippy::type_complexity)]
 fn sync_palette_into_editor_theme(
     palette: Res<ColorPalette>,
     mut themes: ParamSet<(
@@ -172,6 +173,7 @@ fn sync_palette_into_editor_theme(
 /// [`sync_palette_into_editor_theme`] — touch every editor when the
 /// resource changes, and freshly-spawned editors on the next tick.
 #[cfg(feature = "lsp")]
+#[allow(clippy::type_complexity)]
 fn sync_diagnostic_tokens_into_editor_colors(
     tokens: Res<DiagnosticTokens>,
     mut colors: ParamSet<(

@@ -18,22 +18,26 @@ use crate::plugin::syntax_highlighting::EditorSyntaxState;
 use crate::settings::{EditorTheme, SelectionConfig, SyntaxColors};
 use crate::types::{CodeEditor, LineSegment};
 
+type CopyHighlightQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static SelectionState,
+        &'static InstancedText<RopeBuffer>,
+        &'static SelectionConfig,
+        &'static SyntaxColors,
+        &'static EditorTheme,
+        Option<&'static bevy_tree_sitter::SyntaxTree>,
+        &'static mut EditorSyntaxState,
+    ),
+    With<CodeEditor>,
+>;
+
 pub(crate) fn handle_copy_with_highlighting(
     mut events: MessageReader<CopyRequested>,
     input_focus: Res<InputFocus>,
     clipboard: Res<ClipboardResource>,
-    q: Query<
-        (
-            &SelectionState,
-            &InstancedText<RopeBuffer>,
-            &SelectionConfig,
-            &SyntaxColors,
-            &EditorTheme,
-            Option<&bevy_tree_sitter::SyntaxTree>,
-            &mut EditorSyntaxState,
-        ),
-        With<CodeEditor>,
-    >,
+    q: CopyHighlightQuery,
 ) {
     if events.read().next().is_none() {
         return;

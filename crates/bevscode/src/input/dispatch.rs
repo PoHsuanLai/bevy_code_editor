@@ -318,7 +318,10 @@ pub struct DispatchParams<'w, 's> {
     action_query: Query<
         'w,
         's,
-        (&'static ActionState<EditorAction>, &'static mut KeyRepeatState),
+        (
+            &'static ActionState<EditorAction>,
+            &'static mut KeyRepeatState,
+        ),
         With<EditorInputManager>,
     >,
     cursor_settings_q: Query<'w, 's, &'static CursorSettings, With<CodeEditor>>,
@@ -447,9 +450,8 @@ pub fn dispatch_action_events(
         suggest,
     )) = lsp_q.get_mut(focused)
     {
-        let popup_cfg = crate::lsp_ui::interceptors::CompletionPopupConfig::new(
-            lsp_settings, suggest,
-        );
+        let popup_cfg =
+            crate::lsp_ui::interceptors::CompletionPopupConfig::new(lsp_settings, suggest);
         if crate::lsp_ui::interceptors::completion_popup_intercept(
             action,
             focused,
@@ -538,7 +540,8 @@ fn emit_newline_with_indent(
         (ctx.cursor_pos, ctx.cursor_pos)
     };
     let anchor = start.min(ctx.buffer_len_chars);
-    let indent = compute_newline_indent(ctx.rope, anchor, ctx.auto_edit.auto_indent, ctx.indentation);
+    let indent =
+        compute_newline_indent(ctx.rope, anchor, ctx.auto_edit.auto_indent, ctx.indentation);
     replace_range.write(bevy_instanced_text_editor::ReplaceRangeRequested {
         entity: ctx.entity,
         start,

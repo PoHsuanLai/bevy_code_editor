@@ -165,11 +165,21 @@ impl EditHistoryState {
         sel.apply_primary_cursor(cursor);
     }
 
-    pub fn insert_text_at(&mut self, buffer: &mut InstancedText<RopeBuffer>, pos: usize, text: &str) {
+    pub fn insert_text_at(
+        &mut self,
+        buffer: &mut InstancedText<RopeBuffer>,
+        pos: usize,
+        text: &str,
+    ) {
         self.replace_range(buffer, pos, pos, text, EditKind::Other, false);
     }
 
-    pub fn remove_range(&mut self, buffer: &mut InstancedText<RopeBuffer>, start: usize, end: usize) {
+    pub fn remove_range(
+        &mut self,
+        buffer: &mut InstancedText<RopeBuffer>,
+        start: usize,
+        end: usize,
+    ) {
         self.replace_range(buffer, start, end, "", EditKind::Other, false);
     }
 

@@ -1,7 +1,7 @@
 //! UI elements: selection, indent guides
 
 use crate::settings::*;
-use crate::text_view::{DisplayLayout, RectOverlay, RowVertical, InstancedText};
+use crate::text_view::{DisplayLayout, InstancedText, RectOverlay, RowVertical};
 use crate::types::*;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition};
@@ -62,12 +62,55 @@ fn visible_display_rows(
     out
 }
 
-type AutoScrollQuery<'w, 's> = Query<
+type AutoScrollQuery<'w, 's> =
+    Query<'w, 's, (EditorRenderView, ScrollTargetView), With<CodeEditor>>;
+
+type SelectionHighlightQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        EditorRenderView,
+        &'static SelectionState,
+        &'static mut SelectionRects,
+        Option<&'static HiddenLines>,
+        Option<&'static TextBounds>,
+        &'static EditorTheme,
+        &'static SelectionConfig,
+    ),
+    With<CodeEditor>,
+>;
+
+type SelectionDirtyEditorsQuery<'w, 's> = Query<
+    'w,
+    's,
+    Entity,
+    (
+        With<CodeEditor>,
+        Or<(
+            Changed<SelectionState>,
+            Changed<ScrollPosition>,
+            Changed<ComputedNode>,
+            Changed<InstancedText<RopeBuffer>>,
+            Changed<FoldState>,
+            Changed<MonoCellWidth>,
+            Changed<EditorTheme>,
+        )>,
+    ),
+>;
+
+type WhitespaceMarkersQuery<'w, 's> = Query<
     'w,
     's,
     (
         EditorRenderView,
-        ScrollTargetView,
+        Option<&'static HiddenLines>,
+        Option<&'static TextBounds>,
+        &'static EditorTheme,
+        &'static RenderSettings,
+        &'static SelectionState,
+        &'static Indentation,
+        &'static mut WhitespaceRects,
     ),
     With<CodeEditor>,
 >;
@@ -87,50 +130,16 @@ type AutoScrollQuery<'w, 's> = Query<
 ///
 /// Change-detection gated: idle frames do nothing.
 pub(crate) fn update_selection_highlight(
-    mut editor_query: Query<
-        (
-            Entity,
-            EditorRenderView,
-            &SelectionState,
-            &mut SelectionRects,
-            Option<&HiddenLines>,
-            Option<&TextBounds>,
-            &EditorTheme,
-            &SelectionConfig,
-        ),
-        With<CodeEditor>,
-    >,
-    dirty_editors: Query<
-        Entity,
-        (
-            With<CodeEditor>,
-            Or<(
-                Changed<SelectionState>,
-                Changed<ScrollPosition>,
-                Changed<ComputedNode>,
-                Changed<InstancedText<RopeBuffer>>,
-                Changed<FoldState>,
-                Changed<MonoCellWidth>,
-                Changed<EditorTheme>,
-            )>,
-        ),
-    >,
+    mut editor_query: SelectionHighlightQuery,
+    dirty_editors: SelectionDirtyEditorsQuery,
 ) {
     let dirty: std::collections::HashSet<Entity> = dirty_editors.iter().collect();
     if dirty.is_empty() {
         return;
     }
 
-    for (
-        editor_entity,
-        rv,
-        sel,
-        mut sel_rects,
-        hidden,
-        wrap,
-        theme,
-        selection_cfg,
-    ) in editor_query.iter_mut()
+    for (editor_entity, rv, sel, mut sel_rects, hidden, wrap, theme, selection_cfg) in
+        editor_query.iter_mut()
     {
         if !dirty.contains(&editor_entity) {
             continue;
@@ -409,9 +418,13 @@ pub(crate) fn update_indent_guides(
         let indent_size = indentation.tab_size as usize;
 
         let mut new_rects: Vec<RectOverlay> = Vec::new();
-        for (buffer_line, display_row) in
-            visible_display_rows(rv.fold, rv.buffer.len_lines(), m.line_height, rv.scroll.y, m.viewport_height)
-        {
+        for (buffer_line, display_row) in visible_display_rows(
+            rv.fold,
+            rv.buffer.len_lines(),
+            m.line_height,
+            rv.scroll.y,
+            m.viewport_height,
+        ) {
             let line = rv.buffer.line(buffer_line);
             let mut leading_spaces = 0;
             for c in line.chars() {
@@ -445,12 +458,7 @@ pub(crate) fn update_indent_guides(
 /// Push a 1-px vertical `RectOverlay` per ruler column per visible row.
 pub(crate) fn update_rulers(
     mut editor_query: Query<
-        (
-            EditorRenderView,
-            &EditorTheme,
-            &mut RulerRects,
-            &Rulers,
-        ),
+        (EditorRenderView, &EditorTheme, &mut RulerRects, &Rulers),
         With<CodeEditor>,
     >,
 ) {
@@ -465,9 +473,13 @@ pub(crate) fn update_rulers(
         let m = rv.metrics();
 
         let mut new_rects: Vec<RectOverlay> = Vec::new();
-        for (_buffer_line, display_row) in
-            visible_display_rows(rv.fold, rv.buffer.len_lines(), m.line_height, rv.scroll.y, m.viewport_height)
-        {
+        for (_buffer_line, display_row) in visible_display_rows(
+            rv.fold,
+            rv.buffer.len_lines(),
+            m.line_height,
+            rv.scroll.y,
+            m.viewport_height,
+        ) {
             for ruler in &rulers.0 {
                 let x = ruler.column as f32 * m.char_width;
                 new_rects.push(RectOverlay {
@@ -562,23 +574,8 @@ pub(crate) fn update_fold_highlights(
 /// Tab columns are computed by walking the line and snapping to the next
 /// `indentation.tab_size` boundary so the marker bar spans the actual
 /// tab-stop width, not a fixed char cell.
-pub(crate) fn update_whitespace_markers(
-    mut editor_query: Query<
-        (
-            EditorRenderView,
-            Option<&HiddenLines>,
-            Option<&TextBounds>,
-            &EditorTheme,
-            &RenderSettings,
-            &SelectionState,
-            &Indentation,
-            &mut WhitespaceRects,
-        ),
-        With<CodeEditor>,
-    >,
-) {
-    for (rv, hidden, bounds, theme, render, sel, indentation, mut rects) in
-        editor_query.iter_mut()
+pub(crate) fn update_whitespace_markers(mut editor_query: WhitespaceMarkersQuery) {
+    for (rv, hidden, bounds, theme, render, sel, indentation, mut rects) in editor_query.iter_mut()
     {
         if matches!(render.render_whitespace, RenderWhitespace::None) {
             if !rects.0.is_empty() {
@@ -766,12 +763,12 @@ pub(crate) fn auto_scroll_to_cursor(mut editor_query: AutoScrollQuery) {
         }
         let line_index = rv.buffer.char_to_line(cursor_pos);
 
-        let mut target =
-            if scroll_target.animator.target == Vec2::ZERO && rv.scroll.0 != Vec2::ZERO {
-                rv.scroll.0
-            } else {
-                scroll_target.animator.target
-            };
+        let mut target = if scroll_target.animator.target == Vec2::ZERO && rv.scroll.0 != Vec2::ZERO
+        {
+            rv.scroll.0
+        } else {
+            scroll_target.animator.target
+        };
         let cursor_y = m.text_area_top - target.y + line_index as f32 * m.line_height;
 
         let margin_vertical = m.line_height * 2.0;

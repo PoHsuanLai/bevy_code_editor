@@ -84,15 +84,15 @@ pub use bevy_lsp::{
     CodeActionOrCommand, LspClient, LspDocument, LspMessage, LspRequest, LspRequestOrigins,
     LspResponse, LspServiceRef, RequestType, ServerCapabilities,
 };
-pub use session::{attach_lsp, lsp_request, spawn_language_service, LspCaps, LspReady, LspSession};
 pub use completion::{
     LspCompletionPopup, UnifiedCompletionItem, WordCompletionItem, COMPLETION_MAX_VISIBLE_DEFAULT,
 };
 pub use lifecycle::{
     CodeActionsLifecycle, CodeActionsPopupBackref, CompletionLifecycle, CompletionPopupBackref,
-    HoverLifecycle, HoverPopupBackref, PopupLifecycleData, PopupObserversAttached,
-    RenameLifecycle, RenamePopupBackref, SignatureLifecycle, SignaturePopupBackref,
+    HoverLifecycle, HoverPopupBackref, PopupLifecycleData, PopupObserversAttached, RenameLifecycle,
+    RenamePopupBackref, SignatureLifecycle, SignaturePopupBackref,
 };
+pub use session::{attach_lsp, lsp_request, spawn_language_service, LspCaps, LspReady, LspSession};
 pub use state::{
     LspCodeActionsPopup, LspDebounceTimers, LspDidChangeBatcher, LspDocumentHighlights,
     LspHoverPopup, LspInlayHints, LspRenamePopup, LspSignatureHelpPopup, PendingLspRequest,
