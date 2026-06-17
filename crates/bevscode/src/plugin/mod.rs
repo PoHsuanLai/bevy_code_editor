@@ -18,9 +18,6 @@ pub mod scroll_animator;
 pub mod syntax_highlighting;
 pub mod ui_elements;
 
-#[cfg(test)]
-mod flicker_test;
-
 #[cfg(feature = "lsp")]
 pub use self::lsp::LspPlugin;
 
@@ -39,7 +36,6 @@ pub use self::scroll_animator::{ScrollAnimator, ScrollAnimatorPlugin};
 
 pub use self::syntax_highlighting::{EditorSyntaxState, SyntaxPlugin};
 
-pub(crate) use self::brackets::{update_bracket_highlight, update_bracket_match};
 pub(crate) use self::cursor::update_cursor_line_highlight;
 pub(crate) use self::line_numbers::{
     setup_gutter_text_view, sync_gutter_container, sync_gutter_text_font, sync_gutter_text_view,
@@ -297,7 +293,7 @@ fn register_handler_systems(app: &mut App) {
             multi_cursor::handle_add_cursor_above,
             multi_cursor::handle_add_cursor_below,
             multi_cursor::handle_clear_secondary_cursors,
-            file::handle_goto_line,
+            goto_line::handle_goto_line,
         )
             .in_set(InputSet)
             .after(ActionDispatchSet),
@@ -333,11 +329,7 @@ fn register_handler_systems(app: &mut App) {
     #[cfg(feature = "lsp")]
     app.add_systems(
         Update,
-        (
-            lsp::handle_request_completion,
-            lsp::handle_goto_definition,
-            lsp::handle_rename_symbol,
-        )
+        (lsp::handle_request_completion, lsp::handle_rename_symbol)
             .in_set(InputSet)
             .after(ActionDispatchSet),
     );

@@ -1,8 +1,8 @@
 //! Per-action handler systems for IDE-specific actions (multi-cursor,
 //! folding, goto-line, LSP requests).
 
-pub mod file;
 pub mod folding;
+pub mod goto_line;
 #[cfg(feature = "lsp")]
 pub mod lsp;
 pub mod multi_cursor;

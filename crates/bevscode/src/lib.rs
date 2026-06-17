@@ -8,7 +8,7 @@
 //!
 //! ## Spawning an editor
 //!
-//! Spawn [`crate::types::editor::CodeEditor`] with any overrides; the
+//! Spawn [`crate::types::marker::CodeEditor`] with any overrides; the
 //! `#[require]` cascade fills in sensible defaults for everything else:
 //!
 //! ```rust,no_run
@@ -42,7 +42,7 @@
 //! - [`crate::plugin::syntax_highlighting::EditorSyntaxState`] — the current
 //!   highlight ranges, keyed by capture name. Useful for outline panels, AI
 //!   context extraction, or custom overlays.
-//! - [`crate::types::editor::BracketMatchState`] — the matched bracket pair
+//! - [`crate::types::brackets::BracketMatchState`] — the matched bracket pair
 //!   under the cursor, if any.
 //! - [`bevy_instanced_text_editor::CursorState`], [`bevy_instanced_text_editor::SelectionState`],
 //!   [`bevy_instanced_text_editor::EditHistoryState`] — cursor position, selections, and
@@ -142,6 +142,9 @@ pub mod lsp_ui;
 #[cfg(feature = "lsp")]
 pub mod lsp_ui_tempera;
 
+#[cfg(test)]
+mod scroll_flicker_tests;
+
 pub mod prelude {
     //! Convenient re-exports for common editor usage.
     //!
@@ -163,9 +166,10 @@ pub mod prelude {
         EditorDispatchPlugin, EditorUiPlugin,
     };
 
-    pub use crate::types::editor::{CodeEditor, OpenRequested, SaveRequested};
     pub use crate::types::events::FoldStateChanged;
     pub use crate::types::events::SetLanguageRequested;
+    pub use crate::types::events::{OpenRequested, SaveRequested};
+    pub use crate::types::marker::CodeEditor;
     pub use bevy_tree_sitter::TreeSitterGrammar;
 
     pub use bevy_instanced_text_editor::{

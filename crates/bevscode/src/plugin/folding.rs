@@ -415,7 +415,7 @@ pub struct FoldingPlugin;
 
 impl Plugin for FoldingPlugin {
     fn build(&self, _app: &mut App) {
-        _app.register_type::<crate::types::fold::GotoLineState>()
+        _app.register_type::<crate::types::goto_line::GotoLineState>()
             .register_type::<crate::types::fold::FoldState>();
         _app.register_type::<crate::types::fold::FoldKind>()
             .register_type::<crate::types::fold::FoldRegion>();

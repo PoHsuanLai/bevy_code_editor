@@ -110,9 +110,12 @@ impl Plugin for LspUiTemperaPlugin {
                 .in_set(LspUiViewSet),
         );
 
-        // Dismiss-grace ticks: one per popup kind. Run before the
-        // render-update systems above so a grace-fired dismiss is
-        // visible the same frame.
+        // Dismiss-grace ticks: one per popup kind. These are state-layer
+        // systems (they live in `lsp_ui::systems`), but they're registered
+        // here because their ordering anchor is `LspUiViewSet`: they must run
+        // before the render-update systems above so a grace-fired dismiss is
+        // visible the same frame. Registering them from the renderer keeps
+        // that ordering local instead of exporting `LspUiViewSet`.
         app.add_systems(
             Update,
             (

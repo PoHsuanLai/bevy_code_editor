@@ -1,4 +1,4 @@
-//! GotoLine dialog handler.
+//! Goto-line dialog toggle handler.
 
 use crate::input::action_events::*;
 use crate::types::*;
