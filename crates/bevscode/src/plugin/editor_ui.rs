@@ -23,8 +23,6 @@ use super::{
 };
 use bevy_instanced_text::gpu::GlyphAtlas;
 
-use super::{update_bracket_highlight, update_bracket_match};
-
 type RopeText = bevy_instanced_text::InstancedText<bevy_instanced_text_editor::RopeBuffer>;
 
 type IndentationDetectQuery<'w, 's> = Query<
@@ -135,6 +133,13 @@ type ViewportOrGutterChangedQuery<'w, 's> = Query<
 >;
 
 #[derive(Default)]
+/// Owns the overlay render pipeline: it wires the producer systems into
+/// `RenderingSet` and runs `merge_overlay_components` after them to fold
+/// every `*Rects` component into the engine's draw lists. The producer
+/// systems themselves are implemented in `ui_elements` (selection, indent
+/// guides, rulers, fold highlights, whitespace), `links`, and
+/// `gutter_decorations`; this plugin only schedules them. Bracket systems
+/// own their scheduling in `BracketPlugin`.
 pub struct EditorUiPlugin;
 
 impl Plugin for EditorUiPlugin {
@@ -222,14 +227,6 @@ impl Plugin for EditorUiPlugin {
         app.add_systems(
             PostUpdate,
             super::diagnostic_underlines::update_diagnostic_underlines.in_set(super::RenderingSet),
-        );
-
-        app.add_systems(Update, update_bracket_match.in_set(super::ApplyStateSet));
-        app.add_systems(
-            PostUpdate,
-            update_bracket_highlight
-                .after(update_indent_guides)
-                .in_set(super::RenderingSet),
         );
 
         app.add_systems(

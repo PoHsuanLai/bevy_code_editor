@@ -255,6 +255,9 @@ impl<'w> ActionEventWriters<'w> {
                 self.request_completion.write(RequestCompletionRequested);
             }
             EditorAction::GotoDefinition => {
+                // No default keybinding and no built-in reader: built-in
+                // goto-definition is ctrl-click (`input::mouse`). This event is
+                // a host extension point for hosts that bind a key to it.
                 self.goto_definition.write(GotoDefinitionRequested);
             }
             EditorAction::RenameSymbol => {
@@ -466,7 +469,7 @@ pub fn dispatch_action_events(
     }
 
     if let Ok((_, _, mut goto_line_state)) = editor_q.get_mut(focused) {
-        if crate::types::fold::goto_line_intercept(action, &mut goto_line_state) {
+        if crate::types::goto_line::goto_line_intercept(action, &mut goto_line_state) {
             return;
         }
     }

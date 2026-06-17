@@ -1,4 +1,7 @@
-//! LSP-related handlers -- RequestCompletion, GotoDefinition, RenameSymbol.
+//! LSP-related handlers -- RequestCompletion, RenameSymbol.
+//!
+//! Goto-definition is mouse-driven (`input::mouse::on_ctrl_click_goto_definition`);
+//! there is no keyboard handler.
 
 use crate::input::action_events::*;
 use crate::input::actions::request_completion;
@@ -42,12 +45,6 @@ pub fn handle_request_completion(
         lsp_document,
         &mut lsp_w,
     );
-}
-
-pub fn handle_goto_definition(mut events: MessageReader<GotoDefinitionRequested>) {
-    // Mouse-click-to-go-to-definition fires this elsewhere; the keyboard
-    // binding is unused but defined for future hosts.
-    events.read().for_each(|_| {});
 }
 
 pub fn handle_rename_symbol(

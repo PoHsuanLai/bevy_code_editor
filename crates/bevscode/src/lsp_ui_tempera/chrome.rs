@@ -11,14 +11,44 @@ use bevy::picking::events::{Out, Over};
 use bevy::prelude::*;
 
 use crate::lsp_ui::state::{
-    CodeActionsLifecycle, CodeActionsPopupBackref, CompletionLifecycle, CompletionPopupBackref,
-    HoverLifecycle, HoverPopupBackref, PopupObserversAttached, RenameLifecycle, RenamePopupBackref,
-    SignatureLifecycle, SignaturePopupBackref,
+    CodeActionsLifecycle, CompletionLifecycle, HoverLifecycle, RenameLifecycle, SignatureLifecycle,
 };
 
 use crate::ui_kit::PopupChrome;
 
 use super::anchor::{PopupAnchor, PopupPlacement, PopupRect};
+
+/// Marker inserted on a popup chrome entity once its `Pointer<Over>` /
+/// `Pointer<Out>` observers have been attached, so renderers can re-spawn
+/// the chrome data Component every frame without re-attaching observers
+/// (which would multiply per-frame and never deregister).
+#[derive(Component, Debug)]
+pub struct PopupObserversAttached;
+
+/// Reverse handle inserted on a popup chrome entity so the chrome's
+/// `Pointer<Over>` / `Pointer<Out>` observers can locate the editor whose
+/// lifecycle to mutate. One concrete type per popup kind because the
+/// observer queries must name a concrete Component.
+macro_rules! popup_backref {
+    ($backref:ident) => {
+        #[derive(Component, Debug)]
+        pub struct $backref {
+            pub editor: Entity,
+        }
+
+        impl $backref {
+            pub fn from_editor(editor: Entity) -> Self {
+                Self { editor }
+            }
+        }
+    };
+}
+
+popup_backref!(HoverPopupBackref);
+popup_backref!(CompletionPopupBackref);
+popup_backref!(SignaturePopupBackref);
+popup_backref!(CodeActionsPopupBackref);
+popup_backref!(RenamePopupBackref);
 
 /// Standard query shape every popup renderer in this module uses to
 /// fetch its tracked popup entities. Parameterized by the popup-data

@@ -49,9 +49,8 @@ pub mod prelude {
     };
 
     pub use super::lifecycle::{
-        CodeActionsLifecycle, CodeActionsPopupBackref, CompletionLifecycle, CompletionPopupBackref,
-        HoverLifecycle, HoverPopupBackref, PopupLifecycleData, PopupObserversAttached,
-        RenameLifecycle, RenamePopupBackref, SignatureLifecycle, SignaturePopupBackref,
+        CodeActionsLifecycle, CompletionLifecycle, HoverLifecycle, PopupLifecycleData,
+        RenameLifecycle, SignatureLifecycle,
     };
 
     pub use super::state::{
@@ -88,9 +87,8 @@ pub use completion::{
     LspCompletionPopup, UnifiedCompletionItem, WordCompletionItem, COMPLETION_MAX_VISIBLE_DEFAULT,
 };
 pub use lifecycle::{
-    CodeActionsLifecycle, CodeActionsPopupBackref, CompletionLifecycle, CompletionPopupBackref,
-    HoverLifecycle, HoverPopupBackref, PopupLifecycleData, PopupObserversAttached, RenameLifecycle,
-    RenamePopupBackref, SignatureLifecycle, SignaturePopupBackref,
+    CodeActionsLifecycle, CompletionLifecycle, HoverLifecycle, PopupLifecycleData, RenameLifecycle,
+    SignatureLifecycle,
 };
 pub use session::{attach_lsp, lsp_request, spawn_language_service, LspCaps, LspReady, LspSession};
 pub use state::{

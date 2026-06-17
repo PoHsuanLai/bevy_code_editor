@@ -60,7 +60,7 @@ pub fn completion_popup_intercept(
         (
             &mut CursorState,
             &mut InstancedText<RopeBuffer>,
-            &mut crate::types::fold::GotoLineState,
+            &mut crate::types::goto_line::GotoLineState,
         ),
         With<CodeEditor>,
     >,
@@ -154,7 +154,7 @@ fn apply_selected(
         (
             &mut CursorState,
             &mut InstancedText<RopeBuffer>,
-            &mut crate::types::fold::GotoLineState,
+            &mut crate::types::goto_line::GotoLineState,
         ),
         With<CodeEditor>,
     >,

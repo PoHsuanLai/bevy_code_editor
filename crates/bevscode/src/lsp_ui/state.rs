@@ -375,7 +375,6 @@ impl LspRenamePopup {
 }
 
 pub use super::lifecycle::{
-    CodeActionsLifecycle, CodeActionsPopupBackref, CompletionLifecycle, CompletionPopupBackref,
-    HoverLifecycle, HoverPopupBackref, PopupLifecycleData, PopupObserversAttached, RenameLifecycle,
-    RenamePopupBackref, SignatureLifecycle, SignaturePopupBackref,
+    CodeActionsLifecycle, CompletionLifecycle, HoverLifecycle, PopupLifecycleData, RenameLifecycle,
+    SignatureLifecycle,
 };

@@ -110,13 +110,17 @@ impl PopupLifecycleData {
     }
 }
 
-/// Generate one typed lifecycle Component + its `PopupBackref` peer.
-/// Each Component is a newtype around [`PopupLifecycleData`] that
-/// `Deref`s through, so call sites look like
-/// `lc.new_request()` / `lc.popup_entity = …` rather than
+/// Generate one typed lifecycle Component. Each Component is a newtype
+/// around [`PopupLifecycleData`] that `Deref`s through, so call sites look
+/// like `lc.new_request()` / `lc.popup_entity = …` rather than
 /// `lc.0.new_request()`.
+///
+/// The peer `*PopupBackref` chrome marker lives in
+/// `lsp_ui_tempera::chrome` — it's a renderer concern (it tags the
+/// rendered chrome entity), so a different renderer can mutate these
+/// lifecycles without inheriting tempera's chrome types.
 macro_rules! lifecycle_component {
-    ($lifecycle:ident, $backref:ident) => {
+    ($lifecycle:ident) => {
         #[derive(Component, Default, Debug)]
         pub struct $lifecycle(pub PopupLifecycleData);
 
@@ -132,35 +136,14 @@ macro_rules! lifecycle_component {
                 &mut self.0
             }
         }
-
-        /// Reverse handle inserted on the popup chrome entity so the
-        /// chrome's `Pointer<Over>` / `Pointer<Out>` observers can
-        /// locate the editor whose lifecycle to mutate.
-        #[derive(Component, Debug)]
-        pub struct $backref {
-            pub editor: Entity,
-        }
-
-        impl $backref {
-            pub fn from_editor(editor: Entity) -> Self {
-                Self { editor }
-            }
-        }
     };
 }
 
-lifecycle_component!(HoverLifecycle, HoverPopupBackref);
-lifecycle_component!(CompletionLifecycle, CompletionPopupBackref);
-lifecycle_component!(SignatureLifecycle, SignaturePopupBackref);
-lifecycle_component!(CodeActionsLifecycle, CodeActionsPopupBackref);
-lifecycle_component!(RenameLifecycle, RenamePopupBackref);
-
-/// Marker inserted on a popup chrome entity once its `Pointer<Over>` /
-/// `Pointer<Out>` observers have been attached, so renderers can
-/// re-spawn the chrome data Component every frame without re-attaching
-/// observers (which would multiply per-frame and never deregister).
-#[derive(Component, Debug)]
-pub struct PopupObserversAttached;
+lifecycle_component!(HoverLifecycle);
+lifecycle_component!(CompletionLifecycle);
+lifecycle_component!(SignatureLifecycle);
+lifecycle_component!(CodeActionsLifecycle);
+lifecycle_component!(RenameLifecycle);
 
 #[cfg(test)]
 mod tests {

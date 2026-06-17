@@ -142,3 +142,15 @@ pub struct FoldStateChanged {
     pub start_line: usize,
     pub is_folded: bool,
 }
+
+/// Fired when the user requests a save; carries the editor's full content.
+#[derive(Message, Clone, Debug, Reflect)]
+#[reflect(Clone, Debug)]
+pub struct SaveRequested {
+    pub content: String,
+}
+
+/// Fired when the user requests opening a file.
+#[derive(Message, Clone, Debug, Reflect, Default)]
+#[reflect(Clone, Debug, Default)]
+pub struct OpenRequested;

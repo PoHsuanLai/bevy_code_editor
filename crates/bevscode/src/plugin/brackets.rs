@@ -42,7 +42,15 @@ type BracketHighlightQuery<'w, 's> = Query<
 pub struct BracketPlugin;
 
 impl Plugin for BracketPlugin {
-    fn build(&self, _app: &mut App) {}
+    fn build(&self, app: &mut App) {
+        app.add_systems(Update, update_bracket_match.in_set(super::ApplyStateSet));
+        app.add_systems(
+            PostUpdate,
+            update_bracket_highlight
+                .after(super::ui_elements::update_indent_guides)
+                .in_set(super::RenderingSet),
+        );
+    }
 }
 
 pub(crate) fn find_matching_bracket(
