@@ -16,7 +16,7 @@ bevy_instanced_text_editor = { path = "../bevy_instanced_text_editor", version =
 bevy_tree_sitter = { path = "../bevy_tree_sitter", version = "0.2.0" }
 bevy_markdown = { path = "../bevy_markdown", version = "0.2.0", optional = true }
 bevy_lsp = { path = "../bevy_lsp", version = "0.2.0", optional = true }
-bevy_resvg = "2.3.3"
+bevy_resvg = "2"
 tempera = { git = "https://github.com/PoHsuanLai/tempera.git", rev = "b687cff" }
 
 bevy = { workspace = true, features = [

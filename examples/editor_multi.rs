@@ -124,7 +124,7 @@ fn spawn_two_editors(
         ))
         .id();
 
-    input_focus.set(left);
+    input_focus.set(left, bevy::input_focus::FocusCause::Navigated);
 
     info!(
         "Spawned multi-editor demo: left = {:?}, right = {:?}. Click either side to focus.",

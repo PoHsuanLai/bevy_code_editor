@@ -72,7 +72,7 @@ fn setup_editor(
         bevy::text::LineHeight::Px(20.0),
     ));
 
-    input_focus.set(entity);
+    input_focus.set(entity, bevy::input_focus::FocusCause::Navigated);
 
     // Set initial Python code
     let initial_text = r#"#!/usr/bin/env python3

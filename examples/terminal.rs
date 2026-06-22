@@ -81,7 +81,7 @@ fn log_events(
 ) {
     for ev in ready.read() {
         info!("ready({:?}): {}x{}", ev.entity, ev.cols, ev.rows);
-        input_focus.set(ev.entity);
+        input_focus.set(ev.entity, bevy::input_focus::FocusCause::Pressed);
     }
     for ev in titles.read() {
         info!("title({:?}): {:?}", ev.entity, ev.title);

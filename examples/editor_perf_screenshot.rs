@@ -90,7 +90,7 @@ fn setup_editor(
         MonoFontFaces::default().with_bold(asset_server.load("fonts/FiraMono-Medium.ttf")),
     ));
 
-    input_focus.set(entity);
+    input_focus.set(entity, bevy::input_focus::FocusCause::Navigated);
 
     let file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/sqlite3.c");
     let content = match std::fs::read_to_string(&file_path) {
