@@ -686,10 +686,19 @@ fn update_font_metrics(
     mut editors: Query<(&TextFont, &mut MonoCellWidth), With<CodeEditor>>,
     mut atlas: ResMut<GlyphAtlas>,
     fonts: Res<Assets<bevy::text::Font>>,
+    mut images: ResMut<Assets<Image>>,
 ) {
     for (font, mut mono) in editors.iter_mut() {
-        let font_id = atlas.ensure_font(&font.font, &fonts);
-        let width = atlas.shape_line("0", font.font_size, font_id).width;
+        // `TextFont.font` is a `FontSource` in Bevy 0.19; the glyph atlas
+        // only handles concrete font handles, so skip non-handle sources.
+        let bevy::text::FontSource::Handle(font_handle) = &font.font else {
+            continue;
+        };
+        atlas.ensure_font(font_handle, &fonts);
+        let font_size = bevy_instanced_text::font_size_px(font.font_size);
+        let width = atlas
+            .shape_line("0", font_size, Some(font_handle), &fonts, &mut images)
+            .width;
         if width > 0.0 && (mono.px - width).abs() > 0.01 {
             info!(
                 "Updating char_width from {:.3} to {:.3} (measured)",

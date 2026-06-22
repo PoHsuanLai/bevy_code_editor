@@ -1,0 +1,27 @@
+[package]
+authors = ["Theodore Bjernhed <uik1475@edu.kunskapsskolan.se>"]
+categories = ["game-development", "graphics", "multimedia::images", "rendering"]
+description = "A simple library for rendering SVGs in Bevy using the amazing Resvg library."
+edition = "2024"
+keywords = ["bevy", "gamedev", "graphics", "render", "svg"]
+license = "MIT OR Apache-2.0"
+name = "bevy_resvg"
+readme = "README.md"
+repository = "https://github.com/theodorebje/bevy_resvg"
+rust-version = "1.89"
+# Vendored from crates.io bevy_resvg 2.3.3 and bumped to Bevy 0.19 (no
+# published release supports Bevy 0.19 yet). Patched in via the workspace
+# [patch.crates-io] table. See vendor/bevy_resvg for the local source.
+version = "2.3.3"
+
+[dependencies]
+bevy = { version = "0.19", default-features = false, features = [
+    "bevy_log",
+    "bevy_sprite_render",
+    "bevy_ui",
+    "std",
+] }
+pastey = "0.2.1"
+resvg = ">=0.42, ^0.47"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = ">=1.0, <3.0"

@@ -13,4 +13,4 @@ CLAUDE.md
 
 !README.md
 !CHANGELOG.md
-*.mov
+*.movvendor/*/target/

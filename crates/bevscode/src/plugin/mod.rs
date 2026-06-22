@@ -235,6 +235,10 @@ impl PluginGroup for CodeEditorPlugins {
             .add(bevy_instanced_text::gpu::GlyphAtlasPlugin)
             .add(bevy_instanced_text::gpu::InstancedTextRenderPlugin)
             .add(bevy_instanced_text::view::plugin::InstancedTextPlugin)
+            // Bevy 0.19 split the `InputFocus` resource init out of
+            // `InputDispatchPlugin` into `InputFocusPlugin`; add both so the
+            // dispatch systems have the resource they require.
+            .add(bevy::input_focus::InputFocusPlugin)
             .add(bevy::input_focus::InputDispatchPlugin)
             .add(bevy_instanced_text_editor::InstancedTextEditPlugin::without_typing_observer())
             .add(EditorDispatchPlugin)

@@ -41,6 +41,30 @@ use bevy_instanced_text_editor::{BlinkPhase, EditDelta, EditPoint, RopeBuffer};
 use bevy_tree_sitter::{SyntaxTree, TreeSitterGrammar, TreeSitterPlugin};
 use std::time::{Duration, Instant};
 
+/// Merge every glyph batch a `TextView` produced into one
+/// `GlyphBatchComponent`.
+///
+/// In Bevy 0.19 `bevy_instanced_text` splits a view across multiple batch
+/// entities (one per render tier), so `TextViewBatchEntity` now holds a
+/// `Vec<Entity>`. These tests only inspect the flat glyph-instance stream, so
+/// we concatenate all batches' instances (preserving order) behind the
+/// historical single-`GlyphBatchComponent` view. Returns `None` if the view
+/// has no batch entities or none carry a `GlyphBatchComponent` yet.
+fn merged_glyph_batch(world: &World, entity: Entity) -> Option<GlyphBatchComponent> {
+    let batch_entities = world.get::<TextViewBatchEntity>(entity)?;
+    let mut merged: Option<GlyphBatchComponent> = None;
+    for &be in &batch_entities.0 {
+        let Some(batch) = world.get::<GlyphBatchComponent>(be) else {
+            continue;
+        };
+        match &mut merged {
+            Some(acc) => acc.instances.extend(batch.instances.iter().cloned()),
+            None => merged = Some(batch.clone()),
+        }
+    }
+    merged
+}
+
 /// Build a headless test app with the minimum plugins for syntax / layout.
 fn make_test_app() -> App {
     let mut app = App::new();
@@ -48,6 +72,18 @@ fn make_test_app() -> App {
     app.add_plugins(TimePlugin);
     app.add_plugins(bevy::asset::AssetPlugin::default());
     app.init_resource::<Assets<Font>>();
+    // Bevy 0.19's shaping pipeline (via `GlyphAtlas::shape_line`) refuses to
+    // produce glyphs unless the resolved `Font` asset is actually loaded —
+    // it bails to an empty shape otherwise. `TextFont::from_font_size` uses
+    // the default font handle, so load the embedded default font at the
+    // default `AssetId` here. (On 0.18 shaping tolerated a missing asset.)
+    {
+        let font = Font::from_bytes(DEFAULT_FONT_DATA.to_vec());
+        app.world_mut()
+            .resource_mut::<Assets<Font>>()
+            .insert(AssetId::default(), font)
+            .unwrap();
+    }
     app.configure_sets(
         Update,
         (
@@ -90,6 +126,10 @@ fn spawn_test_editor(app: &mut App, text: &str) -> Entity {
         InstancedText::<RopeBuffer>::new(RopeBuffer::new(text)),
         bevy_instanced_text::ContentMetrics::default(),
         computed,
+        // Bevy 0.19 moved the UI stack index off `ComputedNode` into its own
+        // `ComputedStackIndex` component, which `update_text_views` now
+        // requires on every text view.
+        bevy::ui::ComputedStackIndex::default(),
         DisplayLayout::default(),
         TextUnderlays::default(),
         TextOverlays::default(),
@@ -145,7 +185,7 @@ fn install_atlas_and_font(app: &mut App) {
         GlyphAtlas::new(&mut images)
     };
     world.insert_resource(atlas);
-    let font = Font::try_from_bytes(DEFAULT_FONT_DATA.to_vec()).unwrap();
+    let font = Font::from_bytes(DEFAULT_FONT_DATA.to_vec());
     world
         .resource_mut::<Assets<Font>>()
         .insert(AssetId::default(), font)
@@ -552,14 +592,8 @@ fn pipeline_consistency_initial() {
     let world = app.world();
     let line_styles = world.get::<LineStyles>(entity).unwrap().clone();
     let display_layout = world.get::<DisplayLayout>(entity).unwrap().clone();
-    let batch_entity = world
-        .get::<TextViewBatchEntity>(entity)
-        .expect("update_text_views must spawn a batch entity")
-        .0;
-    let batch = world
-        .get::<GlyphBatchComponent>(batch_entity)
-        .unwrap()
-        .clone();
+    let batch = merged_glyph_batch(world, entity)
+        .expect("update_text_views must spawn a batch entity with glyphs");
 
     assert_pipeline_consistent_for_keyword(
         &line_styles,
@@ -631,11 +665,7 @@ fn pipeline_consistency_after_newline_insert() {
     let world = app.world();
     let line_styles = world.get::<LineStyles>(entity).unwrap().clone();
     let display_layout = world.get::<DisplayLayout>(entity).unwrap().clone();
-    let batch_entity = world.get::<TextViewBatchEntity>(entity).unwrap().0;
-    let batch = world
-        .get::<GlyphBatchComponent>(batch_entity)
-        .unwrap()
-        .clone();
+    let batch = merged_glyph_batch(world, entity).unwrap();
 
     // `fn` moved to buffer_row=1.
     assert_pipeline_consistent_for_keyword(
@@ -724,11 +754,7 @@ fn pipeline_consistency_after_backspace_join() {
     let world = app.world();
     let line_styles = world.get::<LineStyles>(entity).unwrap().clone();
     let display_layout = world.get::<DisplayLayout>(entity).unwrap().clone();
-    let batch_entity = world.get::<TextViewBatchEntity>(entity).unwrap().0;
-    let batch = world
-        .get::<GlyphBatchComponent>(batch_entity)
-        .unwrap()
-        .clone();
+    let batch = merged_glyph_batch(world, entity).unwrap();
 
     assert_pipeline_consistent_for_keyword(
         &line_styles,
@@ -983,7 +1009,7 @@ fn full_postupdate_schedule_with_real_overlays() {
         computed,
         UiGlobalTransform::from(Affine2::from_translation(Vec2::new(400.0, 300.0))),
     ));
-    app.world_mut().resource_mut::<InputFocus>().set(entity);
+    app.world_mut().resource_mut::<InputFocus>().set(entity, bevy::input_focus::FocusCause::Pressed);
 
     let timeout = Duration::from_secs(5);
     let start = Instant::now();
@@ -996,10 +1022,7 @@ fn full_postupdate_schedule_with_real_overlays() {
             break;
         }
         let world = app.world();
-        let Some(bh) = world.get::<TextViewBatchEntity>(entity) else {
-            continue;
-        };
-        let Some(batch) = world.get::<GlyphBatchComponent>(bh.0) else {
+        let Some(batch) = merged_glyph_batch(world, entity) else {
             continue;
         };
         last_instances = batch.instances.len();
@@ -1083,7 +1106,7 @@ fn gpu_readback_renders_colored_pixels() {
 
     {
         let world = app.world_mut();
-        let font = Font::try_from_bytes(DEFAULT_FONT_DATA.to_vec()).unwrap();
+        let font = Font::from_bytes(DEFAULT_FONT_DATA.to_vec());
         world
             .resource_mut::<Assets<Font>>()
             .insert(AssetId::default(), font)
@@ -1091,7 +1114,9 @@ fn gpu_readback_renders_colored_pixels() {
     }
     let target_handle: Handle<Image> = {
         let mut images = app.world_mut().resource_mut::<Assets<Image>>();
-        let mut img = Image::new_target_texture(W, H, TextureFormat::bevy_default(), None);
+        // `TextureFormat::bevy_default()` was deprecated in Bevy 0.19; use the
+        // concrete sRGB format it resolved to.
+        let mut img = Image::new_target_texture(W, H, TextureFormat::Rgba8UnormSrgb, None);
         img.texture_descriptor.usage |= TextureUsages::COPY_SRC;
         images.add(img)
     };
