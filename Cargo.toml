@@ -39,11 +39,3 @@ lsp-types = "0.95"
 wezterm-term = { git = "https://github.com/wezterm/wezterm", rev = "577474d89ee61aef4a48145cdec82a638d874751" }
 wezterm-surface = { git = "https://github.com/wezterm/wezterm", rev = "577474d89ee61aef4a48145cdec82a638d874751" }
 termwiz = { git = "https://github.com/wezterm/wezterm", rev = "577474d89ee61aef4a48145cdec82a638d874751" }
-
-# bevy_resvg 2.3.3 (crates.io latest) targets Bevy 0.18; no upstream 0.19
-# release exists. Redirect to our 0.19-ported fork. Drop once an upstream
-# Bevy-0.19 bevy_resvg is published.
-# (tempera and bevy_ui_text_input no longer need patches — their own repos
-#  are now on Bevy 0.19 and bevscode pins those 0.19 revisions directly.)
-[patch.crates-io]
-bevy_resvg = { git = "https://github.com/PoHsuanLai/bevy_resvg.git", rev = "000a90f" }
