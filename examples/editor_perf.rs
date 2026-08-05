@@ -148,10 +148,7 @@ fn spawn_perf_overlay(mut commands: Commands, windows: Query<&Window>) {
     commands.spawn((
         PerfOverlay,
         Text2d::new("fps: -"),
-        TextFont {
-            font_size: 14.0,
-            ..default()
-        },
+        TextFont::from_font_size(14.0),
         TextColor(Color::srgb(0.9, 0.9, 0.2)),
         bevy::sprite::Anchor::TOP_RIGHT,
         Transform::from_xyz(x, y, 1000.0),
