@@ -125,8 +125,24 @@
 //!
 //! ## Keybindings
 //!
-//! Spawn an `EditorInputManager` with your own `InputMap<EditorAction>` before
-//! `PostStartup`; the plugin's default input manager is only added if none exists.
+//! Input runs in two stages, and only the first knows what a *keybinding* is:
+//! something decides an [`input::EditorAction`] should happen, then
+//! [`input::execute_editor_action`] turns it into the `*Requested` messages every
+//! handler reads. The `leafwing` feature (on by default) supplies the first
+//! stage; the second is always present.
+//!
+//! Three ways to bind keys, in increasing order of host control:
+//!
+//! 1. **Do nothing.** `CodeEditorPlugins` adds `EditorDispatchPlugin`, which
+//!    spawns a default `InputMap<EditorAction>` and polls it.
+//! 2. **Your own map, our polling.** Spawn an `EditorInputManager` carrying your
+//!    `InputMap<EditorAction>` before `PostStartup` — the default one is only
+//!    added if none exists.
+//! 3. **Your own pipeline.** Turn the `leafwing` feature off and call
+//!    [`input::execute_editor_action`] from your own system, having decided the
+//!    action however you like. Nothing in the public API then names a leafwing
+//!    type. This is the right choice for a host that already has an input layer:
+//!    two systems binding the same key is a race, not a configuration.
 
 pub mod display_map;
 pub mod input;
@@ -161,9 +177,10 @@ pub mod prelude {
 
     pub use bevy_instanced_text::prelude::*;
 
+    #[cfg(feature = "leafwing")]
+    pub use crate::plugin::EditorDispatchPlugin;
     pub use crate::plugin::{
-        AutoResizeViewport, CodeEditorPlugin, CodeEditorPlugins, EditorAppExt,
-        EditorDispatchPlugin, EditorUiPlugin,
+        AutoResizeViewport, CodeEditorPlugin, CodeEditorPlugins, EditorAppExt, EditorUiPlugin,
     };
 
     pub use crate::types::events::FoldStateChanged;

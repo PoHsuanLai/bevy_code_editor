@@ -34,6 +34,22 @@ use crate::types::{
     FoldState, IndentGuideRects, SelectionRects, SelectionState,
 };
 
+/// Add whatever supplies `ActionState<EditorAction>`, if anything does.
+///
+/// These are scroll-flicker regression tests: leafwing is scaffolding here, not
+/// subject matter — no test below asserts anything about input. So with the
+/// `leafwing` feature off this is a no-op and the tests still run, rather than
+/// the whole module being gated out and the coverage quietly disappearing.
+#[cfg(feature = "leafwing")]
+fn add_input_manager(app: &mut App) {
+    app.add_plugins(leafwing_input_manager::plugin::InputManagerPlugin::<
+        crate::input::EditorAction,
+    >::default());
+}
+
+#[cfg(not(feature = "leafwing"))]
+fn add_input_manager(_app: &mut App) {}
+
 fn make_test_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
@@ -233,9 +249,7 @@ fn full_code_editor_plugin_does_not_move_scroll_target_on_idle_frames() {
     app.add_plugins(bevy::input_focus::InputFocusPlugin);
     app.add_plugins(bevy::input_focus::InputDispatchPlugin);
     app.add_plugins(bevy_instanced_text_editor::InstancedTextEditPlugin::without_typing_observer());
-    app.add_plugins(leafwing_input_manager::plugin::InputManagerPlugin::<
-        crate::input::EditorAction,
-    >::default());
+    add_input_manager(&mut app);
     app.add_plugins(crate::plugin::CodeEditorPlugin);
     app.add_plugins(crate::plugin::CursorPlugin);
     app.add_plugins(crate::plugin::SyntaxPlugin);
@@ -277,9 +291,7 @@ fn pointer_scroll_event_accumulates_into_target() {
     app.add_plugins(bevy::input_focus::InputFocusPlugin);
     app.add_plugins(bevy::input_focus::InputDispatchPlugin);
     app.add_plugins(bevy_instanced_text_editor::InstancedTextEditPlugin::without_typing_observer());
-    app.add_plugins(leafwing_input_manager::plugin::InputManagerPlugin::<
-        crate::input::EditorAction,
-    >::default());
+    add_input_manager(&mut app);
     app.add_plugins(crate::plugin::CodeEditorPlugin);
 
     // 200-line buffer so there's room to scroll.
@@ -336,9 +348,7 @@ fn animator_drives_current_to_target_within_duration() {
     app.add_plugins(bevy::input_focus::InputFocusPlugin);
     app.add_plugins(bevy::input_focus::InputDispatchPlugin);
     app.add_plugins(bevy_instanced_text_editor::InstancedTextEditPlugin::without_typing_observer());
-    app.add_plugins(leafwing_input_manager::plugin::InputManagerPlugin::<
-        crate::input::EditorAction,
-    >::default());
+    add_input_manager(&mut app);
     app.add_plugins(crate::plugin::CodeEditorPlugin);
     app.add_plugins(crate::plugin::EditorUiPlugin);
     app.add_plugins(crate::plugin::ScrollAnimatorPlugin);
