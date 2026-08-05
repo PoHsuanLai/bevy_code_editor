@@ -23,8 +23,8 @@ bevy_tasks = "0.19"
 bevy_camera = "0.19"
 
 # In-workspace bevy_instanced_text family.
-bevy_instanced_text = { git = "https://github.com/PoHsuanLai/bevy_instanced_text.git", rev = "81026c6" }
-bevy_instanced_text_interaction = { git = "https://github.com/PoHsuanLai/bevy_instanced_text.git", rev = "81026c6", default-features = false }
+bevy_instanced_text = { git = "https://github.com/PoHsuanLai/bevy_instanced_text.git", rev = "a5c4e73" }
+bevy_instanced_text_interaction = { git = "https://github.com/PoHsuanLai/bevy_instanced_text.git", rev = "a5c4e73", default-features = false }
 
 # Shared third-party crates with 2+ callers.
 ropey = "1.6"
