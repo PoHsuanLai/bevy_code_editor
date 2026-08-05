@@ -158,6 +158,17 @@ pub struct CodeEditorPlugin;
 
 impl Plugin for CodeEditorPlugin {
     fn build(&self, app: &mut App) {
+        // Bevy 0.19 split the `InputFocus` resource init out of
+        // `InputDispatchPlugin` into `InputFocusPlugin`; ensure both exist.
+        // `DefaultPlugins` already carries them under its `bevy_input_focus`
+        // feature, so guard rather than add unconditionally.
+        if !app.is_plugin_added::<bevy::input_focus::InputFocusPlugin>() {
+            app.add_plugins(bevy::input_focus::InputFocusPlugin);
+        }
+        if !app.is_plugin_added::<bevy::input_focus::InputDispatchPlugin>() {
+            app.add_plugins(bevy::input_focus::InputDispatchPlugin);
+        }
+
         app.configure_sets(
             Update,
             (
@@ -246,11 +257,6 @@ impl PluginGroup for CodeEditorPlugins {
             .add(bevy_instanced_text::gpu::GlyphAtlasPlugin)
             .add(bevy_instanced_text::gpu::InstancedTextRenderPlugin)
             .add(bevy_instanced_text::view::plugin::InstancedTextPlugin)
-            // Bevy 0.19 split the `InputFocus` resource init out of
-            // `InputDispatchPlugin` into `InputFocusPlugin`; add both so the
-            // dispatch systems have the resource they require.
-            .add(bevy::input_focus::InputFocusPlugin)
-            .add(bevy::input_focus::InputDispatchPlugin)
             .add(bevy_instanced_text_editor::InstancedTextEditPlugin::without_typing_observer())
             .add(CodeEditorPlugin)
             .add(CursorPlugin)
