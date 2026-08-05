@@ -21,9 +21,17 @@
 #[cfg(feature = "lsp")]
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
+// All three are read only by `PopupChrome`, which is LSP-only. They were
+// previously in one grouped `use` whose `#[cfg]` came from `MenuTokens`
+// sitting alongside them; splitting the import made that dependence visible.
+//
+// `MenuTokens` moved out of `theme` into its own module when the menu row
+// colours started coming from the palette (tempera 63fa64b).
+#[cfg(feature = "lsp")]
+use tempera::menu_tokens::MenuTokens;
 use tempera::theme::{ColorPalette, Spacing, ThemePlugin};
 #[cfg(feature = "lsp")]
-use tempera::theme::{FontHandle, MenuTokens, Typography};
+use tempera::theme::{FontHandle, Typography};
 
 use crate::settings::EditorTheme;
 use crate::types::CodeEditor;

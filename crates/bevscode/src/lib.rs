@@ -195,7 +195,6 @@ pub mod prelude {
     pub use crate::settings::{DiagnosticColors, LspConfig, Suggest};
 
     pub use crate::ui_kit::BevscodePalettePlugin;
-    pub use tempera::theme::{
-        ColorPalette, FontHandle, MenuTokens, Spacing, ThemePlugin, Typography,
-    };
+    pub use tempera::menu_tokens::MenuTokens;
+    pub use tempera::theme::{ColorPalette, FontHandle, Spacing, ThemePlugin, Typography};
 }
