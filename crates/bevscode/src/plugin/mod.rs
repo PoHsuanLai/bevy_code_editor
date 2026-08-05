@@ -118,13 +118,24 @@ impl EditorAppExt for App {
     }
 }
 
-/// Self-contained action dispatch: leafwing `InputManagerPlugin`,
-/// default `EditorInputManager` spawn, and the `dispatch_action_events`
-/// system. Disable this when the host app owns the input pipeline and
-/// writes bevscode's action events itself.
+/// Self-contained keybinding frontend: leafwing `InputManagerPlugin`, the
+/// default `EditorInputManager` spawn, and the `dispatch_action_events` system.
+///
+/// Requires the `leafwing` feature, and is the only plugin that does. It is
+/// also the only part of [`CodeEditorPlugins`] a host has to think about when
+/// it owns its own input pipeline — two ways to opt out:
+///
+/// - **Turn the `leafwing` feature off.** This plugin ceases to exist, and the
+///   host drives [`execute_editor_action`](crate::input::execute_editor_action)
+///   from its own pipeline. Preferred: no leafwing in the dependency graph, and
+///   no chance of two input systems binding the same key.
+/// - **`.disable::<EditorDispatchPlugin>()`** with the feature left on, when the
+///   host wants leafwing but its own `InputMap` or run conditions.
+#[cfg(feature = "leafwing")]
 #[derive(Default)]
 pub struct EditorDispatchPlugin;
 
+#[cfg(feature = "leafwing")]
 impl Plugin for EditorDispatchPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(leafwing_input_manager::plugin::InputManagerPlugin::<
@@ -241,7 +252,6 @@ impl PluginGroup for CodeEditorPlugins {
             .add(bevy::input_focus::InputFocusPlugin)
             .add(bevy::input_focus::InputDispatchPlugin)
             .add(bevy_instanced_text_editor::InstancedTextEditPlugin::without_typing_observer())
-            .add(EditorDispatchPlugin)
             .add(CodeEditorPlugin)
             .add(CursorPlugin)
             .add(syntax_highlighting::SyntaxPlugin)
@@ -253,6 +263,11 @@ impl PluginGroup for CodeEditorPlugins {
         let group = group
             .add(crate::ui_kit::EditorTemperaPlugin)
             .add(crate::ui_kit::BevscodePalettePlugin);
+        // The keybinding frontend. Added last among the input plugins so a host
+        // that keeps the feature can still `.disable::<EditorDispatchPlugin>()`
+        // without disturbing the rest of the group.
+        #[cfg(feature = "leafwing")]
+        let group = group.add(EditorDispatchPlugin);
         #[cfg(feature = "lsp")]
         let group = group
             .add(LspPlugin)
@@ -347,6 +362,9 @@ fn register_handler_systems(app: &mut App) {
     );
 }
 
+/// Spawn the default `InputMap<EditorAction>` holder, unless the host already
+/// spawned its own `EditorInputManager` (in which case its bindings win).
+#[cfg(feature = "leafwing")]
 fn spawn_default_input_manager(
     mut commands: Commands,
     existing: Query<(), With<EditorInputManager>>,

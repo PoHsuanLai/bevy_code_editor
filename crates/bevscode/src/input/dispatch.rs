@@ -1,24 +1,39 @@
-//! `EditorAction` → typed event dispatcher.
+//! `EditorAction` → typed event dispatch, in two halves.
 //!
-//! Polls leafwing's `ActionState`, picks the just-pressed-or-repeating
-//! action for the focused editor, and emits the corresponding
-//! `*Requested` event.
+//! [`dispatch_action_events`] is the leafwing frontend: it polls `ActionState`,
+//! picks the just-pressed-or-repeating action, and hands it on. It exists only
+//! under the `leafwing` feature.
+//!
+//! [`execute_editor_action`] is everything after that decision — gating,
+//! interception, and emitting the `*Requested` message — and is always
+//! available. A host with its own input pipeline calls it directly.
 
 use super::action_events::*;
 use super::auto_indent::compute_newline_indent;
 #[cfg(feature = "lsp")]
 use super::handlers::lsp_followup::PendingActionFollowup;
 use super::keybindings::EditorAction;
+// Both are key-repeat machinery, which only the leafwing frontend runs.
+#[cfg(feature = "leafwing")]
 use crate::plugin::EditorInputManager;
-use crate::settings::{AutoEdit, AutoIndent, CursorSettings, Indentation};
+#[cfg(feature = "leafwing")]
+use crate::settings::CursorSettings;
+use crate::settings::{AutoEdit, AutoIndent, Indentation};
 use crate::types::*;
 use bevy::ecs::system::SystemParam;
 use bevy::input_focus::InputFocus;
+#[cfg(feature = "leafwing")]
 use bevy::platform::time::Instant;
 use bevy::prelude::*;
 use bevy_instanced_text_editor::RopeBuffer;
+#[cfg(feature = "leafwing")]
 use leafwing_input_manager::prelude::*;
 
+/// Scan order for "which action was just pressed".
+///
+/// Only the leafwing frontend consults this — a host driving
+/// [`execute_editor_action`] already knows its action.
+#[cfg(feature = "leafwing")]
 const ALL_ACTIONS: [EditorAction; 49] = [
     EditorAction::DeleteBackward,
     EditorAction::DeleteForward,
@@ -299,8 +314,12 @@ impl<'w> ActionEventWriters<'w> {
     }
 }
 
+/// The LSP-side query [`execute_editor_action`] takes.
+///
+/// Public because a host driving `execute_editor_action` from its own system
+/// has to name this type in that system's signature.
 #[cfg(feature = "lsp")]
-type DispatchLspQuery<'w, 's> = Query<
+pub type DispatchLspQuery<'w, 's> = Query<
     'w,
     's,
     (
@@ -315,19 +334,14 @@ type DispatchLspQuery<'w, 's> = Query<
     With<CodeEditor>,
 >;
 
+/// Everything [`execute_editor_action`] needs, and nothing about keybindings.
+///
+/// Deliberately free of leafwing types so the execution half compiles with the
+/// `leafwing` feature off. The selection half's extra state lives in
+/// [`ActionSelectionParams`] instead of here.
 #[derive(SystemParam)]
 pub struct DispatchParams<'w, 's> {
     input_focus: Res<'w, InputFocus>,
-    action_query: Query<
-        'w,
-        's,
-        (
-            &'static ActionState<EditorAction>,
-            &'static mut KeyRepeatState,
-        ),
-        With<EditorInputManager>,
-    >,
-    cursor_settings_q: Query<'w, 's, &'static CursorSettings, With<CodeEditor>>,
     misc_q: Query<'w, 's, &'static mut crate::settings::Misc, With<CodeEditor>>,
     auto_indent_q: Query<
         'w,
@@ -342,19 +356,125 @@ pub struct DispatchParams<'w, 's> {
     writers: ActionEventWriters<'w>,
 }
 
-/// `EditorAction` → typed event dispatcher.
+/// The leafwing half: the `ActionState` to poll and the key-repeat clock.
 ///
-/// Polls leafwing's `ActionState<EditorAction>` and emits the
-/// corresponding `*Requested` events for the focused editor.
-/// Handles key repeat, read-only gating, auto-indent, goto-line
-/// interception, and (with `lsp`) completion-popup interception.
+/// `cursor_settings_q` is here rather than in [`DispatchParams`] because the
+/// only thing that reads it is key repeat, which is a property of how the key
+/// is *held* — a keybinding concern.
+#[cfg(feature = "leafwing")]
+#[derive(SystemParam)]
+pub struct ActionSelectionParams<'w, 's> {
+    action_query: Query<
+        'w,
+        's,
+        (
+            &'static ActionState<EditorAction>,
+            &'static mut KeyRepeatState,
+        ),
+        With<EditorInputManager>,
+    >,
+    cursor_settings_q: Query<'w, 's, &'static CursorSettings, With<CodeEditor>>,
+}
+
+/// Leafwing keybinding frontend: `ActionState<EditorAction>` → one action per
+/// frame → [`execute_editor_action`].
 ///
-/// [`EditorDispatchPlugin`](crate::plugin::EditorDispatchPlugin)
-/// registers this in `Update` inside `InputSet ∩ ActionDispatchSet`.
-/// Hosts that disable `EditorDispatchPlugin` can register it
-/// themselves with a custom run condition.
+/// Owns exactly two things — picking the just-pressed action, and key repeat.
+/// Everything downstream of "which action" is [`execute_editor_action`]'s, and
+/// this function is a thin shim over it.
+///
+/// [`EditorDispatchPlugin`](crate::plugin::EditorDispatchPlugin) registers it in
+/// `Update` inside `InputSet ∩ ActionDispatchSet`. Hosts that disable that
+/// plugin but keep the `leafwing` feature can register it themselves with a
+/// custom run condition; hosts that turn the feature off call
+/// [`execute_editor_action`] from their own input pipeline instead.
+#[cfg(feature = "leafwing")]
 pub fn dispatch_action_events(
+    mut selection: ActionSelectionParams,
     mut params: DispatchParams,
+    #[cfg(feature = "lsp")] pending: ResMut<PendingActionFollowup>,
+    #[cfg(feature = "lsp")] editor_q: Query<
+        (
+            &mut CursorState,
+            &mut crate::text_view::InstancedText<RopeBuffer>,
+            &mut GotoLineState,
+        ),
+        With<CodeEditor>,
+    >,
+    #[cfg(not(feature = "lsp"))] editor_q: Query<
+        (
+            &CursorState,
+            &crate::text_view::InstancedText<RopeBuffer>,
+            &mut GotoLineState,
+        ),
+        With<CodeEditor>,
+    >,
+    #[cfg(feature = "lsp")] lsp_q: DispatchLspQuery,
+) {
+    let Some(focused) = params.input_focus.get() else {
+        return;
+    };
+    let Ok((action_state, mut key_repeat_state)) = selection.action_query.single_mut() else {
+        warn!("No EditorInputManager entity found with ActionState");
+        return;
+    };
+
+    let now = Instant::now();
+    let mut action_to_execute: Option<EditorAction> = None;
+
+    for action in ALL_ACTIONS {
+        if action_state.just_pressed(&action) {
+            action_to_execute = Some(action);
+            if action.is_repeatable() {
+                key_repeat_state.arm(action, now);
+            }
+            break;
+        }
+    }
+
+    if action_to_execute.is_none() {
+        if let Some(current_action) = key_repeat_state.current_action {
+            if action_state.pressed(&current_action) {
+                let default = CursorSettings::default();
+                let cursor_settings = selection.cursor_settings_q.get(focused).unwrap_or(&default);
+                if let Some(action) = key_repeat_state.tick(now, &cursor_settings.key_repeat) {
+                    action_to_execute = Some(action);
+                }
+            } else {
+                key_repeat_state.release();
+            }
+        }
+    }
+
+    let Some(action) = action_to_execute else {
+        return;
+    };
+
+    execute_editor_action(
+        action,
+        &mut params,
+        #[cfg(feature = "lsp")]
+        pending,
+        editor_q,
+        #[cfg(feature = "lsp")]
+        lsp_q,
+    );
+}
+
+/// Execute one [`EditorAction`] against the focused editor, whatever selected it.
+///
+/// This is the half that has nothing to do with keybindings, and it is the entry
+/// point for a host that owns its own input pipeline: decide an `EditorAction`
+/// however you like, then call this. It handles, in order — LSP rename-popup
+/// suppression, read-only gating, tab-focus mode, completion-popup and goto-line
+/// interception, the save/open special cases, auto-indent on newline — and
+/// finally emits the matching `*Requested` message.
+///
+/// Available with the `leafwing` feature off; nothing in its signature names a
+/// leafwing type.
+pub fn execute_editor_action(
+    action: EditorAction,
+    params: &mut DispatchParams,
     #[cfg(feature = "lsp")] mut pending: ResMut<PendingActionFollowup>,
     #[cfg(feature = "lsp")] mut editor_q: Query<
         (
@@ -377,47 +497,16 @@ pub fn dispatch_action_events(
     let Some(focused) = params.input_focus.get() else {
         return;
     };
-    let Ok((action_state, mut key_repeat_state)) = params.action_query.single_mut() else {
-        warn!("No EditorInputManager entity found with ActionState");
-        return;
-    };
 
+    // A visible rename popup owns the keyboard outright. Checked here rather
+    // than in the selection half so it holds for any frontend, not just
+    // leafwing's.
     #[cfg(feature = "lsp")]
     if let Ok((_, _, _, _, rename_state, _, _)) = lsp_q.get(focused) {
         if rename_state.visible {
             return;
         }
     }
-    let now = Instant::now();
-    let mut action_to_execute: Option<EditorAction> = None;
-
-    for action in ALL_ACTIONS {
-        if action_state.just_pressed(&action) {
-            action_to_execute = Some(action);
-            if action.is_repeatable() {
-                key_repeat_state.arm(action, now);
-            }
-            break;
-        }
-    }
-
-    if action_to_execute.is_none() {
-        if let Some(current_action) = key_repeat_state.current_action {
-            if action_state.pressed(&current_action) {
-                let default = CursorSettings::default();
-                let cursor_settings = params.cursor_settings_q.get(focused).unwrap_or(&default);
-                if let Some(action) = key_repeat_state.tick(now, &cursor_settings.key_repeat) {
-                    action_to_execute = Some(action);
-                }
-            } else {
-                key_repeat_state.release();
-            }
-        }
-    }
-
-    let Some(action) = action_to_execute else {
-        return;
-    };
 
     if action.is_mutating() {
         if let Ok(misc) = params.misc_q.get(focused) {

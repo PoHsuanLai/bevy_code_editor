@@ -39,7 +39,7 @@ bevy = { workspace = true, features = [
 
 ropey = { workspace = true }
 serde = { workspace = true }
-leafwing-input-manager = { workspace = true, features = ["keyboard"] }
+leafwing-input-manager = { workspace = true, features = ["keyboard"], optional = true }
 lsp-types = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 fuzzy-matcher = { version = "0.3", optional = true }
@@ -52,7 +52,22 @@ lsp-types = { workspace = true }
 serde_json = { workspace = true }
 
 [features]
-default = ["clipboard"]
+default = ["clipboard", "leafwing"]
+
+# Keybinding frontend: leafwing's `InputMap`/`ActionState` plus the
+# `EditorDispatchPlugin` that polls them. ON by default, so a host that
+# adds `CodeEditorPlugins` and nothing else still gets a working editor.
+#
+# Turn it OFF when the host owns its own input pipeline. What remains is
+# the whole editor minus the *keybinding* layer: `EditorAction` is still
+# a plain enum, `execute_editor_action` still turns one into the
+# `*Requested` messages, and every handler still reads only those. The
+# host decides what a keystroke means and calls in — which is the only
+# way to avoid two input systems racing for the same key.
+#
+# Gates the dependency, not behaviour: with it off, nothing in the public
+# API names a leafwing type.
+leafwing = ["dep:leafwing-input-manager"]
 
 clipboard = ["bevy_instanced_text_editor/arboard"]
 clipboard-wasm = ["bevy_instanced_text_editor/clipboard-wasm"]

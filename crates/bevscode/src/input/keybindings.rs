@@ -1,7 +1,25 @@
+//! [`EditorAction`] — the editor's action vocabulary — and the default
+//! keybindings that produce it.
+//!
+//! The enum is deliberately leafwing-free: it is the *vocabulary*, and a host
+//! that binds keys some other way still needs every variant to talk about. Only
+//! the `Actionlike` derive and [`default_input_map`] — the parts that are about
+//! *keybindings* rather than *actions* — sit behind the `leafwing` feature.
+
+#[cfg(feature = "leafwing")]
 use bevy::input::keyboard::KeyCode;
 use bevy::prelude::*;
+#[cfg(feature = "leafwing")]
 use leafwing_input_manager::prelude::*;
 
+/// The default keymap: a conventional desktop-editor layout over
+/// [`EditorAction`].
+///
+/// Spawned onto the `EditorInputManager` entity by
+/// [`EditorDispatchPlugin`](crate::plugin::EditorDispatchPlugin). A host that
+/// wants different bindings but still wants leafwing can build its own
+/// `InputMap` and skip that plugin.
+#[cfg(feature = "leafwing")]
 pub fn default_input_map() -> InputMap<EditorAction> {
     let mut input_map = InputMap::default();
 
@@ -185,7 +203,18 @@ pub fn default_input_map() -> InputMap<EditorAction> {
     input_map
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Reflect, Actionlike)]
+/// Everything the editor can be asked to do, independent of how it was asked.
+///
+/// One variant per user-visible editing operation.
+/// [`execute_editor_action`](super::execute_editor_action) is the only thing
+/// that consumes these; it turns one into the corresponding `*Requested`
+/// message.
+///
+/// `Actionlike` is derived only under the `leafwing` feature — it is what lets
+/// a variant sit in an `InputMap`, which is a statement about keybindings, not
+/// about the action itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Reflect)]
+#[cfg_attr(feature = "leafwing", derive(Actionlike))]
 #[reflect(Debug, Hash, PartialEq)]
 pub enum EditorAction {
     DeleteBackward,
