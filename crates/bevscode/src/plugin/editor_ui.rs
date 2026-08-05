@@ -69,6 +69,9 @@ type OverlayChangedFilterLsp = (
     )>,
 );
 
+type ThemedEditorQuery<'w, 's> =
+    Query<'w, 's, (Entity, &'static EditorTheme), (With<CodeEditor>, Changed<EditorTheme>)>;
+
 type AutoLayoutQuery<'w, 's> = Query<
     'w,
     's,
@@ -165,6 +168,7 @@ impl Plugin for EditorUiPlugin {
         app.add_systems(Update, setup_gutter_text_view);
 
         app.add_systems(Update, sync_node_from_window);
+        app.add_systems(Update, sync_background_from_theme);
 
         app.add_observer(sync_indent_config_on_change);
         app.add_observer(disable_scroll_beyond_last_line);
@@ -325,6 +329,51 @@ fn sync_node_from_window(
         if node.height != target_h {
             node.height = target_h;
         }
+    }
+}
+
+/// Paint `EditorTheme::background` onto the editor's own UI node.
+///
+/// Without this the field is inert: it has one writer
+/// (`ui_kit::sync_palette_into_editor_theme`) and its only other reader is
+/// `copy_highlight`, which serialises it to hex for clipboard HTML. Nothing
+/// put it on screen, so whatever showed behind the glyphs was the window's
+/// `ClearColor` — which is not the editor's to set, and is wrong the moment an
+/// editor is one pane among several rather than the whole window.
+///
+/// The failure was quiet in the worst way. A host switching to a light palette
+/// got light *syntax* colours (those are per-glyph and did work) on the default
+/// dark ground: legible by accident, and only obviously wrong once someone
+/// looked. `EditorTheme`'s own docs promise
+/// `(CodeEditor, EditorTheme { background: .., ..default() })` works at spawn
+/// time, so this closes the gap between that promise and what rendered.
+///
+/// The editor entity is already a UI node — `InstancedText<T>` registers
+/// `Node` as required (`bevy_instanced_text::view::plugin`) — so this adds a
+/// `BackgroundColor` to a node that exists rather than introducing a surface.
+/// Bevy UI draws a node's background beneath its content, so the glyphs, the
+/// selection band and every overlay rect keep painting on top; no ordering
+/// against `RenderingSet` is needed.
+///
+/// `Update` rather than a spawn-time insert: `EditorTheme` is a mutable
+/// per-entity component, so a host may recolour a live editor and expect the
+/// surface to follow. `Changed<EditorTheme>` is what keeps an idle frame from
+/// rewriting `BackgroundColor` — which Bevy UI's extraction reads, so a
+/// per-frame rewrite would mark it changed forever and defeat change detection
+/// downstream.
+///
+/// `Changed` is the *only* guard, deliberately. An `if current == new { return }`
+/// equality check alongside it reads like belt-and-braces and is dead code:
+/// mutation testing showed each mechanism alone passes every test in
+/// `background_tests`, and only removing *both* fails
+/// `an_unchanged_theme_does_not_touch_the_node`. Two mechanisms for one
+/// property means one of them is never exercised, so the redundant one is gone
+/// rather than left to rot untested.
+fn sync_background_from_theme(mut commands: Commands, editors: ThemedEditorQuery) {
+    for (entity, theme) in editors.iter() {
+        commands
+            .entity(entity)
+            .insert(BackgroundColor(theme.background));
     }
 }
 
@@ -717,4 +766,144 @@ fn digit_count_for(n: u32) -> u32 {
         digits += 1;
     }
     digits
+}
+
+#[cfg(test)]
+mod background_tests {
+    use super::*;
+
+    /// A world with the one system under test and nothing else.
+    ///
+    /// Deliberately not `CodeEditorPlugins`: that group builds the GPU stack,
+    /// and `InstancedTextRenderPlugin::build` calls `sub_app_mut(RenderApp)`
+    /// unconditionally, which is a panic in a headless test rather than a
+    /// degraded render. The system under test reads two components and writes
+    /// one, so the world is all it needs.
+    fn app() -> App {
+        let mut app = App::new();
+        app.add_systems(Update, sync_background_from_theme);
+        app
+    }
+
+    /// The editor entity is spawned bare rather than via `CodeEditor`'s
+    /// `#[require]` cascade — the cascade pulls 47 components, several of which
+    /// want plugins this harness does not build. `CodeEditor` + `EditorTheme`
+    /// is exactly what the query asks for.
+    fn spawn_editor(app: &mut App, background: Color) -> Entity {
+        app.world_mut()
+            .spawn((
+                CodeEditor,
+                EditorTheme {
+                    background,
+                    ..Default::default()
+                },
+            ))
+            .id()
+    }
+
+    fn background_of(app: &App, entity: Entity) -> Option<Color> {
+        app.world().get::<BackgroundColor>(entity).map(|bg| bg.0)
+    }
+
+    #[test]
+    fn the_theme_background_reaches_the_node() {
+        let mut app = app();
+        let editor = spawn_editor(&mut app, Color::srgb(1.0, 0.0, 0.0));
+        app.update();
+        assert_eq!(
+            background_of(&app, editor),
+            Some(Color::srgb(1.0, 0.0, 0.0)),
+            "EditorTheme::background must be painted onto the editor's node; \
+             before this system it was inert and the window ClearColor showed through"
+        );
+    }
+
+    /// The regression this fixes: a host switching palettes at runtime.
+    ///
+    /// The original bug was visible precisely here — syntax colours followed
+    /// the palette (they are per-glyph) while the surface did not.
+    #[test]
+    fn recolouring_a_live_editor_repaints_the_surface() {
+        let mut app = app();
+        let editor = spawn_editor(&mut app, Color::BLACK);
+        app.update();
+        assert_eq!(background_of(&app, editor), Some(Color::BLACK));
+
+        app.world_mut()
+            .get_mut::<EditorTheme>(editor)
+            .expect("editor has a theme")
+            .background = Color::WHITE;
+        app.update();
+
+        assert_eq!(
+            background_of(&app, editor),
+            Some(Color::WHITE),
+            "a theme change on a live editor must repaint the surface"
+        );
+    }
+
+    /// Two editors, two themes — the reason `EditorTheme` is per-entity rather
+    /// than a resource, per its own module docs.
+    #[test]
+    fn two_editors_keep_their_own_backgrounds() {
+        let mut app = app();
+        let dark = spawn_editor(&mut app, Color::BLACK);
+        let light = spawn_editor(&mut app, Color::WHITE);
+        app.update();
+        assert_eq!(background_of(&app, dark), Some(Color::BLACK));
+        assert_eq!(background_of(&app, light), Some(Color::WHITE));
+    }
+
+    /// An unchanged theme must not rewrite the component.
+    ///
+    /// `BackgroundColor` is read by Bevy UI's extraction; rewriting it every
+    /// frame would mark it changed every frame. The guard is the `Changed`
+    /// filter plus the equality check, and this pins the pair.
+    #[test]
+    fn an_unchanged_theme_does_not_touch_the_node() {
+        let mut app = app();
+        let editor = spawn_editor(&mut app, Color::BLACK);
+        app.update();
+
+        let before = app
+            .world()
+            .entity(editor)
+            .get_ref::<BackgroundColor>()
+            .expect("painted on the first update")
+            .last_changed();
+
+        app.update();
+        app.update();
+
+        let after = app
+            .world()
+            .entity(editor)
+            .get_ref::<BackgroundColor>()
+            .expect("still painted")
+            .last_changed();
+
+        assert_eq!(
+            before, after,
+            "an idle frame must not rewrite BackgroundColor — that would mark it \
+             changed every frame and defeat UI change detection"
+        );
+    }
+
+    /// A non-editor entity carrying a theme is not painted.
+    ///
+    /// `With<CodeEditor>` is what scopes this; without it any entity that
+    /// happened to hold an `EditorTheme` would acquire a background.
+    #[test]
+    fn a_theme_without_the_editor_marker_is_ignored() {
+        let mut app = app();
+        let stray = app
+            .world_mut()
+            .spawn(EditorTheme {
+                background: Color::WHITE,
+                ..Default::default()
+            })
+            .id();
+        app.update();
+        assert_eq!(background_of(&app, stray), None);
+    }
 }
