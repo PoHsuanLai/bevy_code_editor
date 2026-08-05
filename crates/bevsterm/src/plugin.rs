@@ -25,6 +25,11 @@ pub struct TerminalPlugin;
 
 impl Plugin for TerminalPlugin {
     fn build(&self, app: &mut App) {
+        // Bevy 0.19 split the `InputFocus` resource init out of
+        // `InputDispatchPlugin` into `InputFocusPlugin`; ensure both exist.
+        if !app.is_plugin_added::<bevy::input_focus::InputFocusPlugin>() {
+            app.add_plugins(bevy::input_focus::InputFocusPlugin);
+        }
         if !app.is_plugin_added::<bevy::input_focus::InputDispatchPlugin>() {
             app.add_plugins(bevy::input_focus::InputDispatchPlugin);
         }
@@ -168,6 +173,8 @@ impl PluginGroup for TerminalPlugins {
             .add(bevy_instanced_text::gpu::GlyphAtlasPlugin)
             .add(bevy_instanced_text::gpu::InstancedTextRenderPlugin)
             .add(bevy_instanced_text::view::plugin::InstancedTextPlugin)
+            // Bevy 0.19 split `InputFocus` resource init into `InputFocusPlugin`.
+            .add(bevy::input_focus::InputFocusPlugin)
             .add(bevy::input_focus::InputDispatchPlugin)
             .add(
                 bevy_instanced_text_interaction::InstancedTextInteractionPlugin::<String>::default(

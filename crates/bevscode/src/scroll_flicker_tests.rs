@@ -230,6 +230,7 @@ fn full_code_editor_plugin_does_not_move_scroll_target_on_idle_frames() {
     // Pull in everything the editor plugin needs to *function*; skip the
     // GPU-render plugins (`GlyphAtlasPlugin`, `InstancedTextRenderPlugin`)
     // and `InstancedTextPlugin` since they require a render device.
+    app.add_plugins(bevy::input_focus::InputFocusPlugin);
     app.add_plugins(bevy::input_focus::InputDispatchPlugin);
     app.add_plugins(bevy_instanced_text_editor::InstancedTextEditPlugin::without_typing_observer());
     app.add_plugins(leafwing_input_manager::plugin::InputManagerPlugin::<
@@ -273,6 +274,7 @@ fn full_code_editor_plugin_does_not_move_scroll_target_on_idle_frames() {
 fn pointer_scroll_event_accumulates_into_target() {
     let mut app = make_test_app();
     app.add_plugins(bevy_instanced_text::view::plugin::InstancedTextPlugin);
+    app.add_plugins(bevy::input_focus::InputFocusPlugin);
     app.add_plugins(bevy::input_focus::InputDispatchPlugin);
     app.add_plugins(bevy_instanced_text_editor::InstancedTextEditPlugin::without_typing_observer());
     app.add_plugins(leafwing_input_manager::plugin::InputManagerPlugin::<
@@ -306,6 +308,8 @@ fn pointer_scroll_event_accumulates_into_target() {
                 x: 0.0,
                 y: -10.0,
                 hit: HitData::new(dummy_camera, 0.0, Some(Vec3::ZERO), None),
+                // New in Bevy 0.19: scroll events carry a touch phase.
+                phase: bevy::input::touch::TouchPhase::Moved,
             },
             entity,
         );
@@ -329,6 +333,7 @@ fn pointer_scroll_event_accumulates_into_target() {
 fn animator_drives_current_to_target_within_duration() {
     let mut app = make_test_app();
     app.add_plugins(bevy_instanced_text::view::plugin::InstancedTextPlugin);
+    app.add_plugins(bevy::input_focus::InputFocusPlugin);
     app.add_plugins(bevy::input_focus::InputDispatchPlugin);
     app.add_plugins(bevy_instanced_text_editor::InstancedTextEditPlugin::without_typing_observer());
     app.add_plugins(leafwing_input_manager::plugin::InputManagerPlugin::<

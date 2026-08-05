@@ -74,12 +74,14 @@ fn spawn_heading(
         .spawn((
             Text::default(),
             TextFont {
-                font: theme
-                    .fonts
-                    .bold
-                    .clone()
-                    .unwrap_or_else(|| theme.fonts.body.clone()),
-                font_size: size,
+                font: FontSource::Handle(
+                    theme
+                        .fonts
+                        .bold
+                        .clone()
+                        .unwrap_or_else(|| theme.fonts.body.clone()),
+                ),
+                font_size: bevy::text::FontSize::Px(size),
                 ..default()
             },
             TextColor(theme.colors.text),
@@ -109,8 +111,8 @@ fn spawn_paragraph(
         .spawn((
             Text::default(),
             TextFont {
-                font: theme.fonts.body.clone(),
-                font_size: size,
+                font: FontSource::Handle(theme.fonts.body.clone()),
+                font_size: bevy::text::FontSize::Px(size),
                 ..default()
             },
             TextColor(theme.colors.text),
@@ -164,8 +166,8 @@ fn spawn_code_block(
                 .spawn((
                     Text::default(),
                     TextFont {
-                        font: theme.fonts.mono.clone(),
-                        font_size: size,
+                        font: FontSource::Handle(theme.fonts.mono.clone()),
+                        font_size: bevy::text::FontSize::Px(size),
                         ..default()
                     },
                     TextColor(theme.colors.text),
@@ -176,8 +178,8 @@ fn spawn_code_block(
                         t.spawn((
                             TextSpan::new(text.to_string()),
                             TextFont {
-                                font: theme.fonts.mono.clone(),
-                                font_size: size,
+                                font: FontSource::Handle(theme.fonts.mono.clone()),
+                                font_size: bevy::text::FontSize::Px(size),
                                 ..default()
                             },
                             TextColor(theme.colors.text),
@@ -195,8 +197,8 @@ fn spawn_code_block(
                             t.spawn((
                                 TextSpan::new(text[cursor..start].to_string()),
                                 TextFont {
-                                    font: theme.fonts.mono.clone(),
-                                    font_size: size,
+                                    font: FontSource::Handle(theme.fonts.mono.clone()),
+                                    font_size: bevy::text::FontSize::Px(size),
                                     ..default()
                                 },
                                 TextColor(theme.colors.text),
@@ -205,8 +207,8 @@ fn spawn_code_block(
                         t.spawn((
                             TextSpan::new(text[start..end].to_string()),
                             TextFont {
-                                font: theme.fonts.mono.clone(),
-                                font_size: size,
+                                font: FontSource::Handle(theme.fonts.mono.clone()),
+                                font_size: bevy::text::FontSize::Px(size),
                                 ..default()
                             },
                             TextColor(color),
@@ -217,8 +219,8 @@ fn spawn_code_block(
                         t.spawn((
                             TextSpan::new(text[cursor..].to_string()),
                             TextFont {
-                                font: theme.fonts.mono.clone(),
-                                font_size: size,
+                                font: FontSource::Handle(theme.fonts.mono.clone()),
+                                font_size: bevy::text::FontSize::Px(size),
                                 ..default()
                             },
                             TextColor(theme.colors.text),
@@ -263,8 +265,8 @@ fn spawn_list(
                         row.spawn((
                             Text::new(marker),
                             TextFont {
-                                font: theme.fonts.body.clone(),
-                                font_size: theme.spacing.base_font_size,
+                                font: FontSource::Handle(theme.fonts.body.clone()),
+                                font_size: bevy::text::FontSize::Px(theme.spacing.base_font_size),
                                 ..default()
                             },
                             TextColor(theme.colors.text),
@@ -356,7 +358,7 @@ fn spawn_inline_span(
                 TextSpan::new(text.clone()),
                 TextFont {
                     font: pick_face(*style, theme.fonts, heading),
-                    font_size: size,
+                    font_size: bevy::text::FontSize::Px(size),
                     ..default()
                 },
                 TextColor(theme.colors.text),
@@ -368,8 +370,8 @@ fn spawn_inline_span(
             parent.spawn((
                 TextSpan::new(code.clone()),
                 TextFont {
-                    font: theme.fonts.mono.clone(),
-                    font_size: size * 0.92,
+                    font: FontSource::Handle(theme.fonts.mono.clone()),
+                    font_size: bevy::text::FontSize::Px(size * 0.92),
                     ..default()
                 },
                 TextColor(theme.colors.inline_code_bg),
@@ -384,8 +386,8 @@ fn spawn_inline_span(
             parent.spawn((
                 TextSpan::new(" ".to_string()),
                 TextFont {
-                    font: theme.fonts.body.clone(),
-                    font_size: size,
+                    font: FontSource::Handle(theme.fonts.body.clone()),
+                    font_size: bevy::text::FontSize::Px(size),
                     ..default()
                 },
                 TextColor(theme.colors.text),
@@ -395,8 +397,8 @@ fn spawn_inline_span(
             parent.spawn((
                 TextSpan::new("\n".to_string()),
                 TextFont {
-                    font: theme.fonts.body.clone(),
-                    font_size: size,
+                    font: FontSource::Handle(theme.fonts.body.clone()),
+                    font_size: bevy::text::FontSize::Px(size),
                     ..default()
                 },
                 TextColor(theme.colors.text),
@@ -419,7 +421,7 @@ fn spawn_link_child(
                 TextSpan::new(text.clone()),
                 TextFont {
                     font: pick_face(*style, theme.fonts, heading),
-                    font_size: size,
+                    font_size: bevy::text::FontSize::Px(size),
                     ..default()
                 },
                 TextColor(theme.colors.link),
@@ -430,8 +432,8 @@ fn spawn_link_child(
             parent.spawn((
                 TextSpan::new(code.clone()),
                 TextFont {
-                    font: theme.fonts.mono.clone(),
-                    font_size: size * 0.92,
+                    font: FontSource::Handle(theme.fonts.mono.clone()),
+                    font_size: bevy::text::FontSize::Px(size * 0.92),
                     ..default()
                 },
                 TextColor(theme.colors.link),
@@ -447,7 +449,11 @@ fn spawn_link_child(
     }
 }
 
-fn pick_face(style: InlineStyle, fonts: &MarkdownFonts, heading: bool) -> Handle<Font> {
+fn pick_face(style: InlineStyle, fonts: &MarkdownFonts, heading: bool) -> FontSource {
+    FontSource::Handle(pick_face_handle(style, fonts, heading))
+}
+
+fn pick_face_handle(style: InlineStyle, fonts: &MarkdownFonts, heading: bool) -> Handle<Font> {
     if style.bold && style.italic {
         if let Some(h) = fonts.bold_italic.clone() {
             return h;

@@ -71,7 +71,7 @@ fn setup_editor(
         MonoFontFaces::default().with_bold(asset_server.load("fonts/FiraMono-Medium.ttf")),
     ));
 
-    input_focus.set(entity);
+    input_focus.set(entity, bevy::input_focus::FocusCause::Navigated);
 
     let file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/sqlite3.c");
     let content = match std::fs::read_to_string(&file_path) {
@@ -148,10 +148,7 @@ fn spawn_perf_overlay(mut commands: Commands, windows: Query<&Window>) {
     commands.spawn((
         PerfOverlay,
         Text2d::new("fps: -"),
-        TextFont {
-            font_size: 14.0,
-            ..default()
-        },
+        TextFont::from_font_size(14.0),
         TextColor(Color::srgb(0.9, 0.9, 0.2)),
         bevy::sprite::Anchor::TOP_RIGHT,
         Transform::from_xyz(x, y, 1000.0),

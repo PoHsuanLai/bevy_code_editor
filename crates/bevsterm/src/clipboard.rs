@@ -186,7 +186,7 @@ pub fn handle_focus(
 ) {
     for ev in events.read() {
         if sessions.get(ev.entity).is_ok() {
-            input_focus.set(ev.entity);
+            input_focus.set(ev.entity, bevy::input_focus::FocusCause::Pressed);
         }
     }
 }

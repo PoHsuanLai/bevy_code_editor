@@ -10,28 +10,28 @@ members = [
     "examples",
     "examples/wasm_lsp",
 ]
-
 [profile.release]
 debug = true
 
 [workspace.dependencies]
 # Bevy. Features stay per-crate; default-features = false everywhere.
-bevy = { version = "0.18", default-features = false }
-bevy_app = "0.18"
-bevy_ecs = "0.18"
-bevy_log = "0.18"
-bevy_tasks = "0.18"
-bevy_camera = "0.18"
+bevy = { version = "0.19", default-features = false }
+bevy_app = "0.19"
+bevy_ecs = "0.19"
+bevy_log = "0.19"
+bevy_tasks = "0.19"
+bevy_camera = "0.19"
 
 # In-workspace bevy_instanced_text family.
-bevy_instanced_text = { git = "https://github.com/PoHsuanLai/bevy_instanced_text.git", rev = "ad62e10" }
-bevy_instanced_text_interaction = { git = "https://github.com/PoHsuanLai/bevy_instanced_text.git", rev = "ad62e10", default-features = false }
+bevy_instanced_text = { git = "https://github.com/PoHsuanLai/bevy_instanced_text.git", rev = "81026c6" }
+bevy_instanced_text_interaction = { git = "https://github.com/PoHsuanLai/bevy_instanced_text.git", rev = "81026c6", default-features = false }
 
 # Shared third-party crates with 2+ callers.
 ropey = "1.6"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-leafwing-input-manager = "0.20"
+# 0.21 is the first release built against Bevy 0.19; 0.20 targets Bevy 0.18.
+leafwing-input-manager = "0.21"
 lsp-types = "0.95"
 
 # Wezterm trio — must stay on the same git rev. Pinned commit, isolated to

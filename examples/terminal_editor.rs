@@ -143,7 +143,7 @@ fn layout_panes(
             Name::new("Editor"),
         ))
         .id();
-    input_focus.set(editor);
+    input_focus.set(editor, bevy::input_focus::FocusCause::Navigated);
 
     // Terminal — right pane.
     commands.spawn((

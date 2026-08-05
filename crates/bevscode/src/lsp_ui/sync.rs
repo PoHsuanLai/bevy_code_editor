@@ -253,7 +253,7 @@ pub fn sync_hover_popup(
         (false, false) => format!("{diagnostic_md}\n\n---\n\n{}", hover_state.content),
     };
 
-    let font_size = font.font_size * 0.9;
+    let font_size = bevy_instanced_text::font_size_px(font.font_size) * 0.9;
     let padding = 10.0;
 
     let max_line_chars = content
@@ -395,7 +395,7 @@ pub fn sync_signature_help_popup(
 
     let (line, character) = buffer_position(buffer, cursor_state.cursor_pos);
 
-    let font_size = font.font_size * 0.9;
+    let font_size = bevy_instanced_text::font_size_px(font.font_size) * 0.9;
     let padding = 8.0;
 
     let sig_label = &signature.label;
