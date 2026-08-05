@@ -173,9 +173,6 @@ impl PluginGroup for TerminalPlugins {
             .add(bevy_instanced_text::gpu::GlyphAtlasPlugin)
             .add(bevy_instanced_text::gpu::InstancedTextRenderPlugin)
             .add(bevy_instanced_text::view::plugin::InstancedTextPlugin)
-            // Bevy 0.19 split `InputFocus` resource init into `InputFocusPlugin`.
-            .add(bevy::input_focus::InputFocusPlugin)
-            .add(bevy::input_focus::InputDispatchPlugin)
             .add(
                 bevy_instanced_text_interaction::InstancedTextInteractionPlugin::<String>::default(
                 ),

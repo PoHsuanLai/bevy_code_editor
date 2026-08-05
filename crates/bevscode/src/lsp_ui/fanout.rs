@@ -13,11 +13,11 @@ use crate::types::CodeEditor;
 macro_rules! fanout_broadcast {
     ($fn_name:ident, $msg_ty:ident) => {
         pub(crate) fn $fn_name(
-            mut events: MessageReader<$msg_ty>,
+            mut messages: ParamSet<(MessageReader<$msg_ty>, MessageWriter<$msg_ty>)>,
             editors: Query<(Entity, &LspSession), With<CodeEditor>>,
-            mut writer: MessageWriter<$msg_ty>,
         ) {
-            for ev in events.read() {
+            let mut fanned = Vec::new();
+            for ev in messages.p0().read() {
                 let service = ev.entity;
                 if editors.get(service).is_ok() {
                     continue;
@@ -26,9 +26,12 @@ macro_rules! fanout_broadcast {
                     if session.0 == service {
                         let mut cloned = ev.clone();
                         cloned.entity = editor;
-                        writer.write(cloned);
+                        fanned.push(cloned);
                     }
                 }
+            }
+            if !fanned.is_empty() {
+                messages.p1().write_batch(fanned);
             }
         }
     };
@@ -41,11 +44,14 @@ fanout_broadcast!(fanout_inlay_refresh, LspInlayHintRefreshRequested);
 fanout_broadcast!(fanout_diagnostics_refresh, LspDiagnosticsRefreshRequested);
 
 pub(crate) fn fanout_diagnostics(
-    mut events: MessageReader<LspDiagnosticsUpdated>,
+    mut messages: ParamSet<(
+        MessageReader<LspDiagnosticsUpdated>,
+        MessageWriter<LspDiagnosticsUpdated>,
+    )>,
     editors: Query<(Entity, &LspSession, Option<&bevy_lsp::LspDocument>), With<CodeEditor>>,
-    mut writer: MessageWriter<LspDiagnosticsUpdated>,
 ) {
-    for ev in events.read() {
+    let mut fanned = Vec::new();
+    for ev in messages.p0().read() {
         let service = ev.entity;
         if editors.get(service).is_ok() {
             continue;
@@ -55,11 +61,14 @@ pub(crate) fn fanout_diagnostics(
                 continue;
             }
             if doc.is_some_and(|d| d.uri == ev.uri) {
-                writer.write(LspDiagnosticsUpdated {
+                fanned.push(LspDiagnosticsUpdated {
                     entity: editor,
                     ..ev.clone()
                 });
             }
         }
+    }
+    if !fanned.is_empty() {
+        messages.p1().write_batch(fanned);
     }
 }
