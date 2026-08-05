@@ -1009,7 +1009,9 @@ fn full_postupdate_schedule_with_real_overlays() {
         computed,
         UiGlobalTransform::from(Affine2::from_translation(Vec2::new(400.0, 300.0))),
     ));
-    app.world_mut().resource_mut::<InputFocus>().set(entity, bevy::input_focus::FocusCause::Pressed);
+    app.world_mut()
+        .resource_mut::<InputFocus>()
+        .set(entity, bevy::input_focus::FocusCause::Pressed);
 
     let timeout = Duration::from_secs(5);
     let start = Instant::now();
